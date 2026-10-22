@@ -341,9 +341,8 @@ mod tests {
     fn unset_home_falls_back_to_passwd_not_to_a_guess() {
         // The passwd fallback exists on any machine that runs the tests; what matters is
         // that it is the only source and never silently the current directory.
-        match Paths::from_lookup(lookup(&[])) {
-            Ok(p) => assert!(p.config_dir().is_absolute()),
-            Err(NoHomeDir) => {}
+        if let Ok(p) = Paths::from_lookup(lookup(&[])) {
+            assert!(p.config_dir().is_absolute());
         }
         // With both XDG variables set, no home is needed at all.
         assert!(
