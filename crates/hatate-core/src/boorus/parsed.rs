@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn joined_text_keeps_every_string_unstripped() {
         let html = soup_of("<div id=d> a <b>b</b><script>x</script> c</div>");
-        assert_eq!(text_joined(first(&html, "#d"), " "), " a   b   c");
+        assert_eq!(text_joined(first(&html, "#d"), " "), " a  b  c");
         assert_eq!(text_joined(first(&html, "#d"), ""), " a b c");
     }
 

@@ -60,3 +60,60 @@ pub fn parse_dimensions(html: &str, url: &str) -> (Option<i64>, Option<i64>) {
 pub fn parse_preview_url(html: &str, url: &str) -> Option<String> {
     gelbooru::parse_preview_url_from_html(html, url)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const URL: &str = "https://safebooru.org/index.php?page=post&s=view&id=7";
+    const PAGE: &str = concat!(
+        r#"<a href="https://img4.safebooru.org/images/a/b/real.png">Original image</a>"#,
+        r#"<img id="image" src="https://img4.safebooru.org/samples/a/b/real.jpg">"#,
+        "<li>Rating: Safe</li><li>Size: 1000x2000</li>"
+    );
+
+    #[test]
+    fn claims_safebooru_only() {
+        assert!(matches(URL));
+        assert!(!matches(
+            "https://gelbooru.com/index.php?page=post&s=view&id=7"
+        ));
+        assert!(!matches("https://example.com/safebooru.org/x"));
+    }
+
+    #[test]
+    fn the_page_is_read_without_the_data_api() {
+        assert_eq!(parse_rating(PAGE, URL).as_deref(), Some("safe"));
+        assert_eq!(parse_dimensions(PAGE, URL), (Some(1000), Some(2000)));
+        assert_eq!(
+            parse_preview_url(PAGE, URL).as_deref(),
+            Some("https://img4.safebooru.org/samples/a/b/real.jpg")
+        );
+        // No `#image` element: no preview, not an error.
+        assert_eq!(parse_preview_url("<html><body></body></html>", URL), None);
+    }
+
+    #[test]
+    fn the_file_url_is_gelboorus_api_first_hook() {
+        let ctx = Context::with_api_post(json!({"file_url": "API"}).as_object().cloned());
+        assert_eq!(parse_file_url(PAGE, URL, &ctx).as_deref(), Some("API"));
+        assert_eq!(
+            parse_file_url(PAGE, URL, &Context::default()).as_deref(),
+            Some("https://img4.safebooru.org/images/a/b/real.png")
+        );
+    }
+
+    #[test]
+    fn safebooru_defines_exactly_the_hooks_python_does() {
+        assert_eq!(
+            PARSER.defined_hooks(),
+            [
+                "parse_file_url",
+                "parse_preview_url",
+                "parse_dimensions",
+                "parse_rating"
+            ]
+        );
+    }
+}

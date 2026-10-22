@@ -295,3 +295,260 @@ pub fn post_from_dapi(data: &Value) -> Option<&Map<String, Value>> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const URL: &str = "https://gelbooru.com/index.php?page=post&s=view&id=1";
+
+    fn api(post: Value) -> Context {
+        Context::with_api_post(post.as_object().cloned())
+    }
+
+    const LISTING: &str = concat!(
+        "<html><body>",
+        r#"<div class="thumbnail-preview"><a href="?id=1"><img></a></div>"#,
+        r#"<div class="thumbnail-preview"><a href="?id=2"><img></a></div>"#,
+        r#"<div class="thumbnail-preview"><a href="?id=3"><img></a></div>"#,
+        r#"<ul id="tag-list">"#,
+        r#"<li class="tag-type-artist"><a href="?page=post">koyama_shigeru</a></li>"#,
+        "</ul></body></html>"
+    );
+
+    const POST: &str = concat!(
+        r#"<html><body><img id="image" src="https://img.gelbooru.com/x.jpg">"#,
+        r#"<ul id="tag-list">"#,
+        r#"<li class="tag-type-character"><a href="?page=post">hakurei_reimu</a></li>"#,
+        "</ul></body></html>"
+    );
+
+    #[test]
+    fn claims_gelbooru_only() {
+        assert!(matches(
+            "https://gelbooru.com/index.php?page=post&s=view&id=1"
+        ));
+        assert!(matches("https://GELBOORU.com/x"));
+        assert!(!matches(
+            "https://safebooru.org/index.php?page=post&s=view&id=1"
+        ));
+        assert!(!matches("https://example.com/gelbooru.com/x"));
+    }
+
+    #[test]
+    fn a_listing_is_recognised_and_a_post_is_not() {
+        assert!(looks_like_a_listing(LISTING));
+        assert!(!looks_like_a_listing(POST));
+    }
+
+    #[test]
+    fn a_listing_yields_no_tags_and_no_rating() {
+        assert!(parse(LISTING, URL).is_empty());
+        let rated = LISTING.replace("</ul>", "<li>Rating: Explicit</li></ul>");
+        assert_eq!(parse_rating(&rated, URL), None);
+        // The page-only half does not look: it is the caller's to guard.
+        assert_eq!(
+            parse_rating_from_html(&rated, URL).as_deref(),
+            Some("explicit")
+        );
+    }
+
+    #[test]
+    fn a_real_post_is_untouched() {
+        let tags = parse(POST, URL);
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].name, "hakurei_reimu");
+        assert_eq!(tags[0].namespace.as_deref(), Some("character"));
+    }
+
+    #[test]
+    fn both_halves_of_the_listing_test_are_required() {
+        // A grid AND a post image: a post, whatever else is on the page.
+        let both = r#"<img id="image"><div class="thumbnail-preview"></div>"#.repeat(3);
+        assert!(!looks_like_a_listing(&both));
+        let video = r#"<div id="gelcomVideoPlayer"></div>"#.to_string()
+            + &r#"<div class="thumbnail-preview"></div>"#.repeat(3);
+        assert!(!looks_like_a_listing(&video));
+        // Neither: an unrecognised page, not a listing.
+        assert!(!looks_like_a_listing(
+            "<html><body>nothing here</body></html>"
+        ));
+        // One stray thumbnail is not a grid.
+        assert!(!looks_like_a_listing(
+            r#"<div class="thumbnail-preview"></div>"#
+        ));
+        assert!(!looks_like_a_listing(""));
+    }
+
+    #[test]
+    fn the_tag_container_is_found_by_either_name_and_the_wiki_link_is_not_the_tag() {
+        let sidebar = concat!(
+            r#"<div id="tag-sidebar"><li class="tag-type-artist tag">"#,
+            r#"<a href="index.php?page=wiki&amp;s=list&amp;search=x">?</a>"#,
+            r#"<a href="index.php?page=post&amp;s=list&amp;tags=x">some one</a></li></div>"#
+        );
+        let tags = parse(sidebar, URL);
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].name, "some_one");
+        assert_eq!(tags[0].namespace.as_deref(), Some("artist"));
+        // `ul#tag-list` is looked for before `ul#tag-sidebar`.
+        let both = r#"<ul id="tag-sidebar"><li><a>b</a></li></ul><ul id="tag-list"><li><a>a</a></li></ul>"#;
+        assert_eq!(parse(both, URL)[0].name, "a");
+        // A row with no link, or an empty one, is skipped; an unknown class is "general".
+        let rows =
+            r#"<ul id="tag-list"><li>plain</li><li><a> </a></li><li class="x"><a>k</a></li></ul>"#;
+        let tags = parse(rows, URL);
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].namespace.as_deref(), Some("general"));
+    }
+
+    #[test]
+    fn a_page_with_neither_container_yields_nothing() {
+        assert!(
+            parse(
+                "<html><body><ul id=\"other\"><li><a>x</a></li></ul></body></html>",
+                URL
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn the_original_image_link_beats_the_displayed_image() {
+        let page = concat!(
+            r#"<a href="https://i/orig.png">Original image</a>"#,
+            r#"<img id="image" src="https://i/sample.jpg">"#
+        );
+        assert_eq!(
+            parse_file_url_from_html(page, URL).as_deref(),
+            Some("https://i/orig.png")
+        );
+        assert_eq!(
+            parse_preview_url_from_html(page, URL).as_deref(),
+            Some("https://i/sample.jpg")
+        );
+        // The label is read through nested single children, as bs4's `.string` does.
+        let nested = r#"<a href="https://i/o.png"><b>ORIGINAL IMAGE</b></a>"#;
+        assert_eq!(
+            parse_file_url_from_html(nested, URL).as_deref(),
+            Some("https://i/o.png")
+        );
+        // Two children: no `.string`, so not the link.
+        let split =
+            r#"<a href="https://i/o.png">Original <b>image</b></a><img id="image" src="s">"#;
+        assert_eq!(parse_file_url_from_html(split, URL).as_deref(), Some("s"));
+    }
+
+    #[test]
+    fn the_first_matching_link_is_the_only_one_tried() {
+        let page = concat!(
+            r#"<a>Original image</a><a href="https://i/second.png">Original image</a>"#,
+            r#"<img id="image" src="https://i/sample.jpg">"#
+        );
+        assert_eq!(
+            parse_file_url_from_html(page, URL).as_deref(),
+            Some("https://i/sample.jpg")
+        );
+        assert_eq!(parse_file_url_from_html("<html></html>", URL), None);
+        assert_eq!(parse_preview_url_from_html("<html></html>", URL), None);
+    }
+
+    #[test]
+    fn the_api_post_wins_where_it_has_the_field_and_the_page_is_the_fallback() {
+        let page = r#"<a href="p">Original image</a><img id="image" src="s"><li>Size: 10x20</li>"#;
+        let ctx = api(json!({"file_url": "F", "sample_url": "S", "width": 3, "height": 4}));
+        assert_eq!(parse_file_url(page, URL, &ctx).as_deref(), Some("F"));
+        assert_eq!(parse_preview_url(page, URL, &ctx).as_deref(), Some("S"));
+        assert_eq!(parse_dimensions(page, URL, &ctx), (Some(3), Some(4)));
+        // A post without the field, or with an empty one, or no post at all.
+        for ctx in [
+            api(json!({"width": 1})),
+            api(json!({"file_url": "", "sample_url": null})),
+            api(json!({})),
+            Context::default(),
+        ] {
+            assert_eq!(parse_file_url(page, URL, &ctx).as_deref(), Some("p"));
+            assert_eq!(parse_preview_url(page, URL, &ctx).as_deref(), Some("s"));
+            assert_eq!(parse_dimensions(page, URL, &ctx), (Some(10), Some(20)));
+        }
+    }
+
+    #[test]
+    fn api_dimensions_are_ints_and_junk_falls_back_to_the_page() {
+        let page = "<li>Size: 1536x2048</li>";
+        let strings = api(json!({"width": "3000", "height": "4000"}));
+        assert_eq!(
+            parse_dimensions(page, URL, &strings),
+            (Some(3000), Some(4000))
+        );
+        for post in [
+            json!({"width": "wide", "height": "tall"}),
+            json!({"width": "3000"}),
+            json!({"width": 0, "height": 5}),
+            json!({"width": [1], "height": 5}),
+        ] {
+            assert_eq!(
+                parse_dimensions(page, URL, &api(post.clone())),
+                (Some(1536), Some(2048)),
+                "{post}"
+            );
+        }
+        assert_eq!(
+            parse_dimensions("<html></html>", URL, &Context::default()),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn the_size_label_is_the_originals_not_the_samples() {
+        let page = r#"<img id="image" width="850" height="1000"><li>Size: 1232x918</li>"#;
+        assert_eq!(
+            parse_dimensions_from_html(page, URL),
+            (Some(1232), Some(918))
+        );
+        // A zero is no size.
+        assert_eq!(
+            parse_dimensions_from_html("<li>Size: 0x5</li>", URL),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn a_dapi_body_gives_its_first_post_wrapped_or_bare() {
+        let bare = json!([{"id": 1, "file_url": "https://x/a.png"}]);
+        assert_eq!(
+            post_from_dapi(&bare).unwrap()["file_url"],
+            "https://x/a.png"
+        );
+        let wrapped = json!({"post": [{"id": 2}]});
+        assert_eq!(post_from_dapi(&wrapped).unwrap()["id"], 2);
+        let single = json!({"post": {"id": 3}});
+        assert_eq!(post_from_dapi(&single).unwrap()["id"], 3);
+        for none in [
+            json!([]),
+            json!({}),
+            json!("nope"),
+            json!(null),
+            json!([1]),
+            json!({"post": []}),
+            json!({"post": 5}),
+            json!({"post": [null]}),
+        ] {
+            assert!(post_from_dapi(&none).is_none(), "{none}");
+        }
+    }
+
+    #[test]
+    fn gelbooru_defines_exactly_the_hooks_python_does() {
+        assert_eq!(
+            PARSER.defined_hooks(),
+            [
+                "parse_file_url",
+                "parse_preview_url",
+                "parse_dimensions",
+                "parse_rating"
+            ]
+        );
+    }
+}

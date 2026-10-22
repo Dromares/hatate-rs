@@ -53,3 +53,133 @@ pub fn parse_preview_url(html: &str, url: &str, ctx: &Context) -> Option<String>
 pub fn parse_dimensions(html: &str, url: &str, ctx: &Context) -> (Option<i64>, Option<i64>) {
     gelbooru::parse_dimensions(html, url, ctx)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    const URL: &str = "https://xbooru.com/index.php?page=post&s=view&id=987654";
+
+    // The recorded fallback page: the "Original image" link, the displayed sample under #image,
+    // the Statistics sidebar's Size label and one artist tag (the wiki "?" link is not the tag).
+    const HTML_PAGE: &str = concat!(
+        "<html><body>",
+        r#"<a href="https://xbooru.com//images/a/b/original.png">Original image</a>"#,
+        r#"<img id="image" src="https://xbooru.com//samples/a/b/sample.jpg">"#,
+        "<li>Size: 1536x2048</li>",
+        r#"<ul id="tag-sidebar"><li class="tag-type-artist tag">"#,
+        r#"<a href="index.php?page=wiki&amp;s=list&amp;search=someone">?</a>"#,
+        r#"<a href="index.php?page=post&amp;s=list&amp;tags=someone">someone</a>"#,
+        "</li></ul></body></html>"
+    );
+
+    fn api(post: serde_json::Value) -> Context {
+        Context::with_api_post(post.as_object().cloned())
+    }
+
+    #[test]
+    fn claims_its_own_host_and_not_a_relative() {
+        assert!(matches(URL));
+        assert!(!matches(
+            "https://rule34.xxx/index.php?page=post&s=view&id=1"
+        ));
+        assert!(!matches(
+            "https://gelbooru.com/index.php?page=post&s=view&id=1"
+        ));
+    }
+
+    #[test]
+    fn the_api_answer_wins_and_the_page_is_the_fallback() {
+        let post = json!({
+            "file_url": "https://xbooru.com//images/a/b/api-original.png",
+            "sample_url": "https://xbooru.com//samples/a/b/api-sample.jpg",
+            "width": "3000",
+            "height": "4000"
+        });
+        let ctx = api(post);
+        assert_eq!(
+            parse_file_url(HTML_PAGE, URL, &ctx).as_deref(),
+            Some("https://xbooru.com//images/a/b/api-original.png")
+        );
+        assert_eq!(
+            parse_preview_url(HTML_PAGE, URL, &ctx).as_deref(),
+            Some("https://xbooru.com//samples/a/b/api-sample.jpg")
+        );
+        // The API answers sizes as strings; they come back as numbers.
+        assert_eq!(
+            parse_dimensions(HTML_PAGE, URL, &ctx),
+            (Some(3000), Some(4000))
+        );
+
+        let none = Context::default();
+        assert_eq!(
+            parse_file_url(HTML_PAGE, URL, &none).as_deref(),
+            Some("https://xbooru.com//images/a/b/original.png")
+        );
+        assert_eq!(
+            parse_preview_url(HTML_PAGE, URL, &none).as_deref(),
+            Some("https://xbooru.com//samples/a/b/sample.jpg")
+        );
+        assert_eq!(
+            parse_dimensions(HTML_PAGE, URL, &none),
+            (Some(1536), Some(2048))
+        );
+        // A post with no file_url still falls back to the page for it.
+        let sized = api(json!({"width": "10", "height": "10"}));
+        assert_eq!(
+            parse_file_url(HTML_PAGE, URL, &sized).as_deref(),
+            Some("https://xbooru.com//images/a/b/original.png")
+        );
+    }
+
+    #[test]
+    fn nothing_anywhere_is_none_not_an_error() {
+        let none = Context::default();
+        assert_eq!(parse_file_url("<html></html>", URL, &none), None);
+        assert_eq!(parse_preview_url("<html></html>", URL, &none), None);
+        assert_eq!(parse_dimensions("<html></html>", URL, &none), (None, None));
+    }
+
+    #[test]
+    fn non_numeric_or_missing_api_dimensions_fall_back_to_the_page() {
+        for post in [
+            json!({"width": "wide", "height": "tall"}),
+            json!({"width": "3000"}),
+        ] {
+            assert_eq!(
+                parse_dimensions(HTML_PAGE, URL, &api(post)),
+                (Some(1536), Some(2048))
+            );
+        }
+    }
+
+    #[test]
+    fn tags_come_from_the_shared_markup_reader() {
+        let tags = parse(HTML_PAGE, URL);
+        assert_eq!(tags.len(), 1);
+        assert_eq!(tags[0].name, "someone");
+        assert_eq!(tags[0].namespace.as_deref(), Some("artist"));
+        assert!(parse("<html><body>nothing here</body></html>", URL).is_empty());
+    }
+
+    #[test]
+    fn the_rating_comes_off_the_page() {
+        let html = HTML_PAGE.replace("<li>Size:", "<li>Rating: Explicit</li><li>Size:");
+        assert_eq!(parse_rating(&html, URL).as_deref(), Some("explicit"));
+        assert_eq!(parse_rating(HTML_PAGE, URL), None);
+    }
+
+    #[test]
+    fn xbooru_defines_exactly_the_hooks_python_does() {
+        assert_eq!(
+            PARSER.defined_hooks(),
+            [
+                "parse_file_url",
+                "parse_preview_url",
+                "parse_dimensions",
+                "parse_rating"
+            ]
+        );
+    }
+}
