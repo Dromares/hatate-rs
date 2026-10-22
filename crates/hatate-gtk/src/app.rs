@@ -761,7 +761,13 @@ async fn open_surface(ui: &Ui, what: Open) -> Vec<(gtk4::Popover, gtk4::Widget)>
     match what {
         Open::Dropdown => {
             ui.dropdown.set_selected(2);
-            ui.dropdown.activate_action("popup", None).ok();
+            // The dropdown's own toggle button opens its popover, as a click would.
+            if let Some(b) = descendants(ui.dropdown.upcast_ref())
+                .into_iter()
+                .find_map(|w| w.downcast::<gtk4::ToggleButton>().ok())
+            {
+                b.emit_clicked();
+            }
         }
         Open::Menubar => {
             // The first item of the bar is "File"; activating it opens its menu.
@@ -881,17 +887,8 @@ async fn finish(ui: Ui, opts: Options) {
         }
     }
 
-    // Open surfaces.
-    let mut popovers = Vec::new();
-    if let Some(what) = opts.open {
-        popovers = open_surface(&ui, what).await;
-        println!("OPEN {what:?}: popovers_visible={}", popovers.len());
-    }
-
-    // Audits.
+    // Focus sweep first: it moves focus around, so it runs before anything is opened.
     if opts.audit {
-        let pal = theme::palette(scheme);
-        let was = opts.open;
         for page in ["queue", "review"] {
             ui.stack.set_visible_child_name(page);
             frames(&wid, 4).await;
@@ -900,10 +897,43 @@ async fn finish(ui: Ui, opts: Options) {
         ui.stack.set_visible_child_name(&opts.tab);
         GtkWindowExt::set_focus(&win, None::<&gtk4::Widget>);
         frames(&wid, 3).await;
-        // Re-open the requested surface after the focus sweep moved focus around.
-        if let Some(what) = was {
-            popovers = open_surface(&ui, what).await;
+    }
+
+    // Open surfaces.
+    let mut popovers = Vec::new();
+    let mut under: Option<Pixels> = None;
+    if let Some(what) = opts.open {
+        if what == Open::Dialog {
+            // The same window without the dialog, for the shadow audit.
+            ui.queue.select_range(0, 2);
+            frames(&wid, 6).await;
+            under = render(&win).ok().map(|t| pixels(&t));
         }
+        popovers = open_surface(&ui, what).await;
+        println!("OPEN {what:?}: popovers_visible={}", popovers.len());
+    }
+    if std::env::var_os("HATATE_DUMP_TREE").is_some() {
+        for w in descendants(&wid) {
+            let mut depth = 0;
+            let mut p = w.parent();
+            while let Some(x) = p {
+                depth += 1;
+                p = x.parent();
+            }
+            println!(
+                "TREE {}{} <{}> [{}] mapped={}",
+                "  ".repeat(depth),
+                w.type_().name(),
+                w.css_name(),
+                w.css_classes().join("."),
+                w.is_mapped()
+            );
+        }
+    }
+
+    // Surface audits.
+    if opts.audit {
+        let pal = theme::palette(scheme);
         for (p, _) in &popovers {
             let name = audit_name(p.upcast_ref());
             match render(p).map(|t| pixels(&t)) {
@@ -929,17 +959,24 @@ async fn finish(ui: Ui, opts: Options) {
                 Err(e) => println!("AUDIT popover {name}: render failed: {e}"),
             }
         }
-        if matches!(was, Some(Open::Dialog)) {
+        if let (Some(Open::Dialog), Some(under)) = (opts.open, &under) {
             if let Ok(tex) = render(&win) {
-                let px = pixels(&tex);
+                let with = pixels(&tex);
+                // The card is the `sheet` node with the `background` class.
                 let sheets: Vec<gtk4::Widget> = descendants(&wid)
                     .into_iter()
-                    .filter(|w| w.css_name() == "sheet" && w.is_mapped())
+                    .filter(|w| w.css_name() == "sheet" && w.has_css_class("background"))
                     .collect();
-                println!("AUDIT dialog sheets_found={}", sheets.len());
+                println!("AUDIT dialog cards_found={}", sheets.len());
                 for s in sheets {
                     if let Some(r) = rect_of(&s, &win) {
-                        let f = audit::card_flatness(&px, r, pal.ink_28.over(pal.raised), 16);
+                        let f = audit::card_flatness(
+                            under,
+                            &with,
+                            r,
+                            &[pal.ink_28.over(pal.raised), pal.raised],
+                            16,
+                        );
                         println!(
                             "AUDIT dialog card={}x{}+{}+{} corners_square={:?} shadow_px={} {}",
                             r.w,

@@ -182,11 +182,12 @@ pub fn popover_flatness(px: &Pixels) -> Option<Flatness> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CardFlatness {
-    /// The four corner pixels of the card are the card's own edge colour, not the backdrop
-    /// showing through a rounded corner.
+    /// The pixel one step in from each corner of the card is the card's own colour (edge or
+    /// fill), not the backdrop showing through a rounded corner. One step in, because the
+    /// bounds a toolkit reports can be a pixel off the painted edge.
     pub corners_square: [bool; 4],
-    /// Pixels in the band just outside the card that differ from the backdrop's colour far
-    /// away: a drop shadow.
+    /// Pixels in the band just outside the card that differ from what the dimmed backdrop
+    /// alone would show there: a drop shadow.
     pub shadow_px: usize,
 }
 
@@ -200,27 +201,73 @@ impl CardFlatness {
     }
 }
 
-/// Flatness of an in-window card (a dialog) at `card` in a window render whose backdrop is
-/// otherwise uniform. `edge` is the card's border colour.
-pub fn card_flatness(px: &Pixels, card: Rect, edge: Rgba, band: i64) -> CardFlatness {
+/// Least-squares line `with = k * under + c` for one channel over the pixels outside `skip`.
+fn fit_dim(under: &Pixels, with: &Pixels, skip: Rect, ch: usize) -> (f64, f64) {
+    let (mut n, mut sx, mut sy, mut sxx, mut sxy) = (0.0, 0.0, 0.0, 0.0, 0.0);
+    for y in (0..under.h).step_by(3) {
+        for x in (0..under.w).step_by(3) {
+            let (xi, yi) = (x as i64, y as i64);
+            if xi >= skip.x && xi < skip.x + skip.w && yi >= skip.y && yi < skip.y + skip.h {
+                continue;
+            }
+            let (u, w) = (
+                f64::from(under.get(x, y)[ch]),
+                f64::from(with.get(x, y)[ch]),
+            );
+            n += 1.0;
+            sx += u;
+            sy += w;
+            sxx += u * u;
+            sxy += u * w;
+        }
+    }
+    let den = n * sxx - sx * sx;
+    if den.abs() < 1e-9 {
+        return (1.0, 0.0);
+    }
+    let k = (n * sxy - sx * sy) / den;
+    (k, (sy - k * sx) / n)
+}
+
+/// Flatness of an in-window card (a dialog). `under` is the same window rendered without the
+/// dialog, `with` rendered with it. The backdrop is dimmed uniformly, so away from the card
+/// `with` is a straight line of `under`; inside the `band` around the card any pixel that
+/// leaves that line is shadow. `own` lists the card's own colours (border and fill).
+pub fn card_flatness(
+    under: &Pixels,
+    with: &Pixels,
+    card: Rect,
+    own: &[Rgba],
+    band: i64,
+) -> CardFlatness {
     let near = |a: Rgba, b: Rgba| {
         (a.0 - b.0).abs() < 3.0 && (a.1 - b.1).abs() < 3.0 && (a.2 - b.2).abs() < 3.0
     };
-    let (x0, y0) = (card.x.max(0) as usize, card.y.max(0) as usize);
+    let (x0, y0) = (card.x.max(0) as usize + 1, card.y.max(0) as usize + 1);
     let (x1, y1) = (
-        ((card.x + card.w - 1) as usize).min(px.w - 1),
-        ((card.y + card.h - 1) as usize).min(px.h - 1),
+        ((card.x + card.w - 2) as usize).min(with.w - 1),
+        ((card.y + card.h - 2) as usize).min(with.h - 1),
     );
     let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
-    let corners_square = corners.map(|(x, y)| near(px.rgb(x, y), edge));
-    // The reference backdrop colour: the window's own corner, far from any card.
-    let backdrop = px.rgb(2, px.h - 3);
+    let corners_square = corners.map(|(x, y)| own.iter().any(|c| near(with.rgb(x, y), *c)));
     let outer = card.grow(band);
+    let fit = [0, 1, 2].map(|ch| fit_dim(under, with, outer, ch));
     let mut shadow_px = 0;
-    for y in outer.y.max(0)..(outer.y + outer.h).min(px.h as i64) {
-        for x in outer.x.max(0)..(outer.x + outer.w).min(px.w as i64) {
+    for y in outer.y.max(0)..(outer.y + outer.h).min(with.h as i64) {
+        for x in outer.x.max(0)..(outer.x + outer.w).min(with.w as i64) {
             let inside = x >= card.x && x < card.x + card.w && y >= card.y && y < card.y + card.h;
-            if !inside && !near(px.rgb(x as usize, y as usize), backdrop) {
+            if inside {
+                continue;
+            }
+            let (u, w) = (
+                under.get(x as usize, y as usize),
+                with.get(x as usize, y as usize),
+            );
+            let off = (0..3).any(|ch| {
+                let want = fit[ch].0 * f64::from(u[ch]) + fit[ch].1;
+                (want - f64::from(w[ch])).abs() > 4.0
+            });
+            if off {
                 shadow_px += 1;
             }
         }
@@ -354,30 +401,45 @@ mod tests {
 
     #[test]
     fn card_flatness_tells_a_flat_card_from_a_shadowed_round_one() {
-        let bg = [9, 9, 9, 255];
+        // `under`: a striped page. `with`: the same page dimmed to 60%, a card on top.
+        let mut under = Pixels::new(120, 90, [0, 0, 0, 255]);
+        for y in 0..90 {
+            for x in 0..120 {
+                let v = if (y / 6) % 2 == 0 { 100 } else { 160 };
+                under.set(x, y, [v, v, v, 255]);
+            }
+        }
+        let mut dimmed = under.clone();
+        for p in dimmed.rgba.chunks_mut(4) {
+            for c in &mut p[..3] {
+                *c = (f64::from(*c) * 0.6) as u8;
+            }
+        }
         let edge = [90, 87, 83, 255];
-        let mut flat = Pixels::new(100, 80, bg);
         let card = Rect {
-            x: 20,
-            y: 20,
+            x: 30,
+            y: 25,
             w: 60,
             h: 40,
         };
-        for y in 20..60 {
-            for x in 20..80 {
-                let border = x == 20 || x == 79 || y == 20 || y == 59;
+        let mut flat = dimmed.clone();
+        for y in 25..65 {
+            for x in 30..90 {
+                let border = x == 30 || x == 89 || y == 25 || y == 64;
                 flat.set(x, y, if border { edge } else { [20, 20, 20, 255] });
             }
         }
-        let f = card_flatness(&flat, card, Rgba::rgb(90, 87, 83), 12);
+        let own = [Rgba::rgb(90, 87, 83), Rgba::rgb(20, 20, 20)];
+        let f = card_flatness(&under, &flat, card, &own, 12);
         assert!(f.square() && f.shadowless(), "{f:?}");
 
         let mut soft = flat.clone();
-        soft.set(20, 20, bg); // rounded corner shows the backdrop
-        for x in 20..80 {
-            soft.set(x, 62, [0, 0, 0, 255]); // shadow band, darker than the backdrop
+        soft.set(31, 26, dimmed.get(31, 26)); // rounded corner shows the backdrop
+        for x in 30..90 {
+            soft.set(x, 67, [0, 0, 0, 255]); // shadow band, darker than the dimmed page
         }
-        let f = card_flatness(&soft, card, Rgba::rgb(90, 87, 83), 12);
+        let f = card_flatness(&under, &soft, card, &own, 12);
         assert!(!f.square() && !f.shadowless(), "{f:?}");
+        assert_eq!(f.shadow_px, 60);
     }
 }

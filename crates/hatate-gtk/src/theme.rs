@@ -227,8 +227,12 @@ columnview.queue > listview > row:focus-visible,
 columnview.queue > listview > row:focus-within:focus-visible { outline-offset: -2px; }
 columnview.queue > listview > row:selected:focus-visible { outline-color: @stamp_fg; }
 .canvas:focus-visible { outline-offset: -2px; }
-popover modelbutton:focus-visible, popover row:focus-visible, popovermenubar > item:focus-visible,
-popover listview > row:focus-visible, popover button:focus-visible { outline-offset: -2px; }
+popover modelbutton:focus-visible, popover row:focus-visible, menubar > item:focus-visible,
+popover listview > row:focus-visible, popover button:focus-visible,
+dialog button:focus-visible { outline-offset: -2px; }
+/* containers that merely hold focus (a popover, the dialog and its sheet) draw no ring of their own */
+window:focus-visible, popover:focus-visible, popover > contents:focus-visible, dialog:focus-visible, floating-sheet:focus-visible, sheet:focus-visible,
+dialog widget:focus-visible { outline: none; }
 
 /* tabs and mode toggles: hairline frame, the active one is the stamp (fg/bg swap) */
 button.tab, button.mode { background: transparent; color: @ink_65; border: 1px solid @ink_28;
@@ -264,6 +268,9 @@ columnview.queue > listview > row:selected .thumb { border-color: @stamp_fg; bac
 columnview.queue > listview > row:selected .status-glyph,
 columnview.queue > listview > row:selected .status-word { color: @stamp_fg; }
 columnview.queue > listview > row:selected .status-error .status-word { border-color: @stamp_fg; }
+/* scrolled windows draw soft edge gradients (undershoot) where content continues; flat has none */
+undershoot, overshoot, undershoot.top, undershoot.bottom, undershoot.left, undershoot.right {
+  background: none; background-image: none; box-shadow: none; }
 scrollbar slider { background: @ink_28; border-radius: 0; min-width: 6px; min-height: 6px; }
 scrollbar, scrollbar trough { background: transparent; }
 
@@ -281,7 +288,8 @@ dropdown > button, dropdown > button.toggle { background: @sunken; color: @ink; 
 dropdown > button:hover { background: @ink_10; }
 
 /* popovers (dropdown list, menubar menus, context menus): square, shadowless, hairline edge */
-popover, popover.background, popover.menu { background: transparent; box-shadow: none; border-radius: 0; }
+popover, popover.background, popover.menu { background: transparent; box-shadow: none; border-radius: 0;
+  margin: 0; padding: 0; border: none; }
 popover > contents, popover.background > contents, popover.menu > contents {
   background: @raised; color: @ink; border: 1px solid @ink_28; border-radius: 0; box-shadow: none; padding: 0; }
 popover > arrow { background: transparent; border: none; box-shadow: none; min-width: 0; min-height: 0; }
@@ -297,24 +305,26 @@ popover listview > row:selected label { color: @stamp_fg; }
 popover label, popover modelbutton label { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
 
 /* menubar */
-popovermenubar { background: @page; color: @ink; border-bottom: 1px solid @ink_18; padding: 0 24px; }
-popovermenubar > item { border-radius: 0; padding: 6px 12px; min-height: 0; color: @ink_65;
+menubar { background: @page; color: @ink; border-bottom: 1px solid @ink_18; padding: 0 24px; }
+menubar > item { border-radius: 0; padding: 6px 12px; min-height: 0; color: @ink_65;
   font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.16em; }
-popovermenubar > item:hover, popovermenubar > item:checked, popovermenubar > item:selected { background: @stamp_bg; color: @stamp_fg; }
+menubar > item:hover, menubar > item:checked, menubar > item:selected { background: @stamp_bg; color: @stamp_fg; }
 
 /* dialog (libadwaita AlertDialog): floating card flattened, buttons as hairline boxes */
 dialog.floating, dialog.floating.alert, window.dialog, window.messagedialog, .alert { border-radius: 0; box-shadow: none; }
 dialog.alert sheet, dialog.floating sheet, floating-sheet > sheet, sheet { background: @raised; color: @ink; border: 1px solid @ink_28;
   border-radius: 0; box-shadow: none; }
-dialog.alert .heading, dialog.alert .title-2, .alert .heading { font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; color: @ink; }
+dialog.alert .title-2, dialog.alert .heading, .alert .heading { font-family: 'Source Serif 4', Georgia, serif; font-weight: 600; color: @ink; }
 dialog.alert .body { color: @ink_65; }
-dialog.alert button, dialog.alert button.suggested-action, dialog.alert button.destructive-action,
+dialog.alert button, dialog.alert button.suggested-action, dialog.alert button.destructive,
 dialog.alert .response-area button { background: transparent; color: @ink; border: 1px solid @ink_28;
   border-radius: 0; box-shadow: none; text-shadow: none; padding: 8px 16px; min-height: 0;
   font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.16em; }
-dialog.alert button.destructive-action { background: @stamp_bg; color: @stamp_fg; border-color: @stamp_bg; }
+dialog.alert button.destructive { background: @stamp_bg; color: @stamp_fg; border-color: @stamp_bg; }
+dialog.alert button.destructive label { color: @stamp_fg; }
 dialog.alert button:hover { background: @ink_10; }
-dialog.alert button.destructive-action:hover { background: @ink; }
+dialog.alert button.destructive:hover { background: @ink; }
+dialog.alert separator { background: @ink_18; min-width: 1px; min-height: 1px; }
 ";
 
 /// The whole sheet for a scheme.
@@ -337,6 +347,16 @@ pub fn install(scheme: Scheme) {
             &provider,
             gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
+        // Development aid: extra rules from a file, so a CSS change needs no rebuild.
+        if let Some(path) = std::env::var_os("HATATE_CSS_EXTRA") {
+            let extra = gtk4::CssProvider::new();
+            extra.load_from_path(path);
+            gtk4::style_context_add_provider_for_display(
+                &display,
+                &extra,
+                gtk4::STYLE_PROVIDER_PRIORITY_USER,
+            );
+        }
     }
 }
 

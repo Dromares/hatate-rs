@@ -178,6 +178,8 @@ fn status_column(sorter: gtk4::Sorter) -> gtk4::ColumnViewColumn {
         let word = gtk4::Label::new(None);
         word.add_css_class("status-word");
         word.set_xalign(0.0);
+        word.set_valign(gtk4::Align::Center);
+        glyph.set_valign(gtk4::Align::Center);
         cell.append(&glyph);
         cell.append(&word);
         item.set_child(Some(&cell));
@@ -223,7 +225,7 @@ fn thumb_column(thumbs: Option<ThumbCache>) -> gtk4::ColumnViewColumn {
         pic.set_content_fit(gtk4::ContentFit::Cover);
         pic.set_halign(gtk4::Align::Start);
         pic.set_valign(gtk4::Align::Center);
-        pic.set_can_shrink(false);
+        pic.set_can_shrink(true);
         pic.set_focusable(false);
         item.set_child(Some(&pic));
     });
