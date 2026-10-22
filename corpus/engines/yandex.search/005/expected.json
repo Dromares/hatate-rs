@@ -1,0 +1,16 @@
+{
+  "results": {
+    "core.yandex.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": false,
+          "consecutive_failures": 1,
+          "resting": false
+        }
+      },
+      "message": "Yandex's results page (HTTP 200) had no results block in it - the page layout may have changed.",
+      "raises": "YandexError"
+    }
+  }
+}

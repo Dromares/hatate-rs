@@ -1,0 +1,18 @@
+{
+  "results": {
+    "core.reddit._feed_entries": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "cached_keys": [
+            "yanchagalanjousan/new/.rss?limit=100"
+          ]
+        }
+      },
+      "returns": [
+        "<author><name>/u/someone</name></author><content type=\"html\">&lt;a href=&quot;https://www.reddit.com/r/YanchaGalAnjouSan/comments/1vz8vo8/manga_cover/&quot;&gt; &lt;img src=&quot;https://preview.redd.it/ogpxyscp4slh1.png?width=140&amp;amp;height=140&quot; alt=&quot;Manga cover&quot; /&gt;</content><id>t3_1vz8vo8</id><link href=\"https://www.reddit.com/r/YanchaGalAnjouSan/comments/1vz8vo8/manga_cover/\" /><title>Manga cover</title>",
+        "<content type=\"html\">&lt;img src=&quot;https://preview.redd.it/other1.jpg&quot;</content><link href=\"https://www.reddit.com/r/YanchaGalAnjouSan/comments/1aaaaaa/other/\" />"
+      ]
+    }
+  }
+}

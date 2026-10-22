@@ -1,0 +1,50 @@
+{
+  "args": {
+    "image_path": "<image>",
+    "settings": {
+      "__dataclass__": "SauceNaoSettings",
+      "api_key": "<api-key>",
+      "dbmask": 999,
+      "min_similarity": 50,
+      "namespace": "",
+      "pause_search_on_quota_exhausted": true,
+      "tag_types": [
+        "creator"
+      ],
+      "use_json_api": true
+    },
+    "timeout": 30.0
+  },
+  "callables": [
+    "core.saucenao.search"
+  ],
+  "kind": "mocked_transport",
+  "request": [
+    {
+      "allow_redirects": null,
+      "data_fields": null,
+      "file_fields": [
+        "file"
+      ],
+      "has_headers": null,
+      "json_body": false,
+      "layer": "net",
+      "method": "POST",
+      "params": {
+        "api_key": "<api-key>",
+        "db": 999,
+        "output_type": 2
+      },
+      "timeout": 30.0,
+      "url": "https://saucenao.com/search.php"
+    }
+  ],
+  "responses": [
+    {
+      "body": "input",
+      "body_kind": "json",
+      "status": 200
+    }
+  ],
+  "state_before": "fresh module state (every module-level counter and latch at its import-time value)"
+}

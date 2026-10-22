@@ -1,0 +1,14 @@
+{
+  "results": {
+    "core.google_images.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": true
+        }
+      },
+      "message": "Google accepted the image but answers with a page that only fills in its results once its own JavaScript has run, which this app does not do. Add a Google Cloud Vision API key under Settings > Engine to use Google's web detection API instead, or turn Google Images off.",
+      "raises": "GoogleImagesJavaScriptError"
+    }
+  }
+}

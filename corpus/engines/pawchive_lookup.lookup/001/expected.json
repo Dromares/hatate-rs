@@ -1,0 +1,11 @@
+{
+  "results": {
+    "core.pawchive_lookup.lookup": {
+      "effects": {
+        "sleeps": []
+      },
+      "message": "pawchive.pw answered HTTP 503",
+      "raises": "PawchiveLookupError"
+    }
+  }
+}

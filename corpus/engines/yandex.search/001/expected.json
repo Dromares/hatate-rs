@@ -1,0 +1,16 @@
+{
+  "results": {
+    "core.yandex.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": false,
+          "consecutive_failures": 0,
+          "resting": true
+        }
+      },
+      "message": "Yandex asked for a captcha, so it is resting until <HH:MM> rather than being asked again straight away. The other engines carry on.",
+      "raises": "YandexBlockedError"
+    }
+  }
+}

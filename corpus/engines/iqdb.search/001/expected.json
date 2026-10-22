@@ -1,0 +1,11 @@
+{
+  "results": {
+    "core.iqdb.search": {
+      "effects": {
+        "sleeps": []
+      },
+      "message": "IQDB's response didn't look like a real results page (possible block/CAPTCHA/rate limit)",
+      "raises": "IqdbError"
+    }
+  }
+}

@@ -21,6 +21,7 @@ helper, the call site (`tests/test_parsers_and_tags.py:1045 (_danbooru)`).
 corpus/MANIFEST.json                         one record per item (schema below)
 corpus/boorus/<parser>/<NNN>/                one item per distinct call, one dir per parser module
 corpus/engines/<module>.<callable>/<NNN>/    same, for engine result parsers (a leading `_` is dropped from the callable)
+                                             `kind: "mocked_transport"` items (DAN-2001) hold a whole engine call, see below
     input.html | input.json | input.xml | input.txt     first argument, byte-identical to the fixture
     call.json                                the rest of the call: extra args, kwargs, state, callables
     expected.json                            what Python returned, serialised as below
@@ -78,6 +79,7 @@ Top level: `python_repo`, `python_commit`, `item_count`, `items`. Each item:
 |---|---|
 | `id` | `<parser>-<NNN>`, unique |
 | `family` | `boorus` or `engines` |
+| `item_kind` | only on `mocked_transport` items (below); absent means a plain parser item |
 | `parser` | Python module short name |
 | `dir` | item directory, relative to the repo root |
 | `input`, `call`, `expected` | file names inside `dir` |
@@ -107,6 +109,37 @@ site stopped serving. `phase_0d_note` names the probe row.
 answered 503 throughout; SauceNAO, ascii2d and IQDB sit behind a challenge or need an upload;
 trace.moe's remote fetch failed; Google Images and Lens were out of scope.
 
+## Mocked-transport items (DAN-2001)
+
+Some engine code parses inline with the HTTP call, so the Python tests feed it a body through a mocked
+HTTP layer instead of calling a parser. Those items are `corpus/engines/<module>.<callable>/<NNN>/`
+with `call.json` `"kind": "mocked_transport"`, and the manifest item carries `"item_kind":
+"mocked_transport"`. The callable is a whole engine call (`core.saucenao.search`,
+`core.reddit._feed_entries`, `core.ascii2d.search`, `core.iqdb.search`, `core.iqdb.search_3d`,
+`core.pawchive_lookup.lookup`, `core.yandex.search`, `core.google_images.search`).
+
+| File | Meaning |
+|---|---|
+| `input.*` | the body of the **last** scripted response, the one the parser reads. A JSON body is the mock's `.json()` value in the canonical JSON above (`null` is a valid body: the mock answered `.json()` with `None`); a text body is its UTF-8 bytes, byte-identical. |
+| `call.json` `args` | the Python call's own arguments. `image_path` is always `"<image>"` (the engine reads the file only to upload it, and the replay stubs that read); `settings` is the `SauceNaoSettings` the test passed (`__dataclass__` tag as in the tag-helper items); `timeout`, `sha256`, `subreddit`, `feed` as called. |
+| `call.json` `request` | the requests the Python code made, in order, as seen at the outermost transport layer it called (`layer`: `net` = `core.net.get/post`, `session` = `requests.Session.get/post`, `requests` = `requests.post`): `method`, `url`, `params`, `file_fields` / `data_fields` (field **names** only, never values), `json_body`, `has_headers` (header **names** only), `timeout`, `allow_redirects`. |
+| `call.json` `responses` | the scripted answers, in order. Each has `status` and optionally `url` and `headers`; the last has `"body": "input"` and `body_kind` (`json` or `text`); earlier ones carry their `text` / `json` inline. `json_unset: true` means the test's mock gave `.json()` no usable value (an unconfigured `MagicMock`); a replay must make `.json()` fail, and the expected result shows the code never needed it. |
+| `call.json` `state_before` | always the fresh-start sentence: every module-level counter, latch and cache is at its import-time value. A recorded call whose module state had been preset by an earlier step of the test (a spent burst window, a prior failure count, a latched block) is **not** an item; a fresh replay would not reproduce it. |
+| `expected.json` | `{"results": {"<callable>": {"returns": <value>} \| {"raises": "<ExcClass>", "message": "<str(exc)>"}, "effects": {...}}}`. `message` is recorded for these items because the text is user-facing behaviour; a Rust port may compare it. |
+| `expected.json` `effects` | `sleeps`: burst-window waits the code asked for (seconds, via `saucenao._sleep_interruptibly`, which the replay stubs); `state_after`: the module state the call left behind (SauceNAO quota reading and daily-limit latch; whether the reddit feed was cached; ascii2d, Yandex and Google Images block latches and Yandex's failure counter). |
+
+Replay rules the generator used, and a Rust harness should copy: the transport is replaced at **every**
+layer by one script (a request that arrives at a layer or URL other than the recorded one fails the
+replay, as does a response left unused), uploads read nothing from disk, and no socket is opened.
+
+Two deliberate normalisations:
+
+- **API keys.** The tests use the dummy key `"k"`. Every `api_key` / `key` value, in `args`, in
+  `params` and in the request URL, is the placeholder `"<api-key>"`. The replay used the placeholder
+  itself, so the items reproduce from what is on disk; the key's value never affects a parse.
+- **Wall-clock text.** Yandex's captcha message embeds the local time the rest ends ("resting until
+  06:04"). It is written `resting until <HH:MM>` in `expected.json`, and a replay should compare it so.
+
 ## Reproducing
 
 The generator is not in this repo (Rust-only tree) and not in the Python repo. It was a throwaway
@@ -119,16 +152,24 @@ requests 2.34.2.
 
 ## Coverage and gaps
 
-Per-parser counts are in the PR description (DAN-1965). All 20 booru parsers have items. Of the 10
-engines in `core/engines.py`, eight have items (IQDB and IQDB 3D share one parser). SauceNAO has only
-its pure tag helper, and the Pawchive index has none. The reddit feed resolver (`core/reddit.py`) is
-not an engine and has none. For these, parsing is inline with the HTTP call and the Python tests
-mock the HTTP layer instead of passing a body. They are gaps, not omissions:
+Per-parser counts are in the PR descriptions (DAN-1965, DAN-2001). All 20 booru parsers have items.
+Nine of the 10 engines in `core/engines.py` have items (IQDB and IQDB 3D share one parser); the tenth,
+the Pawchive index, is not a Phase 2 gap (below). DAN-2001
+closed the engines whose parsing is inline with the HTTP call, as `mocked_transport` items (above),
+43 in all: `saucenao.search` 14, `google_images.search` 10, `yandex.search` 5, `pawchive_lookup.lookup` 5,
+`reddit.feed_entries` 4, `ascii2d.search` 3, `iqdb.search` 1, `iqdb.search_3d` 1.
+
+What is left, and why:
 
 | Gap | Why |
 |---|---|
-| SauceNAO result page and JSON API | `_search_html` / `_search_json` parse inside the request; only `_tags_from_result` is a pure function (5 items) |
-| Pawchive index (`core/pawchive_index.py`) | its tests build images and indexes in memory; there is no HTML/JSON body fixture |
-| Reddit feed resolver (`core/reddit.py`) | `_feed_entries` parses `net.get(...).text` inline; the Python tests mock `net.get` |
-| ascii2d bovw (`/search/bovw/`) result variant | one `kind` per fixture; no `kind="bovw"` body in the tests |
+| SauceNAO **HTML** result page (`_search_html`) | every `saucenao.search` test passes `use_json_api=True` and a JSON dict; no Python test feeds the HTML path a body. Only the JSON API path has items |
+| ascii2d bovw (`/search/bovw/`) result variant | one `kind` per fixture; no test feeds a `kind="bovw"` body |
+| `tracemoe.search` | no Python test calls it with a mocked body (`parse_results` is the only thing tested, and it has items) |
+| `google_lens.search` | drives a browser (`lens_browser`), not a mocked HTTP layer; its pure parsers already have items |
+| `remote.py` fetch helpers, `availability.py` probes | not engines; they read headers / status of a remote file, outside the parser corpus |
+| calls whose module state a test had preset (a spent burst window, a latched block, a prior failure count) | a fresh replay would not reproduce them, so they are not items (5 recorded calls skipped for this); 2 more were skipped because the call took a callable argument other than `on_tick`, or was rejected before any request was made |
 | `pawchive.parse`, `pawchive.parse_dimensions`, `redditpost.parse_dimensions` on some items | need a network lookup (creator profile, remote file header); listed per item in `skipped_network_callables` |
+
+The Pawchive index (`core/pawchive_index.py`) is **not** a Phase 2 gap: it crawls, hashes images with
+`dhash` and keeps a SQLite index, so it moves to Phase 4 with image compare.

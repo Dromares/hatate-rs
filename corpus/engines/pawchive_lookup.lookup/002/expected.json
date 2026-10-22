@@ -1,0 +1,18 @@
+{
+  "results": {
+    "core.pawchive_lookup.lookup": {
+      "effects": {
+        "sleeps": []
+      },
+      "returns": [
+        {
+          "page_count": 2,
+          "page_index": 1,
+          "thumb_url": "https://img.pawchive.pw/thumbnail/data/3f/ac/3fac89759d85abce1ebcbff0c27d838d9a52c47ffc5a6fdcf31c6986064bbefb.jpeg",
+          "title": "OC set",
+          "url": "https://pawchive.pw/fanbox/user/44297987/post/12640897"
+        }
+      ]
+    }
+  }
+}

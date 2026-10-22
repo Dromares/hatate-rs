@@ -1,0 +1,22 @@
+{
+  "header": {
+    "long_limit": 100,
+    "long_remaining": 100,
+    "status": 0
+  },
+  "results": [
+    {
+      "data": {
+        "ext_urls": [
+          "https://chan.sankakucomplex.com/post/show/12345",
+          "https://e621.net/posts/67890"
+        ]
+      },
+      "header": {
+        "index_name": "Index #29: e621.net - x.jpg",
+        "similarity": "97.16",
+        "thumbnail": "https://img1.saucenao.com/booru/t.jpg"
+      }
+    }
+  ]
+}

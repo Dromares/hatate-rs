@@ -1,0 +1,14 @@
+{
+  "results": {
+    "core.ascii2d.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": true
+        }
+      },
+      "message": "ascii2d is behind a Cloudflare bot check and won't accept uploads from this app. Nothing is wrong with your setup and there is no setting that fixes it - turn ascii2d off under Settings > Engine until the site stops challenging.",
+      "raises": "Ascii2dBlockedError"
+    }
+  }
+}
