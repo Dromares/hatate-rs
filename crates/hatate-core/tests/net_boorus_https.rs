@@ -932,7 +932,8 @@ async fn download_bytes_sends_the_referer_and_gives_the_body_of_a_200_only() {
         None,
         None,
     )
-    .await;
+    .await
+    .unwrap();
     assert_eq!(got.as_deref(), Some(&b"pixels"[..]));
     let first = &w.server.recorded()[0];
     assert_eq!(first.header("referer"), Some("https://www.pixiv.net/"));
@@ -945,7 +946,8 @@ async fn download_bytes_sends_the_referer_and_gives_the_body_of_a_200_only() {
         None,
         None,
     )
-    .await;
+    .await
+    .unwrap();
     assert_eq!(got, None);
     assert_eq!(w.server.recorded()[1].header("referer"), None);
     // A data: URI is decoded where it stands: no request, and an empty one is a failure.
@@ -958,14 +960,17 @@ async fn download_bytes_sends_the_referer_and_gives_the_body_of_a_200_only() {
         None,
         None,
     )
-    .await;
+    .await
+    .unwrap();
     assert_eq!(got.as_deref(), Some(&b"hi"[..]));
     assert_eq!(
         remote::download_bytes(&w.client, Some("data:;base64,"), 5.0, None, None, None).await,
-        None
+        Ok(None)
     );
     assert_eq!(
-        remote::download_bytes(&w.client, None, 5.0, None, None, None).await,
+        remote::download_bytes(&w.client, None, 5.0, None, None, None)
+            .await
+            .unwrap(),
         None
     );
     assert_eq!(w.server.request_count(), before);
@@ -987,7 +992,11 @@ async fn download_bytes_network_error_and_deadline_are_both_nothing() {
     let get = |path: &str, timeout| {
         let url = format!("https://img.example.test/{path}");
         let client = w.client.clone();
-        async move { remote::download_bytes(&client, Some(&url), timeout, None, None, None).await }
+        async move {
+            remote::download_bytes(&client, Some(&url), timeout, None, None, None)
+                .await
+                .unwrap()
+        }
     };
     assert_eq!(get("down", 5.0).await, None);
     assert_eq!(get("trickle", 0.5).await, None);
@@ -1118,4 +1127,47 @@ async fn an_absent_url_makes_no_request_anywhere() {
     );
     assert_eq!(w.server.request_count(), 0);
     assert!(find_parser("https://example.test/").is_none());
+}
+
+#[tokio::test]
+async fn a_referer_http_client_cannot_encode_is_raised_after_the_url_is_prepared() {
+    use hatate_core::remote::Raised;
+    let w = world(
+        &["img.example.test"],
+        routes(vec![("/ok", Reply::ok("pixels"))]),
+    )
+    .await;
+    let referer = Some("https://ref.example.test/東");
+    let message = "'latin-1' codec can't encode character '\\u6771' in position 25: ordinal not in range(256)";
+    let url = Some("https://img.example.test/ok");
+    assert_eq!(
+        remote::download_bytes(&w.client, url, 5.0, referer, None, None).await,
+        Err(Raised::UnicodeEncode(message.into()))
+    );
+    assert_eq!(
+        remote::fetch_remote_info(&w.client, url, 5.0, referer, None).await,
+        Err(Raised::UnicodeEncode(message.into()))
+    );
+    // A run of characters is reported as a range; `requests` refuses a leading space first.
+    assert_eq!(
+        remote::download_bytes(&w.client, url, 5.0, Some("x東京"), None, None).await,
+        Err(Raised::UnicodeEncode(
+            "'latin-1' codec can't encode characters in position 1-2: ordinal not in range(256)"
+                .into()
+        ))
+    );
+    assert_eq!(
+        remote::download_bytes(&w.client, url, 5.0, Some(" 東"), None, None).await,
+        Ok(None)
+    );
+    // No URL to prepare, or no time left: nothing is raised, and nothing is sent.
+    assert_eq!(
+        remote::download_bytes(&w.client, Some("http://"), 5.0, referer, None, None).await,
+        Ok(None)
+    );
+    assert_eq!(
+        remote::download_bytes(&w.client, url, 0.0, referer, None, None).await,
+        Ok(None)
+    );
+    assert_eq!(w.server.request_count(), 0);
 }

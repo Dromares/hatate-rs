@@ -31,12 +31,17 @@ pub enum Raised {
     /// `ValueError`: `int()` of a `Content-Length` that `str.isdigit()` accepts but `int()` does
     /// not (superscript digits).
     ValueError(String),
+    /// `UnicodeEncodeError`: `http.client` sends a header value as Latin-1, and `requests` has
+    /// let a value with a character past U+00FF through its own check. No request is made.
+    UnicodeEncode(String),
 }
 
 impl std::fmt::Display for Raised {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Raised::HardTimeout(m) | Raised::ValueError(m) => f.write_str(m),
+            Raised::HardTimeout(m) | Raised::ValueError(m) | Raised::UnicodeEncode(m) => {
+                f.write_str(m)
+            }
         }
     }
 }
@@ -118,6 +123,53 @@ pub(crate) fn set_header(headers: &mut HeaderMap, name: &str, value: &str) -> bo
     }
 }
 
+/// What Python raises, not just fails, for a header value that [`set_header`] refused: a character
+/// past U+00FF makes `http.client` fail to encode it (`UnicodeEncodeError`, which
+/// `except requests.RequestException` does not catch). `requests` checks the value first against
+/// `^\S[^\r\n]*$|^$`, and a value it refuses is a `RequestException`, the plain failure.
+pub(crate) fn encode_fault(value: &str) -> Option<Raised> {
+    let mut rest = value.chars();
+    let clean = match rest.next() {
+        None => true,
+        Some(first) => {
+            let rest = rest.as_str();
+            let rest = rest.strip_suffix('\n').unwrap_or(rest);
+            (first == '\n' && rest.is_empty())
+                || (!py_isspace(first) && !rest.contains(['\r', '\n']))
+        }
+    };
+    if !clean {
+        return None;
+    }
+    let chars: Vec<char> = value.chars().collect();
+    let first = chars.iter().position(|c| u32::from(*c) > 0xff)?;
+    let last = first
+        + chars[first..]
+            .iter()
+            .take_while(|c| u32::from(**c) > 0xff)
+            .count()
+        - 1;
+    let what = if first == last {
+        let c = u32::from(chars[first]);
+        let escaped = if c > 0xffff {
+            format!("\\U{c:08x}")
+        } else {
+            format!("\\u{c:04x}")
+        };
+        format!("character '{escaped}' in position {first}")
+    } else {
+        format!("characters in position {first}-{last}")
+    };
+    Some(Raised::UnicodeEncode(format!(
+        "'latin-1' codec can't encode {what}: ordinal not in range(256)"
+    )))
+}
+
+/// `str.isspace()` for one character, which is what the `\s` of `re` matches in a `str` pattern.
+fn py_isspace(c: char) -> bool {
+    c.is_whitespace() || ('\x1c'..='\x1f').contains(&c)
+}
+
 /// `credentials` for the site-access layer from the settings that hold them.
 pub fn credentials(settings: &Settings) -> SiteCredentials {
     // Two `Secret` types exist (config and net); the value crosses by `expose`, nowhere else.
@@ -147,30 +199,39 @@ pub async fn download_bytes(
     referer: Option<&str>,
     on_tick: Option<OnTick<'_>>,
     cookies: Option<Cookies>,
-) -> Option<Vec<u8>> {
-    let url = url.filter(|u| !u.is_empty())?;
+) -> Result<Option<Vec<u8>>, Raised> {
+    let Some(url) = url.filter(|u| !u.is_empty()) else {
+        return Ok(None);
+    };
     if url.starts_with("data:") {
-        return match data_uri_bytes(url) {
+        return Ok(match data_uri_bytes(url) {
             Ok(bytes) if !bytes.is_empty() => Some(bytes),
             Ok(_) => None,
             Err(DecodeError) => {
                 debug!("Could not decode a data: URI");
                 None
             }
-        };
+        });
     }
     let mut headers = ua_headers();
-    if let Some(referer) = referer.filter(|r| !r.is_empty()) {
-        // A referer `requests` would refuse to send fails the request, which is a `None` here.
-        if !set_header(&mut headers, "Referer", referer) {
-            return None;
-        }
+    let refused = referer
+        .filter(|r| !r.is_empty())
+        .filter(|referer| !set_header(&mut headers, "Referer", referer));
+    let Ok(req) = get_request(url, timeout, Some(timeout), &headers, cookies) else {
+        return Ok(None);
+    };
+    if let Some(referer) = refused {
+        // A referer `requests` would refuse to send fails the request, which is a `None` here; one
+        // `http.client` cannot encode escapes the `requests.RequestException` handler. Both come
+        // after the URL was prepared, and a request with no time left is never sent.
+        return encode_fault(referer)
+            .filter(|_| timeout > 0.0)
+            .map_or(Ok(None), Err);
     }
-    let req = get_request(url, timeout, Some(timeout), &headers, cookies).ok()?;
-    let resp = ticked("Downloading image", timeout, on_tick, net.send(req))
-        .await
-        .ok()?;
-    (resp.status.as_u16() == 200).then(|| resp.body.to_vec())
+    let Ok(resp) = ticked("Downloading image", timeout, on_tick, net.send(req)).await else {
+        return Ok(None);
+    };
+    Ok((resp.status.as_u16() == 200).then(|| resp.body.to_vec()))
 }
 
 /// GETs a URL and returns its body as text, or `None`.
@@ -207,7 +268,7 @@ pub async fn fetch_text(
                 "Timed out after {timeout:.0}s"
             )))
         } else {
-            Ok(None)
+            encode_fault(referer).map_or(Ok(None), Err)
         };
     }
     let cookies = site::cookies_for_url(url, &creds);
@@ -255,15 +316,19 @@ pub async fn fetch_remote_info(
         return Ok((None, None));
     };
     let mut headers = ua_headers();
-    if let Some(referer) = referer.filter(|r| !r.is_empty())
-        && !set_header(&mut headers, "Referer", referer)
-    {
-        return Ok((None, None));
-    }
+    let refused = referer
+        .filter(|r| !r.is_empty())
+        .filter(|referer| !set_header(&mut headers, "Referer", referer));
     debug!("HEAD {url} (referer={referer:?})");
     let Ok(mut req) = NetRequest::head(&pyurl::requote_uri(url), secs(timeout)) else {
         return Ok((None, None));
     };
+    if let Some(referer) = refused {
+        // After the URL was prepared; a request with no time left is never sent.
+        return encode_fault(referer)
+            .filter(|_| timeout > 0.0)
+            .map_or(Ok((None, None)), Err);
+    }
     req.headers = headers;
     req = req
         .with_deadline(secs(timeout))
