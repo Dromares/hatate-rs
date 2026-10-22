@@ -16,12 +16,18 @@
 //! matches.
 
 use std::collections::HashSet;
+use std::path::Path;
 
 use serde::Serialize;
 use serde_json::Value;
 use tracing::debug;
 
+use super::client::{
+    Failure, OnTick, failure_of, multipart_upload, read_upload, response_text, seconds, ticking,
+};
+use crate::hard_timeout::HardTimeoutError;
 use crate::model::{Tag, TagSource};
+use crate::net::{NetClient, NetError, NetRequest};
 use crate::pycompat;
 use crate::pyrepr::py_str;
 
@@ -50,6 +56,88 @@ impl std::fmt::Display for TraceMoeError {
 }
 
 impl std::error::Error for TraceMoeError {}
+
+/// The request half of `core/tracemoe.py`'s `search`.
+///
+/// A multipart POST of the (prepared) image to `<api>?cutBorders=1&anilistInfo=1`, with a
+/// deadline over the whole exchange. What the answer means is [`search_from_response`].
+#[derive(Debug, Clone)]
+pub struct TraceMoeClient {
+    net: NetClient,
+    api_url: String,
+}
+
+impl TraceMoeClient {
+    /// The real api.trace.moe.
+    pub fn new(net: NetClient) -> Self {
+        Self::with_host(net, API_URL)
+    }
+
+    /// The same client against another address (a local https server in tests). Not reachable
+    /// from `config.json`, the environment or a flag.
+    pub fn with_host(net: NetClient, api_url: &str) -> Self {
+        TraceMoeClient {
+            net,
+            api_url: api_url.to_owned(),
+        }
+    }
+
+    /// `search`: upload an image to trace.moe and return the parsed matches at or above
+    /// `min_similarity`. `on_tick` is the UI countdown, see [`OnTick`].
+    pub async fn search(
+        &self,
+        image_path: &Path,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+        min_similarity: f64,
+    ) -> Result<Vec<TraceMoeMatch>, TraceMoeError> {
+        debug!("Uploading {} to trace.moe", image_path.display());
+        let (data, filename) = read_upload(image_path)
+            .await
+            .map_err(|e| TraceMoeError(format!("Could not read image: {}", e.0)))?;
+        let request = self
+            .request(data, filename, timeout)
+            .map_err(|e| TraceMoeError(format!("trace.moe request failed: {e}")))?;
+        let sent = ticking(
+            "Waiting on trace.moe",
+            timeout,
+            on_tick,
+            self.net.send(request),
+        );
+        let resp = match sent.await {
+            Ok(resp) => resp,
+            Err(err) => {
+                return Err(match failure_of(&err, seconds(timeout)) {
+                    Failure::Deadline(HardTimeoutError(why)) => {
+                        TraceMoeError(format!("trace.moe request timed out: {why}"))
+                    }
+                    Failure::Transport(why) => {
+                        TraceMoeError(format!("trace.moe request failed: {why}"))
+                    }
+                });
+            }
+        };
+        search_from_response(resp.status.as_u16(), &response_text(&resp), min_similarity)
+    }
+
+    /// The POST `search` makes: `net.post(API_URL, params=..., files=..., timeout=timeout,
+    /// deadline=timeout)`.
+    fn request(
+        &self,
+        data: bytes::Bytes,
+        filename: String,
+        timeout: f64,
+    ) -> Result<NetRequest, NetError> {
+        let limit = seconds(timeout);
+        let upload = multipart_upload("image", &filename, &data);
+        Ok(NetRequest::post(&self.api_url, limit)?
+            .query("cutBorders", "1")
+            .query("anilistInfo", "1")
+            .header("Content-Type", &upload.content_type)?
+            .with_body(upload.body)
+            .with_deadline(limit))
+    }
+}
 
 /// What `search` makes of the answer to its POST: the status mapping, the JSON check, the
 /// `error` field, then [`parse_results`]. `body` is the response text.
@@ -332,5 +420,34 @@ mod tests {
                 .0,
             "trace.moe: Invalid image"
         );
+    }
+}
+
+#[cfg(test)]
+mod client_tests {
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::net::{Body, Method, NetConfig};
+
+    #[test]
+    fn the_request_is_the_multipart_post_python_makes() {
+        let c = TraceMoeClient::new(NetClient::new(NetConfig::default()).unwrap());
+        let req = c
+            .request(Bytes::from_static(b"x"), "x.png".to_owned(), 30.0)
+            .unwrap();
+        assert_eq!(req.method, Method::Post);
+        // `params={"cutBorders": "1", "anilistInfo": "1"}`, in that order.
+        assert_eq!(
+            req.url.as_str(),
+            "https://api.trace.moe/search?cutBorders=1&anilistInfo=1"
+        );
+        let Body::Bytes(body) = &req.body else {
+            panic!("{:?}", req.body)
+        };
+        assert!(String::from_utf8_lossy(body).contains("name=\"image\"; filename=\"x.png\""));
+        // The caller's timeout is used as given: no floor.
+        assert_eq!(req.timeout, std::time::Duration::from_secs(30));
+        assert_eq!(req.deadline, Some(std::time::Duration::from_secs(30)));
     }
 }

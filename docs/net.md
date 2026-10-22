@@ -304,3 +304,104 @@ All local; no live site is contacted. TLS certificates (a throw-away CA and a le
 | `between-search` arithmetic (`rate_limit.py`) | `src/net/pacing.rs` tests |
 | Site headers, cookies, host matching, rotation | `src/net/site.rs` tests |
 | Secrets are redacted in `Debug`, logs and errors | `tests/net_redaction.rs` (synthetic values, each with a positive control that the secret was really sent) |
+
+## 11. The shared replay server (test support, DAN-2057)
+
+`crates/hatate-core/tests/common/replay.rs`, built on `tests/common/net_server.rs`'s `TestServer`
+and `TestPki`. It is test support only: it lives under `tests/`, so the crate's
+`dev-dependencies` (`rcgen`, `tokio-rustls`) build it and no shipped binary links it. Every Phase 3
+engine test reuses it.
+
+- `ReplayServer::https(&pki, script)` starts a local **https** server (certificate from the
+  throw-away `TestPki`, generated on every run, nothing committed). The Nth request is answered
+  with the Nth `Reply` of `script` (status, headers, body, and optionally a `delayed` head or a
+  `trickled` body). A request after the script has run out gets a **599** and is counted.
+- `recorded()` returns every request received, in order: method, target (path and query), header
+  names lower-cased, body, arrival time. `RecordedExt` reads them: `path()`, `query()` as decoded
+  pairs, and `form_parts()` for a `multipart/form-data` body (field name, the raw
+  `Content-Disposition` value, filename, content type, data).
+- `assert_script_consumed()` fails when a scripted reply was never asked for (`unused()`) or a
+  request arrived that the script did not cover (`overflow()`).
+- `mocked_items(callable)` loads the corpus's `mocked_transport` items for a Python callable.
+  `MockedItem::script()` turns an item's recorded responses into replies (the last carries
+  `input.*`), and `recorded_targets()` gives the recorded requests' method and path-with-query, with
+  the host dropped: the client under test is built with the replay server's address, never a real
+  host.
+- Hosts are injected through each client's constructor (`IqdbClient::with_hosts`,
+  `TraceMoeClient::with_host`, `PawchiveLookupClient::with_host`). The shipped binary calls `new`,
+  which uses the real hosts. No environment variable, flag or config key redirects a host or
+  switches TLS verification off for an engine or site.
+
+## 12. Engine clients (Phase 3.a, DAN-2057)
+
+Python source of truth: `Dromares/Hatate-Linux-Redux` at `76c85c4`.
+
+### 12.1 The cut
+
+| Python | Rust | Notes |
+|---|---|---|
+| `core/engines.py` | `hatate_core::engine_ids` | ids, labels, `MEASURES_SIMILARITY`, `LOCAL_ENGINES`, `label_for`, `effective_primary`, `opposite_engine`, `reports_real_similarity`, `pipeline_summary(&Settings)`. The ids are `config.json` values and are not renamed |
+| `core/hard_timeout.py` | `hatate_core::hard_timeout` | `HardTimeoutError` (same message), `run_with_hard_timeout` for blocking code, and `within` for futures. The engine requests set `NetRequest::with_deadline`, so the net layer enforces the deadline |
+| `core/image_prep.py` | `hatate_core::image_prep` | the process-wide one-entry cache (`prepare_upload_bytes`, `last_prepared`, `reset_cache`) and `UploadPrep` for a cache of one's own (tests) |
+| `core/progress_ticker.py` | `engines::client::{OnTick, ProgressTicker}` | the once-a-second countdown, then one `("", 0, 0)` |
+| `iqdb.search`, `iqdb.search_3d` | `engines::iqdb::IqdbClient` | multipart POST, 45 s floor on the budget |
+| `tracemoe.search` | `engines::tracemoe::TraceMoeClient` | multipart POST with `cutBorders=1&anilistInfo=1` |
+| `pawchive_lookup.lookup`, `file_sha256` | `engines::pawchive_lookup::{PawchiveLookupClient, file_sha256}` | one GET of the hash |
+
+Each client does what its Python function does around the answer: read and prepare the upload, send
+the request with a deadline over the whole exchange, and map a failure to the engine's error. What
+the answer *means* is the Phase 2 pure half (`*_from_response`), unchanged except that
+`iqdb::answer_from_response` takes the instance's name, because the client talks to an address it
+was given and that address need not contain `3d.iqdb`. Python's `iqdb.search(base_url=...)` is not
+ported: `search` and `search_3d` are the two instances.
+
+The multipart body is built in `engines::client::multipart_upload` the way `requests` and urllib3 2.x
+write it (`Content-Disposition` then `Content-Type`, `"`, CR and LF percent-encoded in the
+filename, nothing else touched), not through `reqwest`'s multipart, which writes a backslash before
+a quote or newline.
+
+`response_text` decodes a body the way `requests` does from the `Content-Type` header: a `charset`
+parameter, else ISO-8859-1 for `text/*` and UTF-8 for `application/json`, else (where `requests`
+asks a detector, `charset_normalizer`) UTF-8 if the bytes are, Windows-1252 if not. That is the
+one place the port guesses where `requests` detects: see C2.
+
+### 12.2 What is not matched, with counts
+
+The transport differential (see the DAN-2057 thread; its log is
+`worktrees/DAN-2057-differential.log`) sends the same scripted answers through the Python at
+`76c85c4` (`requests.Session` scripted, `core.net` running for real) and through the Rust clients
+(a local https replay server). It compares the return value or the error class and message, every
+request (method, path and query, the headers Python sets explicitly, the multipart wire form,
+cookies), every sleep (Rust: the measured gap between a request and its retry), and the module
+state afterwards (the `image_prep` cache). Every difference falls in one of these classes; the
+counts are from the run recorded in the log.
+
+| Class | What differs | Why it stays |
+|---|---|---|
+| **J1** `image_prep` shrink loop | the re-encoded JPEG's bytes (granted by name), and with them the one place a decision depends on a byte count: the shrink loop's steps, so a picture can land one 0.8 step apart. In every such case the decision (as is or re-encode) and the format match, and the Rust output is under the cap. Either the dimensions differ (one step larger than Python's), or they are equal and Python's file is the one over the cap (`under_cap` false) while Rust's, a fraction of a percent smaller, is under it. Rust is never the one over the cap | the JPEG bytes are not Pillow's. The pixels going into the encoder are (the Lanczos resample is Pillow's ported, the chroma path is libjpeg's), and the encoder's output sits within about 0.3% of Pillow's size, so only a cap that falls inside that gap diverges. Matches on all runs at the default cap and dimension (7 MiB, 3000 px) |
+| **C1** declared charset | a page whose `Content-Type` declares a charset other than UTF-8, ASCII, ISO-8859-1 or Windows-1252 is read as UTF-8 | `requests` has Python's codecs; none of IQDB, trace.moe or Pawchive sends one. Decoding it needs `encoding_rs`, which is not added here. 3.c (ascii2d, SauceNAO) owns re-opening this: if a real fixture there declares a non-UTF-8 charset, that ticket matches it and adds `encoding_rs` |
+| **C2** undeclared charset | a 200 answer with no `Content-Type`, or one that is neither `text/*` nor JSON and has no `charset`, whose body is not valid UTF-8. `requests` runs `charset_normalizer` over the bytes and decodes with whatever it picks (`cp775`, `windows-1250`, ...); the port reads the body as Windows-1252. Only text outside ASCII differs, so the effect is on IQDB's size line (`4159x1061` in the port, none in Python, in the one case found) | porting `charset_normalizer`'s detector is out of proportion: IQDB, trace.moe and Pawchive all declare their type, so this is an answer they do not send. Where the detector picks Windows-1250 or Windows-1252 (40 of 41 such bodies in the run) the two agree. Brought to Cloud on DAN-2057 as new after DAN-2066's list |
+| **D1** transport failure text | `requests`' wording of a connection error vs the net layer's. In Python the `request failed` branch of IQDB's and trace.moe's `search` is unreachable: `requests.RequestException` is an `OSError`, so every transport failure reads `Could not read image: <text>`. Rust says `IQDB request failed: <text>` | the text is `requests`' |
+| **D2** header-wait timeout | a server that never answers is `requests.ReadTimeout` (`request failed`) in Python; the net layer reports it as a missed deadline (`request timed out`) | the net layer (1.c) does not say whether data was arriving |
+| **D3** `lookup` and `HardTimeoutError` | Python's `lookup` does not catch `HardTimeoutError`, so it escapes as itself, not as `PawchiveLookupError`. `PawchiveError::HardTimeout` carries the same | kept: it is what Python does |
+| **T1, T2, T3, P1** pure halves (2.h) | a trace.moe `image` that is not a string (Python returns the value), an `anilist` of JSON `true` (Python reads `True` as the id), a body that is not a JSON object (Python raises `AttributeError`/`TypeError`, Rust returns no matches), and the same for Pawchive's body | inputs the services never send; found by this differential, not changed here because the ticket does not change the 2.h halves. Raised on DAN-2057 |
+
+Counts, from the two seeds run at the head (9029 cases, seed 9, log `worktrees/DAN-2057-differential-s9.log`;
+9027 cases, seed 4242, `...-s4242.log`; 0 unexplained in both). The classes are per differing case:
+
+| Class | seed 9 | seed 4242 |
+|---|---|---|
+| C1 | 20 | 15 |
+| C2 | 0 | 1 |
+| D1 | 12 | 12 |
+| J1 | 7 (all dimensions) | 7 (4 dimensions, 3 with equal dimensions and Python over the cap) |
+| P1 | 7 | 7 |
+| T1 | 24 | 34 |
+| T2 | 25 | 11 |
+| T3 | 21 | 26 |
+| total differing | 116 | 113 |
+
+Image-format reading differs from Pillow's in one more way that the differential found and the port
+now matches: Pillow's mode for a file (a grey-ramp GIF or BMP is `L`, a bilevel PNG is `1` and
+becomes RGB, 16-bit grey is clipped at 255 on conversion), which decides whether the JPEG has one
+channel or three and so whether it fits under the cap.

@@ -14,6 +14,8 @@ http = "1"
 # NFKC for `pyurl`'s netloc check (`urllib.parse._checknetloc`). Already in the lockfile through
 # `url` -> `idna`, so no new crate is built.
 icu_normalizer = { version = "2.1", default-features = false, features = ["compiled_data"] }
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff", "ico", "pnm", "tga"] }
+jpeg-encoder = "0.6.1"
 # The WHATWG named-character-reference table, for `pycompat::html_unescape`. Already in the
 # lockfile through scraper's html5ever, so no new crate.
 markup5ever = "0.40"
@@ -27,6 +29,7 @@ reqwest = { version = "0.13", default-features = false, features = ["rustls-no-p
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 scraper = "0.29.0"
+sha2 = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
 tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
@@ -36,7 +39,6 @@ url = "2"
 
 [dev-dependencies]
 rcgen = "0.14"
-sha2 = "0.10"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time", "sync", "net", "io-util", "test-util"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
