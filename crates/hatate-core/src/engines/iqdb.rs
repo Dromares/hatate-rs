@@ -7,6 +7,7 @@
 //! The upload, the 45 s floor on the timeout and the network errors are the engine client's
 //! (Phase 3; see the module docs of [`super`]).
 
+use std::path::Path;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -14,10 +15,15 @@ use scraper::{ElementRef, Html, Selector};
 use serde::Serialize;
 use tracing::{debug, warn};
 
+use super::client::{
+    Failure, OnTick, failure_of, read_upload, response_text, seconds, ticking, upload_part,
+};
 use super::{extract_dimensions, looks_like_url};
 use crate::boorus::parsed::{classes_of, soup_of, text_of, text_stripped};
 use crate::boorus::sizes;
+use crate::hard_timeout::HardTimeoutError;
 use crate::model::Tag;
+use crate::net::{NetClient, NetRequest};
 use crate::{pycompat, pyurl, sites};
 
 pub const IQDB_URL: &str = "https://iqdb.org/";
@@ -72,7 +78,18 @@ pub fn search_from_response(
     status: u16,
     html: &str,
 ) -> Result<Vec<IqdbMatch>, IqdbError> {
-    let instance = instance_name(base_url);
+    answer_from_response(instance_name(base_url), base_url, status, html)
+}
+
+/// [`search_from_response`] with the instance named by the caller. The client talks to an
+/// address it was given, which need not contain "3d.iqdb" however the instance is named; the
+/// name goes in the messages and the address is what thumbnail paths are joined against.
+pub fn answer_from_response(
+    instance: &str,
+    base_url: &str,
+    status: u16,
+    html: &str,
+) -> Result<Vec<IqdbMatch>, IqdbError> {
     if status == 413 {
         return Err(IqdbError(format!(
             "{instance} rejected the image as too large, even after downscaling"
@@ -84,6 +101,171 @@ pub fn search_from_response(
     let matches = parse_results(html, base_url)?;
     debug!("{instance} HTML parsed into {} match(es)", matches.len());
     Ok(matches)
+}
+
+/// Which instance a search goes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Instance {
+    /// iqdb.org: 2D anime art.
+    TwoD,
+    /// 3d.iqdb.org: the same markup against a 3D/CG index.
+    ThreeD,
+}
+
+impl Instance {
+    fn name(self) -> &'static str {
+        match self {
+            Instance::TwoD => "IQDB",
+            Instance::ThreeD => "IQDB 3D",
+        }
+    }
+}
+
+/// The request half of `core/iqdb.py`: `search` and `search_3d`.
+///
+/// A multipart POST of the (prepared) image to the instance, with a deadline over the whole
+/// exchange and IQDB's 45 s floor on the budget. What the answer means is
+/// [`answer_from_response`]. The two addresses are the client's constructor's, so a test serves
+/// them from a local server; `new` uses the real ones.
+#[derive(Debug, Clone)]
+pub struct IqdbClient {
+    net: NetClient,
+    base_2d: String,
+    base_3d: String,
+    min_budget: f64,
+}
+
+impl IqdbClient {
+    /// The real iqdb.org and 3d.iqdb.org.
+    pub fn new(net: NetClient) -> Self {
+        Self::with_hosts(net, IQDB_URL, IQDB_3D_URL)
+    }
+
+    /// The same client against other addresses (a local https server in tests). Not reachable
+    /// from `config.json`, the environment or a flag.
+    pub fn with_hosts(net: NetClient, base_2d: &str, base_3d: &str) -> Self {
+        IqdbClient {
+            net,
+            base_2d: base_2d.to_owned(),
+            base_3d: base_3d.to_owned(),
+            min_budget: MIN_BUDGET_SECONDS,
+        }
+    }
+
+    /// Replaces the 45 s floor. Only so a test can see a deadline pass without waiting 45 s.
+    pub fn with_min_budget_seconds(mut self, seconds: f64) -> Self {
+        self.min_budget = seconds;
+        self
+    }
+
+    /// `max(timeout, MIN_BUDGET_SECONDS)`: the least time an IQDB search gets, whatever the
+    /// general search timeout says (measured 8 to 42 s per search; a 15 s timeout failed every
+    /// search that day).
+    fn budget(&self, timeout: f64) -> f64 {
+        if timeout > self.min_budget {
+            timeout
+        } else {
+            self.min_budget
+        }
+    }
+
+    fn base(&self, instance: Instance) -> &str {
+        match instance {
+            Instance::TwoD => &self.base_2d,
+            Instance::ThreeD => &self.base_3d,
+        }
+    }
+
+    /// `search`: upload an image to IQDB and return the parsed matches, best match first.
+    ///
+    /// `timeout` is the caller's search timeout (seconds); the request gets at least
+    /// [`MIN_BUDGET_SECONDS`], as both its per-read timeout and its deadline. `on_tick` is the
+    /// UI countdown, see [`OnTick`].
+    pub async fn search(
+        &self,
+        image_path: &Path,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+    ) -> Result<Vec<IqdbMatch>, IqdbError> {
+        self.run(Instance::TwoD, image_path, timeout, on_tick).await
+    }
+
+    /// `search_3d`: IQDB's 3D/CG index. Same protocol, different corpus.
+    pub async fn search_3d(
+        &self,
+        image_path: &Path,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+    ) -> Result<Vec<IqdbMatch>, IqdbError> {
+        self.run(Instance::ThreeD, image_path, timeout, on_tick)
+            .await
+    }
+
+    async fn run(
+        &self,
+        instance: Instance,
+        image_path: &Path,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+    ) -> Result<Vec<IqdbMatch>, IqdbError> {
+        let name = instance.name();
+        let timeout = self.budget(timeout);
+        debug!(
+            "Uploading {} to {name} ({})",
+            image_path.display(),
+            self.base(instance)
+        );
+        let (data, filename) = read_upload(image_path)
+            .await
+            .map_err(|e| IqdbError(format!("Could not read image: {}", e.0)))?;
+        let request = self
+            .request(instance, data, filename, timeout)
+            .map_err(|e| IqdbError(format!("{name} request failed: {e}")))?;
+        let label = format!("Waiting on {name}");
+        let resp = match ticking(&label, timeout, on_tick, self.net.send(request)).await {
+            Ok(resp) => resp,
+            Err(err) => {
+                return Err(match failure_of(&err, seconds(timeout)) {
+                    Failure::Deadline(HardTimeoutError(why)) => {
+                        warn!(
+                            "{name} request for {} exceeded the hard deadline",
+                            image_path.display()
+                        );
+                        IqdbError(format!("{name} request timed out: {why}"))
+                    }
+                    Failure::Transport(why) => {
+                        warn!("{name} request failed for {}", image_path.display());
+                        IqdbError(format!("{name} request failed: {why}"))
+                    }
+                });
+            }
+        };
+        debug!(
+            "{name} responded HTTP {} ({} bytes)",
+            resp.status.as_u16(),
+            resp.body.len()
+        );
+        answer_from_response(
+            name,
+            self.base(instance),
+            resp.status.as_u16(),
+            &response_text(&resp),
+        )
+    }
+
+    /// The POST `search` makes: `net.post(base_url, files=..., timeout=timeout, deadline=timeout)`.
+    fn request(
+        &self,
+        instance: Instance,
+        data: bytes::Bytes,
+        filename: String,
+        timeout: f64,
+    ) -> Result<NetRequest, crate::net::NetError> {
+        let limit = seconds(timeout);
+        Ok(NetRequest::post(self.base(instance), limit)?
+            .with_multipart(vec![upload_part("file", data, filename)])
+            .with_deadline(limit))
+    }
 }
 
 // `(\d+(?:\.\d+)?)\s*%\s*similarity`, IGNORECASE. Python folds `s` with U+017F and `i` with the
@@ -413,6 +595,82 @@ mod tests {
         assert_eq!(
             m.thumb_url.as_deref(),
             Some("https://3d.iqdb.org/danbooru/t.jpg")
+        );
+    }
+}
+
+#[cfg(test)]
+mod client_tests {
+    use std::time::Duration;
+
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::net::{Body, Method, NetConfig};
+
+    fn client() -> IqdbClient {
+        IqdbClient::new(NetClient::new(NetConfig::default()).unwrap())
+    }
+
+    #[test]
+    fn a_short_general_timeout_is_raised_to_iqdbs_floor() {
+        // test_net.py::TestIqdbBudget: IQDB took 8-42 s per search when measured; a 15 s general
+        // timeout failed every one of them.
+        let c = client();
+        assert_eq!(c.budget(15.0), 45.0);
+        assert_eq!(c.budget(5.0), 45.0);
+        assert_eq!(c.budget(45.0), 45.0);
+        assert_eq!(c.budget(60.0), 60.0);
+        // And it is the request's per-read timeout and its deadline both.
+        let req = c
+            .request(
+                Instance::TwoD,
+                Bytes::from_static(b"x"),
+                "x.png".to_owned(),
+                c.budget(15.0),
+            )
+            .unwrap();
+        assert_eq!(req.timeout, Duration::from_secs(45));
+        assert_eq!(req.deadline, Some(Duration::from_secs(45)));
+    }
+
+    #[test]
+    fn the_request_is_the_multipart_post_python_makes() {
+        let c = client();
+        let req = c
+            .request(
+                Instance::ThreeD,
+                Bytes::from_static(b"x"),
+                "x.png".to_owned(),
+                45.0,
+            )
+            .unwrap();
+        assert_eq!(req.method, Method::Post);
+        assert_eq!(req.url.as_str(), "https://3d.iqdb.org/");
+        let Body::Multipart(parts) = &req.body else {
+            panic!("{:?}", req.body)
+        };
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0].name, "file");
+        assert_eq!(parts[0].filename.as_deref(), Some("x.png"));
+        assert_eq!(parts[0].mime.as_deref(), Some("application/octet-stream"));
+    }
+
+    #[test]
+    fn the_instance_is_named_by_the_one_asked_not_by_the_address() {
+        // Python names it by "3d.iqdb" in the URL; the client may be given any address.
+        let local = IqdbClient::with_hosts(
+            NetClient::new(NetConfig::default()).unwrap(),
+            "https://127.0.0.1:1/",
+            "https://127.0.0.1:2/",
+        );
+        assert_eq!(local.base(Instance::ThreeD), "https://127.0.0.1:2/");
+        assert_eq!(Instance::ThreeD.name(), "IQDB 3D");
+        assert_eq!(instance_name(local.base(Instance::ThreeD)), "IQDB");
+        let err = answer_from_response("IQDB 3D", "https://127.0.0.1:2/", 413, "").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "IQDB 3D rejected the image as too large, even after downscaling"
         );
     }
 }

@@ -561,7 +561,7 @@ fn the_cache_can_be_reset() {
 
 #[test]
 fn the_default_cap_leaves_headroom_under_the_cited_8_mib_limit() {
-    assert!(DEFAULT_MAX_BYTES < 8 * 1024 * 1024);
+    const { assert!(DEFAULT_MAX_BYTES < 8 * 1024 * 1024) };
     assert_eq!(DEFAULT_MAX_DIMENSION, 3000);
 }
 

@@ -6,6 +6,9 @@
 mod net_server;
 #[allow(unused_imports)]
 pub use net_server::*;
+mod replay;
+#[allow(unused_imports)]
+pub use replay::*;
 
 use std::collections::HashMap;
 use std::ffi::OsString;
