@@ -22,7 +22,7 @@ worked example.
   required two, and struct-update syntax adds the rest.
 - **Registered in `boorus::PARSERS`**, in the order Python's `PARSERS` list has: the first
   `matches` wins, so the order is behaviour.
-- **Parity to Python at the pinned commit, not to the live site.** A parser that Phase 0.d
+- **The target is what Python returned at the pinned commit, not the live site.** A parser that Phase 0.d
   marked `drifted` or `dead` still reproduces what Python returned. A live-site fix is a note
   for a later ticket, not part of the port.
 
