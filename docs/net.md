@@ -362,7 +362,8 @@ a quote or newline.
 
 `response_text` decodes a body the way `requests` does from the `Content-Type` header: a `charset`
 parameter, else ISO-8859-1 for `text/*` and UTF-8 for `application/json`, else (where `requests`
-asks `chardet`) UTF-8 if the bytes are, Windows-1252 if not.
+asks a detector, `charset_normalizer`) UTF-8 if the bytes are, Windows-1252 if not. That is the
+one place the port guesses where `requests` detects: see C2.
 
 ### 12.2 What is not matched, with counts
 
@@ -377,12 +378,28 @@ counts are from the run recorded in the log.
 
 | Class | What differs | Why it stays |
 |---|---|---|
-| **J1** `image_prep` shrink loop | the re-encoded JPEG's bytes (granted by name), and with them the one place a decision depends on a byte count: the shrink loop's steps, so a picture can land one 0.8 step apart. In every such case the Rust output is under the cap, the decision (as is or re-encode) and the format match, and only the dimensions differ (one step larger than Python's) | the JPEG bytes are not Pillow's. The pixels going into the encoder are (the Lanczos resample is Pillow's ported, the chroma path is libjpeg's), and the encoder's output sits within about 0.3% of Pillow's size, so only a cap that falls inside that gap diverges. Matches on all runs at the default cap and dimension (7 MiB, 3000 px) |
-| **C1** response charset | a page in a charset other than UTF-8, ASCII, ISO-8859-1 or Windows-1252 is read as UTF-8 | `requests` has Python's codecs; none of IQDB, trace.moe or Pawchive sends one. Decoding it needs `encoding_rs`, which is not added here. 3.c (ascii2d, SauceNAO) owns re-opening this: if a real fixture there declares a non-UTF-8 charset, that ticket matches it and adds `encoding_rs` |
+| **J1** `image_prep` shrink loop | the re-encoded JPEG's bytes (granted by name), and with them the one place a decision depends on a byte count: the shrink loop's steps, so a picture can land one 0.8 step apart. In every such case the decision (as is or re-encode) and the format match, and the Rust output is under the cap. Either the dimensions differ (one step larger than Python's), or they are equal and Python's file is the one over the cap (`under_cap` false) while Rust's, a fraction of a percent smaller, is under it. Rust is never the one over the cap | the JPEG bytes are not Pillow's. The pixels going into the encoder are (the Lanczos resample is Pillow's ported, the chroma path is libjpeg's), and the encoder's output sits within about 0.3% of Pillow's size, so only a cap that falls inside that gap diverges. Matches on all runs at the default cap and dimension (7 MiB, 3000 px) |
+| **C1** declared charset | a page whose `Content-Type` declares a charset other than UTF-8, ASCII, ISO-8859-1 or Windows-1252 is read as UTF-8 | `requests` has Python's codecs; none of IQDB, trace.moe or Pawchive sends one. Decoding it needs `encoding_rs`, which is not added here. 3.c (ascii2d, SauceNAO) owns re-opening this: if a real fixture there declares a non-UTF-8 charset, that ticket matches it and adds `encoding_rs` |
+| **C2** undeclared charset | a 200 answer with no `Content-Type`, or one that is neither `text/*` nor JSON and has no `charset`, whose body is not valid UTF-8. `requests` runs `charset_normalizer` over the bytes and decodes with whatever it picks (`cp775`, `windows-1250`, ...); the port reads the body as Windows-1252. Only text outside ASCII differs, so the effect is on IQDB's size line (`4159x1061` in the port, none in Python, in the one case found) | porting `charset_normalizer`'s detector is out of proportion: IQDB, trace.moe and Pawchive all declare their type, so this is an answer they do not send. Where the detector picks Windows-1250 or Windows-1252 (40 of 41 such bodies in the run) the two agree. Brought to Cloud on DAN-2057 as new after DAN-2066's list |
 | **D1** transport failure text | `requests`' wording of a connection error vs the net layer's. In Python the `request failed` branch of IQDB's and trace.moe's `search` is unreachable: `requests.RequestException` is an `OSError`, so every transport failure reads `Could not read image: <text>`. Rust says `IQDB request failed: <text>` | the text is `requests`' |
 | **D2** header-wait timeout | a server that never answers is `requests.ReadTimeout` (`request failed`) in Python; the net layer reports it as a missed deadline (`request timed out`) | the net layer (1.c) does not say whether data was arriving |
 | **D3** `lookup` and `HardTimeoutError` | Python's `lookup` does not catch `HardTimeoutError`, so it escapes as itself, not as `PawchiveLookupError`. `PawchiveError::HardTimeout` carries the same | kept: it is what Python does |
 | **T1, T2, T3, P1** pure halves (2.h) | a trace.moe `image` that is not a string (Python returns the value), an `anilist` of JSON `true` (Python reads `True` as the id), a body that is not a JSON object (Python raises `AttributeError`/`TypeError`, Rust returns no matches), and the same for Pawchive's body | inputs the services never send; found by this differential, not changed here because the ticket does not change the 2.h halves. Raised on DAN-2057 |
+
+Counts, from the two seeds run at the head (9029 cases, seed 9, log `worktrees/DAN-2057-differential-s9.log`;
+9027 cases, seed 4242, `...-s4242.log`; 0 unexplained in both). The classes are per differing case:
+
+| Class | seed 9 | seed 4242 |
+|---|---|---|
+| C1 | 20 | 15 |
+| C2 | 0 | 1 |
+| D1 | 12 | 12 |
+| J1 | 7 (all dimensions) | 7 (4 dimensions, 3 with equal dimensions and Python over the cap) |
+| P1 | 7 | 7 |
+| T1 | 24 | 34 |
+| T2 | 25 | 11 |
+| T3 | 21 | 26 |
+| total differing | 116 | 113 |
 
 Image-format reading differs from Pillow's in one more way that the differential found and the port
 now matches: Pillow's mode for a file (a grey-ramp GIF or BMP is `L`, a bilevel PNG is `1` and
