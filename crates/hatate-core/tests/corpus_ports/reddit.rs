@@ -3,6 +3,10 @@
 //! `call.json` `responses[-1].status` is its status. The request itself and the session cache are
 //! Phase 3; the second test below holds their recorded address and cache key to the Rust helpers
 //! that name them.
+//!
+//! `every_ported_parser_matches_its_corpus_items` compares `returns` only. An item's
+//! `effects.state_after` (`cached_keys`, `sleeps`) is checked by the second test below, so a run
+//! filtered to the first one does not cover it.
 
 use hatate_core::reddit;
 

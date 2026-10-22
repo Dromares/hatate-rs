@@ -107,6 +107,20 @@ has needed yet:
   absent, and a non-string `regular` falls through to `small`. Pixiv sends neither. Twitter's
   `_as_int` is `int(v)`, so it is ported as that (`json_fields::int_of`, which also reads
   `"1_0"` and non-ASCII digits in a string).
+- **Non-JSON bodies and big integers reach Pixiv, Twitter and the Reddit feed too** (found by the
+  DAN-2034 differential, 14,853 generated cases). A body with `NaN`, `Infinity` or a lone-surrogate
+  escape (`"a\ud800"`) parses in `json.loads` and not in `serde_json`, so the hook reads it as
+  non-JSON. A `width`, `height` or `pageCount` of 2^63 or more is a Python `int`; here it reads as
+  absent (dimensions) or as one page (`pageCount`). The sites send neither. No corpus item
+  reaches either.
+- **`<meta id="meta-preload-data">` inside `<noscript>`.** lxml (Python) finds it; `scraper` does
+  not. Only Pixiv's legacy HTML fallback reads that meta, and the real one sits in `<head>`. `<template>`, `<svg>`,
+  `<textarea>`, comments, unclosed tags and a BOM matched.
+- **`sizes::py_int` and U+001C to U+001F.** `pycompat::strip` is `str.strip()`, which removes
+  those four characters; `int()` does not (`int("\x1c5")` is `ValueError`), so `py_int` reads `5`
+  where Python raises. It is reached through `json_fields::int_of` (Twitter `width` and `height`,
+  Pixiv `pageCount`) when the JSON holds a string. Documented, not fixed: the sites send plain
+  digits, and the fix is a behaviour change for its own ticket.
 - **Where Python raises on a shape the site never sends** (a Pixiv `tags` that is a list, a tag
   that is not an object, a `userName` that is a number, a Twitter `author` that is a list) the
   hook gives what `fetch_page_info` makes of a raised hook: no tags, no URL, `(None, None)`, one
