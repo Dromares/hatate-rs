@@ -265,3 +265,106 @@ fn is_expired(root: &serde_json::Value, ttl_days: f64, now: f64) -> bool {
         Some(at) => now - at > ttl_days * 86_400.0,
     }
 }
+
+#[cfg(test)]
+mod kill_tests {
+    //! "Killing the process mid-write (simulated) leaves either the old file or the new
+    //! one, never a truncated one" (DAN-1982 acceptance). The real-process version is
+    //! `tests/cache_kill.rs`.
+
+    use super::*;
+    use std::collections::HashMap;
+    use std::ffi::OsString;
+
+    fn setup() -> (tempfile::TempDir, SearchCache, CacheKey) {
+        let dir = tempfile::Builder::new()
+            .prefix("hatate-core-test-")
+            .tempdir()
+            .unwrap();
+        let vars: HashMap<&str, OsString> = HashMap::from([
+            ("XDG_CONFIG_HOME", dir.path().join("c").into()),
+            ("XDG_CACHE_HOME", dir.path().join("k").into()),
+        ]);
+        let paths = Paths::from_lookup(|k| vars.get(k).cloned()).unwrap();
+        assert!(paths.search_cache_dir().starts_with(dir.path()));
+        (
+            dir,
+            SearchCache::new(&paths),
+            CacheKey::parse(&"d".repeat(64)).unwrap(),
+        )
+    }
+
+    fn entry(url: &str, at: f64) -> CacheEntry {
+        CacheEntry::new(MatchStatus::Good, vec![Candidate::new(url)], at)
+    }
+
+    #[test]
+    fn a_kill_during_an_overwrite_leaves_the_old_entry_or_the_new_one() {
+        for (stage, expect_new) in [
+            (Stage::PartialTemp, false),
+            (Stage::TempSynced, false),
+            (Stage::Renamed, true),
+        ] {
+            let (_d, cache, key) = setup();
+            cache
+                .store(&key, &entry("https://old.invalid/", 1.0), false)
+                .unwrap();
+            let err = cache
+                .store_until(
+                    &key,
+                    &entry("https://new.invalid/", 2.0),
+                    false,
+                    Some(stage),
+                )
+                .unwrap_err();
+            assert_eq!(err.kind(), io::ErrorKind::Interrupted);
+            let hit = cache.lookup(&key, 0.0, 3.0).hit().expect("never truncated");
+            let want = if expect_new {
+                "https://new.invalid/"
+            } else {
+                "https://old.invalid/"
+            };
+            assert_eq!(hit.candidates[0].url, want, "{stage:?}");
+        }
+    }
+
+    #[test]
+    fn a_kill_during_the_first_write_leaves_no_entry_at_all() {
+        for stage in [Stage::PartialTemp, Stage::TempSynced] {
+            let (_d, cache, key) = setup();
+            let _ = cache.store_until(
+                &key,
+                &entry("https://new.invalid/", 2.0),
+                false,
+                Some(stage),
+            );
+            assert_eq!(
+                cache.lookup(&key, 0.0, 3.0),
+                Lookup::Miss(MissReason::Absent),
+                "{stage:?}"
+            );
+            // The leftover is invisible to size and listing, and `clear` sweeps it.
+            assert_eq!(cache.size_bytes(), 0);
+            assert_eq!(cache.clear().unwrap(), 0);
+            assert_eq!(fs::read_dir(cache.dir()).unwrap().count(), 0);
+        }
+    }
+
+    /// The Python app's own write truncates in place, so a crash there leaves a partial
+    /// file; the Rust reader treats it as a miss and the next store replaces it whole.
+    #[test]
+    fn a_file_python_left_truncated_is_replaced_by_the_next_store() {
+        let (_d, cache, key) = setup();
+        fs::create_dir_all(cache.dir()).unwrap();
+        let path = cache.dir().join(format!("{}.json", key.as_str()));
+        fs::write(&path, br#"{"format_version": 2, "cached_at": 1.5, "sta"#).unwrap();
+        assert_eq!(
+            cache.lookup(&key, 0.0, 2.0),
+            Lookup::Miss(MissReason::Unreadable)
+        );
+        cache
+            .store(&key, &entry("https://new.invalid/", 2.0), false)
+            .unwrap();
+        assert!(cache.lookup(&key, 0.0, 3.0).hit().is_some());
+    }
+}
