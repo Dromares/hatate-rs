@@ -1,5 +1,7 @@
 //! Shared library for the Hatate Rust rewrite. Work in progress.
 
+pub mod net;
+
 /// Crate name, used by the placeholder test below.
 pub const NAME: &str = "hatate-core";
 
