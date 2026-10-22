@@ -10,10 +10,13 @@ publish.workspace = true
 
 [dependencies]
 bytes = "1"
+fast_image_resize = "5.1.4"
 http = "1"
 # NFKC for `pyurl`'s netloc check (`urllib.parse._checknetloc`). Already in the lockfile through
 # `url` -> `idna`, so no new crate is built.
 icu_normalizer = { version = "2.1", default-features = false, features = ["compiled_data"] }
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff", "ico", "pnm", "tga"] }
+jpeg-encoder = "0.6.1"
 # The WHATWG named-character-reference table, for `pycompat::html_unescape`. Already in the
 # lockfile through scraper's html5ever, so no new crate.
 markup5ever = "0.40"
