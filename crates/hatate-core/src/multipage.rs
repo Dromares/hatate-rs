@@ -18,7 +18,7 @@ use regex::Regex;
 use tracing::debug;
 
 use crate::boorus::host;
-use crate::boorus::sizes::py_int;
+use crate::boorus::sizes::digit_value;
 use crate::image_compare::{Hash, Source, dhash, hamming_distance};
 use crate::pyimage::DecompressionBomb;
 use crate::pyurl::{self, UrlValueError};
@@ -153,12 +153,13 @@ static SAUCENAO_PIXIV_THUMB_RE: LazyLock<Regex> = LazyLock::new(|| {
 ///
 /// `None` for anything that is not an unambiguous SauceNAO Pixiv thumbnail, including IQDB's
 /// thumbnails, which are a different host and carry no page information. `Err` where
-/// `urlsplit` raises `ValueError`. A page number too large for an `i64` is `i64::MAX`, which is
-/// what every caller treats a number past the page count as.
+/// `urlsplit` raises `ValueError`. Python's `int` has no limit and this one stops at 38 digits:
+/// a page number past that is `i128::MAX` (which every caller treats as past the page count, as
+/// it is) and is listed in `docs/image-compare.md`.
 pub fn page_index_from_thumbnail(
     thumb_url: Option<&str>,
     illust_id: Option<&str>,
-) -> Result<Option<i64>, UrlValueError> {
+) -> Result<Option<i128>, UrlValueError> {
     let (Some(thumb_url), Some(illust_id)) = (
         thumb_url.filter(|s| !s.is_empty()),
         illust_id.filter(|s| !s.is_empty()),
@@ -191,7 +192,7 @@ pub fn page_index_from_thumbnail(
         );
         return Ok(None);
     }
-    Ok(Some(py_int(&caps[2]).unwrap_or(i64::MAX)))
+    Ok(Some(digits_to_int(&caps[2])))
 }
 
 /// A page's size as the page list gives it: `(width, height)`, either of which may be missing.
@@ -302,4 +303,16 @@ pub fn page_url_for_index(first_page_url: &str, index: usize) -> Option<String> 
         &first_page_url[..at],
         &first_page_url[at + 3..]
     ))
+}
+
+/// `int(digits)` for a run of decimal digits of any script (what `\d` matches), saturating at
+/// `i128::MAX`.
+fn digits_to_int(digits: &str) -> i128 {
+    digits
+        .chars()
+        .try_fold(0i128, |acc, c| {
+            acc.checked_mul(10)?
+                .checked_add(i128::from(digit_value(c)?))
+        })
+        .unwrap_or(i128::MAX)
 }

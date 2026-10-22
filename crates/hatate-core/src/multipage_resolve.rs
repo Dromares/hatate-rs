@@ -177,7 +177,7 @@ pub async fn resolve_multipage_candidate(
 
     // SauceNAO names the page in its own thumbnail URL, but only for Pixiv: the pattern is that
     // index's, and reading another site's thumbnail through it would invent a page number.
-    let mut reported: Option<i64> = None;
+    let mut reported: Option<i128> = None;
     if parser.name == pixiv::PARSER.name {
         reported = page_index_from_thumbnail(
             candidate.thumb_url.as_deref(),
@@ -397,7 +397,7 @@ pub async fn resolve_multipage_candidate(
         // Hashing wins outright where it has an answer, including against SauceNAO: the one
         // measured disagreement was a stale index, and hashing had it right.
         if let Some(r) = reported
-            && r != m.index as i64
+            && r != m.index as i128
         {
             info!(
                 "{}: SauceNAO's thumbnail names page {} but the images say page {} - going with \

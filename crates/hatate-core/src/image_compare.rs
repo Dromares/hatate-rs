@@ -435,32 +435,43 @@ impl SizeComparison {
     }
 }
 
-/// Python's `a / b` on two ints: the exactly rounded quotient.
+/// Python's `a / b` on two ints: the correctly rounded quotient (ties to even), where a float
+/// division of two converted operands would round twice once an operand passes 2^53.
 fn int_div(a: i128, b: i128) -> f64 {
     const EXACT: i128 = 1 << 53;
     if a.abs() <= EXACT && b.abs() <= EXACT {
         return a as f64 / b as f64;
     }
-    // Beyond 2^53 neither operand converts exactly. Scale the quotient into 64 bits instead.
-    let (neg, a, b) = ((a < 0) != (b < 0), a.unsigned_abs(), b.unsigned_abs());
-    let shift = (a.leading_zeros().saturating_sub(1)).min(120);
-    let q = (a << shift) / b;
-    let r = (a << shift) % b;
-    // Round to nearest, ties to even, at the 53rd significant bit.
-    let bits = 128 - q.leading_zeros();
-    let drop = bits.saturating_sub(53);
-    let (mut m, rem) = if drop == 0 {
-        (q, 0u128)
-    } else {
-        (q >> drop, q & ((1u128 << drop) - 1))
-    };
-    let half = if drop == 0 { 0 } else { 1u128 << (drop - 1) };
-    let sticky = r != 0;
-    if drop > 0 && (rem > half || (rem == half && (sticky || m & 1 == 1))) {
-        m += 1;
+    let negative = (a < 0) != (b < 0);
+    let (a, b) = (a.unsigned_abs(), b.unsigned_abs());
+    let bits = |v: u128| 128 - v.leading_zeros();
+    let mut mantissa = a / b;
+    let mut rest = a % b;
+    let mut exponent = 0i32;
+    // Long division, a bit at a time, until the quotient has 55 significant bits (two more than
+    // a double keeps, and the remainder says whether anything is left past them).
+    while bits(mantissa) < 55 && rest != 0 {
+        rest *= 2;
+        let bit = rest >= b;
+        if bit {
+            rest -= b;
+        }
+        mantissa = (mantissa << 1) | u128::from(bit);
+        exponent -= 1;
     }
-    let v = m as f64 * 2f64.powi(drop as i32 - shift as i32);
-    if neg { -v } else { v }
+    let width = bits(mantissa);
+    if width > 53 {
+        let drop = width - 53;
+        let tail = mantissa & ((1u128 << drop) - 1);
+        let half = 1u128 << (drop - 1);
+        mantissa >>= drop;
+        exponent += drop as i32;
+        if tail > half || (tail == half && (rest != 0 || mantissa & 1 == 1)) {
+            mantissa += 1;
+        }
+    }
+    let value = mantissa as f64 * 2f64.powi(exponent);
+    if negative { -value } else { value }
 }
 
 /// `compare_sizes`: relates a match's dimensions to the local file's, on the long edge.
