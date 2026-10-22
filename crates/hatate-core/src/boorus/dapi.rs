@@ -18,10 +18,10 @@ use serde_json::{Map, Value};
 use tracing::{debug, info};
 
 use super::gelbooru;
-use crate::net::{NetClient, NetRequest};
+use crate::net::NetClient;
 use crate::pyresponse::PyResponse;
-use crate::remote::ua_headers;
-use crate::{pyurl, remote};
+use crate::remote::{get_request, ua_headers};
+use crate::pyurl;
 
 /// `timeout=15` of every Data-API call. No deadline: Python sets none.
 pub const TIMEOUT: f64 = 15.0;
@@ -147,10 +147,9 @@ async fn fetch_post(
         Family::Xbooru => "xbooru.com".to_string(),
     };
     let api_url = format!("https://{host}/index.php?page=dapi&s=post&q=index&json=1&id={id}");
-    let Ok(mut req) = NetRequest::get(&api_url, remote::secs(TIMEOUT)) else {
+    let Ok(req) = get_request(&api_url, TIMEOUT, None, &ua_headers(), None) else {
         return (None, false);
     };
-    req.headers = ua_headers();
     let resp = match net.send(req).await {
         Ok(resp) => PyResponse::from_net(resp),
         Err(e) => {

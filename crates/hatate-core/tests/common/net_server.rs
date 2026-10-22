@@ -49,6 +49,11 @@ pub struct Reply {
     pub delay: Duration,
     /// Send the body in pieces of this size with this pause between them.
     pub trickle: Option<(usize, Duration)>,
+    /// Close the connection without answering (a network error).
+    pub abort: bool,
+    /// The text of the `Content-Length` header, when it is not the body's length (a HEAD answer
+    /// that states a size, or a value no real file has).
+    pub content_length: Option<String>,
 }
 
 impl Reply {
@@ -59,6 +64,8 @@ impl Reply {
             body: body.into(),
             delay: Duration::ZERO,
             trickle: None,
+            abort: false,
+            content_length: None,
         }
     }
 
@@ -73,6 +80,17 @@ impl Reply {
 
     pub fn delayed(mut self, delay: Duration) -> Self {
         self.delay = delay;
+        self
+    }
+
+    pub fn aborted() -> Self {
+        let mut reply = Self::new(0, "");
+        reply.abort = true;
+        reply
+    }
+
+    pub fn content_length(mut self, text: &str) -> Self {
+        self.content_length = Some(text.to_owned());
         self
     }
 
@@ -260,6 +278,9 @@ where
         requests.lock().unwrap().push(rec.clone());
         let reply = handler(&rec);
 
+        if reply.abort {
+            return;
+        }
         if !reply.delay.is_zero() {
             tokio::time::sleep(reply.delay).await;
         }
@@ -267,7 +288,11 @@ where
         for (n, v) in &reply.headers {
             head.push_str(&format!("{n}: {v}\r\n"));
         }
-        head.push_str(&format!("Content-Length: {}\r\n\r\n", reply.body.len()));
+        let length = reply
+            .content_length
+            .clone()
+            .unwrap_or_else(|| reply.body.len().to_string());
+        head.push_str(&format!("Content-Length: {length}\r\n\r\n"));
         if stream.write_all(head.as_bytes()).await.is_err() {
             return;
         }

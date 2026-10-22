@@ -346,8 +346,12 @@ pub async fn fetch_feed_entries(
         http::header::USER_AGENT,
         http::HeaderValue::from_static(USER_AGENT),
     );
-    let Ok(req) = get_request(&url, timeout, Some(timeout), &headers, None) else {
-        return Ok(None);
+    let req = match get_request(&url, timeout, Some(timeout), &headers, None) {
+        Ok(req) => req,
+        Err(e) if e.kind() == ErrorKind::DeadlineExceeded => {
+            return Err(Raised::HardTimeout(e.detail().to_string()));
+        }
+        Err(_) => return Ok(None),
     };
     let resp = match net.send(req).await {
         Ok(resp) => PyResponse::from_net(resp),

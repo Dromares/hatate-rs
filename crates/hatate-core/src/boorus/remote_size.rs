@@ -17,7 +17,7 @@ use tracing::debug;
 
 use crate::lru::LruCache;
 use crate::net::{BodyProbe, NetClient, NetRequest};
-use crate::pyimage;
+use crate::{pyimage, pyurl};
 use crate::remote::{set_header, ua_headers};
 
 pub const MAX_BYTES: usize = 512 * 1024;
@@ -66,7 +66,7 @@ impl RemoteSizes {
         if !headers.contains_key(http::header::USER_AGENT) {
             headers.extend(ua_headers().into_iter().filter_map(|(n, v)| Some((n?, v))));
         }
-        let Ok(mut req) = NetRequest::get(url, Duration::from_secs_f64(TIMEOUT)) else {
+        let Ok(mut req) = NetRequest::get(&pyurl::requote_uri(url), Duration::from_secs_f64(TIMEOUT)) else {
             // Python's `requests` refuses the URL the same way, as a `RequestException`.
             return (None, None);
         };
