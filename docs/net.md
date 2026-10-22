@@ -34,6 +34,31 @@ listed in section 7.
 The header names are matched case-insensitively (requests' `headers` is a
 case-insensitive dict; `core/net.py:168-169` reads lower-case names).
 
+### How the Rust stack is ordered
+
+`NetClient::send` runs a request through a tower stack, outermost first:
+
+1. **Admit** waits out the host's `resume_at` once (or refuses it), then stamps the
+   time the deadline is measured from. This is `_wait_for_host` followed by
+   `started = time.monotonic()` (`core/net.py:121-122`), so a host wait is not charged
+   to the deadline.
+2. **Retry** (`tower::retry`) applies the `RetryMode` of the request.
+3. **Pace** runs on every attempt: it honours `min_gap` and records the response's
+   rate-limit headers.
+4. **Transport** is the `reqwest` exchange: per-read timeouts, the deadline, manual
+   redirects, the body read.
+
+Where this differs from the Python on purpose:
+
+- Rate-limit headers are noted on **every** response, retries included. Python notes
+  only the first response of a call (`core/net.py:136`).
+- A non-finite `x-ratelimit-reset` is clamped (NaN counts as 0, anything above
+  1,000,000 s as 1,000,000 s) because Python's `inf` would panic a Rust `Duration`.
+  `inf` therefore refuses the host (over `MAX_HOST_WAIT`) until `close_all`, as
+  Python's does.
+- Cookies and credential headers are not forwarded when a redirect leaves the host
+  they were attached for (section 8).
+
 ## 2. Timeouts
 
 There is **no global HTTP timeout**. Every call passes one. The values, by call site:
@@ -86,10 +111,14 @@ places, none of which is inside `core/net.py`:
    (`:59,420-428`), a transport error is retried without extra wait (`:413-418`), and the
    pause is interruptible so Stop is honoured within 0.2 s (`:397-404`).
 
-What the Rust layer provides for these: a `Pacer` (minimum interval per key, with an
-injectable clock), the ported `engine_interval` / `remaining_delay` /
-`EngineRateLimiter` as pure functions, and a `PoliteClient`-style retry policy for the
-Pawchive pattern. Wiring them to engines is Phase 2.
+What the Rust layer provides for these: `NetRequest::with_min_gap` (a least gap per
+host, applied on every attempt and measured from when the response arrived, like
+`self._last` at `core/pawchive_index.py:414,419`), `RetryMode::pawchive()` for the
+retry loop above, and `net::pacing`, the ported `engine_interval` / `remaining_delay` /
+`EngineRateLimiter` as pure functions on `f64` seconds (the caller owns the clock and
+the random number: `pacing::uniform(min, max, unit)`). "Interruptible so Stop is
+honoured" becomes cancellation: dropping the `send` future stops the wait. Wiring all
+of this to engines is Phase 2.
 
 ## 4. SauceNAO quota (shape only; the pause file belongs to 1.d)
 
@@ -199,12 +228,27 @@ differences that matter are kept as per-request options.
   **does not follow them for HEAD** unless `allow_redirects=True` is passed. The calls
   that pass it: `core/availability.py:570`, `core/remote.py:137`,
   `core/hydrus_import.py:245`, `core/ascii2d.py:122`, `core/google_images.py:457`. Both
-  HEAD callers in the tree pass it. The Rust layer exposes `Redirects::{Follow, None}`
-  per request, default `Follow` for GET/POST and `None` for HEAD, with a limit of 30.
-- **TLS.** Certificates are verified against `certifi`'s bundle (requests default) for
-  every host except Hydrus, where `verify_ssl` decides (section 7). Rust: rustls with
-  the webpki root set (Mozilla's bundle, the same family as certifi), plus the optional
-  extra roots and the `verify_tls = false` switch for Hydrus.
+  HEAD callers in the tree pass it. The Rust layer has `Redirects::{Default, Follow,
+  Stop}` per request: `Default` follows for GET and POST and stays put for HEAD. It
+  follows up to 30 hops (`NetConfig::max_redirects`), turns a POST into a GET on 301,
+  302 and 303 (dropping the body) and repeats it on 307 and 308.
+- **Credentials do not leave their host.** `Cookie` and any header marked secret
+  (`Authorization`, `Proxy-Authorization`, `Hydrus-Client-API-Access-Key`, or one set with
+  `NetRequest::secret_header`) are dropped from a redirect hop whose host differs from the
+  host of the original request, and from any https-to-http hop. The URLs the app fetches
+  come from search results, which are not trusted (`core/site_access.py:368-381`). Cookies
+  built by `net::site::cookies_for_url` carry a scope (`pixiv.net`; `deviantart.com` and
+  `fav.me`; and so on) that widens this to the site's own domains, so `fav.me` to
+  `deviantart.com` still works. Ordinary headers (`Referer`, `User-Agent`) travel.
+- **TLS.** Python verifies against `certifi`'s bundle (requests default) for every host
+  except Hydrus, where `verify_ssl` decides (section 7). Rust: rustls through reqwest's
+  `rustls-no-provider` build, so reqwest uses the process-wide `CryptoProvider` and
+  panics if there is none (the rv-rs failure, DAN-1909). `net::install_crypto_provider`
+  installs `ring` once and is called by `NetClient::new`; a second install is harmless.
+  Server certificates are checked by the platform verifier (the system trust store, which
+  on Linux is what distributions ship, the same Mozilla lineage as certifi).
+  `NetConfig::with_root_certificate_der` adds a trust anchor and
+  `NetConfig::without_tls_verification` is the Hydrus `verify_ssl = false` switch.
 - **Proxies.** There is **no proxy setting** in `Settings` and no `proxies=` argument
   anywhere (`git grep -n -i proxy -- core gui workers` finds only a comment at
   `core/engine_runner.py:38` and a docstring at `core/tracemoe.py:136`). `requests`
