@@ -11,7 +11,9 @@
 //! Two inputs make Python raise `ValueError` out of `matches`: a malformed bracketed (IPv6)
 //! host, and a non-ASCII host whose NFKC form contains one of `/?#@:`. Here the first is "not on
 //! the host" and the second is not detected at all (it would need a Unicode-normalisation
-//! dependency for a hostile-input case); neither occurs in the corpus.
+//! dependency for a hostile-input case); neither occurs in the corpus. [`raises_value_error`]
+//! says when Python raises, for the caller that cannot treat it as "not on the host" (Yandex's
+//! `post_url` lets it leave the function, DAN-2009).
 
 use crate::pycompat;
 
@@ -72,16 +74,32 @@ fn hostname(url: &str) -> Option<String> {
     })
 }
 
-/// True if `url` is on one of `hosts` or a subdomain of one.
-pub fn on_host(url: &str, hosts: &[&str]) -> bool {
+/// What `on_host` parses: the stripped URL with `http://` supplied when it has no `://`, or
+/// `None` for an empty one (which `on_host` answers without parsing).
+fn normalised(url: &str) -> Option<String> {
     let url = pycompat::strip(url);
     if url.is_empty() {
-        return false;
+        return None;
     }
-    let url = if url.contains("://") {
+    Some(if url.contains("://") {
         url.to_string()
     } else {
         format!("http://{}", url.trim_start_matches('/'))
+    })
+}
+
+/// True when Python's `on_host(url, ...)` raises `ValueError` out of `urlparse` (a malformed
+/// bracketed host, or a non-ASCII host whose NFKC form has `/?#@:` in it). Every site's
+/// `matches` is `on_host`, and `find_parser` asks Danbooru's first, so this is also when
+/// `find_parser(url)` raises.
+pub fn raises_value_error(url: &str) -> bool {
+    normalised(url).is_some_and(|url| crate::pyurl::try_urlparse(&url, "").is_err())
+}
+
+/// True if `url` is on one of `hosts` or a subdomain of one.
+pub fn on_host(url: &str, hosts: &[&str]) -> bool {
+    let Some(url) = normalised(url) else {
+        return false;
     };
     let host = hostname(&url).unwrap_or_default();
     hosts

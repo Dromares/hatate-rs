@@ -23,12 +23,11 @@ use regex::Regex;
 use serde::Serialize;
 use serde_json::Value;
 
+use super::google_images::{host_label, is_google_host};
 use crate::pyalpha::is_alpha;
-use crate::pycase::ignorecase_matches;
 use crate::pycompat::{html_unescape, strip, truthy};
 use crate::pyimage::image_size;
 use crate::pyrepr::py_str;
-use crate::pyurl;
 
 /// `SIMILARITY_START`, `SIMILARITY_STEP`, `SIMILARITY_FLOOR`: the made-up score a visual match gets
 /// from its rank.
@@ -124,74 +123,6 @@ static ZEROCHAN_IMAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
     );
     Regex::new(&pattern).expect("zerochan image")
 });
-
-/// `[a-z]` in a pattern compiled with `re.IGNORECASE`: some letter of the range matches `c`.
-fn is_a_to_z_ignorecase(c: char) -> bool {
-    ('a'..='z').any(|p| ignorecase_matches(p, c))
-}
-
-/// `host_label` (`core/google_images.py`): the host of a URL, lower-cased, without a leading `www.`;
-/// `None` for none, and for a URL `urlparse` raises `ValueError` on (a malformed bracketed host).
-fn host_label(url: &str) -> Option<String> {
-    let netloc = pyurl::urlparse(url, "").netloc;
-    if pyurl::netloc_raises(&netloc) {
-        return None;
-    }
-    let host = netloc.to_lowercase();
-    let host = host.strip_prefix("www.").unwrap_or(&host);
-    (!host.is_empty()).then(|| host.to_owned())
-}
-
-/// `GOOGLE_HOST_SUFFIXES`.
-const GOOGLE_HOST_SUFFIXES: [&str; 11] = [
-    "gstatic.com",
-    "googleusercontent.com",
-    "googleapis.com",
-    "googleadservices.com",
-    "googlesyndication.com",
-    "googletagmanager.com",
-    "google-analytics.com",
-    "ggpht.com",
-    "goo.gl",
-    "schema.org",
-    "w3.org",
-];
-
-/// `GOOGLE_DOMAIN_RE.search(host)`: `(?:^|\.)google(?:\.[a-z]{2,3}){1,2}$`, case-insensitive. The
-/// groups are tried by hand because `[a-z]` under `re.IGNORECASE` is wider than a plain range.
-fn is_google_domain(host: &str) -> bool {
-    let chars: Vec<char> = host.chars().collect();
-    // `rest` after `google`: one or two `.xx` / `.xxx` groups reaching the end.
-    fn groups(rest: &[char], left: u8) -> bool {
-        if rest.first() != Some(&'.') {
-            return false;
-        }
-        (2..=3).any(|n| {
-            rest.len() > n
-                && rest[1..=n].iter().all(|&c| is_a_to_z_ignorecase(c))
-                && (rest.len() == n + 1 || (left > 1 && groups(&rest[n + 1..], left - 1)))
-        })
-    }
-    (0..chars.len()).any(|start| {
-        (start == 0 || chars[start - 1] == '.')
-            && chars.len() >= start + 6
-            && chars[start..start + 6]
-                .iter()
-                .zip("google".chars())
-                .all(|(&c, p)| ignorecase_matches(p, c))
-            && groups(&chars[start + 6..], 2)
-    })
-}
-
-/// `is_google_host` (`core/google_images.py`).
-fn is_google_host(host: &str) -> bool {
-    let host = host.to_lowercase();
-    let host = host.strip_prefix("www.").unwrap_or(&host);
-    is_google_domain(host)
-        || GOOGLE_HOST_SUFFIXES.iter().any(|suffix| {
-            host == *suffix || host.strip_suffix(suffix).is_some_and(|p| p.ends_with('.'))
-        })
-}
 
 /// `_label_is_near`: whether the site's name appears in this title or just after it, stopping at
 /// the next result so one tile cannot borrow its neighbour's site.
