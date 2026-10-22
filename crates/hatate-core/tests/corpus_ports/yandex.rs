@@ -75,7 +75,7 @@ fn search(
         url: at(0)["url"].as_str().unwrap_or(""),
         text: upload_text,
     };
-    // `json_unset`: the mock gave `.json()` nothing usable, so the replay must make it fail.
+    // `json_unset`: the mock gave `.json()` nothing to decode, so the replay must make it fail.
     let upload_json = at(0).get("json");
     let result =
         yandex::upload_from_response(&mut state, CLOCK, &upload, upload_json).and_then(|_| {
