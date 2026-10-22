@@ -1318,4 +1318,263 @@ mod tests {
             Some("https://rule34storage.b-cdn.net/posts/1/2/3.jpg")
         );
     }
+
+    // ---- `search`, through the two halves that read an answer ---------------------------------
+    // `TestGoogleVisionWebDetection` (a key, a rejected key, an exhausted quota, a per-image
+    // error) and `TestGoogleImagesBlocked` (a consent wall, a traffic check, a server error, the
+    // JavaScript shell, a Lens landing).
+
+    const SEARCH_URL: &str = "https://www.google.com/search?tbs=sbi:x";
+    const CONSENT_URL: &str = "https://consent.google.com/m?continue=https://www.google.com/";
+    const SORRY: &str = "<html><body>Our systems have detected unusual traffic from your computer \
+                         network.</body></html>";
+    const SHELL: &str = r#"<html><body><noscript><meta http-equiv="refresh" content="0;url=/httpservice/retry/enablejs?sei=x"><div>Please click <a href="/httpservice/retry/enablejs?sei=x">here</a> if you are not redirected within a few seconds.</div></noscript></body></html>"#;
+
+    fn public(
+        status: u16,
+        url: &str,
+        text: &str,
+    ) -> Result<Vec<GoogleImagesMatch>, GoogleImagesError> {
+        public_from_response(&Response { status, url, text })
+    }
+
+    #[test]
+    fn a_key_picks_the_vision_route_and_a_blank_one_the_public_page() {
+        assert_eq!(vision_key("k"), Some("k"));
+        assert_eq!(vision_key("  k\u{a0}\n"), Some("k"));
+        assert_eq!(vision_key(""), None);
+        assert_eq!(vision_key(" \t\u{3000}"), None);
+        let matches = vision_from_response(200, Some(&payload())).unwrap();
+        assert_eq!(
+            matches[0].url,
+            "https://www.deviantart.com/someone/art/A-Picture-123"
+        );
+    }
+
+    #[test]
+    fn a_rejected_key_stands_down_for_the_batch() {
+        let body = json!({"error": {"code": 403, "status": "PERMISSION_DENIED",
+            "message": "Cloud Vision API has not been used in project 1"}});
+        let error = vision_from_response(403, Some(&body)).unwrap_err();
+        assert!(error.latches());
+        assert!(matches!(error, GoogleImagesError::Blocked(_)));
+        assert!(error.to_string().contains("Settings > Engine"));
+    }
+
+    #[test]
+    fn an_exhausted_quota_stands_down_too() {
+        let body = json!({"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded"}});
+        assert!(
+            vision_from_response(429, Some(&body))
+                .unwrap_err()
+                .latches()
+        );
+        // The reason alone is enough, whatever the status.
+        let error = vision_from_response(500, Some(&body)).unwrap_err();
+        assert!(error.latches());
+        assert!(
+            error
+                .to_string()
+                .starts_with("Google Vision quota is exhausted")
+        );
+    }
+
+    #[test]
+    fn the_other_vision_failures_are_read_by_status_reason_and_message() {
+        for (status, body, latches, message) in [
+            (
+                401,
+                json!({}),
+                true,
+                "Google Vision refused the API key: HTTP 401. ",
+            ),
+            (
+                500,
+                json!({"error": {"status": "unauthenticated", "message": " nope "}}),
+                true,
+                "Google Vision refused the API key: nope. ",
+            ),
+            (
+                400,
+                json!({"error": {"message": "API key not valid. Please pass a valid API key."}}),
+                true,
+                "Google Vision rejected the API key: API key not valid.",
+            ),
+            (
+                400,
+                json!({"error": {"message": "Bad image data"}}),
+                false,
+                "Google Vision: Bad image data",
+            ),
+            (503, json!({"error": ""}), false, "Google Vision: HTTP 503"),
+            (
+                500,
+                json!({"error": {"message": "   "}}),
+                false,
+                "Google Vision: HTTP 500",
+            ),
+        ] {
+            let error = vision_from_response(status, Some(&body)).unwrap_err();
+            assert_eq!(error.latches(), latches, "{status} {body}");
+            assert!(
+                error.to_string().starts_with(message),
+                "{status} {body}: {error}"
+            );
+        }
+        // A body that is not JSON reads as `{}`.
+        assert_eq!(
+            vision_from_response(502, None).unwrap_err(),
+            GoogleImagesError::Failed("Google Vision: HTTP 502".to_owned())
+        );
+        assert_eq!(vision_from_response(200, None).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn a_per_image_error_is_not_latched() {
+        let body = json!({"responses": [{"error": {"code": 3, "message": "Bad image data"}}]});
+        let error = vision_from_response(200, Some(&body)).unwrap_err();
+        assert_eq!(
+            error,
+            GoogleImagesError::Failed("Google Vision: Bad image data".to_owned())
+        );
+        assert!(!error.latches());
+        // With no message the error itself is shown, as Python formats it.
+        let body = json!({"responses": [{"error": {"code": 3}}]});
+        assert_eq!(
+            vision_from_response(200, Some(&body))
+                .unwrap_err()
+                .to_string(),
+            "Google Vision: {'code': 3}"
+        );
+    }
+
+    #[test]
+    fn an_empty_or_malformed_vision_body_is_no_matches_not_an_error() {
+        for body in [
+            json!({}),
+            json!({"responses": []}),
+            json!({"responses": [{}]}),
+            json!({"responses": [{"error": null}]}),
+            json!({"responses": [{"error": {}}]}),
+            json!({"responses": [{"webDetection": {}}]}),
+        ] {
+            assert_eq!(
+                vision_from_response(200, Some(&body)).unwrap(),
+                vec![],
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_vision_body_python_raises_on_is_an_error() {
+        for (status, body) in [
+            (200, json!([])),
+            (200, json!(null)),
+            (403, json!([])),
+            (200, json!({"responses": ["x"]})),
+            (200, json!({"responses": "x"})),
+            (200, json!({"responses": {"a": 1}})),
+            (200, json!({"responses": 5})),
+            (200, json!({"responses": [{"error": "boom"}]})),
+            (200, json!({"responses": [{"error": [1]}]})),
+            (400, json!({"error": "boom"})),
+            (400, json!({"error": {"message": 5}})),
+            (400, json!({"error": {"status": ["x"]}})),
+        ] {
+            assert_eq!(
+                vision_from_response(status, Some(&body)),
+                Err(GoogleImagesError::Unexpected(UnexpectedInput)),
+                "{status} {body}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_consent_wall_is_recognised_and_latched() {
+        // Served as an ordinary 200, which is why the status alone cannot tell results from a wall.
+        let error = public(200, CONSENT_URL, "<html>consent</html>").unwrap_err();
+        assert!(matches!(error, GoogleImagesError::Blocked(_)));
+        assert!(error.latches());
+        assert!(
+            public(200, "https://www.google.de/sorry/index?continue=x", "")
+                .unwrap_err()
+                .latches()
+        );
+    }
+
+    #[test]
+    fn an_unusual_traffic_check_is_recognised() {
+        let error = public(429, SEARCH_URL, SORRY).unwrap_err();
+        assert!(error.latches());
+        assert!(error.to_string().contains("Settings > Engine"));
+        for marker in [
+            "/sorry/index",
+            "reCAPTCHA",
+            "<div id=\"captcha\">",
+            "UNUSUAL TRAFFIC FROM YOUR COMPUTER NETWORK",
+        ] {
+            assert!(
+                public(200, SEARCH_URL, marker).unwrap_err().latches(),
+                "{marker}"
+            );
+        }
+        // Only the first 6000 characters are read.
+        let late = format!("{}recaptcha", "x".repeat(6000));
+        assert_eq!(public(200, SEARCH_URL, &late), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_plain_server_error_is_not_called_a_block() {
+        let error = public(500, SEARCH_URL, "nope").unwrap_err();
+        assert_eq!(
+            error,
+            GoogleImagesError::Failed("Google returned HTTP 500".to_owned())
+        );
+        assert!(!error.latches());
+    }
+
+    #[test]
+    fn too_large_is_checked_before_the_challenge() {
+        let error = public(413, CONSENT_URL, SORRY).unwrap_err();
+        assert_eq!(
+            error,
+            GoogleImagesError::Failed(
+                "Google rejected the image as too large, even after downscaling".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn a_javascript_only_page_is_reported_not_recorded_as_empty() {
+        let error = public(200, SEARCH_URL, SHELL).unwrap_err();
+        assert_eq!(error, GoogleImagesError::JavaScript);
+        assert!(error.latches());
+        assert!(error.to_string().contains("Vision")); // names the fix
+        // Only an empty parse is an error; a shell that holds results is read.
+        let with_results = format!("{SERP}{SHELL}");
+        assert_eq!(public(200, SERP_URL, &with_results).unwrap().len(), 2);
+        // The marker is looked for in the first 20000 characters only.
+        let late = format!("{}{SHELL}", " ".repeat(20000));
+        assert_eq!(public(200, SEARCH_URL, &late), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_lens_landing_is_parsed_through_the_lens_reader() {
+        let matches = public(200, "https://lens.google.com/search?p=abc", LENS).unwrap();
+        let urls: Vec<_> = matches.iter().map(|m| m.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            ["https://www.deviantart.com/someone/art/A-Picture-123"]
+        );
+        // The classic reader finds nothing on it.
+        assert_eq!(public(200, SEARCH_URL, LENS), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_page_with_no_url_of_its_own_is_read_against_googles() {
+        let page = r#"<a href="/url?q=https://www.pixiv.net/artworks/456&amp;sa=U"><h3>t</h3></a>"#;
+        let matches = public(200, "", page).unwrap();
+        assert_eq!(matches[0].url, "https://www.pixiv.net/artworks/456");
+    }
 }

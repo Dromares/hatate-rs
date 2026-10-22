@@ -444,9 +444,10 @@ pub fn results_from_response(
 
 #[cfg(test)]
 mod tests {
-    //! `tests/test_yandex.py::TestReadingTheResultsPage` at `76c85c4`, test for test. The
-    //! `TestStandingDown` tests are the request half (the captcha rest, the stand-down after three
-    //! empty pages, the pacing) and `TestTakingPart` is engine settings: Phase 3.
+    //! `tests/test_yandex.py::TestReadingTheResultsPage` and `TestStandingDown` at `76c85c4`, test for
+    //! test (the latter through the two halves of `search`, see the end of the module). The
+    //! `test_a_resting_yandex_says_so_on_the_row` is the engine runner's and `TestTakingPart` is
+    //! engine settings: Phase 3.
 
     use super::*;
     use serde_json::json;
@@ -680,5 +681,192 @@ mod tests {
             page(&sites())
         );
         assert_eq!(parse_sites(&page).unwrap().unwrap().len(), sites().len());
+    }
+
+    // ---- `tests/test_yandex.py::TestStandingDown`, through the two halves of `search` -----------
+
+    const CLOCK: RestClock<'static> = RestClock {
+        now: 5000.0,
+        rest_ends_at: "21:41",
+    };
+    const UPLOAD_URL: &str = "https://yandex.com/images/search";
+    const CAPTCHA_URL: &str = "https://yandex.com/showcaptcha?cc=1&retpath=x";
+
+    fn answer<'a>(url: &'a str, text: &'a str) -> Response<'a> {
+        Response {
+            status: 200,
+            url,
+            text,
+        }
+    }
+
+    fn upload_ok() -> Value {
+        json!({"blocks": [{"params": {"cbirId": "1617445/abc"}}]})
+    }
+
+    /// `YandexState` after `search(upload, page)`, as the Python tests drive it.
+    fn run(
+        state: &mut YandexState,
+        upload: &Response<'_>,
+        json: Option<&Value>,
+        page: Option<&Response<'_>>,
+    ) -> Result<Vec<YandexMatch>, YandexError> {
+        upload_from_response(state, CLOCK, upload, json)?;
+        results_from_response(state, CLOCK, page.expect("a page"))
+    }
+
+    fn good_upload(
+        state: &mut YandexState,
+        page_text: &str,
+    ) -> Result<Vec<YandexMatch>, YandexError> {
+        run(
+            state,
+            &answer(UPLOAD_URL, ""),
+            Some(&upload_ok()),
+            Some(&answer(UPLOAD_URL, page_text)),
+        )
+    }
+
+    #[test]
+    fn a_good_answer() {
+        let mut state = YandexState::default();
+        let matches = good_upload(&mut state, &page(&sites())).unwrap();
+        assert_eq!(matches.len(), 3);
+        assert_eq!(state, YandexState::default());
+    }
+
+    #[test]
+    fn a_captcha_rests_yandex_through_a_new_search() {
+        let mut state = YandexState::default();
+        let error = run(
+            &mut state,
+            &answer(CAPTCHA_URL, "<html>captcha</html>"),
+            None,
+            None,
+        )
+        .unwrap_err();
+        assert!(matches!(error, YandexError::Blocked(_)));
+        state.reset_blocked_flag(); // what starting a search does
+        assert!(state.is_blocked(CLOCK.now));
+        assert!(error.to_string().contains(CLOCK.rest_ends_at));
+    }
+
+    #[test]
+    fn a_captcha_on_the_results_page_counts_too() {
+        let mut state = YandexState::default();
+        let error = run(
+            &mut state,
+            &answer(UPLOAD_URL, ""),
+            Some(&upload_ok()),
+            Some(&answer(CAPTCHA_URL, "<html>captcha</html>")),
+        )
+        .unwrap_err();
+        assert!(matches!(error, YandexError::Blocked(_)));
+        assert!(state.is_resting(CLOCK.now));
+    }
+
+    #[test]
+    fn a_challenge_marker_in_the_body_counts_but_only_in_its_first_6000_characters() {
+        for marker in ["showcaptcha", "SmartCaptcha", "checkcaptcha"] {
+            let mut state = YandexState::default();
+            let text = format!("<html>{marker}</html>");
+            assert!(
+                upload_from_response(&mut state, CLOCK, &answer(UPLOAD_URL, &text), None).is_err()
+            );
+            assert!(state.is_resting(CLOCK.now), "{marker}");
+        }
+        let mut state = YandexState::default();
+        let late = format!("{}showcaptcha", "x".repeat(6000));
+        let error =
+            upload_from_response(&mut state, CLOCK, &answer(UPLOAD_URL, &late), None).unwrap_err();
+        assert!(matches!(error, YandexError::Failed(_)), "{error:?}");
+        assert!(!state.is_resting(CLOCK.now));
+    }
+
+    #[test]
+    fn the_rest_ends() {
+        let mut state = YandexState::default();
+        let _ = run(&mut state, &answer(CAPTCHA_URL, ""), None, None);
+        assert!(state.is_blocked(CLOCK.now));
+        assert!(state.is_blocked(CLOCK.now + CHALLENGE_REST_SECONDS - 1.0));
+        assert!(!state.is_blocked(CLOCK.now + CHALLENGE_REST_SECONDS + 1.0));
+    }
+
+    #[test]
+    fn a_changed_page_stands_down_after_a_run_of_them() {
+        let mut state = YandexState::default();
+        let broken = "<html>no results block</html>";
+        for _ in 0..MAX_CONSECUTIVE_FAILURES - 1 {
+            let error = good_upload(&mut state, broken).unwrap_err();
+            assert!(matches!(error, YandexError::Failed(_)), "{error:?}");
+        }
+        let error = good_upload(&mut state, broken).unwrap_err();
+        assert!(matches!(error, YandexError::Blocked(_)));
+        assert!(error.to_string().contains("3 images in a row"));
+        assert!(state.is_blocked(CLOCK.now));
+        assert!(!state.is_resting(CLOCK.now)); // not a captcha: a new search retries
+        state.reset_blocked_flag();
+        assert!(!state.is_blocked(CLOCK.now));
+    }
+
+    #[test]
+    fn a_success_clears_the_run_of_failures() {
+        let mut state = YandexState::default();
+        for _ in 0..MAX_CONSECUTIVE_FAILURES - 1 {
+            assert!(good_upload(&mut state, "<html></html>").is_err());
+        }
+        good_upload(&mut state, &page(&[])).unwrap();
+        let error = good_upload(&mut state, "<html></html>").unwrap_err();
+        assert!(matches!(error, YandexError::Failed(_)), "{error:?}");
+    }
+
+    #[test]
+    fn an_upload_with_no_search_id_counts_as_a_failure_and_says_what_it_got() {
+        for json in [
+            None,
+            Some(json!(null)),
+            Some(json!([])),
+            Some(json!({})),
+            Some(json!({"blocks": []})),
+            Some(json!({"blocks": [{}]})),
+            Some(json!({"blocks": [{"params": {"cbirId": ""}}]})),
+            Some(json!({"blocks": [{"params": null}]})),
+            Some(json!({"blocks": ["x"]})),
+            Some(json!({"blocks": "x"})),
+        ] {
+            let mut state = YandexState::default();
+            let upload = Response {
+                status: 502,
+                url: UPLOAD_URL,
+                text: "",
+            };
+            let error =
+                upload_from_response(&mut state, CLOCK, &upload, json.as_ref()).unwrap_err();
+            assert_eq!(
+                error,
+                YandexError::Failed(
+                    "Yandex's upload answer (HTTP 502) carried no search id - the endpoint may \
+                     have changed."
+                        .to_owned()
+                ),
+                "{json:?}"
+            );
+            assert_eq!(state.consecutive_failures, 1);
+        }
+    }
+
+    #[test]
+    fn an_answer_python_raises_on_is_an_error_that_counts_nothing() {
+        for json in [
+            json!({"blocks": {"a": 1}}),
+            json!({"blocks": [{"params": {"cbirId": 7}}]}),
+        ] {
+            let mut state = YandexState::default();
+            let error =
+                upload_from_response(&mut state, CLOCK, &answer(UPLOAD_URL, ""), Some(&json))
+                    .unwrap_err();
+            assert_eq!(error, YandexError::Unexpected(UnexpectedInput), "{json}");
+            assert_eq!(state, YandexState::default());
+        }
     }
 }
