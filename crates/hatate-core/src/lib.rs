@@ -12,6 +12,7 @@ mod pycase;
 mod pycompat;
 pub mod pyurl;
 pub mod quota_pause;
+pub mod reddit;
 pub mod rotating_log;
 pub mod session;
 pub mod timeutil;

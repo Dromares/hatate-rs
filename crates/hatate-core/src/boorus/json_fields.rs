@@ -3,7 +3,18 @@
 
 use serde_json::{Map, Value};
 
+use super::sizes::py_int;
 use crate::pycompat;
+
+/// `int(v)` for a value read from JSON: what [`pycompat::int`] reads, and for a string also what
+/// Python's `int()` reads that it does not (digit separators, non-ASCII digits). `None` where
+/// Python raises, or where the result does not fit an `i64`.
+pub(super) fn int_of(value: &Value) -> Option<i64> {
+    match value {
+        Value::String(text) => py_int(text),
+        other => pycompat::int(other),
+    }
+}
 
 /// The category number of a tag entry: `int(raw_type) if raw_type is not None else -1`, with a
 /// value `int()` rejects also -1. -1 is in no site's table, so the tag falls into "general".
@@ -44,6 +55,17 @@ pub(super) fn absolute_url(raw: Option<&Value>) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn int_of_reads_a_string_the_way_python_does() {
+        assert_eq!(int_of(&json!("1_0")), Some(10));
+        assert_eq!(int_of(&json!(" \u{661}\u{662} ")), Some(12));
+        assert_eq!(int_of(&json!(4.9)), Some(4));
+        assert_eq!(int_of(&json!(true)), Some(1));
+        for odd in [json!("x"), json!("1.5"), json!(null), json!([3]), json!({})] {
+            assert_eq!(int_of(&odd), None, "{odd}");
+        }
+    }
 
     #[test]
     fn a_tag_type_that_is_not_a_number_is_minus_one() {

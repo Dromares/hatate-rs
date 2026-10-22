@@ -64,6 +64,10 @@ static PORTS: &[&Port] = &[
     &corpus_ports::eshuushuu::PORT,
     &corpus_ports::zerochan::PORT,
     &corpus_ports::mangadex::PORT,
+    &corpus_ports::pixiv::PORT,
+    &corpus_ports::twitter::PORT,
+    &corpus_ports::redditpost::PORT,
+    &corpus_ports::reddit::PORT,
 ];
 
 /// The Python exception class a `raises` item names, and the Rust error variant that stands for
@@ -81,6 +85,9 @@ pub struct Input {
 
 /// One call, as `call.json` describes it.
 pub struct Call<'a> {
+    /// The whole of `call.json`, for the keys only some items have (a `mocked_transport` item's
+    /// `args`, `request` and `responses`).
+    pub call: &'a Value,
     pub input: &'a Input,
     pub extra_args: &'a [Value],
     pub kwargs: &'a Map<String, Value>,
@@ -91,6 +98,17 @@ impl Call<'_> {
     /// The input as text: a booru's response body, whatever its extension.
     pub fn body(&self) -> &str {
         std::str::from_utf8(&self.input.bytes).expect("input.* is not UTF-8")
+    }
+
+    /// The status of the last scripted response of a `mocked_transport` item: the one whose body
+    /// is `input.*`.
+    pub fn response_status(&self) -> u16 {
+        self.call["responses"]
+            .as_array()
+            .and_then(|responses| responses.last())
+            .and_then(|response| response["status"].as_u64())
+            .and_then(|status| u16::try_from(status).ok())
+            .expect("responses[-1].status is not an HTTP status")
     }
 
     /// The post-page URL, `extra_args[0]` for a booru item.
@@ -337,6 +355,7 @@ fn run_item(root: &Path, item: &Item, port: &Port) -> Vec<String> {
     let empty = Map::new();
     let extra_args = call["extra_args"].as_array().map_or(&[][..], Vec::as_slice);
     let args = Call {
+        call: &call,
         input: &input,
         extra_args,
         kwargs: call["kwargs"].as_object().unwrap_or(&empty),
