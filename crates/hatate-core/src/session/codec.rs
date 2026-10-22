@@ -332,6 +332,8 @@ fn candidate_from_value(v: &Value, now: f64, coerced: &mut Coerced) -> Result<Ca
         availability_checked_at,
         restricted: opt_string(d, "restricted", coerced),
         url,
+        thumb_bytes: None,
+        page_index: 0,
     })
 }
 

@@ -637,7 +637,7 @@ pub async fn page_says_available(
 
 /// Runs `jobs` with at most `limit` in flight at once, on this task, and returns each result in
 /// the order it finished.
-async fn run_bounded<'f, T>(
+pub(crate) async fn run_bounded<'f, T>(
     jobs: Vec<Pin<Box<dyn Future<Output = T> + 'f>>>,
     limit: usize,
 ) -> Vec<T> {

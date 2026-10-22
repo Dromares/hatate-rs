@@ -14,6 +14,8 @@ pub mod image_compare;
 pub mod image_prep;
 pub mod lru;
 pub mod model;
+pub mod multipage;
+pub mod multipage_resolve;
 pub mod net;
 pub mod parser_health;
 pub mod paths;
@@ -33,6 +35,7 @@ pub mod reddit;
 pub mod remote;
 pub mod rotating_log;
 pub mod session;
+pub mod similarity_check;
 pub mod sites;
 pub mod timeutil;
 
