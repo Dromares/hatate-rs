@@ -22,7 +22,8 @@ pub const PARSE: Port = Port {
 };
 
 fn lookup(c: &Call) -> Result<Vec<pawchive_lookup::PawchiveMatch>, PawchiveLookupError> {
-    let sha256 = pawchive_lookup::normalise_sha256(c.call["args"]["sha256"].as_str().unwrap_or(""))?;
+    let sha256 =
+        pawchive_lookup::normalise_sha256(c.call["args"]["sha256"].as_str().unwrap_or(""))?;
     pawchive_lookup::lookup_from_response(c.response_status(), c.body(), &sha256)
 }
 
@@ -50,7 +51,11 @@ mod tests {
             let sha256 = c.call["args"]["sha256"].as_str().unwrap();
             let requests = c.call["request"].as_array().unwrap();
             assert_eq!(requests.len(), 1, "{id}");
-            assert_eq!(requests[0]["url"], pawchive_lookup::request_url(sha256), "{id}");
+            assert_eq!(
+                requests[0]["url"],
+                pawchive_lookup::request_url(sha256),
+                "{id}"
+            );
             let got = lookup(c);
             if let Some(message) = expected["message"].as_str() {
                 assert_eq!(got.unwrap_err().to_string(), message, "{id}");

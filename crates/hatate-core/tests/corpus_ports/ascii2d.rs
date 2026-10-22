@@ -18,7 +18,11 @@ pub const PARSE: Port = Port {
     unit: PARSE_UNIT,
     calls: &[(PARSE_UNIT, |c: &Call| {
         let page_url = c.extra_args.first().and_then(Value::as_str).unwrap_or("");
-        let kind = c.kwargs.get("kind").and_then(Value::as_str).unwrap_or("color");
+        let kind = c
+            .kwargs
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or("color");
         ok(ascii2d::parse_results(c.body(), page_url, kind))
     })],
 };

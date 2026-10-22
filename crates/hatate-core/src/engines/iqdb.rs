@@ -151,9 +151,9 @@ pub fn parse_results(html: &str, base_url: &str) -> Result<Vec<IqdbMatch>, IqdbE
             .is_some_and(|th| text_of(th).to_lowercase().contains("best match"));
 
         // `td.image a`: the first link under a cell of class "image".
-        let image_link = table.select(&ANY_A).find(|a| {
-            under(*a, "td", |td| classes_of(td).contains(&"image"))
-        });
+        let image_link = table
+            .select(&ANY_A)
+            .find(|a| under(*a, "td", |td| classes_of(td).contains(&"image")));
         let Some(image_link) = image_link else {
             debug!("Table {i}: no td.image a element, skipping (markup may have changed)");
             continue;
@@ -188,7 +188,9 @@ pub fn parse_results(html: &str, base_url: &str) -> Result<Vec<IqdbMatch>, IqdbE
         let similarity = extract_percent(&text);
         let (width, height) = extract_dimensions(&text);
         let source_name = sites::guess_site_name(&url).map(str::to_owned);
-        debug!("Table {i}: parsed match url={url} site={source_name:?} similarity={similarity:?} best={is_best}");
+        debug!(
+            "Table {i}: parsed match url={url} site={source_name:?} similarity={similarity:?} best={is_best}"
+        );
 
         matches.push(IqdbMatch {
             url,
@@ -217,7 +219,9 @@ mod tests {
     use super::*;
 
     fn page(rows: &str) -> String {
-        format!("<html><head><title>iqdb</title></head><body><div id=\"pages\">{rows}</div></body></html>")
+        format!(
+            "<html><head><title>iqdb</title></head><body><div id=\"pages\">{rows}</div></body></html>"
+        )
     }
 
     fn row(head: &str, href: &str, src: &str, text: &str) -> String {
@@ -242,7 +246,10 @@ mod tests {
             m.thumb_url.as_deref(),
             Some("https://iqdb.org/danbooru/3/5/7/abc.jpg")
         );
-        assert_eq!((m.similarity, m.width, m.height), (97.0, Some(1200), Some(1600)));
+        assert_eq!(
+            (m.similarity, m.width, m.height),
+            (97.0, Some(1200), Some(1600))
+        );
         assert_eq!(m.source_name.as_deref(), Some("Danbooru"));
         assert!(m.is_best_match);
         assert!(m.unnamespaced_tags.is_empty());
@@ -250,13 +257,30 @@ mod tests {
 
     #[test]
     fn best_matches_sort_first_then_by_similarity_and_ties_keep_page_order() {
-        let html = page(&[
-            row("Additional match", "https://a.example/1", "/t", "50% similarity"),
-            row("Additional match", "https://a.example/2", "/t", "90% similarity"),
-            row("Best match", "https://a.example/3", "/t", "10% similarity"),
-            row("Additional match", "https://a.example/4", "/t", "90% similarity"),
-        ]
-        .concat());
+        let html = page(
+            &[
+                row(
+                    "Additional match",
+                    "https://a.example/1",
+                    "/t",
+                    "50% similarity",
+                ),
+                row(
+                    "Additional match",
+                    "https://a.example/2",
+                    "/t",
+                    "90% similarity",
+                ),
+                row("Best match", "https://a.example/3", "/t", "10% similarity"),
+                row(
+                    "Additional match",
+                    "https://a.example/4",
+                    "/t",
+                    "90% similarity",
+                ),
+            ]
+            .concat(),
+        );
         let urls: Vec<_> = parse_results(&html, IQDB_URL)
             .unwrap()
             .into_iter()
@@ -275,13 +299,17 @@ mod tests {
 
     #[test]
     fn the_first_absolute_link_is_the_source_and_it_is_used_as_written() {
-        let table = "<table><tr><th>Best match</th></tr><tr><td class=image><a href=\"/relative\">x</a>\
-                     <a href=\"\">e</a><a href=\" //b.example/p \"><img src=\" //cdn.example/t.jpg \"></a></td>\
+        let table = "<table><tr><th>Best match</th></tr><tr><td class=image><a href=\"/relative\"><img src=\" //cdn.example/t.jpg \"></a>\
+                     <a href=\"\">e</a><a href=\" //b.example/p \">x</a></td>\
                      <td>5% similarity</td></tr></table>";
         let got = parse_results(&page(table), IQDB_URL).unwrap();
-        // Stripped for the test, not for the value: the leading space defeats the `//` rewrite.
+        // The thumbnail is the first link's image, whichever link is the source. Stripped for the
+        // test, not for the value: the leading space defeats the `//` rewrite.
         assert_eq!(got[0].url, " //b.example/p ");
-        assert_eq!(got[0].thumb_url.as_deref(), Some("https://cdn.example/t.jpg"));
+        assert_eq!(
+            got[0].thumb_url.as_deref(),
+            Some("https://cdn.example/t.jpg")
+        );
         let table = table.replace(" //b.example/p ", "//b.example/p");
         let got = parse_results(&page(&table), IQDB_URL).unwrap();
         assert_eq!(got[0].url, "https://b.example/p");
@@ -291,12 +319,21 @@ mod tests {
     fn rows_without_an_image_cell_or_a_source_link_are_skipped() {
         let no_cell = "<table><tr><th>Best match</th></tr><tr><td><a href=\"https://a.example/1\">x</a></td></tr></table>";
         let no_link = "<table><tr><td class=image><a href=\"/rel\">x</a></td></tr></table>";
-        assert!(parse_results(&page(&[no_cell, no_link].concat()), IQDB_URL).unwrap().is_empty());
+        assert!(
+            parse_results(&page(&[no_cell, no_link].concat()), IQDB_URL)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
     fn a_missing_similarity_is_zero_and_missing_dimensions_are_none() {
-        let html = page(&row("Additional match", "https://a.example/1", "", "no numbers"));
+        let html = page(&row(
+            "Additional match",
+            "https://a.example/1",
+            "",
+            "no numbers",
+        ));
         let m = &parse_results(&html, IQDB_URL).unwrap()[0];
         assert_eq!((m.similarity, m.width, m.height), (0.0, None, None));
         assert_eq!(m.thumb_url, None);
@@ -315,10 +352,18 @@ mod tests {
 
     #[test]
     fn a_page_that_is_not_iqdbs_is_an_error_and_an_empty_iqdb_page_is_not() {
-        let err = parse_results("<html><body>Just a moment...</body></html>", IQDB_URL).unwrap_err();
-        assert!(err.0.starts_with("IQDB's response didn't look like a real results page"));
+        let err =
+            parse_results("<html><body>Just a moment...</body></html>", IQDB_URL).unwrap_err();
+        assert!(
+            err.0
+                .starts_with("IQDB's response didn't look like a real results page")
+        );
         assert!(parse_results("", IQDB_URL).is_err());
-        assert!(parse_results("<html><title>IQDB</title></html>", IQDB_URL).unwrap().is_empty());
+        assert!(
+            parse_results("<html><title>IQDB</title></html>", IQDB_URL)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -329,12 +374,20 @@ mod tests {
         assert_eq!(extract_percent("97% sim"), None);
         assert_eq!(extract_percent("97 similarity"), None);
         // The spellings Python's IGNORECASE accepts and `(?i)` would not.
-        assert_eq!(extract_percent("3% \u{17f}\u{130}m\u{131}larity"), Some(3.0));
+        assert_eq!(
+            extract_percent("3% \u{17f}\u{130}m\u{131}larity"),
+            Some(3.0)
+        );
     }
 
     #[test]
     fn the_status_decides_before_the_page_is_read() {
-        let html = page(&row("Best match", "https://a.example/1", "/t", "9% similarity"));
+        let html = page(&row(
+            "Best match",
+            "https://a.example/1",
+            "/t",
+            "9% similarity",
+        ));
         assert_eq!(search_from_response(IQDB_URL, 200, &html).unwrap().len(), 1);
         assert_eq!(
             search_from_response(IQDB_URL, 413, &html).unwrap_err().0,
@@ -350,8 +403,16 @@ mod tests {
 
     #[test]
     fn a_relative_thumbnail_is_joined_to_the_instance_that_answered() {
-        let html = page(&row("Best match", "https://a.example/1", "danbooru/t.jpg", "9% similarity"));
+        let html = page(&row(
+            "Best match",
+            "https://a.example/1",
+            "danbooru/t.jpg",
+            "9% similarity",
+        ));
         let m = &parse_results(&html, IQDB_3D_URL).unwrap()[0];
-        assert_eq!(m.thumb_url.as_deref(), Some("https://3d.iqdb.org/danbooru/t.jpg"));
+        assert_eq!(
+            m.thumb_url.as_deref(),
+            Some("https://3d.iqdb.org/danbooru/t.jpg")
+        );
     }
 }

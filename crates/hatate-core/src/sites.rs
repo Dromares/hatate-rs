@@ -88,17 +88,20 @@ mod tests {
             guess_site_name("https://WWW.Pixiv.net/artworks/1"),
             Some("Pixiv")
         );
+        assert_eq!(guess_site_name("https://img.e621.net/x"), Some("e621"));
         assert_eq!(
-            guess_site_name("https://img.e621.net/x"),
-            Some("e621")
+            guess_site_name("https://rule34.paheal.net/post/1"),
+            Some("Paheal")
         );
-        assert_eq!(guess_site_name("https://rule34.paheal.net/post/1"), Some("Paheal"));
     }
 
     #[test]
     fn the_host_is_compared_whole_not_as_a_substring() {
         // `t.co` is a substring of `anilist.co`; the map has both.
-        assert_eq!(guess_site_name("https://anilist.co/anime/1"), Some("AniList"));
+        assert_eq!(
+            guess_site_name("https://anilist.co/anime/1"),
+            Some("AniList")
+        );
         assert_eq!(guess_site_name("https://t.co/abc"), Some("Twitter"));
         assert_eq!(guess_site_name("https://nott.co/abc"), None);
         assert_eq!(guess_site_name("https://fakex.com/abc"), None);

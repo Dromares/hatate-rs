@@ -67,14 +67,26 @@ mod tests {
 
     #[test]
     fn dimensions_take_the_first_pair_with_either_separator() {
-        assert_eq!(extract_dimensions("1200x1600 [x]"), (Some(1200), Some(1600)));
-        assert_eq!(extract_dimensions("a 800 \u{d7}\u{1f}600 b 1x2"), (Some(800), Some(600)));
+        assert_eq!(
+            extract_dimensions("1200x1600 [x]"),
+            (Some(1200), Some(1600))
+        );
+        assert_eq!(
+            extract_dimensions("a 800 \u{d7}\u{1f}600 b 1x2"),
+            (Some(800), Some(600))
+        );
         assert_eq!(extract_dimensions("1200 X 1600"), (None, None));
         assert_eq!(extract_dimensions(""), (None, None));
         // Any script's digits, as Python's `\d` and `int()` read them.
-        assert_eq!(extract_dimensions("\u{661}\u{662}x\u{663}"), (Some(12), Some(3)));
+        assert_eq!(
+            extract_dimensions("\u{661}\u{662}x\u{663}"),
+            (Some(12), Some(3))
+        );
         // Past `i64`: absent, where Python would keep the integer.
-        assert_eq!(extract_dimensions("99999999999999999999x5"), (None, Some(5)));
+        assert_eq!(
+            extract_dimensions("99999999999999999999x5"),
+            (None, Some(5))
+        );
     }
 
     #[test]

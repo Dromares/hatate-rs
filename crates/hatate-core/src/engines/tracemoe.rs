@@ -10,9 +10,10 @@
 //! errors are the engine client's (Phase 3; see the module docs of [`super`]).
 //!
 //! Where Python reads a field unchecked and a shape the API never sends would make it raise (a
-//! `title` that is a string, a `romaji` that is a number, a list `result` of a non-dict, a
-//! payload that is not an object), this reads the field as the type the API sends and takes the
-//! rest as absent, and a payload that is not an object has no matches.
+//! `title` that is a string, a `romaji` that is a number, a list `result` of a non-dict, an
+//! `anilist` that is a boolean, a payload that is not an object), this reads the field as the type
+//! the API sends and takes the rest as absent, and a payload that is not an object has no
+//! matches.
 
 use std::collections::HashSet;
 
@@ -58,7 +59,11 @@ pub fn search_from_response(
     min_similarity: f64,
 ) -> Result<Vec<TraceMoeMatch>, TraceMoeError> {
     match status {
-        429 => return Err(TraceMoeError("trace.moe rate limit reached (HTTP 429)".to_owned())),
+        429 => {
+            return Err(TraceMoeError(
+                "trace.moe rate limit reached (HTTP 429)".to_owned(),
+            ));
+        }
         402 => {
             return Err(TraceMoeError(
                 "trace.moe monthly quota exhausted (HTTP 402)".to_owned(),
@@ -216,7 +221,10 @@ mod tests {
         assert_eq!(m.similarity, 0.94 * 100.0);
         assert_eq!(m.title.as_deref(), Some("One Piece"));
         assert_eq!(m.episode.as_deref(), Some("15"));
-        assert_eq!(m.thumb_url.as_deref(), Some("https://media.trace.moe/i.jpg"));
+        assert_eq!(
+            m.thumb_url.as_deref(),
+            Some("https://media.trace.moe/i.jpg")
+        );
         // The English title is the same name in another case: one tag. Then the episode.
         assert_eq!(names(m), ["series:One_Piece", "meta:episode 15"]);
     }
@@ -255,8 +263,14 @@ mod tests {
             {"anilist": {"id": "x"}, "similarity": 0.99},
             {"anilist": "7", "similarity": 0.99},
             "junk"]});
-        let ids: Vec<_> = parse_results(&payload, 0.0).into_iter().map(|m| m.url).collect();
-        assert_eq!(ids, ["https://anilist.co/anime/2", "https://anilist.co/anime/1"]);
+        let ids: Vec<_> = parse_results(&payload, 0.0)
+            .into_iter()
+            .map(|m| m.url)
+            .collect();
+        assert_eq!(
+            ids,
+            ["https://anilist.co/anime/2", "https://anilist.co/anime/1"]
+        );
     }
 
     #[test]
@@ -280,7 +294,11 @@ mod tests {
         let payload = json!({"result": [
             {"anilist": 1, "similarity": 0.9, "image": ""},
             {"anilist": 2, "similarity": 0.9}]});
-        assert!(parse_results(&payload, 0.0).iter().all(|m| m.thumb_url.is_none()));
+        assert!(
+            parse_results(&payload, 0.0)
+                .iter()
+                .all(|m| m.thumb_url.is_none())
+        );
     }
 
     #[test]
@@ -299,7 +317,10 @@ mod tests {
             (402, "trace.moe monthly quota exhausted (HTTP 402)"),
             (500, "trace.moe returned HTTP 500"),
         ] {
-            assert_eq!(search_from_response(status, ok, 85.0).unwrap_err().0, message);
+            assert_eq!(
+                search_from_response(status, ok, 85.0).unwrap_err().0,
+                message
+            );
         }
         assert_eq!(
             search_from_response(200, "<html>", 85.0).unwrap_err().0,

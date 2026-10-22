@@ -39,7 +39,11 @@ pub const SEARCH: Port = Port {
     family: "engines",
     unit: SEARCH_UNIT,
     calls: &[(SEARCH_UNIT, |c: &Call| {
-        outcome(iqdb::search_from_response(IQDB_URL, c.response_status(), c.body()))
+        outcome(iqdb::search_from_response(
+            IQDB_URL,
+            c.response_status(),
+            c.body(),
+        ))
     })],
 };
 
@@ -47,7 +51,11 @@ pub const SEARCH_3D: Port = Port {
     family: "engines",
     unit: SEARCH_3D_UNIT,
     calls: &[(SEARCH_3D_UNIT, |c: &Call| {
-        outcome(iqdb::search_from_response(IQDB_3D_URL, c.response_status(), c.body()))
+        outcome(iqdb::search_from_response(
+            IQDB_3D_URL,
+            c.response_status(),
+            c.body(),
+        ))
     })],
 };
 

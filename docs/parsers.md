@@ -158,6 +158,55 @@ it, and then matched. No item is allowed to fail instead.
   is the same. `types` is a dict keyed by `t`, so a later entry of the same name replaces an
   earlier one.
 
+## Engine result parsers (`engines/`, DAN-2008)
+
+`crates/hatate-core/src/engines/` holds what an engine's answer says once it is in hand:
+`iqdb`, `ascii2d`, `tracemoe`, `pawchive_lookup` (the exact-hash lookup, not the booru parser
+`boorus::pawchive`) and `saucenao`. The corpus family is `engines`, one runner unit per Python
+callable (`core.iqdb._parse_results`, `core.saucenao.search`, ...).
+
+- **Where Python's engine functions are cut.** A Python `search` uploads, waits, reads the
+  answer and interprets it. The interpreting is here, as a pure function of the response: the
+  status to error mapping (413, 429, anything but 200), the check that an HTML page is the
+  engine's and not a block page, the JSON header checks, and the parse. `iqdb::search_from_response`,
+  `ascii2d::search_from_responses`, `tracemoe::search_from_response`,
+  `pawchive_lookup::lookup_from_response` and `saucenao::search_from_response` are those halves.
+  The request half is Phase 3: reading and downscaling the file, the multipart body and headers,
+  the deadline, network errors (`RequestException`, `HardTimeoutError`, `OSError`), IQDB's 45 s
+  floor on the timeout, SauceNAO's burst-window wait and its one retry after a 429, and every
+  module global.
+- **A module global becomes a return value.** `ascii2d._blocked` is `Ascii2dError::Blocked` (the
+  client sets the latch); SauceNAO's `_last_quota` and `_daily_limit_reported` are
+  `JsonAnswer::quota` and `JsonAnswer::daily_limit_reported`, and the client keeps the latch and
+  the observation time. A second request that depends on the first answer (ascii2d's feature
+  search, at `ascii2d::bovw_url`) is a second argument, and a failed one is passed as `None`.
+- **A `mocked_transport` item compares the last response.** The runner compares only `returns` or
+  the error class. The port feeds the last scripted response's status and body to the pure half
+  (for SauceNAO's 429-then-200 item that is the answer to the retry), and each port's own test
+  holds the recorded error message, request address, sleep count and `state_after` to what the
+  port gives.
+- **Shapes the API never sends.** Python reads some fields unchecked and raises something other
+  than the engine's error. Where that would be a whole search failing, SauceNAO's port returns a
+  `SauceNaoError` naming the field (a result that is not an object, a `similarity` that is not
+  a number, an `ext_urls` entry that is not text, a `status` that is not a number). Elsewhere a
+  field is read as the type the API sends and anything else is absent: a trace.moe or Pawchive
+  `title`, `image`, SauceNAO `title`, `index_name`, `thumbnail` or `source` that is not text, a
+  trace.moe `anilist` that is a boolean (Python reads it as an integer id and prints `True`), a
+  non-text member of a list `characters` (skipped), and a trace.moe or Pawchive body that is not
+  an object (no matches). Integers past `i64` read as absent (an IQDB or ascii2d width).
+- **`re.IGNORECASE` on "similarity".** Python folds `s` with U+017F and `i` with U+0130 and
+  U+0131; `(?i)` here does not, so IQDB's percent pattern spells the word out. `\s` is
+  `[\s\x1c-\x1f]` as above.
+- **IQDB's tables are selected by their ancestors.** `div#pages table` and `td.image a` are
+  matched as bs4 does, with the ancestor allowed to sit outside the element searched, and class
+  lists split on Python whitespace (`parsed::classes_of`). html5ever and lxml build different
+  trees from a `<table>` that opens inside an unclosed `<tr>`; both agree on well-formed markup,
+  which is all IQDB serves and all the corpus holds.
+- **`float()` of page text** is `sizes::py_float` (SauceNAO HTML similarity, IQDB's percent):
+  any script's digits, single underscores between digits, `inf` and `nan`.
+- **`sites::guess_site_name`** (`core/sites.py`) is ported with its `HOST_MAP` because IQDB labels
+  each match with it; `classify_site` and `canonicalize_url` come with the code that uses them.
+
 ## Registering a port in the corpus runner
 
 `crates/hatate-core/tests/corpus_diff.rs` runs every item of every ported parser.

@@ -18,7 +18,9 @@ const SEARCH_UNIT: &str = "core.saucenao.search";
 /// The `SauceNaoSettings` a `call.json` records, as `{"__dataclass__": ..., <field>: <value>}`.
 fn settings_of(recorded: &Value) -> SauceNaoSettings {
     let mut settings = SauceNaoSettings::default();
-    let fields = recorded.as_object().expect("settings is a dataclass object");
+    let fields = recorded
+        .as_object()
+        .expect("settings is a dataclass object");
     for (key, value) in fields {
         match key.as_str() {
             "__dataclass__" => assert_eq!(value, "SauceNaoSettings"),
@@ -60,7 +62,10 @@ pub const TAGS: Port = Port {
 
 fn search(c: &Call) -> saucenao::JsonAnswer {
     let settings = settings_of(&c.call["args"]["settings"]);
-    assert!(saucenao::uses_json_api(&settings), "every recorded search item uses the JSON API");
+    assert!(
+        saucenao::uses_json_api(&settings),
+        "every recorded search item uses the JSON API"
+    );
     saucenao::parse_json_response(&settings, c.response_status(), c.body())
 }
 
@@ -89,7 +94,10 @@ mod tests {
             }
             let answer = search(c);
             let state = &expected["effects"]["state_after"];
-            assert_eq!(state["daily_limit_reported"], answer.daily_limit_reported, "{id}");
+            assert_eq!(
+                state["daily_limit_reported"], answer.daily_limit_reported,
+                "{id}"
+            );
             // `last_quota` after a fresh start: null until a header was read.
             let quota = answer
                 .quota
@@ -97,7 +105,11 @@ mod tests {
             assert_eq!(state["last_quota"], quota, "{id}");
             // One wait of the burst window per 429 the client retried.
             let retried = c.call["responses"].as_array().unwrap().len() - 1;
-            assert_eq!(expected["effects"]["sleeps"].as_array().unwrap().len(), retried, "{id}");
+            assert_eq!(
+                expected["effects"]["sleeps"].as_array().unwrap().len(),
+                retried,
+                "{id}"
+            );
             for sleep in expected["effects"]["sleeps"].as_array().unwrap() {
                 assert_eq!(sleep.as_f64(), Some(saucenao::SHORT_WINDOW_SECONDS), "{id}");
             }

@@ -136,15 +136,19 @@ pub fn parse_response(body: &Value, sha256: &str) -> Vec<PawchiveMatch> {
     let mut matches = Vec::new();
     let posts = body.get("posts").and_then(Value::as_array);
     for post in posts.into_iter().flatten() {
-        let Some(post) = post.as_object() else { continue };
+        let Some(post) = post.as_object() else {
+            continue;
+        };
         let (service, user, id) = (post.get("service"), post.get("user"), post.get("id"));
-        let (Some(service), Some(user), Some(id)) =
-            (truthy(service), truthy(user), truthy(id))
+        let (Some(service), Some(user), Some(id)) = (truthy(service), truthy(user), truthy(id))
         else {
             continue;
         };
         let files = files_of(post);
-        let index = files.iter().position(|path| path.contains(sha256)).unwrap_or(0);
+        let index = files
+            .iter()
+            .position(|path| path.contains(sha256))
+            .unwrap_or(0);
         matches.push(PawchiveMatch {
             url: format!(
                 "https://pawchive.pw/{}/user/{}/post/{}",
@@ -157,7 +161,9 @@ pub fn parse_response(body: &Value, sha256: &str) -> Vec<PawchiveMatch> {
                 .and_then(Value::as_str)
                 .filter(|t| !t.is_empty())
                 .map(str::to_owned),
-            thumb_url: files.get(index).map(|path| format!("{THUMBNAIL_URL}{path}")),
+            thumb_url: files
+                .get(index)
+                .map(|path| format!("{THUMBNAIL_URL}{path}")),
             page_index: index,
             page_count: files.len().max(1),
         });
@@ -197,12 +203,19 @@ mod tests {
 
     #[test]
     fn a_hash_in_no_file_points_at_the_first_and_no_files_means_one_page_and_no_thumbnail() {
-        let got = parse_response(&json!({"posts": [post("9")]}), "ff");
+        let got = parse_response(&json!({"posts": [post("9")]}), "zz");
         assert_eq!((got[0].page_index, got[0].page_count), (0, 2));
         let bare = json!({"service": "s", "user": 1, "id": 2});
         let got = parse_response(&json!({"posts": [bare]}), HASH);
         assert_eq!(got[0].url, "https://pawchive.pw/s/user/1/post/2");
-        assert_eq!((got[0].thumb_url.clone(), got[0].page_index, got[0].page_count), (None, 0, 1));
+        assert_eq!(
+            (
+                got[0].thumb_url.clone(),
+                got[0].page_index,
+                got[0].page_count
+            ),
+            (None, 0, 1)
+        );
         assert_eq!(got[0].title, None);
     }
 
@@ -225,22 +238,35 @@ mod tests {
         ];
         posts.extend((0..8).map(|n| post(&n.to_string())));
         let got = parse_response(&json!({"posts": posts}), HASH);
-        let ids: Vec<_> = got.iter().map(|m| m.url.rsplit('/').next().unwrap().to_owned()).collect();
+        let ids: Vec<_> = got
+            .iter()
+            .map(|m| m.url.rsplit('/').next().unwrap().to_owned())
+            .collect();
         assert_eq!(ids, ["0", "1", "2", "3", "4"]);
     }
 
     #[test]
     fn no_posts_is_no_matches() {
-        for body in [json!({}), json!({"posts": null}), json!({"posts": {}}), json!(null), json!([])] {
+        for body in [
+            json!({}),
+            json!({"posts": null}),
+            json!({"posts": {}}),
+            json!(null),
+            json!([]),
+        ] {
             assert!(parse_response(&body, HASH).is_empty(), "{body}");
         }
     }
 
     #[test]
     fn numbers_in_a_post_print_as_python_prints_them() {
-        let p = json!({"service": "s", "user": 1.5, "id": 10_000_000_000_000_000_000u64, "title": 3});
+        let p =
+            json!({"service": "s", "user": 1.5, "id": 10_000_000_000_000_000_000u64, "title": 3});
         let got = parse_response(&json!({"posts": [p]}), HASH);
-        assert_eq!(got[0].url, "https://pawchive.pw/s/user/1.5/post/10000000000000000000");
+        assert_eq!(
+            got[0].url,
+            "https://pawchive.pw/s/user/1.5/post/10000000000000000000"
+        );
         // A title is read as the text the site sends; a number is not one.
         assert_eq!(got[0].title, None);
     }
@@ -266,9 +292,18 @@ mod tests {
 
     #[test]
     fn the_hash_is_stripped_and_lower_cased_and_anything_else_is_an_error() {
-        assert_eq!(normalise_sha256(&format!(" {}\n", HASH.to_uppercase())).unwrap(), HASH);
-        assert_eq!(request_url(HASH), format!("https://pawchive.pw/api/v1/search_hash/{HASH}"));
-        assert_eq!(normalise_sha256("abc").unwrap_err().0, "not a SHA-256: 'abc'");
+        assert_eq!(
+            normalise_sha256(&format!(" {}\n", HASH.to_uppercase())).unwrap(),
+            HASH
+        );
+        assert_eq!(
+            request_url(HASH),
+            format!("https://pawchive.pw/api/v1/search_hash/{HASH}")
+        );
+        assert_eq!(
+            normalise_sha256("abc").unwrap_err().0,
+            "not a SHA-256: 'abc'"
+        );
         assert_eq!(
             normalise_sha256(&format!("{HASH}0")).unwrap_err().0,
             "not a SHA-256: '3fac89759d85abce'"

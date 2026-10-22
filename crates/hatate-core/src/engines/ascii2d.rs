@@ -139,14 +139,24 @@ pub fn search_from_responses(
     }
 
     let mut matches = parse_results(color.text, color.url, "color");
-    debug!("ascii2d colour search parsed into {} match(es)", matches.len());
+    debug!(
+        "ascii2d colour search parsed into {} match(es)",
+        matches.len()
+    );
 
     if let (Some(bovw_url), Some(bovw)) = (bovw_url(color.url), bovw)
         && bovw.status == 200
     {
-        let page_url = if bovw.url.is_empty() { &bovw_url } else { bovw.url };
+        let page_url = if bovw.url.is_empty() {
+            &bovw_url
+        } else {
+            bovw.url
+        };
         let found = parse_results(bovw.text, page_url, "bovw");
-        debug!("ascii2d feature search parsed into {} match(es)", found.len());
+        debug!(
+            "ascii2d feature search parsed into {} match(es)",
+            found.len()
+        );
         matches.extend(found);
     }
     Ok(dedupe(matches))
@@ -183,7 +193,11 @@ pub fn parse_results(html: &str, page_url: &str, kind: &str) -> Vec<Ascii2dMatch
             .and_then(|img| img.value().attr("src"))
             .filter(|src| !src.is_empty())
             .map(|src| {
-                let base = if page_url.is_empty() { ASCII2D_URL } else { page_url };
+                let base = if page_url.is_empty() {
+                    ASCII2D_URL
+                } else {
+                    page_url
+                };
                 pyurl::urljoin(base, pycompat::strip(src))
             });
 
@@ -282,9 +296,15 @@ mod tests {
         let urls: Vec<_> = got.iter().map(|m| m.url.as_str()).collect();
         assert_eq!(
             urls,
-            ["https://www.pixiv.net/artworks/12345", "https://twitter.com/i/web/status/99"]
+            [
+                "https://www.pixiv.net/artworks/12345",
+                "https://twitter.com/i/web/status/99"
+            ]
         );
-        assert!(got.iter().all(|m| m.similarity == 86.0 && m.search_kind == "color"));
+        assert!(
+            got.iter()
+                .all(|m| m.similarity == 86.0 && m.search_kind == "color")
+        );
         assert_eq!(got[0].source_name.as_deref(), Some("pixiv.net"));
         assert_eq!(
             got[1].thumb_url.as_deref(),
@@ -303,7 +323,10 @@ mod tests {
         // Six boxes at most, 80, 78, ... 70.
         assert_eq!(scores, [80.0, 78.0, 76.0, 74.0, 72.0, 70.0]);
         // A deep rank would floor at 50; MAX_RESULTS_PER_SEARCH keeps rank under it.
-        assert_eq!((COLOR_SIMILARITY_START - 5.0 * SIMILARITY_STEP).max(50.0), 76.0);
+        assert_eq!(
+            (COLOR_SIMILARITY_START - 5.0 * SIMILARITY_STEP).max(50.0),
+            76.0
+        );
     }
 
     #[test]
@@ -320,7 +343,10 @@ mod tests {
 
     #[test]
     fn the_hash_gives_the_feature_url() {
-        assert_eq!(hash_from_url("https://ascii2d.net/search/color/AaBb09"), Some("AaBb09".into()));
+        assert_eq!(
+            hash_from_url("https://ascii2d.net/search/color/AaBb09"),
+            Some("AaBb09".into())
+        );
         assert_eq!(
             bovw_url("https://ascii2d.net/search/color/aabbcc"),
             Some("https://ascii2d.net/search/bovw/aabbcc".into())
@@ -345,7 +371,9 @@ mod tests {
             Err(Ascii2dError::Failed("ascii2d returned HTTP 403".into()))
         );
         assert_eq!(
-            search_from_responses(&resp(413, "", "x"), None).unwrap_err().to_string(),
+            search_from_responses(&resp(413, "", "x"), None)
+                .unwrap_err()
+                .to_string(),
             "ascii2d rejected the image as too large, even after downscaling"
         );
         // Only the first 4000 characters are looked at.
@@ -354,16 +382,31 @@ mod tests {
             search_from_responses(&resp(503, "", &late), None),
             Err(Ascii2dError::Failed("ascii2d returned HTTP 503".into()))
         );
-        assert!(Ascii2dError::Blocked.to_string().starts_with("ascii2d is behind a Cloudflare bot check"));
+        assert!(
+            Ascii2dError::Blocked
+                .to_string()
+                .starts_with("ascii2d is behind a Cloudflare bot check")
+        );
     }
 
     #[test]
     fn a_200_that_is_not_ascii2d_is_an_error() {
         let err = search_from_responses(&resp(200, "", "<html>hello</html>"), None).unwrap_err();
-        assert!(err.to_string().starts_with("ascii2d's response didn't look like a real results page"));
+        assert!(
+            err.to_string()
+                .starts_with("ascii2d's response didn't look like a real results page")
+        );
         // "ascii2d" in any case, or an item box, is enough.
-        assert!(search_from_responses(&resp(200, "", "<p>ASCII2D"), None).unwrap().is_empty());
-        assert!(search_from_responses(&resp(200, "", "<p>item-box"), None).unwrap().is_empty());
+        assert!(
+            search_from_responses(&resp(200, "", "<p>ASCII2D"), None)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            search_from_responses(&resp(200, "", "<p>item-box"), None)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -372,12 +415,12 @@ mod tests {
         let bovw_page = "<html><body>\
             <div class=item-box><a href=\"https://www.pixiv.net/artworks/12345\">p</a></div>\
             <div class=item-box><a href=\"https://new.example/1\">n</a></div></body></html>";
-        let got = search_from_responses(
-            &resp(200, url, PAGE),
-            Some(&resp(200, "", bovw_page)),
-        )
-        .unwrap();
-        let rows: Vec<_> = got.iter().map(|m| (m.url.as_str(), m.similarity, m.search_kind.as_str())).collect();
+        let got =
+            search_from_responses(&resp(200, url, PAGE), Some(&resp(200, "", bovw_page))).unwrap();
+        let rows: Vec<_> = got
+            .iter()
+            .map(|m| (m.url.as_str(), m.similarity, m.search_kind.as_str()))
+            .collect();
         assert_eq!(
             rows,
             [
@@ -387,9 +430,14 @@ mod tests {
             ]
         );
         // A failed or non-200 feature search keeps the colour results; so does no hash.
-        let colour_only = search_from_responses(&resp(200, url, PAGE), Some(&resp(503, "", bovw_page))).unwrap();
+        let colour_only =
+            search_from_responses(&resp(200, url, PAGE), Some(&resp(503, "", bovw_page))).unwrap();
         assert_eq!(colour_only.len(), 2);
-        let no_hash = search_from_responses(&resp(200, "https://ascii2d.net/search/file", PAGE), Some(&resp(200, "", bovw_page))).unwrap();
+        let no_hash = search_from_responses(
+            &resp(200, "https://ascii2d.net/search/file", PAGE),
+            Some(&resp(200, "", bovw_page)),
+        )
+        .unwrap();
         assert_eq!(no_hash.len(), 2);
     }
 
@@ -404,15 +452,29 @@ mod tests {
             source_name: None,
             search_kind: kind.into(),
         };
-        let got = dedupe(vec![m("a", 70.0, "color"), m("b", 60.0, "color"), m("a", 80.0, "bovw"), m("b", 60.0, "bovw")]);
-        let rows: Vec<_> = got.iter().map(|m| (m.url.as_str(), m.similarity, m.search_kind.as_str())).collect();
+        let got = dedupe(vec![
+            m("a", 70.0, "color"),
+            m("b", 60.0, "color"),
+            m("a", 80.0, "bovw"),
+            m("b", 60.0, "bovw"),
+        ]);
+        let rows: Vec<_> = got
+            .iter()
+            .map(|m| (m.url.as_str(), m.similarity, m.search_kind.as_str()))
+            .collect();
         assert_eq!(rows, [("a", 80.0, "bovw"), ("b", 60.0, "color")]);
     }
 
     #[test]
     fn a_host_label_drops_www_and_keeps_the_port() {
-        assert_eq!(host_label("https://WWW.Pixiv.net/x"), Some("pixiv.net".into()));
-        assert_eq!(host_label("https://a.example:8080/x"), Some("a.example:8080".into()));
+        assert_eq!(
+            host_label("https://WWW.Pixiv.net/x"),
+            Some("pixiv.net".into())
+        );
+        assert_eq!(
+            host_label("https://a.example:8080/x"),
+            Some("a.example:8080".into())
+        );
         assert_eq!(host_label("mailto:x"), None);
     }
 }

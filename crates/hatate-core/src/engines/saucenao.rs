@@ -31,8 +31,8 @@ use crate::boorus::parsed::{classes_of, soup_of, text_of};
 use crate::boorus::sizes::py_float;
 use crate::config::SauceNaoSettings;
 use crate::model::{Tag, TagSource};
-use crate::pyrepr::py_str;
 use crate::pycompat;
+use crate::pyrepr::py_str;
 
 pub const API_URL: &str = "https://saucenao.com/search.php";
 
@@ -42,7 +42,8 @@ pub const SHORT_WINDOW_SECONDS: f64 = 30.0;
 
 /// Substrings SauceNAO uses when the daily allowance is spent, matched case-insensitively against
 /// the header's `message`. Deliberately excludes the short-window wording.
-pub const DAILY_LIMIT_MARKERS: [&str; 3] = ["daily search limit", "daily limit", "search limit exceeded"];
+pub const DAILY_LIMIT_MARKERS: [&str; 3] =
+    ["daily search limit", "daily limit", "search limit exceeded"];
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SauceNaoMatch {
@@ -154,7 +155,9 @@ pub fn parse_json_response(settings: &SauceNaoSettings, status: u16, body: &str)
         .and_then(Value::as_object)
         .filter(|h| !h.is_empty());
     let Some(header) = header else {
-        warn!("SauceNAO JSON response had no header object - treating it as a failure, not a confirmed result");
+        warn!(
+            "SauceNAO JSON response had no header object - treating it as a failure, not a confirmed result"
+        );
         return early("SauceNAO's response didn't include the expected header data");
     };
 
@@ -175,18 +178,29 @@ pub fn parse_json_response(settings: &SauceNaoSettings, status: u16, body: &str)
         result,
     };
 
-    // `header.get("status", 0) < 0`
-    if header
-        .get("status")
-        .and_then(pycompat::number)
-        .is_some_and(|status| status < 0.0)
-    {
+    // `header.get("status", 0) < 0`. A status that is not a number makes Python raise.
+    let status_code = match header.get("status") {
+        None => 0.0,
+        Some(value) => match pycompat::number(value) {
+            Some(number) => number,
+            None => {
+                return answer(
+                    daily_limit_reported,
+                    Err(failure("SauceNAO's status is not a number")),
+                );
+            }
+        },
+    };
+    if status_code < 0.0 {
         let message = header
             .get("message")
             .map_or_else(|| "Unknown SauceNAO error".to_owned(), py_str);
         // The error text can say so when the response carries no usable quota numbers.
         let lowered = message.to_lowercase();
-        if DAILY_LIMIT_MARKERS.iter().any(|marker| lowered.contains(marker)) {
+        if DAILY_LIMIT_MARKERS
+            .iter()
+            .any(|marker| lowered.contains(marker))
+        {
             warn!("SauceNAO reported the daily search limit is exhausted: {message}");
             daily_limit_reported = true;
         }
@@ -205,7 +219,9 @@ fn items_of(value: Option<&Value>, what: &str) -> Result<Vec<Value>, SauceNaoErr
         None => Ok(Vec::new()),
         Some(Value::Array(items)) => Ok(items.clone()),
         Some(Value::Object(map)) => Ok(map.keys().map(|k| Value::String(k.clone())).collect()),
-        Some(Value::String(text)) => Ok(text.chars().map(|c| Value::String(c.to_string())).collect()),
+        Some(Value::String(text)) => {
+            Ok(text.chars().map(|c| Value::String(c.to_string())).collect())
+        }
         Some(Value::Null) if what == "ext_urls" => Ok(Vec::new()),
         Some(other) if what == "ext_urls" && !pycompat::truthy(other) => Ok(Vec::new()),
         Some(_) => Err(failure(format!("SauceNAO's {what} is not a list"))),
@@ -213,25 +229,33 @@ fn items_of(value: Option<&Value>, what: &str) -> Result<Vec<Value>, SauceNaoErr
 }
 
 /// The result loop of `_search_json`: one candidate per distinct usable URL, best first.
-fn results_of(data: &Value, settings: &SauceNaoSettings) -> Result<Vec<SauceNaoMatch>, SauceNaoError> {
+fn results_of(
+    data: &Value,
+    settings: &SauceNaoSettings,
+) -> Result<Vec<SauceNaoMatch>, SauceNaoError> {
     let mut matches: Vec<SauceNaoMatch> = Vec::new();
     let mut skipped_no_url = 0usize;
     let empty = Map::new();
     for result in items_of(data.get("results"), "results")? {
         let Some(result) = result.as_object() else {
-            return Err(failure("SauceNAO's results held something that is not an object"));
+            return Err(failure(
+                "SauceNAO's results held something that is not an object",
+            ));
         };
         let rheader = result.get("header").map_or(Some(&empty), Value::as_object);
         let rdata = result.get("data").map_or(Some(&empty), Value::as_object);
         let (Some(rheader), Some(rdata)) = (rheader, rdata) else {
-            return Err(failure("SauceNAO's result had a header or data that is not an object"));
+            return Err(failure(
+                "SauceNAO's result had a header or data that is not an object",
+            ));
         };
         let similarity = match rheader.get("similarity") {
             None => 0.0,
             Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
             Some(Value::Bool(b)) => f64::from(u8::from(*b)),
-            Some(Value::String(text)) => py_float(text)
-                .ok_or_else(|| failure("SauceNAO's similarity is not a number"))?,
+            Some(Value::String(text)) => {
+                py_float(text).ok_or_else(|| failure("SauceNAO's similarity is not a number"))?
+            }
             Some(_) => return Err(failure("SauceNAO's similarity is not a number")),
         };
 
@@ -243,7 +267,11 @@ fn results_of(data: &Value, settings: &SauceNaoSettings) -> Result<Vec<SauceNaoM
                 Value::String(text) if looks_like_url(text) => url_list.push(text.clone()),
                 Value::String(_) => {}
                 other if !pycompat::truthy(other) => {}
-                _ => return Err(failure("SauceNAO's ext_urls held something that is not text")),
+                _ => {
+                    return Err(failure(
+                        "SauceNAO's ext_urls held something that is not text",
+                    ));
+                }
             }
         }
         if url_list.is_empty() {
@@ -358,7 +386,10 @@ pub fn parse_html(html: &str) -> Vec<SauceNaoMatch> {
         el.value().name() == tag && classes_of(el).contains(&class)
     };
     let mut matches = Vec::new();
-    for block in soup.select(&any).filter(|el| has_class(*el, "div", "result")) {
+    for block in soup
+        .select(&any)
+        .filter(|el| has_class(*el, "div", "result"))
+    {
         if classes_of(block).contains(&"result-hidden") {
             continue;
         }
@@ -373,7 +404,8 @@ pub fn parse_html(html: &str) -> Vec<SauceNaoMatch> {
         let link = descendants().find(|a| {
             a.value().name() == "a"
                 && a.ancestors().filter_map(ElementRef::wrap).any(|anc| {
-                    has_class(anc, "div", "resulttitle") || has_class(anc, "div", "resultcontentcolumn")
+                    has_class(anc, "div", "resulttitle")
+                        || has_class(anc, "div", "resultcontentcolumn")
                 })
         });
         let sim_el = descendants().find(|d| has_class(*d, "div", "resultsimilarityinfo"));
@@ -409,4 +441,368 @@ pub fn parse_html(html: &str) -> Vec<SauceNaoMatch> {
     matches.sort_by(|a, b| b.similarity.total_cmp(&a.similarity));
     debug!("SauceNAO HTML parsed into {} match(es)", matches.len());
     matches
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn settings(tag_types: &[&str], namespace: &str) -> SauceNaoSettings {
+        SauceNaoSettings {
+            api_key: "k".into(),
+            tag_types: tag_types.iter().map(|t| (*t).to_owned()).collect(),
+            namespace: namespace.to_owned(),
+            ..SauceNaoSettings::default()
+        }
+    }
+
+    fn answer(header: Value, results: Value) -> JsonAnswer {
+        let body = json!({"header": header, "results": results}).to_string();
+        parse_json_response(&settings(&["character", "material"], ""), 200, &body)
+    }
+
+    fn mirrored(ext_urls: Value) -> Vec<SauceNaoMatch> {
+        answer(
+            json!({"status": 0, "long_remaining": 100, "long_limit": 100}),
+            json!([{
+                "header": {
+                    "similarity": "97.16",
+                    "index_name": "Index #29: e621.net - 1234.jpg",
+                    "thumbnail": "https://img1.saucenao.com/booru/t.jpg",
+                },
+                "data": {"ext_urls": ext_urls},
+            }]),
+        )
+        .result
+        .unwrap()
+    }
+
+    #[test]
+    fn a_quota_field_is_an_integer_or_a_numeric_string_else_absent() {
+        assert_eq!(safe_int(Some(&json!("5000"))), Some(5000));
+        assert_eq!(safe_int(Some(&json!(4854))), Some(4854));
+        assert_eq!(safe_int(Some(&json!("not_a_number"))), None);
+        assert_eq!(safe_int(Some(&json!(""))), None);
+        assert_eq!(safe_int(Some(&json!(null))), None);
+        assert_eq!(safe_int(None), None);
+        assert_eq!(safe_int(Some(&json!(7.9))), Some(7));
+        assert_eq!(safe_int(Some(&json!([1]))), None);
+    }
+
+    #[test]
+    fn only_the_daily_window_or_its_message_counts_as_the_daily_limit() {
+        let flag = |header| answer(header, json!([])).daily_limit_reported;
+        assert!(!flag(
+            json!({"status": 0, "short_remaining": 5, "short_limit": 6, "long_remaining": 82, "long_limit": 100})
+        ));
+        // The burst window empty is not the daily limit.
+        assert!(!flag(
+            json!({"status": 0, "short_remaining": 0, "short_limit": 6, "long_remaining": 40, "long_limit": 100})
+        ));
+        assert!(flag(
+            json!({"status": 0, "short_remaining": 4, "short_limit": 6, "long_remaining": 0, "long_limit": 100})
+        ));
+        assert!(flag(json!({"status": 0, "long_remaining": "0"})));
+        // An over-quota reply need not carry numbers; its message says so.
+        for message in [
+            "Daily Search Limit Exceeded.",
+            "your DAILY LIMIT is spent",
+            "Search Limit Exceeded",
+        ] {
+            assert!(flag(json!({"status": -1, "message": message})), "{message}");
+        }
+        // A bad key or a transient failure must not halt a batch.
+        assert!(!flag(json!({"status": -1, "message": "Invalid API key."})));
+        assert!(!flag(json!({"status": -1, "message": "30 second limit"})));
+        assert!(!flag(json!({"status": -1})));
+    }
+
+    #[test]
+    fn an_error_status_carries_the_message_and_the_quota_read_before_it() {
+        let a = answer(
+            json!({"status": -2, "message": "Invalid API key.", "short_limit": 6}),
+            json!([]),
+        );
+        assert_eq!(a.result.unwrap_err().0, "Invalid API key.");
+        assert_eq!(a.quota.unwrap().short_limit, Some(6));
+        let a = answer(json!({"status": -2}), json!([]));
+        assert_eq!(a.result.unwrap_err().0, "Unknown SauceNAO error");
+        // A positive status (SauceNAO sends 1 for some index failures) is not an error.
+        assert!(answer(json!({"status": 1}), json!([])).result.is_ok());
+    }
+
+    #[test]
+    fn a_bad_status_or_body_fails_before_any_quota_is_read() {
+        let s = settings(&["character"], "");
+        let rows = [
+            (
+                413,
+                "{}",
+                "SauceNAO rejected the image as too large, even after downscaling",
+            ),
+            (
+                429,
+                "{}",
+                "SauceNAO rate limit reached, slow down the search delay",
+            ),
+            (500, "{}", "SauceNAO returned HTTP 500"),
+            (200, "<html>", "SauceNAO returned invalid JSON"),
+            (
+                200,
+                "{}",
+                "SauceNAO's response didn't include the expected header data",
+            ),
+            (
+                200,
+                r#"{"header": {}}"#,
+                "SauceNAO's response didn't include the expected header data",
+            ),
+            (
+                200,
+                "null",
+                "SauceNAO's response didn't include the expected header data",
+            ),
+        ];
+        for (status, body, message) in rows {
+            let a = parse_json_response(&s, status, body);
+            assert_eq!(a.result.unwrap_err().0, message, "{status} {body}");
+            assert_eq!((a.quota, a.daily_limit_reported), (None, false));
+        }
+    }
+
+    #[test]
+    fn every_mirrored_url_is_a_candidate_and_a_repeat_is_not() {
+        let both = mirrored(json!([
+            "https://chan.sankakucomplex.com/post/show/12345",
+            "https://e621.net/posts/67890",
+        ]));
+        let urls: Vec<_> = both.iter().map(|m| m.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            [
+                "https://chan.sankakucomplex.com/post/show/12345",
+                "https://e621.net/posts/67890"
+            ]
+        );
+        assert!(both.iter().all(|m| m.similarity == 97.16));
+        assert!(
+            both.iter()
+                .all(|m| m.source_name.as_deref() == Some("Index #29: e621.net - 1234.jpg"))
+        );
+        assert_eq!(
+            mirrored(json!([
+                "https://e621.net/posts/1",
+                "https://e621.net/posts/1"
+            ]))
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_result_with_no_usable_url_is_skipped() {
+        assert!(mirrored(json!(["not a url", ""])).is_empty());
+        assert!(mirrored(json!([])).is_empty());
+        assert!(mirrored(json!(null)).is_empty());
+        assert!(mirrored(json!("https://a.example")).is_empty()); // iterated by character
+        assert_eq!(mirrored(json!([" //a.example/1 ", null])).len(), 1);
+    }
+
+    #[test]
+    fn matches_sort_by_similarity_with_ties_in_result_order() {
+        let a = answer(
+            json!({"status": 0}),
+            json!([
+                {"header": {"similarity": 50}, "data": {"ext_urls": ["https://a.example/1"]}},
+                {"header": {"similarity": "90.5"}, "data": {"ext_urls": ["https://a.example/2", "https://a.example/3"]}},
+                {"header": {"similarity": 90.5}, "data": {"ext_urls": ["https://a.example/4"]}},
+                {"data": {"ext_urls": ["https://a.example/5"]}},
+            ]),
+        );
+        let order: Vec<_> = a
+            .result
+            .unwrap()
+            .into_iter()
+            .map(|m| (m.url.rsplit('/').next().unwrap().to_owned(), m.similarity))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                ("2".into(), 90.5),
+                ("3".into(), 90.5),
+                ("4".into(), 90.5),
+                ("1".into(), 50.0),
+                ("5".into(), 0.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn the_title_is_the_title_else_the_source_and_the_last_operand_stands_when_empty() {
+        let title = |data: Value| {
+            let mut data = data;
+            data["ext_urls"] = json!(["https://a.example/1"]);
+            answer(json!({"status": 0}), json!([{"header": {}, "data": data}]))
+                .result
+                .unwrap()[0]
+                .title
+                .clone()
+        };
+        assert_eq!(
+            title(json!({"title": "T", "source": "S"})),
+            Some("T".into())
+        );
+        assert_eq!(title(json!({"title": "", "source": "S"})), Some("S".into()));
+        assert_eq!(title(json!({"source": "S"})), Some("S".into()));
+        assert_eq!(title(json!({"title": "T", "source": ""})), Some("T".into()));
+        assert_eq!(title(json!({"title": "", "source": ""})), Some("".into()));
+        assert_eq!(
+            title(json!({"title": "T", "source": null})),
+            Some("T".into())
+        );
+        assert_eq!(title(json!({})), None);
+        assert_eq!(title(json!({"title": null, "source": null})), None);
+    }
+
+    #[test]
+    fn shapes_the_api_never_sends_fail_the_search_with_a_named_field() {
+        for results in [
+            json!(null),
+            json!(5),
+            json!(["junk"]),
+            json!([{"header": 5, "data": {"ext_urls": ["https://a.example"]}}]),
+            json!([{"header": {"similarity": null}, "data": {"ext_urls": ["https://a.example"]}}]),
+            json!([{"header": {"similarity": "x"}, "data": {"ext_urls": ["https://a.example"]}}]),
+            json!([{"header": {}, "data": {"ext_urls": [5]}}]),
+            json!([{"header": {}, "data": {"ext_urls": 5}}]),
+        ] {
+            let a = answer(json!({"status": 0}), results.clone());
+            assert!(a.result.is_err(), "{results}");
+        }
+        // Missing keys have Python's defaults.
+        assert!(
+            parse_json_response(&settings(&[], ""), 200, r#"{"header": {"status": 0}}"#)
+                .result
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn tags_follow_the_enabled_types_in_their_order_and_the_namespace_override() {
+        let data = json!({
+            "characters": "Rem, Ram ,, ",
+            "material": ["Re:Zero", " ", "Other"],
+            "creator": "",
+            "member_name": "member",
+            "author_name": "author",
+        });
+        let rdata = data.as_object().unwrap();
+        let tags = |types: &[&str], ns: &str| -> Vec<String> {
+            tags_from_result(rdata, &settings(types, ns))
+                .iter()
+                .map(Tag::display)
+                .collect()
+        };
+        assert_eq!(
+            tags(&["character", "material"], ""),
+            [
+                "character:Rem",
+                "character:Ram",
+                "material:Re:Zero",
+                "material:Other"
+            ]
+        );
+        assert_eq!(
+            tags(&["creator", "character"], ""),
+            ["creator:member", "character:Rem", "character:Ram"]
+        );
+        assert_eq!(tags(&["character"], "src"), ["src:Rem", "src:Ram"]);
+        assert_eq!(tags(&["unknown", "series"], ""), Vec::<String>::new());
+        assert!(tags_from_result(&Map::new(), &settings(&["character", "creator"], "")).is_empty());
+        let all = tags_from_result(rdata, &settings(&["material"], ""));
+        assert!(all.iter().all(|t| t.source == TagSource::SearchEngine));
+    }
+
+    #[test]
+    fn non_text_fields_are_printed_as_python_prints_them_before_splitting() {
+        let data = json!({"characters": 12, "creator": ["a", 5, "b"]});
+        let tags: Vec<_> = tags_from_result(
+            data.as_object().unwrap(),
+            &settings(&["character", "creator"], ""),
+        )
+        .iter()
+        .map(Tag::display)
+        .collect();
+        // A non-text member of a list is skipped; Python would raise.
+        assert_eq!(tags, ["character:12", "creator:a", "creator:b"]);
+    }
+
+    const HTML: &str = r#"<html><body>
+      <div class="result"><table><tr>
+        <td class="resulttableimage"><img src="//img.example/t1.jpg"></td>
+        <td class="resulttablecontent">
+          <div class="resulttitle"><strong>Title one</strong> <a href="https://danbooru.donmai.us/posts/1">link</a></div>
+          <div class="resultsimilarityinfo">91.5%</div>
+        </td></tr></table></div>
+      <div class="result result-hidden"><div class="resulttitle"><a href="https://a.example/hidden">x</a></div><div class="resultsimilarityinfo">99%</div></div>
+      <div class="result"><div class="resultcontentcolumn"><a href="/relative">x</a></div><div class="resultsimilarityinfo">80%</div></div>
+      <div class="result"><div class="resultcontentcolumn"><a href="https://b.example/2">x</a></div><div class="resultsimilarityinfo">oops</div><img src=""></div>
+      <div class="result"><div class="resulttitle"><a href="https://c.example/3">x</a></div></div>
+    </body></html>"#;
+
+    #[test]
+    fn the_html_page_gives_visible_blocks_with_a_link_and_a_similarity() {
+        let got = parse_html(HTML);
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].url, "https://danbooru.donmai.us/posts/1");
+        assert_eq!(got[0].similarity, 91.5);
+        assert_eq!(got[0].title.as_deref(), Some("Title onelink"));
+        assert_eq!(
+            got[0].thumb_url.as_deref(),
+            Some("https://img.example/t1.jpg")
+        );
+        assert_eq!((got[0].source_name.clone(), got[0].tags.len()), (None, 0));
+        // An unreadable similarity is 0, an empty `src` stays empty, no title element is None.
+        assert_eq!(got[1].url, "https://b.example/2");
+        assert_eq!(
+            (
+                got[1].similarity,
+                got[1].thumb_url.as_deref(),
+                got[1].title.as_deref()
+            ),
+            (0.0, Some(""), None)
+        );
+    }
+
+    #[test]
+    fn the_html_path_maps_the_status_without_a_429_special_case() {
+        assert_eq!(parse_html_response(200, HTML).unwrap().len(), 2);
+        assert_eq!(
+            parse_html_response(413, HTML).unwrap_err().0,
+            "SauceNAO rejected the image as too large, even after downscaling"
+        );
+        assert_eq!(
+            parse_html_response(429, HTML).unwrap_err().0,
+            "SauceNAO returned HTTP 429"
+        );
+        assert!(parse_html_response(200, "").unwrap().is_empty());
+    }
+
+    #[test]
+    fn search_reads_the_json_page_only_with_a_key_and_the_json_setting() {
+        let mut s = SauceNaoSettings::default();
+        assert!(!uses_json_api(&s));
+        s.api_key = "k".into();
+        assert!(uses_json_api(&s));
+        s.use_json_api = false;
+        assert!(!uses_json_api(&s));
+        assert_eq!(search_from_response(&s, 200, HTML).unwrap().len(), 2);
+        s.use_json_api = true;
+        assert_eq!(
+            search_from_response(&s, 200, HTML).unwrap_err().0,
+            "SauceNAO returned invalid JSON"
+        );
+    }
 }
