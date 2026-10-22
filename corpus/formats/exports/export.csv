@@ -1,0 +1,7 @@
+filename,path,status,matched_url,site,engine,similarity,similarity_measured,local_width,local_height,match_width,match_height,tag_count,tags,candidate_count,sent,reviewed,upscale_verdict,cache,error,file_missing,hydrus_hash
+example-1.png,/data/hatate-sample/images/example-1.png,Found (good),https://danbooru.donmai.us/posts/1000001,Danbooru,IQDB,96.5,TRUE,800,600,1600,1200,7,"1girl, character:example_character, solo, artist:example_artist, hand_added, already_in_hydrus, hatate:auto_tag",2,sent,FALSE,,fresh,,FALSE,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+example-2.jpg,/data/hatate-sample/images/example-2.jpg,Not found,,,,,,1024,768,,,0,,0,,FALSE,clear,cached,,FALSE,bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ünïcode-3.webp,/data/hatate-sample/images/ünïcode-3.webp,Error,,,,,,,,,,0,,0,,FALSE,,,HTTP 502 from iqdb.org,FALSE,
+example-4.gif,/data/hatate-sample/images/example-4.gif,Not searched,,,,,,,,,,0,,0,,FALSE,,,,FALSE,
+example-5.png,/data/hatate-sample/images/example-5.png,Searching...,https://e621.net/posts/1000005,e621,IQDB,88.0,TRUE,,,,,0,,1,,FALSE,,provisional,,FALSE,
+example-6.png,/data/hatate-sample/images/example-6.png,Found (review),https://gelbooru.com/index.php?page=post&s=view&id=1000006,Gelbooru,ascii2d,71.0,TRUE,,,,,0,,1,,FALSE,,,,FALSE,

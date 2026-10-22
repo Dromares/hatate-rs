@@ -1,0 +1,6 @@
+CREATE TABLE entries (
+            path    TEXT PRIMARY KEY,
+            ordinal INTEGER NOT NULL,
+            data    TEXT NOT NULL
+        );
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);

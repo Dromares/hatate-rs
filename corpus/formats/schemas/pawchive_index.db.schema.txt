@@ -1,0 +1,22 @@
+CREATE TABLE creators (
+    service     TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    name        TEXT,
+    added_at    REAL,
+    indexed_at  REAL,
+    post_count  INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (service, user_id)
+);
+CREATE TABLE images (
+    service     TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    post_id     TEXT NOT NULL,
+    page_index  INTEGER NOT NULL,
+    sha256      TEXT NOT NULL,
+    path        TEXT NOT NULL,
+    title       TEXT,
+    dhash8      TEXT,               -- hex; NULL when pawchive had no thumbnail
+    dhash16     TEXT,
+    PRIMARY KEY (service, user_id, post_id, page_index)
+);
+CREATE INDEX images_by_sha256 ON images (sha256);

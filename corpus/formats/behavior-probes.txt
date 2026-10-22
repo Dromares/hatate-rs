@@ -1,0 +1,142 @@
+Raw output of the failure-mode probes behind docs/file-formats.md (sections 2.3, 3.8, 6.1, 6.5).
+Each probe ran the Python app's own Settings.load / session_db / session code, one fresh process per
+probe, inside a throw-away profile (HOME, XDG_CONFIG_HOME, XDG_CACHE_HOME all inside a mktemp dir).
+Source: Dromares/Hatate-Linux-Redux at 76c85c4. System Python 3.14. "exit" is the probe process's exit
+status, "files" the profile directory afterwards, "stdout" what the probe printed, "stderr_tail" the last
+stderr line (the app's own log line or the traceback's last line).
+
+### config: empty profile
+exit=0
+files=['config.json']
+stdout=13 hydrus always 26
+stderr_tail=[]
+
+### config: v1 legacy
+exit=0
+files=['config.json', 'config.json.bak']
+stdout=13 local disabled 11
+['Xbooru', 'Twitter', 'AniList', 'Paheal', 'MangaUpdates', 'MyAnimeList'] ['User', 'Hydrus', 'Booru', 'Hatate-linux'] False
+stderr_tail=[]
+
+### config: top-level list
+exit=1
+files=['config.json']
+stdout=
+stderr_tail=["AttributeError: 'list' object has no attribute 'get'"]
+
+### config: not json
+exit=0
+files=['config.json.unreadable']
+stdout=13 hydrus always 26
+stderr_tail=['Kept the unreadable config as /tmp/hatate-probe-_jh4zdx3/c/hatate-linux/config.json.unreadable - your keys and cookies are still in it']
+
+### config: nested unknown key
+exit=1
+files=['config.json']
+stdout=
+stderr_tail=["TypeError: HydrusSettings.__init__() got an unexpected keyword argument 'bogus'"]
+
+### config: nested not dict
+exit=0
+files=['config.json']
+stdout=13 hydrus always 26
+<class 'str'>
+stderr_tail=[]
+
+### config: wrong type value
+exit=0
+files=['config.json']
+stdout=13 hydrus always 26
+'abc' None
+stderr_tail=[]
+
+### config: future schema
+exit=0
+files=['config.json']
+stdout=99 hydrus always 26
+99 dark
+stderr_tail=[]
+
+### config: bad config + good bak
+exit=0
+files=['config.json.bak', 'config.json.unreadable']
+stdout=13 hydrus always 26
+light
+stderr_tail=["Could not restrict permissions on /tmp/hatate-probe-87j7pkt4/c/hatate-linux/config.json ([Errno 2] No such file or directory: '/tmp/hatate-probe-87j7pkt4/c/hatate-linux/config.json') - it may be readable by other users on this machine"]
+
+### config: missing schema_version
+exit=0
+files=['config.json', 'config.json.bak']
+stdout=13 hydrus always 26
+stderr_tail=[]
+
+### config: BOM
+exit=0
+files=['config.json.unreadable']
+stdout=13 hydrus always 26
+stderr_tail=['Kept the unreadable config as /tmp/hatate-probe-gd7qqjvt/c/hatate-linux/config.json.unreadable - your keys and cookies are still in it']
+
+### session: meta.schema_version=99 + corrupt row
+exit=0
+files=['session.db']
+stdout=1 1 ['/a/b.png']
+stderr_tail=["Session load dropped 1 corrupt row(s) from /tmp/hatate-probe-4w14un61/c/hatate-linux/session.db - those images' search state is lost"]
+
+### session: no meta table (older)
+exit=0
+files=['session.db']
+stdout=1 1 ['/a/b.png']
+[('entries',), ('sqlite_autoindex_entries_1',), ('meta',), ('sqlite_autoindex_meta_1',)]
+stderr_tail=["Session load dropped 1 corrupt row(s) from /tmp/hatate-probe-ebiditc1/c/hatate-linux/session.db - those images' search state is lost"]
+
+### session: user_version=7
+exit=0
+files=['session.db']
+stdout=1 1 ['/a/b.png']
+(7,)
+stderr_tail=["Session load dropped 1 corrupt row(s) from /tmp/hatate-probe-6dqp6q9n/c/hatate-linux/session.db - those images' search state is lost"]
+
+### session: entries has extra NOT NULL column, then save
+exit=0
+files=['session.db']
+stdout=0 0 []
+save ok= False
+stderr_tail=['Could not save session to /tmp/hatate-probe-azc718gp/c/hatate-linux/session.db: NOT NULL constraint failed: entries.extra']
+
+### session: entries has extra nullable column, then save
+exit=0
+files=['session.db']
+stdout=1 1 ['/a/b.png']
+save ok= True
+stderr_tail=["Session load dropped 1 corrupt row(s) from /tmp/hatate-probe-cqu_95k0/c/hatate-linux/session.db - those images' search state is lost"]
+
+### session: not an sqlite file
+exit=0
+files=['session.db']
+stdout=0 0 []
+stderr_tail=['Could not read session /tmp/hatate-probe-1edns2a0/c/hatate-linux/session.db: file is not a database']
+
+### session: legacy session.json -> migrate
+exit=0
+files=['session.db', 'session.json']
+stdout=1
+['session.db', 'session.json']
+stderr_tail=[]
+
+### session: legacy session.json wrong version
+exit=0
+files=['session.json']
+stdout=0
+stderr_tail=[]
+
+### session: row JSON with unknown status + candidate lacking url
+exit=0
+files=['session.db']
+stdout=0 1 []
+stderr_tail=["Session load dropped 1 corrupt row(s) from /tmp/hatate-probe-m__3j8rx/c/hatate-linux/session.db - those images' search state is lost"]
+
+### XDG resolution (core/paths.py:30,43)
+unset (HOME=/tmp/hh, cwd=/tmp): /tmp/hh/.config/hatate-linux /tmp/hh/.cache/hatate-linux /tmp/hh/.cache/hatate-linux/auto_import_staging
+XDG_CONFIG_HOME='' XDG_CACHE_HOME='' (HOME=/tmp/hh, cwd=/tmp): hatate-linux hatate-linux hatate-linux/auto_import_staging
+XDG_CONFIG_HOME=rel/dir (HOME=/tmp/hh, cwd=/tmp): rel/dir/hatate-linux rel/cache/hatate-linux rel/cache/hatate-linux/auto_import_staging
+XDG_CONFIG_HOME='~/x' (HOME=/tmp/hh, cwd=/tmp): ~/x/hatate-linux /tmp/hh/.cache/hatate-linux /tmp/hh/.cache/hatate-linux/auto_import_staging

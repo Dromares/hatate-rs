@@ -1,0 +1,14 @@
+{
+  "delay_min_seconds": 30.0,
+  "enabled_sites": [
+    "Danbooru",
+    "Gelbooru"
+  ],
+  "use_saucenao_fallback": false,
+  "use_filename_hashes": false,
+  "hydrus": {
+    "api_url": "http://127.0.0.1:45869",
+    "access_key": ""
+  },
+  "unknown_future_key": 1
+}
