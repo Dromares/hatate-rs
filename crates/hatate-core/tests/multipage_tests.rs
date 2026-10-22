@@ -22,9 +22,9 @@ use hatate_core::config::Settings;
 use hatate_core::image_compare::Source;
 use hatate_core::model::Candidate;
 use hatate_core::multipage::{
-    MAX_PLAUSIBLE_DISTANCE, NEAR_EXACT_DISTANCE, PageSize, check_page, choose_matching_page,
-    dimensions_contradict_page, dimensions_identify_page, page_index_from_thumbnail,
-    page_url_for_index,
+    MAX_PAGES_TO_COMPARE, MAX_PLAUSIBLE_DISTANCE, NEAR_EXACT_DISTANCE, PageSize, check_page,
+    choose_matching_page, dimensions_contradict_page, dimensions_identify_page,
+    page_index_from_thumbnail, page_url_for_index,
 };
 use hatate_core::multipage_resolve::{ResolveError, resolve_multipage_candidate};
 use hatate_core::net::{NetClient, NetConfig, USER_AGENT};
@@ -579,6 +579,16 @@ impl World {
             .count()
     }
 
+    /// The `Referer` each request to `host` carried, in order (`None`: it sent none).
+    fn referers_to(&self, host: &str) -> Vec<Option<String>> {
+        self.server
+            .recorded()
+            .iter()
+            .filter(|r| r.header("host") == Some(host))
+            .map(|r| r.header("referer").map(str::to_owned))
+            .collect()
+    }
+
     /// A local file: `art` drawn at `size` (resized if it is not that already), as a PNG.
     fn local(&self, art: &Canvas, size: (u32, u32)) -> String {
         let canvas = if art.size() == size {
@@ -797,6 +807,104 @@ async fn test_a_post_that_doesnt_contain_the_image_is_left_alone() {
     )
     .await;
     assert_eq!(c.page_index, 0);
+}
+
+// -- The Referer on each fetch the resolver makes: the post's own URL (pixiv's CDN refuses a
+//    download without it); the page-list fetch alone would otherwise default to the site root.
+
+#[tokio::test]
+async fn test_the_page_list_is_fetched_with_the_posts_url_as_referer() {
+    let w = world().await;
+    let local = w.flat((1986, 2938));
+    let mut c = pixiv_candidate(Some(1));
+    resolve(&w, &mut c, &[(3474, 6642), (1986, 2938)], &local, &[], None).await;
+    assert_eq!(
+        w.referers_to("www.pixiv.net"),
+        vec![Some(ARTWORK.to_owned())]
+    );
+}
+
+#[tokio::test]
+async fn test_every_thumbnail_is_downloaded_with_the_posts_url_as_referer() {
+    let w = world().await;
+    let arts = art_pages(3);
+    let local = w.local(&arts[1], (450, 300));
+    let mut c = pixiv_candidate(None);
+    resolve(
+        &w,
+        &mut c,
+        &[(900, 600); 3],
+        &local,
+        &thumbs_of(&arts),
+        None,
+    )
+    .await;
+    assert_eq!(
+        w.referers_to("i.pximg.net"),
+        vec![Some(ARTWORK.to_owned()); 3]
+    );
+}
+
+#[tokio::test]
+async fn test_a_huge_posts_named_page_is_downloaded_with_the_posts_url_as_referer() {
+    let w = world().await;
+    let art = page_art(3);
+    let local = w.local(&art, (800, 1122));
+    let mut c = pixiv_candidate(Some(54));
+    resolve(
+        &w,
+        &mut c,
+        &vec![(800, 1122); 111],
+        &local,
+        &[(54, thumbnail_bytes(&art))],
+        Some(111),
+    )
+    .await;
+    assert_eq!(w.referers_to("i.pximg.net"), vec![Some(ARTWORK.to_owned())]);
+}
+
+// -- The edge of MAX_PAGES_TO_COMPARE: a post of exactly that many pages is still compared page
+//    by page; one more and it is not.
+
+#[tokio::test]
+async fn test_a_post_of_exactly_the_comparison_limit_is_compared_page_by_page() {
+    let w = world().await;
+    let arts = art_pages(MAX_PAGES_TO_COMPARE);
+    let local = w.local(&arts[2], (800, 1122));
+    let mut c = pixiv_candidate(None);
+    resolve(
+        &w,
+        &mut c,
+        &vec![(800, 1122); MAX_PAGES_TO_COMPARE],
+        &local,
+        &thumbs_of(&arts),
+        None,
+    )
+    .await;
+    assert_eq!(
+        w.requests_to("i.pximg.net"),
+        MAX_PAGES_TO_COMPARE,
+        "every page's thumbnail is downloaded"
+    );
+}
+
+#[tokio::test]
+async fn test_a_post_one_page_over_the_comparison_limit_downloads_nothing_unprompted() {
+    let w = world().await;
+    let arts = art_pages(MAX_PAGES_TO_COMPARE + 1);
+    let local = w.local(&arts[2], (800, 1122));
+    let mut c = pixiv_candidate(None);
+    resolve(
+        &w,
+        &mut c,
+        &vec![(800, 1122); MAX_PAGES_TO_COMPARE + 1],
+        &local,
+        &thumbs_of(&arts),
+        None,
+    )
+    .await;
+    assert_eq!(c.page_index, 0);
+    assert_eq!(w.requests_to("i.pximg.net"), 0);
 }
 
 #[tokio::test]
