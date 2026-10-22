@@ -10,7 +10,6 @@ publish.workspace = true
 
 [dependencies]
 bytes = "1"
-fast_image_resize = "5.1.4"
 http = "1"
 # NFKC for `pyurl`'s netloc check (`urllib.parse._checknetloc`). Already in the lockfile through
 # `url` -> `idna`, so no new crate is built.

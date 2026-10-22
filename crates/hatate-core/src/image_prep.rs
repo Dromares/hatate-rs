@@ -6,11 +6,13 @@
 //!
 //! **What is matched with Python.** The decision (send the file as it is, or re-encode), the
 //! output dimensions, the output format (JPEG, with a `.jpg` name) and staying under the byte
-//! cap whenever Python does. **What is not:** the re-encoded JPEG's bytes. Pillow's decoder,
-//! Lanczos resampler and libjpeg are not bit-reproduced; that difference is granted by name on
-//! DAN-2057. The encoder here does optimise its Huffman tables and subsample 4:2:0 like Pillow's
-//! `optimize=True`, so the sizes it produces sit close to Pillow's and the quality ladder stops
-//! on the same rung for ordinary inputs; `docs/net.md` lists the measured divergence.
+//! cap whenever Python does. **What is not:** the re-encoded JPEG's bytes (granted by name on
+//! DAN-2057). The resampler is Pillow's Lanczos ported (`resample_axis`) and the colour
+//! conversion and chroma downsampling are libjpeg's (`LibjpegRgb`), so the pixels going into the
+//! encoder are Pillow's; the DCT and the Huffman tables are the `jpeg-encoder` crate's, with
+//! optimised tables and 4:2:0 like Pillow's `optimize=True`. The sizes it produces sit within
+//! about 0.3% of Pillow's, so the quality ladder stops on the same rung for ordinary inputs;
+//! `docs/net.md` lists the measured divergence.
 //!
 //! Never fails for image-processing reasons: it falls back to the raw file bytes if resizing
 //! fails for any reason, so a bug here degrades to the old (occasionally 413) behaviour rather
@@ -21,10 +23,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use bytes::Bytes;
-use fast_image_resize::images::Image as FirImage;
-use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions, Resizer};
 use image::DynamicImage;
-use jpeg_encoder::{ColorType, Encoder, SamplingFactor};
+use jpeg_encoder::{ColorType, Encoder, ImageBuffer, JpegColorType, SamplingFactor};
 use serde_json::Value;
 use tracing::{debug, info, warn};
 
@@ -346,29 +346,22 @@ impl Pixels {
             // Pillow's `resize` refuses a zero side ("height and width must be > 0").
             return Err("height and width must be > 0".to_owned());
         }
-        let pixel_type = if self.grey {
-            PixelType::U8
-        } else {
-            PixelType::U8x3
-        };
-        let src = FirImage::from_vec_u8(
-            self.width,
-            self.height,
-            std::mem::take(&mut self.data),
-            pixel_type,
-        )
-        .map_err(|e| e.to_string())?;
-        let mut dst = FirImage::new(w, h, pixel_type);
-        Resizer::new()
-            .resize(
-                &src,
-                &mut dst,
-                &ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3)),
-            )
-            .map_err(|e| e.to_string())?;
+        let channels = self.channels();
+        let mut data = std::mem::take(&mut self.data);
+        let (mut cur_w, mut cur_h) = (self.width as usize, self.height as usize);
+        // Pillow resamples across first, then down, and skips an axis whose size is unchanged.
+        if w != self.width {
+            data = resample_axis(&data, cur_w, cur_h, channels, w as usize, true);
+            cur_w = w as usize;
+        }
+        if h != self.height {
+            data = resample_axis(&data, cur_w, cur_h, channels, h as usize, false);
+            cur_h = h as usize;
+        }
+        debug_assert_eq!(data.len(), cur_w * cur_h * channels);
         self.width = w;
         self.height = h;
-        self.data = dst.into_vec();
+        self.data = data;
         Ok(())
     }
 
@@ -379,18 +372,195 @@ impl Pixels {
         // Pillow's `optimize=True` and its default 4:2:0 subsampling.
         enc.set_optimized_huffman_tables(true);
         enc.set_sampling_factor(SamplingFactor::F_2_2);
-        let color = if self.grey {
-            ColorType::Luma
-        } else {
-            ColorType::Rgb
-        };
-        debug_assert_eq!(
-            self.data.len(),
-            (self.width * self.height) as usize * self.channels()
-        );
-        enc.encode(&self.data, side(self.width)?, side(self.height)?, color)
+        if self.grey {
+            enc.encode(
+                &self.data,
+                side(self.width)?,
+                side(self.height)?,
+                ColorType::Luma,
+            )
             .map_err(|e| e.to_string())?;
+            return Ok(without_chroma_quantization_table(out));
+        }
+        enc.encode_image(LibjpegRgb {
+            data: &self.data,
+            width: side(self.width)?,
+            height: side(self.height)?,
+        })
+        .map_err(|e| e.to_string())?;
         Ok(out)
+    }
+}
+
+/// The encoder writes both quantization tables even for a one-component picture; libjpeg writes
+/// only the one in use (table 0). Drops the unused table (`DQT`, id 1) from the headers, which
+/// are 69 bytes in a stream whose whole body can be a couple of kilobytes.
+fn without_chroma_quantization_table(jpeg: Vec<u8>) -> Vec<u8> {
+    let mut at = 2;
+    while at + 4 <= jpeg.len() && jpeg[at] == 0xFF && jpeg[at + 1] != 0xDA {
+        let len = usize::from(u16::from_be_bytes([jpeg[at + 2], jpeg[at + 3]])) + 2;
+        let is_table_1 = jpeg[at + 1] == 0xDB && jpeg.get(at + 4).is_some_and(|&b| b & 0x0F == 1);
+        if is_table_1 && at + len <= jpeg.len() {
+            let mut out = jpeg;
+            out.drain(at..at + len);
+            return out;
+        }
+        at += len;
+    }
+    jpeg
+}
+
+/// RGB pixels as libjpeg hands them to the DCT: converted to YCbCr with its fixed-point
+/// arithmetic, and each chroma sample the average of its 2x2 block (`h2v2_downsample`, with the
+/// rounding bias alternating 1, 2 along a row; the last row and column repeat). The encoder's own
+/// 4:2:0 path keeps every second chroma sample and drops the rest, which makes noisy pictures
+/// about 5% larger than Pillow's at the same quality and moves the rung the quality ladder stops
+/// on. It reads the chroma at the even rows and columns of what `fill_buffers` pushes, so each
+/// position carries the average of the block it falls in.
+struct LibjpegRgb<'a> {
+    data: &'a [u8],
+    width: u16,
+    height: u16,
+}
+
+impl LibjpegRgb<'_> {
+    /// `rgb_ycc_convert`: (Y, Cb, Cr) of the pixel at column `x`, row `y`.
+    fn ycc(&self, x: usize, y: usize) -> (i32, i32, i32) {
+        let at = (y * usize::from(self.width) + x) * 3;
+        let (r, g, b) = (
+            i32::from(self.data[at]),
+            i32::from(self.data[at + 1]),
+            i32::from(self.data[at + 2]),
+        );
+        const HALF: i32 = 1 << 15;
+        const CENTRE: i32 = 128 << 16;
+        (
+            (19595 * r + 38470 * g + 7471 * b + HALF) >> 16,
+            (-11059 * r - 21709 * g + 32768 * b + CENTRE + HALF - 1) >> 16,
+            (32768 * r - 27439 * g - 5329 * b + CENTRE + HALF - 1) >> 16,
+        )
+    }
+}
+
+impl ImageBuffer for LibjpegRgb<'_> {
+    fn get_jpeg_color_type(&self) -> JpegColorType {
+        JpegColorType::Ycbcr
+    }
+
+    fn width(&self) -> u16 {
+        self.width
+    }
+
+    fn height(&self) -> u16 {
+        self.height
+    }
+
+    fn fill_buffers(&self, y: u16, buffers: &mut [Vec<u8>; 4]) {
+        let (w, h) = (usize::from(self.width), usize::from(self.height));
+        let y0 = usize::from(y) & !1;
+        let y1 = (y0 + 1).min(h - 1);
+        for x in 0..w {
+            buffers[0].push(self.ycc(x, usize::from(y)).0 as u8);
+            let x0 = x & !1;
+            let x1 = (x0 + 1).min(w - 1);
+            let bias = if (x0 / 2) % 2 == 0 { 1 } else { 2 };
+            let (mut cb, mut cr) = (bias, bias);
+            for (px, py) in [(x0, y0), (x1, y0), (x0, y1), (x1, y1)] {
+                let (_, b, r) = self.ycc(px, py);
+                cb += b;
+                cr += r;
+            }
+            buffers[1].push((cb >> 2) as u8);
+            buffers[2].push((cr >> 2) as u8);
+        }
+    }
+}
+
+/// Pillow's Lanczos filter (`Resample.c`, support 3).
+fn lanczos(x: f64) -> f64 {
+    fn sinc(x: f64) -> f64 {
+        if x == 0.0 {
+            1.0
+        } else {
+            let x = x * std::f64::consts::PI;
+            x.sin() / x
+        }
+    }
+    if (-3.0..3.0).contains(&x) {
+        sinc(x) * sinc(x / 3.0)
+    } else {
+        0.0
+    }
+}
+
+/// One pass of Pillow's `ImagingResample` for 8-bit pixels (`precompute_coeffs`,
+/// `normalize_coeffs_8bpc` and the `8bpc` loops), across (`horizontal`) or down. The weights are
+/// 22-bit fixed point and the sum is rounded and clamped like Pillow's, so the pixels equal
+/// Pillow's `Image.resize(..., Image.LANCZOS)`. The size of a JPEG made from them then follows
+/// Pillow's closely, so the quality ladder and the shrink loop stop where Python's do.
+fn resample_axis(
+    src: &[u8],
+    width: usize,
+    height: usize,
+    channels: usize,
+    out_size: usize,
+    horizontal: bool,
+) -> Vec<u8> {
+    const PRECISION_BITS: u32 = 32 - 8 - 2;
+    let in_size = if horizontal { width } else { height };
+    let scale = in_size as f64 / out_size as f64;
+    let filter_scale = scale.max(1.0);
+    let support = 3.0 * filter_scale;
+    let ss = 1.0 / filter_scale;
+    // Per output position: the first input index and its fixed-point weights.
+    let mut taps: Vec<(usize, Vec<i32>)> = Vec::with_capacity(out_size);
+    for xx in 0..out_size {
+        let center = (xx as f64 + 0.5) * scale;
+        let xmin = ((center - support + 0.5) as i64).max(0) as usize;
+        let xmax = (((center + support + 0.5) as i64).max(0) as usize).min(in_size);
+        let mut k: Vec<f64> = (0..xmax.saturating_sub(xmin))
+            .map(|x| lanczos(((x + xmin) as f64 - center + 0.5) * ss))
+            .collect();
+        let ww: f64 = k.iter().sum();
+        if ww != 0.0 {
+            k.iter_mut().for_each(|w| *w /= ww);
+        }
+        let fixed = k
+            .iter()
+            .map(|&w| {
+                let scaled = w * f64::from(1u32 << PRECISION_BITS);
+                (if w < 0.0 { -0.5 + scaled } else { 0.5 + scaled }) as i32
+            })
+            .collect();
+        taps.push((xmin, fixed));
+    }
+    let clip = |sum: i64| (sum >> PRECISION_BITS).clamp(0, 255) as u8;
+    let round = 1i64 << (PRECISION_BITS - 1);
+    if horizontal {
+        let mut out = vec![0u8; out_size * height * channels];
+        for y in 0..height {
+            let row = &src[y * width * channels..(y + 1) * width * channels];
+            for (xx, (xmin, k)) in taps.iter().enumerate() {
+                for c in 0..channels {
+                    let sum = k.iter().enumerate().fold(round, |acc, (i, &w)| {
+                        acc + i64::from(row[(xmin + i) * channels + c]) * i64::from(w)
+                    });
+                    out[(y * out_size + xx) * channels + c] = clip(sum);
+                }
+            }
+        }
+        out
+    } else {
+        let mut out = vec![0u8; width * out_size * channels];
+        for (yy, (ymin, k)) in taps.iter().enumerate() {
+            for x in 0..width * channels {
+                let sum = k.iter().enumerate().fold(round, |acc, (i, &w)| {
+                    acc + i64::from(src[(ymin + i) * width * channels + x]) * i64::from(w)
+                });
+                out[yy * width * channels + x] = clip(sum);
+            }
+        }
+        out
     }
 }
 

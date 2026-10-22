@@ -711,3 +711,118 @@ fn sixteen_bit_grey_is_clipped_to_255_as_pillows_i16_conversion_does() {
         [255, 255, 255]
     );
 }
+
+// Pillow's resampler and libjpeg's chroma path, ported (see `resample_axis`, `LibjpegRgb`): the
+// expected values below are what Pillow 12's `Image.resize(size, Image.LANCZOS)` gave for the
+// same pixels. Without them the quality ladder stops on other rungs than Python's, which showed
+// up as a picture over the byte cap where Python's was under it (DAN-2057 differential).
+
+/// An 11x7 grey picture with some structure in it.
+const RESAMPLE_SRC: [u8; 77] = [
+    0, 9, 9, 26, 35, 60, 77, 111, 136, 179, 212, 18, 22, 29, 54, 70, 103, 127, 169, 201, 251, 4,
+    37, 48, 76, 95, 118, 159, 190, 239, 2, 13, 15, 69, 87, 123, 149, 193, 228, 0, 10, 11, 29, 38,
+    114, 140, 182, 216, 11, 7, 20, 24, 33, 58, 75, 172, 205, 0, 4, 16, 20, 40, 52, 81, 101, 125,
+    244, 1, 13, 15, 35, 46, 74, 93, 129, 157, 201,
+];
+
+#[test]
+fn the_lanczos_resample_gives_pillows_pixels_across_down_and_up() {
+    // Narrower only, shorter only, both (across first, then down), and enlarged.
+    let across = resample_axis(&RESAMPLE_SRC, 11, 7, 1, 7, true);
+    assert_eq!(
+        across,
+        [
+            3, 11, 29, 57, 95, 145, 203, 19, 29, 60, 100, 145, 232, 100, 39, 70, 105, 155, 221, 33,
+            7, 73, 112, 180, 183, 0, 18, 36, 115, 193, 125, 0, 25, 38, 71, 199, 58, 0, 26, 46, 83,
+            118, 153, 0, 28, 49, 84, 131, 187
+        ]
+    );
+    let down = resample_axis(&RESAMPLE_SRC, 11, 7, 1, 4, false);
+    assert_eq!(
+        down,
+        [
+            7, 13, 13, 33, 42, 70, 111, 150, 170, 217, 118, 39, 46, 86, 109, 146, 187, 129, 167,
+            39, 59, 2, 109, 154, 140, 167, 67, 74, 4, 8, 23, 44, 73, 216, 96, 5, 8, 13, 19, 63, 79,
+            112, 137, 170
+        ]
+    );
+    let both = resample_axis(
+        &resample_axis(&RESAMPLE_SRC, 11, 7, 1, 8, true),
+        8,
+        7,
+        1,
+        5,
+        false,
+    );
+    assert_eq!(
+        both,
+        [
+            6, 11, 26, 48, 77, 120, 203, 176, 30, 43, 70, 115, 171, 191, 109, 33, 66, 117, 165,
+            185, 93, 30, 0, 34, 156, 146, 112, 6, 12, 28, 67, 92, 192, 19, 0, 35, 58, 90, 131, 175
+        ]
+    );
+    let up = resample_axis(
+        &resample_axis(&RESAMPLE_SRC, 11, 7, 1, 14, true),
+        14,
+        7,
+        1,
+        9,
+        false,
+    );
+    assert_eq!(
+        up[..14],
+        [0, 5, 9, 12, 25, 32, 49, 64, 80, 108, 123, 144, 192, 227]
+    );
+    assert_eq!(
+        up[14 * 8..],
+        [255, 72, 0, 27, 20, 34, 42, 58, 79, 94, 123, 143, 177, 207]
+    );
+}
+
+#[test]
+fn the_chroma_of_a_colour_picture_is_averaged_like_libjpegs() {
+    // 1 and 2 alternate as the rounding bias along a row; a last row or column that has no
+    // partner repeats. Pillow's JPEG of these pixels has the same size, which a decimating
+    // encoder misses by about 5% on noise.
+    let (w, h) = (5u16, 3u16);
+    let data: Vec<u8> = noise(usize::from(w) * usize::from(h) * 3);
+    let buf = LibjpegRgb {
+        data: &data,
+        width: w,
+        height: h,
+    };
+    let mut rows: [Vec<u8>; 4] = Default::default();
+    buf.fill_buffers(2, &mut rows);
+    // Row 2 is the last row of three: its pair is itself. Column 4 is the last of five.
+    let cb = |x: usize, y: usize| buf.ycc(x, y).1;
+    let expect = |x0: usize, x1: usize, bias: i32| {
+        ((cb(x0, 2) + cb(x1, 2) + cb(x0, 2) + cb(x1, 2) + bias) >> 2) as u8
+    };
+    assert_eq!(rows[1][0], expect(0, 1, 1));
+    assert_eq!(rows[1][1], expect(0, 1, 1));
+    assert_eq!(rows[1][2], expect(2, 3, 2));
+    assert_eq!(rows[1][4], expect(4, 4, 1));
+}
+
+#[test]
+fn a_grey_jpeg_carries_only_the_quantization_table_it_uses() {
+    let grey = Pixels {
+        width: 16,
+        height: 16,
+        grey: true,
+        data: noise(256),
+    };
+    let jpeg = grey.to_jpeg(40).unwrap();
+    let mut tables = Vec::new();
+    let mut at = 2;
+    while jpeg[at + 1] != 0xDA {
+        if jpeg[at + 1] == 0xDB {
+            tables.push(jpeg[at + 4] & 0x0F);
+        }
+        at += usize::from(u16::from_be_bytes([jpeg[at + 2], jpeg[at + 3]])) + 2;
+    }
+    assert_eq!(tables, [0]);
+    // and it still decodes
+    let decoded = image::load_from_memory(&jpeg).unwrap();
+    assert_eq!((decoded.width(), decoded.height()), (16, 16));
+}
