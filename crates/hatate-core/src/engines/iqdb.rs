@@ -662,6 +662,40 @@ mod client_tests {
         );
     }
 
+    fn page(thumb: &str) -> String {
+        format!(
+            "<html><head><title>iqdb</title></head><body><div id=\"pages\"><table><tr>\
+             <th>Best match</th></tr><tr><td class=\"image\"><a href=\"https://example.test/post/1\">\
+             <img src=\"{thumb}\"></a></td><td>1200x1600</td><td>97% similarity</td></tr></table>\
+             </div></body></html>"
+        )
+    }
+
+    #[test]
+    fn thumbnails_join_against_the_instance_asked() {
+        // test_parsers_and_tags.py: test_root_relative_thumbnail_is_made_absolute,
+        // test_protocol_relative_still_works, test_absolute_thumbnail_untouched;
+        // test_search_quality.py: test_three_d_thumbnails_join_against_the_3d_host.
+        let thumb =
+            |html: &str, base: &str| parse_results(html, base).unwrap()[0].thumb_url.clone();
+        assert_eq!(
+            thumb(&page("/danbooru/3/5/7/abc.jpg"), IQDB_URL).as_deref(),
+            Some("https://iqdb.org/danbooru/3/5/7/abc.jpg")
+        );
+        assert_eq!(
+            thumb(&page("//img3.saucenao.com/x.jpg"), IQDB_URL).as_deref(),
+            Some("https://img3.saucenao.com/x.jpg")
+        );
+        assert_eq!(
+            thumb(&page("https://img.example/t.jpg"), IQDB_URL).as_deref(),
+            Some("https://img.example/t.jpg")
+        );
+        assert_eq!(
+            thumb(&page("/thumbs/a.jpg"), IQDB_3D_URL).as_deref(),
+            Some("https://3d.iqdb.org/thumbs/a.jpg")
+        );
+    }
+
     #[test]
     fn the_instance_is_named_by_the_one_asked_not_by_the_address() {
         // Python names it by "3d.iqdb" in the URL; the client may be given any address.
