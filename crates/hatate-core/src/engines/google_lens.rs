@@ -538,7 +538,10 @@ mod tests {
     fn results_are_scored_in_order() {
         let matches = parse_lens_payload(PAYLOAD);
         assert!(matches[0].similarity > matches[1].similarity);
-        const { assert!(SIMILARITY_START < super::super::ascii2d::COLOR_SIMILARITY_START) };
+        const {
+            assert!(SIMILARITY_START > super::super::google_images::SIMILARITY_START);
+            assert!(SIMILARITY_START < super::super::ascii2d::COLOR_SIMILARITY_START);
+        }
         // The floor holds past 16 results.
         let parts: Vec<String> = (0..20)
             .flat_map(|i| {
