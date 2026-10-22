@@ -271,7 +271,18 @@ async fn execute(
                         }
                         break;
                     }
-                    Ok(Err(e)) => return Err(NetError::from_reqwest(e, &url)),
+                    Ok(Err(e)) => {
+                        // A gzip or deflate body that ends inside its framing: urllib3's decoder
+                        // hands back what it decoded and `stream`/`read` carry on to the end.
+                        if let Some(probe) = &req.probe
+                            && ended_inside_encoding(&e)
+                        {
+                            buf.extend_from_slice(&pending);
+                            let _ = (probe.done)(&buf);
+                            break;
+                        }
+                        return Err(NetError::from_reqwest(e, &url));
+                    }
                     Err(_) => {
                         return Err(expired(
                             &url,
@@ -292,6 +303,20 @@ async fn execute(
             body: buf.into(),
         });
     }
+}
+
+/// Whether a body read failed because a gzip or deflate stream was cut off: the decoder's own
+/// "unexpected end of file", as against a connection that broke (reqwest drops the
+/// `Content-Encoding` header once it decodes a body, so the error is all there is to go on).
+fn ended_inside_encoding(err: &reqwest::Error) -> bool {
+    if !err.is_decode() {
+        return false;
+    }
+    let mut root: &(dyn std::error::Error + 'static) = err;
+    while let Some(next) = root.source() {
+        root = next;
+    }
+    root.to_string() == "unexpected end of file"
 }
 
 #[allow(clippy::too_many_arguments)]

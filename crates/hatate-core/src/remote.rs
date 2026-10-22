@@ -106,18 +106,13 @@ pub(crate) fn ua_headers() -> HeaderMap {
 }
 
 /// Whether `requests` takes a `str` header value at all: `check_header_validity` matches it
-/// against `^\S[^\r\n]*$|^$`. It refuses a value that starts with whitespace and one that holds a
-/// carriage return or a line feed (a final line feed is let through: `$` matches before it).
+/// against `^\S[^\r\n]*\Z|^\Z` (requests 2.34). It refuses a value that starts with whitespace and
+/// one that holds a carriage return or a line feed anywhere, a final one included.
 pub(crate) fn requests_accepts_header_value(value: &str) -> bool {
-    let mut rest = value.chars();
-    match rest.next() {
+    let mut chars = value.chars();
+    match chars.next() {
         None => true,
-        Some(first) => {
-            let rest = rest.as_str();
-            let rest = rest.strip_suffix('\n').unwrap_or(rest);
-            (first == '\n' && rest.is_empty())
-                || (!py_isspace(first) && !rest.contains(['\r', '\n']))
-        }
+        Some(first) => !py_isspace(first) && !chars.as_str().contains(['\r', '\n']),
     }
 }
 
@@ -161,12 +156,7 @@ pub(crate) fn encode_fault(value: &str) -> Option<Raised> {
         return None;
     }
     let chars: Vec<char> = value.chars().collect();
-    let Some(first) = chars.iter().position(|c| u32::from(*c) > 0xff) else {
-        // Clean to `requests`, encodable, and still refused: a final line feed, which
-        // `http.client` will not send (`_is_illegal_header_value`).
-        return (value.ends_with('\n') && chars.iter().all(|c| u32::from(*c) <= 0xff))
-            .then(|| Raised::ValueError(format!("Invalid header value {}", bytes_repr(value))));
-    };
+    let first = chars.iter().position(|c| u32::from(*c) > 0xff)?;
     let last = first
         + chars[first..]
             .iter()
@@ -187,36 +177,6 @@ pub(crate) fn encode_fault(value: &str) -> Option<Raised> {
     Some(Raised::UnicodeEncode(format!(
         "'latin-1' codec can't encode {what}: ordinal not in range(256)"
     )))
-}
-
-/// `repr()` of the Latin-1 bytes of `value`.
-fn bytes_repr(value: &str) -> String {
-    let bytes: Vec<u8> = value
-        .chars()
-        .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
-        .collect();
-    let quote = if bytes.contains(&b'\'') && !bytes.contains(&b'"') {
-        '"'
-    } else {
-        '\''
-    };
-    let mut out = format!("b{quote}");
-    for b in bytes {
-        match b {
-            b'\\' => out.push_str("\\\\"),
-            b'\t' => out.push_str("\\t"),
-            b'\n' => out.push_str("\\n"),
-            b'\r' => out.push_str("\\r"),
-            b if char::from(b) == quote => {
-                out.push('\\');
-                out.push(quote);
-            }
-            0x20..=0x7e => out.push(char::from(b)),
-            b => out.push_str(&format!("\\x{b:02x}")),
-        }
-    }
-    out.push(quote);
-    out
 }
 
 /// `str.isspace()` for one character, which is what the `\s` of `re` matches in a `str` pattern.

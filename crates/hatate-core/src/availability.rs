@@ -319,14 +319,25 @@ fn urlparse_message(url: &str) -> String {
 /// The exception that left `_do_request` and was not one `requests` raised (so the handler in
 /// `_page_says_available` did not catch it), for a body read that failed.
 fn body_fault(e: &NetError) -> Raised {
-    let decode = e.detail().to_lowercase().contains("decod");
+    // A connection that broke is urllib3's `ProtocolError`; a body its `Content-Encoding` could not
+    // decode is its `DecodeError`.
+    let detail = e.detail();
+    let broke = [
+        "from connection",
+        "connection",
+        "incomplete",
+        "closed",
+        "reset",
+    ]
+    .iter()
+    .any(|word| detail.to_lowercase().contains(word));
     Raised::BodyRead {
-        class: if decode {
-            "DecodeError"
-        } else {
+        class: if broke {
             "ProtocolError"
+        } else {
+            "DecodeError"
         },
-        message: e.detail().to_string(),
+        message: detail.to_string(),
     }
 }
 
