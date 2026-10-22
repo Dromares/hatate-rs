@@ -107,6 +107,20 @@ has needed yet:
   absent, and a non-string `regular` falls through to `small`. Pixiv sends neither. Twitter's
   `_as_int` is `int(v)`, so it is ported as that (`json_fields::int_of`, which also reads
   `"1_0"` and non-ASCII digits in a string).
+- **Non-JSON bodies and big integers reach Pixiv, Twitter and the Reddit feed too** (found by the
+  DAN-2034 differential, 14,853 generated cases). A body with `NaN`, `Infinity` or a lone-surrogate
+  escape (`"a\ud800"`) parses in `json.loads` and not in `serde_json`, so the hook reads it as
+  non-JSON. A `width`, `height` or `pageCount` of 2^63 or more is a Python `int`; here it reads as
+  absent (dimensions) or as one page (`pageCount`). The sites send neither. No corpus item
+  reaches either.
+- **`<meta id="meta-preload-data">` inside `<noscript>`.** lxml (Python) finds it; `scraper` does
+  not. Only Pixiv's legacy HTML fallback reads that meta, and the real one sits in `<head>`. `<template>`, `<svg>`,
+  `<textarea>`, comments, unclosed tags and a BOM matched.
+- **`sizes::py_int` and U+001C to U+001F.** `pycompat::strip` is `str.strip()`, which removes
+  those four characters; `int()` does not (`int("\x1c5")` is `ValueError`), so `py_int` reads `5`
+  where Python raises. It is reached through `json_fields::int_of` (Twitter `width` and `height`,
+  Pixiv `pageCount`) when the JSON holds a string. Documented, not fixed: the sites send plain
+  digits, and the fix is a behaviour change for its own ticket.
 - **Where Python raises on a shape the site never sends** (a Pixiv `tags` that is a list, a tag
   that is not an object, a `userName` that is a number, a Twitter `author` that is a list) the
   hook gives what `fetch_page_info` makes of a raised hook: no tags, no URL, `(None, None)`, one
@@ -157,6 +171,56 @@ it, and then matched. No item is allowed to fail instead.
   nothing to say (`[]`, `None`, `(None, None)`). Pawchive's `attachments` that is the number 5
   is the same. `types` is a dict keyed by `t`, so a later entry of the same name replaces an
   earlier one.
+
+## Engine result parsers (`engines/`, DAN-2008)
+
+`crates/hatate-core/src/engines/` holds what an engine's answer says once it is in hand:
+`iqdb`, `ascii2d`, `tracemoe`, `pawchive_lookup` (the exact-hash lookup, not the booru parser
+`boorus::pawchive`) and `saucenao`. The corpus family is `engines`, one runner unit per Python
+callable (`core.iqdb._parse_results`, `core.saucenao.search`, ...).
+
+- **Where Python's engine functions are cut.** A Python `search` uploads, waits, reads the
+  answer and interprets it. The interpreting is here, as a pure function of the response: the
+  status to error mapping (413, 429, anything but 200), the check that an HTML page is the
+  engine's and not a block page, the JSON header checks, and the parse. `iqdb::search_from_response`,
+  `ascii2d::search_from_responses`, `tracemoe::search_from_response`,
+  `pawchive_lookup::lookup_from_response` and `saucenao::search_from_response` are those halves.
+  The request half is Phase 3: reading and downscaling the file, the multipart body and headers,
+  the deadline, network errors (`RequestException`, `HardTimeoutError`, `OSError`), IQDB's 45 s
+  floor on the timeout, SauceNAO's burst-window wait and its one retry after a 429, and every
+  module global.
+- **A module global becomes a return value.** `ascii2d._blocked` is `Ascii2dError::Blocked` (the
+  client sets the latch); SauceNAO's `_last_quota` and `_daily_limit_reported` are
+  `JsonAnswer::quota` and `JsonAnswer::daily_limit_reported`, and the client keeps the latch and
+  the observation time. A second request that depends on the first answer (ascii2d's feature
+  search, at `ascii2d::bovw_url`) is a second argument, and a failed one is passed as `None`.
+- **A `mocked_transport` item compares the last response.** The runner compares only `returns` or
+  the error class. The port feeds the last scripted response's status and body to the pure half
+  (for SauceNAO's 429-then-200 item that is the answer to the retry), and each port's own test
+  holds the recorded error message, request address, sleep count and `state_after` to what the
+  port gives.
+- **Shapes the API never sends.** Python reads some fields unchecked and raises something other
+  than the engine's error. Where that would be a whole search failing, SauceNAO's port returns a
+  `SauceNaoError` naming the field (a result that is not an object, a `similarity` that is not
+  a number, an `ext_urls` entry that is not text, a `status` that is not a number). Elsewhere a
+  field is read as the type the API sends and anything else is absent: a trace.moe or Pawchive
+  `title`, `image`, SauceNAO `title`, `index_name`, `thumbnail` or `source` that is not text, a
+  trace.moe `anilist` that is a boolean (Python reads it as an integer id and prints `True`), a
+  non-text member of a list `characters` (skipped), and a trace.moe or Pawchive body that is not
+  an object (no matches). Integers past `i64` read as absent (an IQDB or ascii2d width).
+- **`re.IGNORECASE` on "similarity".** Python folds `s` with U+017F and `i` with U+0130 and
+  U+0131; `(?i)` here does not, so IQDB's percent pattern spells the word out. `\s` is
+  `[\s\x1c-\x1f]` as above.
+- **IQDB's tables are selected by their ancestors.** `div#pages table` and `td.image a` are
+  matched as bs4 does, with the ancestor allowed to sit outside the element searched, and class
+  lists split on Python whitespace (`parsed::classes_of`). html5ever and lxml build different
+  trees from a `<table>` that opens inside an unclosed `<tr>`; both agree on well-formed markup,
+  which is all IQDB serves and all the corpus holds.
+- **`float()` of page text** is `sizes::py_float` (SauceNAO HTML similarity, IQDB's percent):
+  any script's digits, single underscores between digits, `inf` and `nan`.
+- **`sites::guess_site_name`** (`core/sites.py`) is ported with its `HOST_MAP` because IQDB labels
+  each match with it; `classify_site` comes with the code that uses it. `canonicalize_url` is here too, for Yandex
+  (DAN-2009).
 
 ## Engine result parsers: Yandex and Google Images (DAN-2009)
 

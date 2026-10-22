@@ -67,10 +67,38 @@ fn digit_value(c: char) -> Option<u32> {
 
 /// `int(raw.replace(",", ""))` for text the patterns above matched. `None` where the number does
 /// not fit an `i64` (Python has no such limit; no real page states one that large).
-pub(super) fn to_int(raw: &str) -> Option<i64> {
+pub(crate) fn to_int(raw: &str) -> Option<i64> {
     raw.chars().filter(|&c| c != ',').try_fold(0i64, |acc, c| {
         acc.checked_mul(10)?.checked_add(i64::from(digit_value(c)?))
     })
+}
+
+/// `float(raw)`: surrounding whitespace, a sign, decimal digits of any script with single
+/// underscores between digits, a point, an exponent, and `inf`, `infinity` and `nan` in any case.
+/// `None` where Python raises `ValueError`.
+pub(crate) fn py_float(raw: &str) -> Option<f64> {
+    let chars: Vec<char> = pycompat::strip(raw)
+        .chars()
+        .map(|c| {
+            digit_value(c)
+                .and_then(|d| char::from_digit(d, 10))
+                .unwrap_or(c)
+        })
+        .collect();
+    let mut ascii = String::with_capacity(chars.len());
+    for (i, &c) in chars.iter().enumerate() {
+        if c == '_' {
+            let between_digits = i > 0
+                && chars[i - 1].is_ascii_digit()
+                && chars.get(i + 1).is_some_and(char::is_ascii_digit);
+            if !between_digits {
+                return None;
+            }
+        } else {
+            ascii.push(c);
+        }
+    }
+    ascii.parse().ok()
 }
 
 /// `int(raw)` for text Python's `int()` accepts: surrounding whitespace, one optional sign, then
