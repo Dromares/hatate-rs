@@ -1,4 +1,5 @@
-//! Python's number coercions, for reading files the Python app wrote (or might read).
+//! Python's number coercions, for reading files the Python app wrote (or might read), and the
+//! one text routine (`html.unescape`) whose answer a parser's output depends on.
 //!
 //! The Python readers use `float(x)`, `int(x)` and `x or 0` on whatever `json.loads`
 //! returned, so a stored string `"12"` or `12.0` still counts as 12. These helpers copy
@@ -218,5 +219,55 @@ mod tests {
         let pieces: Vec<&str> = split(" a\u{1c}b\t\u{85}c  ").collect();
         assert_eq!(pieces, ["a", "b", "c"]);
         assert_eq!(split("   ").count(), 0);
+    }
+
+    #[test]
+    fn html_unescape_matches_cpythons_html_module() {
+        // Each pair is `html.unescape(input)` as CPython 3.14 returns it.
+        let cases = [
+            ("Cat &amp; Dog", "Cat & Dog"),
+            ("&amp", "&"),
+            ("&ampx;", "&x;"),
+            ("&notit;", "\u{ac}it;"),
+            ("&not", "\u{ac}"),
+            ("&notin;", "\u{2209}"),
+            ("&#39;&#x27;&#X27;", "'''"),
+            (
+                "&#0;&#13;&#128;&#x9f;&#129;",
+                "\u{fffd}\r\u{20ac}\u{178}\u{81}",
+            ),
+            (
+                "&#x110000;&#xD800;&#1;&#xb;&#x7f;&#xfdd0;&#xfffe;&#x1ffff;",
+                "\u{fffd}\u{fffd}",
+            ),
+            ("&#65;&#00065;&#x41", "AAA"),
+            ("&unknown; & &; &#; &#x;", "&unknown; & &; &#; &#x;"),
+            ("&lt;b&gt; &quot;q&quot; &apos;", "<b> \"q\" '"),
+            ("&amp;amp;", "&amp;"),
+            ("&AMP &AMP;", "& &"),
+            ("&Eacute&eacutex;&eacutex", "\u{c9}\u{e9}x;\u{e9}x"),
+            ("&NotEqualTilde; &acE;", "\u{2242}\u{338} \u{223e}\u{333}"),
+            ("a=1&copy=2&copy2", "a=1\u{a9}=2\u{a9}2"),
+            ("&#99999999999999999999;", "\u{fffd}"),
+            ("&#x99999999999999999999;", "\u{fffd}"),
+            ("&hellip;&nbsp;x", "\u{2026}\u{a0}x"),
+            ("&\u{e9}t\u{e9};", "&\u{e9}t\u{e9};"),
+            (
+                "&aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+                "&aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+            ),
+            (
+                "&aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+                "&aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+            ),
+            ("&ampersand;", "&ersand;"),
+            ("&notanentity", "\u{ac}anentity"),
+            ("&ltx", "<x"),
+        ];
+        for (input, want) in cases {
+            assert_eq!(html_unescape(input), want, "{input:?}");
+        }
+        assert_eq!(html_unescape("no references"), "no references");
+        assert_eq!(html_unescape(""), "");
     }
 }

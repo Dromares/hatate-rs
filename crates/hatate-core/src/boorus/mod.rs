@@ -474,6 +474,55 @@ mod tests {
     }
 
     #[test]
+    fn the_api_and_markup_sites_are_found_by_their_legacy_and_modern_url_shapes() {
+        for (url, site) in [
+            ("https://anime-pictures.net/posts/596771", "animepictures"),
+            (
+                "https://anime-pictures.net/pictures/view_post/596771",
+                "animepictures",
+            ),
+            ("https://chan.sankakucomplex.com/post/show/12345", "sankaku"),
+            (
+                "https://chan.sankakucomplex.com/en/posts/4064096",
+                "sankaku",
+            ),
+            (
+                "https://www.sankakucomplex.com/posts/QyMk8vZ6Kak",
+                "sankaku",
+            ),
+            ("https://reactor.cc/post/5351071", "joyreactor"),
+            ("https://joyreactor.com/post/5351071", "joyreactor"),
+            ("https://joyreactor.cc/post/5351071", "joyreactor"),
+        ] {
+            assert_eq!(find_parser(url).map(|p| p.name), Some(site), "{url}");
+        }
+        // A reactor page that is not a post is nobody's.
+        assert!(find_parser("https://reactor.cc/tag/art").is_none());
+    }
+
+    #[test]
+    fn a_sankaku_hash_miss_reaches_the_page_info_as_an_explanation_and_only_then() {
+        let ctx = Context::default();
+        let url = "https://chan.sankakucomplex.com/en/posts/4604859";
+        let miss = page_info_from_body(&sankaku::PARSER, "[]", url, url, &ctx);
+        assert!(miss.tags.is_empty());
+        assert!(
+            miss.incomplete_reason
+                .as_deref()
+                .is_some_and(|r| r.contains("byte-identical"))
+        );
+        // With tags the post is real, so there is nothing to explain.
+        let body = r#"[{"id": "abc", "tags": [{"name": "cat", "type": 0}]}]"#;
+        let hit = page_info_from_body(&sankaku::PARSER, body, url, url, &ctx);
+        assert_eq!(hit.tags.len(), 1);
+        assert_eq!(hit.incomplete_reason, None);
+        assert_eq!(
+            hit.canonical_url.as_deref(),
+            Some("https://www.sankakucomplex.com/posts/abc")
+        );
+    }
+
+    #[test]
     fn every_parser_is_registered_once_under_its_own_name() {
         let mut names: Vec<_> = PARSERS.iter().map(|p| p.name).collect();
         names.sort_unstable();

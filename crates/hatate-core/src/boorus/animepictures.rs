@@ -185,7 +185,8 @@ fn py_str(v: &Value) -> String {
 }
 
 /// `repr(x)` of a JSON value. Floats print as Rust prints them, which is Python's `repr` for
-/// every value that is not an exponent form.
+/// every value that is not an exponent form; a string holding a control character or a
+/// non-printable one is not escaped the way Python escapes it.
 fn py_repr(v: &Value) -> String {
     match v {
         Value::Null => "None".to_string(),

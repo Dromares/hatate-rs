@@ -34,12 +34,12 @@ use crate::pycompat;
 const HOSTS: [&str; 3] = ["reactor.cc", "joyreactor.com", "joyreactor.cc"];
 const COMMENT_LIST_MARKER: &str = r#"id="comment_list""#;
 
-// Python's `\s` on text also takes U+001C..U+001F, which Rust's does not.
 static POST_ID_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)/post/(\d+)(?:[/?#]|$)").expect("post id regex"));
 static TAGLIST_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?s)<strong class="taglist">(.*?)</strong>"#).expect("taglist regex")
 });
+// Python's `\s` on text also takes U+001C..U+001F, which Rust's does not: the class below adds them.
 static TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?s)<a[\s\x1c-\x1f]+title="([^"]*)"[^>]*data-tag-id="\d+""#).expect("tag regex")
 });
