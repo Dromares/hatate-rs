@@ -7,7 +7,7 @@
 //! no scheme, a query with a bare `&`, a stray `%`). The corpus is Python's output, so this is
 //! Python's algorithm, not the standard's.
 //!
-//! Left out: `ValueError` for a malformed bracketed host or a NFKC-unstable netloc. Python
+//! Left out: `ValueError` for a malformed bracketed host or a netloc that NFKC normalisation changes. Python
 //! raises there, the hook that called it is then skipped by `fetch_page_info`, and the port
 //! reads such a URL as it would any other.
 

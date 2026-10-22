@@ -286,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sidebar_li_without_a_usable_name_is_skipped() {
+    fn a_sidebar_li_without_a_name_is_skipped() {
         let html = r#"<ul id="tag-sidebar">
           <li class="tag-type-artist">no link</li>
           <li class="tag-type-artist"><a href="/post?tags=blank">   </a></li>
