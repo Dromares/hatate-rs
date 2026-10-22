@@ -65,8 +65,18 @@ pub struct Parsed {
     pub fragment: String,
 }
 
-/// `urlparse(url, scheme)`: `scheme` is what a URL with no scheme of its own gets.
-pub fn urlparse(url: &str, default_scheme: &str) -> Parsed {
+/// `_urlsplit`: the five components, each `None` where the URL has no such delimiter. The
+/// difference between `None` and `Some("")` (a bare `?` or `#`) is kept, because `urljoin` keeps
+/// it.
+struct Split {
+    scheme: Option<String>,
+    netloc: Option<String>,
+    path: String,
+    query: Option<String>,
+    fragment: Option<String>,
+}
+
+fn split(url: &str, default_scheme: Option<&str>) -> Split {
     // Leading C0 controls and spaces go, then tab, CR and LF anywhere.
     let url: String = url
         .trim_start_matches(|c: char| c <= ' ')
@@ -74,7 +84,12 @@ pub fn urlparse(url: &str, default_scheme: &str) -> Parsed {
         .filter(|c| !matches!(c, '\t' | '\r' | '\n'))
         .collect();
     let mut rest = url.as_str();
-    let mut scheme = default_scheme.trim_matches(|c: char| c <= ' ').to_string();
+    let mut scheme = default_scheme.map(|s| {
+        s.trim_matches(|c: char| c <= ' ')
+            .chars()
+            .filter(|c| !matches!(c, '\t' | '\r' | '\n'))
+            .collect::<String>()
+    });
     if let Some(i) = rest.find(':')
         && i > 0
         && rest.starts_with(|c: char| c.is_ascii_alphabetic())
@@ -82,43 +97,90 @@ pub fn urlparse(url: &str, default_scheme: &str) -> Parsed {
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
     {
-        scheme = rest[..i].to_ascii_lowercase();
+        scheme = Some(rest[..i].to_ascii_lowercase());
         rest = &rest[i + 1..];
     }
-    let mut netloc = "";
+    let mut netloc = None;
     if let Some(after) = rest.strip_prefix("//") {
         let end = after.find(['/', '?', '#']).unwrap_or(after.len());
-        netloc = &after[..end];
+        netloc = Some(after[..end].to_string());
         rest = &after[end..];
     }
-    let mut fragment = "";
+    let mut fragment = None;
     if let Some((before, frag)) = rest.split_once('#') {
         rest = before;
-        fragment = frag;
+        fragment = Some(frag.to_string());
     }
-    let mut query = "";
+    let mut query = None;
     if let Some((before, q)) = rest.split_once('?') {
         rest = before;
-        query = q;
+        query = Some(q.to_string());
     }
-    let (path, params) = if USES_PARAMS.contains(&scheme.as_str()) && rest.contains(';') {
-        split_params(rest)
+    Split {
+        scheme,
+        netloc,
+        path: rest.to_string(),
+        query,
+        fragment,
+    }
+}
+
+/// `_urlunsplit`.
+fn unsplit(
+    scheme: Option<&str>,
+    netloc: Option<&str>,
+    path: &str,
+    query: Option<&str>,
+    fragment: Option<&str>,
+) -> String {
+    let mut url = path.to_string();
+    if let Some(netloc) = netloc {
+        if !url.is_empty() && !url.starts_with('/') {
+            url.insert(0, '/');
+        }
+        url = format!("//{netloc}{url}");
+    } else if url.starts_with("//") {
+        url = format!("//{url}");
+    }
+    if let Some(scheme) = scheme.filter(|s| !s.is_empty()) {
+        url = format!("{scheme}:{url}");
+    }
+    if let Some(query) = query {
+        url = format!("{url}?{query}");
+    }
+    if let Some(fragment) = fragment {
+        url = format!("{url}#{fragment}");
+    }
+    url
+}
+
+/// `urlparse(url, scheme)`: `scheme` is what a URL with no scheme of its own gets.
+pub fn urlparse(url: &str, default_scheme: &str) -> Parsed {
+    let s = split(url, Some(default_scheme));
+    let scheme = s.scheme.unwrap_or_default();
+    let (path, params) = if USES_PARAMS.contains(&scheme.as_str()) && s.path.contains(';') {
+        let (path, params) = split_params(&s.path);
+        (path.to_string(), params.to_string())
     } else {
-        (rest, "")
+        (s.path, String::new())
     };
     Parsed {
         scheme,
-        netloc: netloc.to_string(),
-        path: path.to_string(),
-        params: params.to_string(),
-        query: query.to_string(),
-        fragment: fragment.to_string(),
+        netloc: s.netloc.unwrap_or_default(),
+        path,
+        params,
+        query: s.query.unwrap_or_default(),
+        fragment: s.fragment.unwrap_or_default(),
     }
 }
 
 /// `_splitparams`: the `;params` belong to the last path segment.
 fn split_params(url: &str) -> (&str, &str) {
-    let from = url.rfind('/').filter(|_| url.contains('/'));
+    let from = if url.contains('/') {
+        url.rfind('/')
+    } else {
+        None
+    };
     let i = match from {
         Some(slash) => url[slash..].find(';').map(|i| i + slash),
         None => url.find(';'),
@@ -129,36 +191,9 @@ fn split_params(url: &str) -> (&str, &str) {
     }
 }
 
-/// `urlunparse`.
-pub fn urlunparse(p: &Parsed) -> String {
-    let mut url = if p.params.is_empty() {
-        p.path.clone()
-    } else {
-        format!("{};{}", p.path, p.params)
-    };
-    if !p.netloc.is_empty()
-        || (!p.scheme.is_empty()
-            && USES_NETLOC.contains(&p.scheme.as_str())
-            && !url.starts_with("//"))
-    {
-        if !url.is_empty() && !url.starts_with('/') {
-            url.insert(0, '/');
-        }
-        url = format!("//{}{url}", p.netloc);
-    }
-    if !p.scheme.is_empty() {
-        url = format!("{}:{url}", p.scheme);
-    }
-    if !p.query.is_empty() {
-        url = format!("{url}?{}", p.query);
-    }
-    if !p.fragment.is_empty() {
-        url = format!("{url}#{}", p.fragment);
-    }
-    url
-}
-
-/// `urljoin(base, url)`.
+/// `urljoin(base, url)`. Since CPython 3.14 this works on the five-part split and keeps an empty
+/// query or fragment (`urljoin("http://h/p", "?")` is `"http://h/p?"`), and `;params` stay in the
+/// path.
 pub fn urljoin(base: &str, url: &str) -> String {
     if base.is_empty() {
         return url.to_string();
@@ -166,24 +201,46 @@ pub fn urljoin(base: &str, url: &str) -> String {
     if url.is_empty() {
         return base.to_string();
     }
-    let b = urlparse(base, "");
-    let mut u = urlparse(url, &b.scheme);
-    if u.scheme != b.scheme || !USES_RELATIVE.contains(&u.scheme.as_str()) {
+    let b = split(base, None);
+    let u = split(url, None);
+    let scheme = u.scheme.clone().or_else(|| b.scheme.clone());
+    if scheme != b.scheme
+        || scheme
+            .as_deref()
+            .is_some_and(|s| !USES_RELATIVE.contains(&s))
+    {
         return url.to_string();
     }
-    if USES_NETLOC.contains(&u.scheme.as_str()) {
-        if !u.netloc.is_empty() {
-            return urlunparse(&u);
+    let scheme_ref = scheme.as_deref();
+    let mut netloc = u.netloc.clone();
+    if scheme_ref.is_none_or(|s| USES_NETLOC.contains(&s)) {
+        if netloc.as_deref().is_some_and(|n| !n.is_empty()) {
+            return unsplit(
+                scheme_ref,
+                netloc.as_deref(),
+                &u.path,
+                u.query.as_deref(),
+                u.fragment.as_deref(),
+            );
         }
-        u.netloc = b.netloc.clone();
+        netloc = b.netloc.clone();
     }
-    if u.path.is_empty() && u.params.is_empty() {
-        u.path = b.path;
-        u.params = b.params;
-        if u.query.is_empty() {
-            u.query = b.query;
+    if u.path.is_empty() {
+        let mut query = u.query;
+        let mut fragment = u.fragment;
+        if query.is_none() {
+            query = b.query;
+            if fragment.is_none() {
+                fragment = b.fragment;
+            }
         }
-        return urlunparse(&u);
+        return unsplit(
+            scheme_ref,
+            netloc.as_deref(),
+            &b.path,
+            query.as_deref(),
+            fragment.as_deref(),
+        );
     }
     let mut base_parts: Vec<&str> = b.path.split('/').collect();
     if base_parts.last() != Some(&"") {
@@ -218,12 +275,14 @@ pub fn urljoin(base: &str, url: &str) -> String {
         resolved.push("");
     }
     let joined = resolved.join("/");
-    u.path = if joined.is_empty() {
-        "/".to_string()
-    } else {
-        joined
-    };
-    urlunparse(&u)
+    let path = if joined.is_empty() { "/" } else { &joined };
+    unsplit(
+        scheme_ref,
+        netloc.as_deref(),
+        path,
+        u.query.as_deref(),
+        u.fragment.as_deref(),
+    )
 }
 
 /// `unquote(s)`: `%XX` runs are decoded as UTF-8 with U+FFFD for what is not; a `%` not followed
