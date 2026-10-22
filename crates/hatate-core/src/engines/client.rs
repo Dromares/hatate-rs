@@ -21,7 +21,7 @@ use tokio::task::JoinHandle;
 
 use crate::hard_timeout::HardTimeoutError;
 use crate::image_prep::{self, DEFAULT_MAX_BYTES, DEFAULT_MAX_DIMENSION};
-use crate::net::{ErrorKind, NetError, NetResponse, Part};
+use crate::net::{ErrorKind, NetError, NetResponse};
 
 /// `OnTick = Callable[[str, float, float], None]`: `(label, seconds remaining, total seconds)`.
 /// Called about once a second while a request is in flight, and once at the end with
@@ -104,14 +104,70 @@ pub(crate) async fn read_upload(image_path: &Path) -> Result<(Bytes, String), Re
     }
 }
 
-/// `files = {field: (filename, data, "application/octet-stream")}`.
-pub(crate) fn upload_part(field: &str, data: Bytes, filename: String) -> Part {
-    Part {
-        name: field.to_owned(),
-        filename: Some(filename),
-        mime: Some("application/octet-stream".to_owned()),
-        data,
+/// A `multipart/form-data` upload as `requests` writes it.
+pub(crate) struct Upload {
+    /// `multipart/form-data; boundary=...`
+    pub(crate) content_type: String,
+    pub(crate) body: Bytes,
+}
+
+/// `files={field: (filename, data, "application/octet-stream")}`, encoded the way `requests`
+/// and urllib3 2.x do (`encode_multipart_formdata`): one part, headers `Content-Disposition`
+/// then `Content-Type`, the data as it is, and the WHATWG quoting for the name and filename: LF,
+/// CR and `"` percent-encoded, nothing else touched. Built here and sent as a plain body rather
+/// than through `reqwest`'s multipart, which writes a backslash before `"` and before a newline,
+/// so a filename with either would not be the filename Python sends.
+pub(crate) fn multipart_upload(field: &str, filename: &str, data: &[u8]) -> Upload {
+    let boundary = boundary();
+    let mut body = Vec::with_capacity(data.len() + 256);
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; {}; {}\r\n\
+             Content-Type: application/octet-stream\r\n\r\n",
+            header_param("name", field),
+            header_param("filename", filename)
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(data);
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    Upload {
+        content_type: format!("multipart/form-data; boundary={boundary}"),
+        body: Bytes::from(body),
     }
+}
+
+/// `urllib3.fields.format_multipart_header_param`: `name="value"` with `\n`, `\r` and `"`
+/// percent-encoded.
+fn header_param(name: &str, value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len());
+    for c in value.chars() {
+        match c {
+            '\n' => quoted.push_str("%0A"),
+            '\r' => quoted.push_str("%0D"),
+            '"' => quoted.push_str("%22"),
+            other => quoted.push(other),
+        }
+    }
+    format!("{name}=\"{quoted}\"")
+}
+
+/// A boundary: 32 hex digits, like `uuid4().hex`.
+fn boundary() -> String {
+    use std::hash::{BuildHasher, Hasher, RandomState};
+    let mut out = String::with_capacity(32);
+    while out.len() < 32 {
+        // `RandomState` is seeded from the operating system's entropy on every construction.
+        let mut hasher = RandomState::new().build_hasher();
+        hasher.write_u128(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos()),
+        );
+        out.push_str(&format!("{:016x}", hasher.finish()));
+    }
+    out.truncate(32);
+    out
 }
 
 /// How a failed exchange is reported.
@@ -298,6 +354,27 @@ mod tests {
         assert_eq!(
             response_text(&response(Some("text/plain; charset=ascii"), b"a\xe9")),
             "a\u{fffd}"
+        );
+    }
+
+    #[test]
+    fn the_upload_is_the_multipart_body_requests_writes() {
+        let up = multipart_upload("file", "q\"u\ro\nte\\.png", b"DATA\r\n--x");
+        let boundary = up
+            .content_type
+            .strip_prefix("multipart/form-data; boundary=")
+            .unwrap();
+        assert_eq!(boundary.len(), 32);
+        assert!(boundary.bytes().all(|b| b.is_ascii_hexdigit()));
+        let want = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; \
+             filename=\"q%22u%0Do%0Ate\\.png\"\r\nContent-Type: application/octet-stream\r\n\r\n\
+             DATA\r\n--x\r\n--{boundary}--\r\n"
+        );
+        assert_eq!(up.body, Bytes::from(want));
+        assert_ne!(
+            multipart_upload("f", "x", b"").content_type,
+            multipart_upload("f", "x", b"").content_type
         );
     }
 

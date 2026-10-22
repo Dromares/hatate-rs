@@ -290,6 +290,24 @@ impl Pixels {
                 grey: true,
                 data: g.into_raw(),
             },
+            (DynamicImage::ImageLuma16(g), _) => {
+                // Pillow reads 16-bit grey as mode `I;16`, and converting that to RGB clips at 255
+                // (it does not scale): a picture whose values run past 255 comes out white.
+                let rgb: Vec<u8> = g
+                    .as_raw()
+                    .iter()
+                    .flat_map(|&v| {
+                        let v = u8::try_from(v).unwrap_or(255);
+                        [v, v, v]
+                    })
+                    .collect();
+                Pixels {
+                    width: g.width(),
+                    height: g.height(),
+                    grey: false,
+                    data: rgb,
+                }
+            }
             (other, PillowMode::Grey) => {
                 // A grey-ramp palette decodes to RGB with every channel equal to the index.
                 let rgb = other.to_rgb8();

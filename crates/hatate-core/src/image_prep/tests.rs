@@ -692,3 +692,22 @@ fn a_grey_ramp_palette_is_pillows_mode_l_and_a_bilevel_png_is_rgb() {
     assert_eq!(mode_from_header(b"not an image"), PillowMode::AsDecoded);
     assert_eq!(mode_from_header(b""), PillowMode::AsDecoded);
 }
+
+#[test]
+fn sixteen_bit_grey_is_clipped_to_255_as_pillows_i16_conversion_does() {
+    let img = DynamicImage::ImageLuma16(
+        image::ImageBuffer::from_raw(4, 1, vec![0u16, 200, 255, 256]).unwrap(),
+    );
+    let px = Pixels::from_image(img, PillowMode::AsDecoded);
+    assert!(!px.grey, "converted to RGB, not kept as L");
+    assert_eq!(
+        px.data,
+        [0, 0, 0, 200, 200, 200, 255, 255, 255, 255, 255, 255]
+    );
+    let wide =
+        DynamicImage::ImageLuma16(image::ImageBuffer::from_raw(1, 1, vec![65535u16]).unwrap());
+    assert_eq!(
+        Pixels::from_image(wide, PillowMode::AsDecoded).data,
+        [255, 255, 255]
+    );
+}

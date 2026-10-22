@@ -16,7 +16,7 @@ use serde::Serialize;
 use tracing::{debug, warn};
 
 use super::client::{
-    Failure, OnTick, failure_of, read_upload, response_text, seconds, ticking, upload_part,
+    Failure, OnTick, failure_of, multipart_upload, read_upload, response_text, seconds, ticking,
 };
 use super::{extract_dimensions, looks_like_url};
 use crate::boorus::parsed::{classes_of, soup_of, text_of, text_stripped};
@@ -262,8 +262,10 @@ impl IqdbClient {
         timeout: f64,
     ) -> Result<NetRequest, crate::net::NetError> {
         let limit = seconds(timeout);
+        let upload = multipart_upload("file", &filename, &data);
         Ok(NetRequest::post(self.base(instance), limit)?
-            .with_multipart(vec![upload_part("file", data, filename)])
+            .header("Content-Type", &upload.content_type)?
+            .with_body(upload.body)
             .with_deadline(limit))
     }
 }
@@ -647,13 +649,17 @@ mod client_tests {
             .unwrap();
         assert_eq!(req.method, Method::Post);
         assert_eq!(req.url.as_str(), "https://3d.iqdb.org/");
-        let Body::Multipart(parts) = &req.body else {
+        let Body::Bytes(body) = &req.body else {
             panic!("{:?}", req.body)
         };
-        assert_eq!(parts.len(), 1);
-        assert_eq!(parts[0].name, "file");
-        assert_eq!(parts[0].filename.as_deref(), Some("x.png"));
-        assert_eq!(parts[0].mime.as_deref(), Some("application/octet-stream"));
+        let text = String::from_utf8_lossy(body);
+        assert!(text.contains("name=\"file\"; filename=\"x.png\"\r\nContent-Type: application/octet-stream\r\n\r\nx\r\n"));
+        assert!(
+            req.headers["content-type"]
+                .to_str()
+                .unwrap()
+                .starts_with("multipart/form-data; boundary=")
+        );
     }
 
     #[test]

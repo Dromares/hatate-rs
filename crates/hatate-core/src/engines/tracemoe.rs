@@ -23,7 +23,7 @@ use serde_json::Value;
 use tracing::debug;
 
 use super::client::{
-    Failure, OnTick, failure_of, read_upload, response_text, seconds, ticking, upload_part,
+    Failure, OnTick, failure_of, multipart_upload, read_upload, response_text, seconds, ticking,
 };
 use crate::hard_timeout::HardTimeoutError;
 use crate::model::{Tag, TagSource};
@@ -129,10 +129,12 @@ impl TraceMoeClient {
         timeout: f64,
     ) -> Result<NetRequest, NetError> {
         let limit = seconds(timeout);
+        let upload = multipart_upload("image", &filename, &data);
         Ok(NetRequest::post(&self.api_url, limit)?
             .query("cutBorders", "1")
             .query("anilistInfo", "1")
-            .with_multipart(vec![upload_part("image", data, filename)])
+            .header("Content-Type", &upload.content_type)?
+            .with_body(upload.body)
             .with_deadline(limit))
     }
 }
@@ -440,10 +442,10 @@ mod client_tests {
             req.url.as_str(),
             "https://api.trace.moe/search?cutBorders=1&anilistInfo=1"
         );
-        let Body::Multipart(parts) = &req.body else {
+        let Body::Bytes(body) = &req.body else {
             panic!("{:?}", req.body)
         };
-        assert_eq!((parts[0].name.as_str(), parts.len()), ("image", 1));
+        assert!(String::from_utf8_lossy(body).contains("name=\"image\"; filename=\"x.png\""));
         // The caller's timeout is used as given: no floor.
         assert_eq!(req.timeout, std::time::Duration::from_secs(30));
         assert_eq!(req.deadline, Some(std::time::Duration::from_secs(30)));
