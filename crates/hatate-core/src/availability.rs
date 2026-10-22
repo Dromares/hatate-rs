@@ -399,6 +399,9 @@ pub async fn sankaku_post_exists(
     let numeric = post_id.bytes().all(|b| b.is_ascii_digit());
 
     let api = format!("{SANKAKU_API_POST}{post_id}");
+    // The user's Sankaku login goes to Sankaku's own API host, as it does in Python (a plain dict
+    // follows the request wherever it goes); it stays within that domain.
+    let cookies = cookies.map(|c| c.with_scope(["sankakuapi.com"]));
     let resp = match remote::get_request(&api, timeout, None, &ua_headers(), cookies) {
         Ok(req) => net.send(req).await,
         Err(e) => Err(e),
@@ -493,50 +496,49 @@ pub async fn page_says_available(
 
     let markers = soft_404_markers_for(url);
 
-    // `net.request` takes the URL's netloc before anything else, so a URL `urlparse` refuses
-    // raises here and not as a `requests` error.
-    if pyurl::try_urlparse(url, "").is_err() {
-        return Err(Raised::ValueError(urlparse_message(url)));
-    }
-    let Ok(mut req) = remote::get_request(url, timeout, None, &headers, cookies) else {
-        return Ok(None);
-    };
-    if let Some(referer) = refused {
-        // A referer `requests` would refuse fails the request (`None`); one `http.client` cannot
-        // encode escapes the handler.
-        return encode_fault(referer).map_or(Ok(None), Err);
-    }
-    req = req.with_redirects(Redirects::Follow);
-    req = if markers.is_empty() {
-        // `stream=True` and the body never read; 0 is a status no answer has.
-        req.with_body_only_on(0)
-    } else {
-        // Only pull the bounded prefix needed for the marker check, and only from a 200.
-        req.with_body_only_on(200).with_probe(BodyProbe {
-            chunk: SOFT_404_SCAN_BYTES,
-            cap: SOFT_404_SCAN_BYTES,
-            done: Arc::new(|_| false),
-        })
-    };
-
-    let sent = ticked(
-        "Checking availability",
-        timeout,
-        on_tick,
-        tokio::time::timeout(remote::secs(timeout), net.send(req)),
-    )
+    // The whole request, building it included, runs under the ticker: Python's `_do_request` is
+    // the thread the ticker watches, so the clearing tick fires however it ends.
+    let sent = ticked("Checking availability", timeout, on_tick, async {
+        // `net.request` takes the URL's netloc before anything else, so a URL `urlparse` refuses
+        // raises here and not as a `requests` error.
+        if pyurl::try_urlparse(url, "").is_err() {
+            return Err(Err(Raised::ValueError(urlparse_message(url))));
+        }
+        let Ok(mut req) = remote::get_request(url, timeout, None, &headers, cookies) else {
+            return Err(Ok(None));
+        };
+        if let Some(referer) = refused {
+            // A referer `requests` would refuse fails the request (`None`); one `http.client`
+            // cannot encode escapes the handler.
+            return Err(encode_fault(referer).map_or(Ok(None), Err));
+        }
+        req = req.with_redirects(Redirects::Follow);
+        req = if markers.is_empty() {
+            // `stream=True` and the body never read; 0 is a status no answer has.
+            req.with_body_only_on(0)
+        } else {
+            // Only pull the bounded prefix needed for the marker check, and only from a 200.
+            req.with_body_only_on(200).with_probe(BodyProbe {
+                chunk: SOFT_404_SCAN_BYTES,
+                cap: SOFT_404_SCAN_BYTES,
+                done: Arc::new(|_| false),
+            })
+        };
+        Ok(tokio::time::timeout(remote::secs(timeout), net.send(req)).await)
+    })
     .await;
     let resp: NetResponse = match sent {
-        Err(_elapsed) => {
+        Err(done) => return done,
+        Ok(Err(_elapsed)) => {
             debug!("Availability check for {url} was inconclusive: timed out");
             return Ok(None);
         }
-        Ok(Err(e)) if e.kind() == ErrorKind::Body => return Err(body_fault(&e)),
-        Ok(Err(e)) => {
+        Ok(Ok(Err(e))) if e.kind() == ErrorKind::Body => return Err(body_fault(&e)),
+        Ok(Ok(Err(e))) => {
             debug!("Availability check for {url} was inconclusive: {e}");
             return Ok(None);
         }
-        Ok(Ok(resp)) => resp,
+        Ok(Ok(Ok(resp))) => resp,
     };
 
     let status = resp.status.as_u16();
