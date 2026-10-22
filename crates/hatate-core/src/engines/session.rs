@@ -599,6 +599,7 @@ impl Session {
                 .map_err(|e| failure_of(&e, total))?
                 .with_redirects(Redirects::Stop)
                 .with_retry(RetryMode::Never)
+                .without_host_gate()
                 .with_deadline(left);
             for (name, value) in &self.headers {
                 net_request = net_request

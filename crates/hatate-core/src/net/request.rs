@@ -147,6 +147,10 @@ pub struct NetRequest {
     pub min_gap: Option<Duration>,
     /// Stop reading the body early (a ranged read of a file's first bytes).
     pub probe: Option<BodyProbe>,
+    /// Whether the host's rate-limit state applies: it waits out, and records, the host's
+    /// `X-RateLimit-*` headers. Only a request that Python sends outside `core/net.py`
+    /// (ascii2d's own `requests.Session`) turns this off.
+    pub(crate) gated: bool,
     /// When the exchange began, for the deadline. Set by the stack.
     pub(crate) started: Option<Instant>,
 }
@@ -176,6 +180,7 @@ impl NetRequest {
             retry: RetryMode::Once429,
             min_gap: None,
             probe: None,
+            gated: true,
             started: None,
         })
     }
@@ -251,6 +256,13 @@ impl NetRequest {
 
     pub fn with_min_gap(mut self, gap: Duration) -> Self {
         self.min_gap = Some(gap);
+        self
+    }
+
+    /// The host's `X-RateLimit-*` state neither holds this request back nor learns from its
+    /// answer: for a request Python makes without `core/net.py`.
+    pub fn without_host_gate(mut self) -> Self {
+        self.gated = false;
         self
     }
 

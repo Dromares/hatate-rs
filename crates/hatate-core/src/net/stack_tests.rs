@@ -113,6 +113,32 @@ async fn a_host_that_ran_out_is_waited_for() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_request_outside_the_host_gate_neither_waits_nor_teaches_it() {
+    // ascii2d's own session (`core/ascii2d.py`) never went through `core/net.py`, so a host's
+    // rate-limit headers did not hold it back and its answers taught the gate nothing.
+    let ran_out = [("x-ratelimit-remaining", "0"), ("x-ratelimit-reset", "22")];
+    let mock = Mock::new(vec![
+        Ok(resp(200, &ran_out)),
+        Ok(resp(200, &ran_out)),
+        Ok(resp(200, &[])),
+    ]);
+    let c = client(&mock);
+    c.send(get("http://h.example/a").without_host_gate())
+        .await
+        .unwrap();
+    assert!(c.gate().resume_in("h.example").is_none());
+    // A gated request to the same host is not held back either: nothing was learnt.
+    c.send(get("http://h.example/b")).await.unwrap();
+    assert_eq!(mock.times()[1], secs(0));
+    // That one did teach the gate; the ungated request after it goes straight through.
+    assert!(c.gate().resume_in("h.example").is_some());
+    c.send(get("http://h.example/c").without_host_gate())
+        .await
+        .unwrap();
+    assert_eq!(mock.times()[2], secs(0));
+}
+
+#[tokio::test(start_paused = true)]
 async fn remaining_requests_clear_the_wait() {
     let mock = Mock::new(vec![
         Ok(resp(
