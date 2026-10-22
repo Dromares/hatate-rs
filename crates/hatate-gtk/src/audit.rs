@@ -282,17 +282,22 @@ pub fn card_flatness(
         w: (x1 - x0 + 1) as i64,
         h: (y1 - y0 + 1) as i64,
     };
+    if std::env::var_os("HATATE_AUDIT_DEBUG").is_some() {
+        eprintln!("AUDITDBG edge={edge:?} painted={painted:?} reported={card:?}");
+    }
     let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
     let corners_square = corners.map(|(x, y)| near(with.rgb(x, y), edge));
+    // A card edge that lands between two device pixels antialiases into the pixel just outside
+    // the painted border (libadwaita 1.5 does this for a dialog centred on an odd width). That
+    // one-pixel seam is the edge, not a shadow, which would spread over several pixels and show
+    // on every side.
+    let seam = painted.grow(1);
     let outer = painted.grow(band);
     let fit = [0, 1, 2].map(|ch| fit_dim(under, with, outer, ch));
     let mut shadow_px = 0;
     for y in outer.y.max(0)..(outer.y + outer.h).min(with.h as i64) {
         for x in outer.x.max(0)..(outer.x + outer.w).min(with.w as i64) {
-            let inside = x >= painted.x
-                && x < painted.x + painted.w
-                && y >= painted.y
-                && y < painted.y + painted.h;
+            let inside = x >= seam.x && x < seam.x + seam.w && y >= seam.y && y < seam.y + seam.h;
             if inside {
                 continue;
             }
@@ -471,6 +476,14 @@ mod tests {
         }
         let own = [Rgba::rgb(90, 87, 83)];
         let f = card_flatness(&under, &flat, card, &own, 12);
+        assert!(f.square() && f.shadowless(), "{f:?}");
+
+        // A one-pixel antialiasing seam just outside the border is the edge, not a shadow.
+        let mut seam = flat.clone();
+        for y in 26..64 {
+            seam.set(29, y, [dimmed.get(29, y)[0] / 2 + 40, 60, 60, 255]);
+        }
+        let f = card_flatness(&under, &seam, card, &own, 12);
         assert!(f.square() && f.shadowless(), "{f:?}");
 
         let mut soft = flat.clone();
