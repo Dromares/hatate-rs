@@ -11,6 +11,9 @@ publish.workspace = true
 [dependencies]
 bytes = "1"
 http = "1"
+# The WHATWG named-character-reference table, for `pycompat::html_unescape`. Already in the
+# lockfile through scraper's html5ever, so no new crate.
+markup5ever = "0.40"
 regex = "1.13.1"
 # rustls with NO built-in provider: reqwest then reads the process-wide default
 # provider, which `net::install_crypto_provider` installs explicitly (DAN-1909).

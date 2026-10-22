@@ -18,13 +18,17 @@
 //! engine clients. This module has the part of `fetch_page_info` that runs after the body is in
 //! hand: [`page_info_from_body`].
 
+pub mod animepictures;
 pub mod danbooru;
 pub mod gelbooru;
 pub mod host;
+pub mod joyreactor;
+mod json_fields;
 pub mod parsed;
 pub mod rating;
 pub mod rule34;
 pub mod safebooru;
+pub mod sankaku;
 pub mod sizes;
 pub mod xbooru;
 
@@ -212,7 +216,7 @@ pub static PARSERS: &[&SiteParser] = &[
     // e621
     // zerochan
     // eshuushuu
-    // animepictures
+    &animepictures::PARSER,
     &rule34::PARSER,
     &xbooru::PARSER,
     // paheal
@@ -220,10 +224,10 @@ pub static PARSERS: &[&SiteParser] = &[
     // redditpost
     // deviantart
     // pawchive
-    // sankaku
+    &sankaku::PARSER,
     // twitter
     // mangadex
-    // joyreactor
+    &joyreactor::PARSER,
 ];
 
 /// The parser that claims `url`, if any.

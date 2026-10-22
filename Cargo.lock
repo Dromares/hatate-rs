@@ -514,6 +514,7 @@ version = "0.0.0"
 dependencies = [
  "bytes",
  "http",
+ "markup5ever",
  "rcgen",
  "regex",
  "reqwest",
