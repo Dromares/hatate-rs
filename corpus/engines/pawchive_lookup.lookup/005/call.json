@@ -1,0 +1,32 @@
+{
+  "args": {
+    "sha256": "4a1d0745de0af6810ed553996afd73d8f152b0c32918fda983c0505bc7a07bc1",
+    "timeout": 30.0
+  },
+  "callables": [
+    "core.pawchive_lookup.lookup"
+  ],
+  "kind": "mocked_transport",
+  "request": [
+    {
+      "allow_redirects": null,
+      "data_fields": null,
+      "file_fields": null,
+      "has_headers": null,
+      "json_body": false,
+      "layer": "net",
+      "method": "GET",
+      "params": null,
+      "timeout": 30.0,
+      "url": "https://pawchive.pw/api/v1/search_hash/4a1d0745de0af6810ed553996afd73d8f152b0c32918fda983c0505bc7a07bc1"
+    }
+  ],
+  "responses": [
+    {
+      "body": "input",
+      "body_kind": "json",
+      "status": 404
+    }
+  ],
+  "state_before": "fresh module state (every module-level counter and latch at its import-time value)"
+}

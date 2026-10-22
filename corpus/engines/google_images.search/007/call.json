@@ -1,0 +1,37 @@
+{
+  "args": {
+    "api_key": "<api-key>",
+    "image_path": "<image>",
+    "timeout": 5.0
+  },
+  "callables": [
+    "core.google_images.search"
+  ],
+  "kind": "mocked_transport",
+  "request": [
+    {
+      "allow_redirects": null,
+      "data_fields": null,
+      "file_fields": null,
+      "has_headers": [
+        "User-Agent"
+      ],
+      "json_body": true,
+      "layer": "requests",
+      "method": "POST",
+      "params": {
+        "key": "<api-key>"
+      },
+      "timeout": 5.0,
+      "url": "https://vision.googleapis.com/v1/images:annotate"
+    }
+  ],
+  "responses": [
+    {
+      "body": "input",
+      "body_kind": "json",
+      "status": 200
+    }
+  ],
+  "state_before": "fresh module state (every module-level counter and latch at its import-time value)"
+}

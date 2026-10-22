@@ -1,0 +1,40 @@
+{
+  "results": {
+    "core.yandex.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": false,
+          "consecutive_failures": 0,
+          "resting": false
+        }
+      },
+      "returns": [
+        {
+          "height": 1400,
+          "similarity": 80.0,
+          "source_name": "rule34.us",
+          "thumb_url": "https://avatars.mds.yandex.net/i?id=abc&n=13",
+          "url": "https://rule34.us/index.php?r=posts%2Fview&id=757670",
+          "width": 1000
+        },
+        {
+          "height": 1400,
+          "similarity": 78.0,
+          "source_name": "danbooru.donmai.us",
+          "thumb_url": "https://avatars.mds.yandex.net/i?id=abc&n=13",
+          "url": "https://danbooru.donmai.us/posts/6307169?q=1girl",
+          "width": 1000
+        },
+        {
+          "height": 1400,
+          "similarity": 76.0,
+          "source_name": "xbooru.com",
+          "thumb_url": "https://avatars.mds.yandex.net/i?id=abc&n=13",
+          "url": "https://xbooru.com/index.php?page=post&s=view&id=855502",
+          "width": 1000
+        }
+      ]
+    }
+  }
+}

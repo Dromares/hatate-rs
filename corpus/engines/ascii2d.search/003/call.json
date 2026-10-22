@@ -1,0 +1,35 @@
+{
+  "args": {
+    "image_path": "<image>",
+    "timeout": 30.0
+  },
+  "callables": [
+    "core.ascii2d.search"
+  ],
+  "kind": "mocked_transport",
+  "request": [
+    {
+      "allow_redirects": true,
+      "data_fields": null,
+      "file_fields": [
+        "file"
+      ],
+      "has_headers": null,
+      "json_body": false,
+      "layer": "session",
+      "method": "POST",
+      "params": null,
+      "timeout": 30.0,
+      "url": "https://ascii2d.net/search/file"
+    }
+  ],
+  "responses": [
+    {
+      "body": "input",
+      "body_kind": "text",
+      "json_unset": true,
+      "status": 403
+    }
+  ],
+  "state_before": "fresh module state (every module-level counter and latch at its import-time value)"
+}

@@ -1,0 +1,14 @@
+{
+  "results": {
+    "core.google_images.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": true
+        }
+      },
+      "message": "Google Vision refused the API key: Cloud Vision API has not been used in project 1. Check the key under Settings > Engine, and that the Cloud Vision API is enabled for its project.",
+      "raises": "GoogleImagesBlockedError"
+    }
+  }
+}

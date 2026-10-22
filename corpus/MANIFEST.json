@@ -1,5 +1,5 @@
 {
-  "item_count": 305,
+  "item_count": 348,
   "items": [
     {
       "also_used_by": [
@@ -8245,6 +8245,1027 @@
       "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
       "skipped_network_callables": [],
       "source_fixture": "tests/test_yandex.py:103 (_search)",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_search_quality.py::TestAscii2dBotChallenge.test_a_challenge_is_recognised_and_latched"
+      ],
+      "call": "call.json",
+      "call_sha256": "817ade066bf9995b2d30f7ca9dcdc550e7087a56a895aad1cff60b2eaa4a0ac5",
+      "dir": "corpus/engines/ascii2d.search/001",
+      "expected": "expected.json",
+      "expected_sha256": "3b14997a3c7b73490c12c682e29e1c15b4492f9e05d4b6b656e2c551b817ec4b",
+      "family": "engines",
+      "id": "ascii2d.search-001",
+      "input": "input.html",
+      "input_sha256": "59cdd851f6d14c669e277c3b0674a4e68122f191419d05bb33dfbeae036de7af",
+      "item_kind": "mocked_transport",
+      "parser": "ascii2d",
+      "phase_0d_note": "DAN-1964 engines: URL search challenge-walled; result selectors unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.ascii2d.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestAscii2dBotChallenge.CHALLENGE",
+      "source_fixture_is_named_constant": true
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "817ade066bf9995b2d30f7ca9dcdc550e7087a56a895aad1cff60b2eaa4a0ac5",
+      "dir": "corpus/engines/ascii2d.search/002",
+      "expected": "expected.json",
+      "expected_sha256": "d8dc91d9154a753c86f973d1a0cc21eb0800f186c4de60c34fcc88506185d86f",
+      "family": "engines",
+      "id": "ascii2d.search-002",
+      "input": "input.txt",
+      "input_sha256": "ca3704aa0b06f5954c79ee837faa152d84d6b2d42838f0637a15eda8337dbdce",
+      "item_kind": "mocked_transport",
+      "parser": "ascii2d",
+      "phase_0d_note": "DAN-1964 engines: URL search challenge-walled; result selectors unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.ascii2d.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestAscii2dBotChallenge.test_a_plain_403_is_not_called_a_bot_check",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_search_quality.py::TestAscii2dBotChallenge.test_once_blocked_later_images_do_not_ask_again"
+      ],
+      "call": "call.json",
+      "call_sha256": "a3673f6927e017b49570f43897c14bee4522d8315599bf90226768b81bfe039a",
+      "dir": "corpus/engines/ascii2d.search/003",
+      "expected": "expected.json",
+      "expected_sha256": "3b14997a3c7b73490c12c682e29e1c15b4492f9e05d4b6b656e2c551b817ec4b",
+      "family": "engines",
+      "id": "ascii2d.search-003",
+      "input": "input.html",
+      "input_sha256": "59cdd851f6d14c669e277c3b0674a4e68122f191419d05bb33dfbeae036de7af",
+      "item_kind": "mocked_transport",
+      "parser": "ascii2d",
+      "phase_0d_note": "DAN-1964 engines: URL search challenge-walled; result selectors unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.ascii2d.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestAscii2dBotChallenge.CHALLENGE",
+      "source_fixture_is_named_constant": true
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "f0edbaeb55033e2cf9b45984465db89de274b374c7fa9daf63951be813af13ce",
+      "dir": "corpus/engines/google_images.search/001",
+      "expected": "expected.json",
+      "expected_sha256": "9ed1a3a44e44c94bf0a693d537ed6fd0e6fa1533073987e4b3275b61aee240cd",
+      "family": "engines",
+      "id": "google_images.search-001",
+      "input": "input.html",
+      "input_sha256": "7a9ffb838fadd1be720b60ae347216d0eb793c0e791ec27839f9594fb1dde751",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleImagesBlocked.test_a_consent_wall_is_recognised_and_latched",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "965a140ca4005971f8f3950366fdb6e24a23da8f3b61ed59bf7dd7530c689620",
+      "dir": "corpus/engines/google_images.search/002",
+      "expected": "expected.json",
+      "expected_sha256": "5df40a634f2c29f7a7a4368f5501d0dd2fc684eb2fb2d7d4d69ff3320fa6cdde",
+      "family": "engines",
+      "id": "google_images.search-002",
+      "input": "input.html",
+      "input_sha256": "99f3254b9723fa537930b163651a9f2546550bb4961674ee93486c3d3eba5ed1",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleImagesBlocked.test_a_javascript_only_page_is_reported_not_recorded_as_empty",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_search_quality.py::TestGoogleImagesBlocked.test_a_lens_landing_is_parsed_through_the_lens_reader"
+      ],
+      "call": "call.json",
+      "call_sha256": "713fe685c8728c14b2f8bf48bbc6069b037869822097478ea45e18421a258678",
+      "dir": "corpus/engines/google_images.search/003",
+      "expected": "expected.json",
+      "expected_sha256": "c373a064b890174555584d50fdd254e5d84a385a1a12946cf2ac008b4fcbf1e2",
+      "family": "engines",
+      "id": "google_images.search-003",
+      "input": "input.html",
+      "input_sha256": "1f46e323ec6122d303e6a7200ab457356aed60577977de65620aa9832caaa0c1",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleImagesParser.LENS",
+      "source_fixture_is_named_constant": true
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "883027d6b512cb5c04c783c56798a2428912192da22286be051c9932cbf2f42b",
+      "dir": "corpus/engines/google_images.search/004",
+      "expected": "expected.json",
+      "expected_sha256": "9fa21390d86d163f62a83cd8296460dbc89de78da285cda427ae3332193fd33f",
+      "family": "engines",
+      "id": "google_images.search-004",
+      "input": "input.txt",
+      "input_sha256": "ca3704aa0b06f5954c79ee837faa152d84d6b2d42838f0637a15eda8337dbdce",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleImagesBlocked.test_a_plain_server_error_is_not_called_a_block",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_search_quality.py::TestGoogleImagesBlocked.test_an_unusual_traffic_check_is_recognised"
+      ],
+      "call": "call.json",
+      "call_sha256": "736cd902db87b0c68431b09c84a84c49733c78fe5fed71f7c13bf267a71b6a5e",
+      "dir": "corpus/engines/google_images.search/005",
+      "expected": "expected.json",
+      "expected_sha256": "9ed1a3a44e44c94bf0a693d537ed6fd0e6fa1533073987e4b3275b61aee240cd",
+      "family": "engines",
+      "id": "google_images.search-005",
+      "input": "input.html",
+      "input_sha256": "6b8abbb7d2f64f5e247cd8c2456a032f17fc0107b084264a562477f28367b572",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleImagesBlocked.SORRY",
+      "source_fixture_is_named_constant": true
+    },
+    {
+      "also_used_by": [
+        "tests/test_search_quality.py::TestGoogleImagesBlocked.test_once_blocked_later_images_do_not_ask_again"
+      ],
+      "call": "call.json",
+      "call_sha256": "4552b2b8a5c5b5a58352be7de75a82f11e42af63ff900df846f7615eba763ee3",
+      "dir": "corpus/engines/google_images.search/006",
+      "expected": "expected.json",
+      "expected_sha256": "9ed1a3a44e44c94bf0a693d537ed6fd0e6fa1533073987e4b3275b61aee240cd",
+      "family": "engines",
+      "id": "google_images.search-006",
+      "input": "input.html",
+      "input_sha256": "6b8abbb7d2f64f5e247cd8c2456a032f17fc0107b084264a562477f28367b572",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleImagesBlocked.SORRY",
+      "source_fixture_is_named_constant": true
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "c6378d38d695487d8eae42fa4bccd8f96a3f3efefecbbf2a4512c35dd97d0b67",
+      "dir": "corpus/engines/google_images.search/007",
+      "expected": "expected.json",
+      "expected_sha256": "40fe86bd9e1bd00d1a0e1574a4db6bb7de442c8828ba3a2cd510427ea6dead46",
+      "family": "engines",
+      "id": "google_images.search-007",
+      "input": "input.json",
+      "input_sha256": "86eb98612a7b16948ecb373bf29d0e547abcaaa2b1a03b4174c254a55a3c9265",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleVisionWebDetection.test_a_key_is_used_instead_of_the_public_page",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "c6378d38d695487d8eae42fa4bccd8f96a3f3efefecbbf2a4512c35dd97d0b67",
+      "dir": "corpus/engines/google_images.search/008",
+      "expected": "expected.json",
+      "expected_sha256": "22d36413b3f9a072bcca88815250dca446ba4bf4d4ca7de6b7a5ff4cdc71cb11",
+      "family": "engines",
+      "id": "google_images.search-008",
+      "input": "input.json",
+      "input_sha256": "ba7b871914b163e91e6c222119872d6ca4fd70bf16a3f590bc6a05d71b82fafb",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleVisionWebDetection.test_a_per_image_error_is_not_latched",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "1e74755bb8688d1ec4c7404aa0f30d3d85de198f3a8b07aa11d3cd411dc58f6d",
+      "dir": "corpus/engines/google_images.search/009",
+      "expected": "expected.json",
+      "expected_sha256": "9543f0400a4f1948ca36090cc223c27a3ee089f00f26d704488d14f972ba4653",
+      "family": "engines",
+      "id": "google_images.search-009",
+      "input": "input.json",
+      "input_sha256": "677cff3f7413cea2005afc0537963872f74c9f408f18f5a8b37c084196d77ab0",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleVisionWebDetection.test_a_rejected_key_stands_down_for_the_batch",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "2d86476178ac4045a7e9a7a60d4d15207aaf1a6bff0ba87f6063d8cc80af4166",
+      "dir": "corpus/engines/google_images.search/010",
+      "expected": "expected.json",
+      "expected_sha256": "0afc0babe75355df32609511299092ab7d32737b2b2fbb9b815698e466e89342",
+      "family": "engines",
+      "id": "google_images.search-010",
+      "input": "input.json",
+      "input_sha256": "87b09e8bb85811f6df8ee2d418a5a61d86694d4f09350da231bc4fe348f0c2c7",
+      "item_kind": "mocked_transport",
+      "parser": "google_images",
+      "phase_0d_note": "DAN-1964 engines: upload POST not exercised",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.google_images.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestGoogleVisionWebDetection.test_an_exhausted_quota_stands_down_too",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "7fb5456ab674105c3adf2cfa281bd4bddd3b0f3f1c4031dcbd9415150b21903e",
+      "dir": "corpus/engines/iqdb.search/001",
+      "expected": "expected.json",
+      "expected_sha256": "5a767b0657280c5a9d3c11ef75ae8e0f629d62646eb6221effbf255b78542735",
+      "family": "engines",
+      "id": "iqdb.search-001",
+      "input": "input.html",
+      "input_sha256": "b633a587c652d02386c4f16f8c6f6aab7352d97f16367c3c40576214372dd628",
+      "item_kind": "mocked_transport",
+      "parser": "iqdb",
+      "phase_0d_note": "DAN-1964 engines: result selectors not verifiable without an upload; URL mode bot-checked",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.iqdb.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_net.py::TestIqdbBudget.test_a_short_general_timeout_is_raised_to_iqdbs_floor",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "1f34a05d414e191b56fb20c76fcf08ad2ef0754640777e1b2f20fcdd9136a84d",
+      "dir": "corpus/engines/iqdb.search_3d/001",
+      "expected": "expected.json",
+      "expected_sha256": "03ab9ac00dd76f7280aca3e460b11214643411237f99a5407c5c91ffe3b6edc0",
+      "family": "engines",
+      "id": "iqdb.search_3d-001",
+      "input": "input.html",
+      "input_sha256": "26cf5631329c2987ada74371c82e6ff6eb8afbc5cdc97d475fc9b56dddb13f60",
+      "item_kind": "mocked_transport",
+      "parser": "iqdb",
+      "phase_0d_note": "DAN-1964 engines: result selectors not verifiable without an upload; URL mode bot-checked",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.iqdb.search_3d"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestIqdb3d.test_search_3d_posts_to_the_3d_host",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "b158d172cc7541348ba30b4dea24dd7346fe7fe8c372556c21078a66bb34102e",
+      "dir": "corpus/engines/pawchive_lookup.lookup/001",
+      "expected": "expected.json",
+      "expected_sha256": "6127207f349009b8d86cec715973e67622d3c2ec09401188cac43315d0ace21e",
+      "family": "engines",
+      "id": "pawchive_lookup.lookup-001",
+      "input": "input.json",
+      "input_sha256": "38e0b9de817f645c4bec37c0d4a3e58baecccb040f5718dc069a72c7385a0bed",
+      "item_kind": "mocked_transport",
+      "parser": "pawchive_lookup",
+      "phase_0d_note": "DAN-1964 engines: search_hash 200/404 as expected",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.pawchive_lookup.lookup"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestPawchiveExactLookup.test_a_failed_lookup_is_reported",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "bdb4c0ca3f29fdadb82c37b26ffb8d14cfa50bd37d6813f62fbfebe7bf464f42",
+      "dir": "corpus/engines/pawchive_lookup.lookup/002",
+      "expected": "expected.json",
+      "expected_sha256": "db0320c3b9ceb59de8d9ae17db9428c82ee5ce047c8eef91ef19ead46f1b42f3",
+      "family": "engines",
+      "id": "pawchive_lookup.lookup-002",
+      "input": "input.json",
+      "input_sha256": "603fafbd4e3b59e802b0ada73ed5f0f1622241f97cb157ddb26589350a72cc09",
+      "item_kind": "mocked_transport",
+      "parser": "pawchive_lookup",
+      "phase_0d_note": "DAN-1964 engines: search_hash 200/404 as expected",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.pawchive_lookup.lookup"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestPawchiveExactLookup.test_a_hit_is_a_certain_measured_100",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "89c28cb9dfef9395e6fb9c5f489ed4cb40fa682ba3354b96b4f8fc9670888d07",
+      "dir": "corpus/engines/pawchive_lookup.lookup/003",
+      "expected": "expected.json",
+      "expected_sha256": "b680a68da896cdf546bed8bcabee16c3cce57d1acb871d0c45dd906c29d6f7e8",
+      "family": "engines",
+      "id": "pawchive_lookup.lookup-003",
+      "input": "input.json",
+      "input_sha256": "38e0b9de817f645c4bec37c0d4a3e58baecccb040f5718dc069a72c7385a0bed",
+      "item_kind": "mocked_transport",
+      "parser": "pawchive_lookup",
+      "phase_0d_note": "DAN-1964 engines: search_hash 200/404 as expected",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.pawchive_lookup.lookup"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestPawchiveExactLookup.test_an_unknown_file_is_simply_not_found",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "2895948501538bc20f0c22de04a6e3f0ce1372b6b10a884c91b2e05ccd4b54f1",
+      "dir": "corpus/engines/pawchive_lookup.lookup/004",
+      "expected": "expected.json",
+      "expected_sha256": "dfe180ffd74a516761e2672ac9e328eeebc9bf2d2d27674e72adc816b6511a3a",
+      "family": "engines",
+      "id": "pawchive_lookup.lookup-004",
+      "input": "input.json",
+      "input_sha256": "38e0b9de817f645c4bec37c0d4a3e58baecccb040f5718dc069a72c7385a0bed",
+      "item_kind": "mocked_transport",
+      "parser": "pawchive_lookup",
+      "phase_0d_note": "DAN-1964 engines: search_hash 200/404 as expected",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.pawchive_lookup.lookup"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestPawchiveExactLookup.test_rate_limiting_is_an_error_not_a_miss",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "f9cb3f8bd43892e4ac489b6347cdf72f8b99dd6331b9321a698c1fc5f0b6f70d",
+      "dir": "corpus/engines/pawchive_lookup.lookup/005",
+      "expected": "expected.json",
+      "expected_sha256": "b680a68da896cdf546bed8bcabee16c3cce57d1acb871d0c45dd906c29d6f7e8",
+      "family": "engines",
+      "id": "pawchive_lookup.lookup-005",
+      "input": "input.json",
+      "input_sha256": "38e0b9de817f645c4bec37c0d4a3e58baecccb040f5718dc069a72c7385a0bed",
+      "item_kind": "mocked_transport",
+      "parser": "pawchive_lookup",
+      "phase_0d_note": "DAN-1964 engines: search_hash 200/404 as expected",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.pawchive_lookup.lookup"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestPawchiveExactLookup.test_the_hash_is_computed_when_not_yet_known",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.test_a_rate_limited_feed_falls_back_and_is_not_remembered"
+      ],
+      "call": "call.json",
+      "call_sha256": "7cbd2a39c1e9f1e83f10042521f7fa34e9752f2449c4f127f2c523b068167d70",
+      "dir": "corpus/engines/reddit.feed_entries/001",
+      "expected": "expected.json",
+      "expected_sha256": "2c5003ca7bb63e0ec16d933c8e6ee35a2ed0473dd36b4f344cafe873fa0c36c6",
+      "family": "engines",
+      "id": "reddit.feed_entries-001",
+      "input": "input.xml",
+      "input_sha256": "394dfaddbfb8b1f27be17eef7c4e5e284e2ae3cec32d9f3a811d399cac311dc1",
+      "item_kind": "mocked_transport",
+      "parser": "reddit",
+      "phase_0d_note": "DAN-1964 did not probe reddit.com RSS feeds; the Python tests are the only evidence of the feed shape",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.reddit._feed_entries"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.FEED",
+      "source_fixture_is_named_constant": true
+    },
+    {
+      "also_used_by": [
+        "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.test_a_rate_limited_feed_falls_back_and_is_not_remembered"
+      ],
+      "call": "call.json",
+      "call_sha256": "d7ef7f5d6166b19fce887beeadd62caef8797b24781c6453a518b405b5241e7e",
+      "dir": "corpus/engines/reddit.feed_entries/002",
+      "expected": "expected.json",
+      "expected_sha256": "2c5003ca7bb63e0ec16d933c8e6ee35a2ed0473dd36b4f344cafe873fa0c36c6",
+      "family": "engines",
+      "id": "reddit.feed_entries-002",
+      "input": "input.xml",
+      "input_sha256": "394dfaddbfb8b1f27be17eef7c4e5e284e2ae3cec32d9f3a811d399cac311dc1",
+      "item_kind": "mocked_transport",
+      "parser": "reddit",
+      "phase_0d_note": "DAN-1964 did not probe reddit.com RSS feeds; the Python tests are the only evidence of the feed shape",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.reddit._feed_entries"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.FEED",
+      "source_fixture_is_named_constant": true
+    },
+    {
+      "also_used_by": [
+        "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.test_a_rate_limited_feed_falls_back_and_is_not_remembered",
+        "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.test_an_unfound_post_falls_back_to_the_image_not_the_subreddit",
+        "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.test_lens_search_hands_back_the_post",
+        "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.test_the_post_holding_the_image_is_found"
+      ],
+      "call": "call.json",
+      "call_sha256": "33d382afb36404162a77106657e83af6925f7c3e8c9b250e09e60699c97618a8",
+      "dir": "corpus/engines/reddit.feed_entries/003",
+      "expected": "expected.json",
+      "expected_sha256": "8b6262affb69d54ecc6bb289b07605cb92f488c174f423ed0fd09b710345e003",
+      "family": "engines",
+      "id": "reddit.feed_entries-003",
+      "input": "input.xml",
+      "input_sha256": "394dfaddbfb8b1f27be17eef7c4e5e284e2ae3cec32d9f3a811d399cac311dc1",
+      "item_kind": "mocked_transport",
+      "parser": "reddit",
+      "phase_0d_note": "DAN-1964 did not probe reddit.com RSS feeds; the Python tests are the only evidence of the feed shape",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.reddit._feed_entries"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.FEED",
+      "source_fixture_is_named_constant": true
+    },
+    {
+      "also_used_by": [
+        "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.test_an_unfound_post_falls_back_to_the_image_not_the_subreddit"
+      ],
+      "call": "call.json",
+      "call_sha256": "3f63271bfc3745101b4cddf529c8926d63b6d231a80a266af6586c5438b91364",
+      "dir": "corpus/engines/reddit.feed_entries/004",
+      "expected": "expected.json",
+      "expected_sha256": "924299ebf37bfbf83422ebaa0231e3a801f8af3bd49c943b21a4c56d94013b10",
+      "family": "engines",
+      "id": "reddit.feed_entries-004",
+      "input": "input.xml",
+      "input_sha256": "394dfaddbfb8b1f27be17eef7c4e5e284e2ae3cec32d9f3a811d399cac311dc1",
+      "item_kind": "mocked_transport",
+      "parser": "reddit",
+      "phase_0d_note": "DAN-1964 did not probe reddit.com RSS feeds; the Python tests are the only evidence of the feed shape",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.reddit._feed_entries"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_search_quality.py::TestSubredditLinksBecomeThePost.FEED",
+      "source_fixture_is_named_constant": true
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "cdbc279ebc291ace14c41689f4ef38c6cb83e4ae14176b6aa9fae761e9284dc6",
+      "dir": "corpus/engines/saucenao.search/001",
+      "expected": "expected.json",
+      "expected_sha256": "f41d6a657ac940931f44227679adbc0eaa5e87cc684a5ce6907dec2ce701f2a7",
+      "family": "engines",
+      "id": "saucenao.search-001",
+      "input": "input.json",
+      "input_sha256": "a7780cd51bb0088af84da58e007f9e2c6ccfc22be3df3dfd4ebe0fffcedad9b8",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_core_utils.py::TestSauceNaoQuotaExhaustion.test_daily_window_empty_is_exhaustion",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_core_utils.py::TestSauceNaoQuotaExhaustion.test_reset_clears_the_flag"
+      ],
+      "call": "call.json",
+      "call_sha256": "cdbc279ebc291ace14c41689f4ef38c6cb83e4ae14176b6aa9fae761e9284dc6",
+      "dir": "corpus/engines/saucenao.search/002",
+      "expected": "expected.json",
+      "expected_sha256": "713a0bb2da941be57d9ad5d861261d7ad47924539e3c94ca093958fee49a968a",
+      "family": "engines",
+      "id": "saucenao.search-002",
+      "input": "input.json",
+      "input_sha256": "dc927d6776627447230afa5b15a6dc7615e7f5d0116aaf5f373dffd9e3f3c990",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_core_utils.py::TestSauceNaoQuotaExhaustion.test_error_message_alone_is_enough",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "cdbc279ebc291ace14c41689f4ef38c6cb83e4ae14176b6aa9fae761e9284dc6",
+      "dir": "corpus/engines/saucenao.search/003",
+      "expected": "expected.json",
+      "expected_sha256": "9f93bd9184a82c48592ba333a25fbd18e68ae1aad4cb908fcd472fc20d16edb3",
+      "family": "engines",
+      "id": "saucenao.search-003",
+      "input": "input.json",
+      "input_sha256": "f7e3005178c9e1a7946ad377a7675545dc7748619ef73b2e109150bd76efbb7d",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_core_utils.py::TestSauceNaoQuotaExhaustion.test_quota_remaining_is_not_exhaustion",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "cdbc279ebc291ace14c41689f4ef38c6cb83e4ae14176b6aa9fae761e9284dc6",
+      "dir": "corpus/engines/saucenao.search/004",
+      "expected": "expected.json",
+      "expected_sha256": "603fc84515e9fc56b03d2df753bd67d121db063bc491dce95760514457395005",
+      "family": "engines",
+      "id": "saucenao.search-004",
+      "input": "input.json",
+      "input_sha256": "d99e2705c1c57e99ffff44cece70ea913941e0f3b13c59a9470f2a3577e9f6a6",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_core_utils.py::TestSauceNaoQuotaExhaustion.test_short_burst_window_must_not_count_as_exhausted",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "cdbc279ebc291ace14c41689f4ef38c6cb83e4ae14176b6aa9fae761e9284dc6",
+      "dir": "corpus/engines/saucenao.search/005",
+      "expected": "expected.json",
+      "expected_sha256": "b496e02f0ef0fb48eb15cc2e4df4af26ddd95af8fe5e90c7b0f3a24540f3eb26",
+      "family": "engines",
+      "id": "saucenao.search-005",
+      "input": "input.json",
+      "input_sha256": "99c65dd0a401803fbf064613372f472a78048f405c468b4d547c688fc6d1234f",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_core_utils.py::TestSauceNaoQuotaExhaustion.test_unrelated_error_is_not_exhaustion",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "f956d644dd9d2e1d275ea35883a8c40ecef789c135e307828f7a19ba170a6a38",
+      "dir": "corpus/engines/saucenao.search/006",
+      "expected": "expected.json",
+      "expected_sha256": "af446bf4017e4e3470fc081bba2f0b6e99647a4639bfabac094ac096c2147969",
+      "family": "engines",
+      "id": "saucenao.search-006",
+      "input": "input.json",
+      "input_sha256": "bf61501bb2095be7bd4d51e4066307ea096dcfd67e769402aae1f790569b8d7e",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_core_utils.py::TestSauceNaoRetriesA429.test_a_429_is_retried_once_after_waiting",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "905ffdc4ae3aadb72d907f90490c09a39f4143bf51bc1b46719e0cf1ff7fe771",
+      "dir": "corpus/engines/saucenao.search/007",
+      "expected": "expected.json",
+      "expected_sha256": "808eb2fac06f9c0fc534fa71cfb9bc0bc739ec181e94324f2b3fdf8828b3d3dc",
+      "family": "engines",
+      "id": "saucenao.search-007",
+      "input": "input.json",
+      "input_sha256": "bf61501bb2095be7bd4d51e4066307ea096dcfd67e769402aae1f790569b8d7e",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_core_utils.py::TestSauceNaoRetriesA429.test_a_second_429_gives_up_rather_than_looping",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_core_utils.py::TestSauceNaoRetriesA429.test_the_quota_reading_is_timestamped"
+      ],
+      "call": "call.json",
+      "call_sha256": "cdbc279ebc291ace14c41689f4ef38c6cb83e4ae14176b6aa9fae761e9284dc6",
+      "dir": "corpus/engines/saucenao.search/008",
+      "expected": "expected.json",
+      "expected_sha256": "bff69f3fd7deb4c755fae37e2882c2b1b53d4648e5727a6f447fd8871da9579f",
+      "family": "engines",
+      "id": "saucenao.search-008",
+      "input": "input.json",
+      "input_sha256": "bf61501bb2095be7bd4d51e4066307ea096dcfd67e769402aae1f790569b8d7e",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_core_utils.py::TestSauceNaoRetriesA429.test_a_successful_search_never_sleeps",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "3b02888ad8077f7e17e535d090ce188c24cb8cb9faf6c71e593d5460e7b26e2a",
+      "dir": "corpus/engines/saucenao.search/009",
+      "expected": "expected.json",
+      "expected_sha256": "54e7568948c99250758652ba98010ac028331217c1a12b31a77987351b367c96",
+      "family": "engines",
+      "id": "saucenao.search-009",
+      "input": "input.json",
+      "input_sha256": "460c0ed39c567a4f269bf1c24bfef085c43936daca5005f67dcbf453bb248eb9",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_parsers_and_tags.py::TestDanbooruRestrictedPosts.test_toggle_controls_whether_they_are_dropped",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "cdbc279ebc291ace14c41689f4ef38c6cb83e4ae14176b6aa9fae761e9284dc6",
+      "dir": "corpus/engines/saucenao.search/010",
+      "expected": "expected.json",
+      "expected_sha256": "ac63fb006ef00e83e1d52d9bde123e0df6fbef1b1f5746adb4b15e782ae46cc2",
+      "family": "engines",
+      "id": "saucenao.search-010",
+      "input": "input.json",
+      "input_sha256": "55a015ab966d4e02b1abeb79faf1894d2052505ea303fdcdf6a88a9f9c3e31f6",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_parsers_and_tags.py::TestSauceNaoMirroredResults.test_duplicate_urls_are_collapsed",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_parsers_and_tags.py::TestSauceNaoMirroredResults.test_label_follows_the_url_not_saucenaos_index"
+      ],
+      "call": "call.json",
+      "call_sha256": "cdbc279ebc291ace14c41689f4ef38c6cb83e4ae14176b6aa9fae761e9284dc6",
+      "dir": "corpus/engines/saucenao.search/011",
+      "expected": "expected.json",
+      "expected_sha256": "758f2af6a242aa3ea718b278828f07e0c47ef430450cb9f5259b5b72d1c2a0bf",
+      "family": "engines",
+      "id": "saucenao.search-011",
+      "input": "input.json",
+      "input_sha256": "94de3a09f3d50f2ecf314dc1c933be770debaa6f1ed7ac6decb2c4b3abcf2763",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_parsers_and_tags.py::TestSauceNaoMirroredResults.test_every_mirrored_url_becomes_a_candidate",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "cdbc279ebc291ace14c41689f4ef38c6cb83e4ae14176b6aa9fae761e9284dc6",
+      "dir": "corpus/engines/saucenao.search/012",
+      "expected": "expected.json",
+      "expected_sha256": "cf40640476a0fe685ea1218a49dd2f5e073faa2b13913c2a6e5c996f3368d29a",
+      "family": "engines",
+      "id": "saucenao.search-012",
+      "input": "input.json",
+      "input_sha256": "77471a62c2662c896e9652ab126432b87bd779f93db99739cf294259cb42495b",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_parsers_and_tags.py::TestSauceNaoMirroredResults.test_result_with_no_usable_url_is_skipped",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "3b02888ad8077f7e17e535d090ce188c24cb8cb9faf6c71e593d5460e7b26e2a",
+      "dir": "corpus/engines/saucenao.search/013",
+      "expected": "expected.json",
+      "expected_sha256": "d24c24277af0c1adf4eb96c9654d40d4dd1843e68c241a15b6f71af6ef2d73dc",
+      "family": "engines",
+      "id": "saucenao.search-013",
+      "input": "input.json",
+      "input_sha256": "922c1d30459526e0d95888db9480ff2ceb0260709e4d996018c58e978724af86",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_parsers_and_tags.py::TestSauceNaoMirroredResults.test_site_filter_keeps_the_matching_url",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_tag_rules.py::TestRemapRunsBeforeBlacklistOnTheSauceNaoPath.test_the_pre_remap_namespace_pattern_never_fires"
+      ],
+      "call": "call.json",
+      "call_sha256": "08b7a08e0d4d0da25849ae30d8ed242410f9724ed38f8a98279aadc9f78a7c0a",
+      "dir": "corpus/engines/saucenao.search/014",
+      "expected": "expected.json",
+      "expected_sha256": "a2ccde1645f5bb85b93c79fe010af72bf5366ce9827e69ceccdd0e95e7ed9293",
+      "family": "engines",
+      "id": "saucenao.search-014",
+      "input": "input.json",
+      "input_sha256": "e6ea98c01b56845e6bd259665109511945754bf8a46b192b598abf877a16da37",
+      "item_kind": "mocked_transport",
+      "parser": "saucenao",
+      "phase_0d_note": "DAN-1964 engines: Cloudflare challenge on anonymous GET; result page unverified",
+      "phase_0d_status": "not-probed",
+      "python_callables": [
+        "core.saucenao.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_tag_rules.py::TestRemapRunsBeforeBlacklistOnTheSauceNaoPath.test_the_post_remap_namespace_pattern_fires",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "6b8c4a661b03c528c5ad4347580e8d56af8c9a2407d16efc37aa1ef292c9ff69",
+      "dir": "corpus/engines/yandex.search/001",
+      "expected": "expected.json",
+      "expected_sha256": "1830cc83e2794b3c916a9cb0868654dd85aadd8d136e20868b49236c6740e347",
+      "family": "engines",
+      "id": "yandex.search-001",
+      "input": "input.html",
+      "input_sha256": "bd49651082512d7b2d421b4fb3106af96c8b7f9c03e5ec00a1bdb28d9dadacd4",
+      "item_kind": "mocked_transport",
+      "parser": "yandex",
+      "phase_0d_note": "DAN-1964 engines: CbirSites marker present, no captcha markers",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.yandex.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_yandex.py::TestStandingDown.test_a_captcha_on_the_results_page_counts_too",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [
+        "tests/test_yandex.py::TestStandingDown.test_a_resting_yandex_says_so_on_the_row",
+        "tests/test_yandex.py::TestStandingDown.test_the_rest_ends"
+      ],
+      "call": "call.json",
+      "call_sha256": "5a94870a8f9bace474dda45fafa2bea2710f1544bdc47cc455855b9f77dee0eb",
+      "dir": "corpus/engines/yandex.search/002",
+      "expected": "expected.json",
+      "expected_sha256": "1830cc83e2794b3c916a9cb0868654dd85aadd8d136e20868b49236c6740e347",
+      "family": "engines",
+      "id": "yandex.search-002",
+      "input": "input.html",
+      "input_sha256": "bd49651082512d7b2d421b4fb3106af96c8b7f9c03e5ec00a1bdb28d9dadacd4",
+      "item_kind": "mocked_transport",
+      "parser": "yandex",
+      "phase_0d_note": "DAN-1964 engines: CbirSites marker present, no captcha markers",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.yandex.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_yandex.py::TestStandingDown.test_a_captcha_rests_yandex_through_a_new_search",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "b6ec136bde97209f81ce79681b54d915d0d323e703931660f99d8ad2c159b623",
+      "dir": "corpus/engines/yandex.search/003",
+      "expected": "expected.json",
+      "expected_sha256": "53c7374c6a226e2b5dc929e2cf3e854f6fd6eac1a8d99b66dc9bb8fbe9472f7e",
+      "family": "engines",
+      "id": "yandex.search-003",
+      "input": "input.html",
+      "input_sha256": "913c080647ac397f9b878b4395eed7f53cc5ea1d7d1aef8d638dc97240ee3bbf",
+      "item_kind": "mocked_transport",
+      "parser": "yandex",
+      "phase_0d_note": "DAN-1964 engines: CbirSites marker present, no captcha markers",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.yandex.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_yandex.py::TestStandingDown.test_a_changed_page_stands_down_after_a_run_of_them",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "b6ec136bde97209f81ce79681b54d915d0d323e703931660f99d8ad2c159b623",
+      "dir": "corpus/engines/yandex.search/004",
+      "expected": "expected.json",
+      "expected_sha256": "45ca34619da5a627440bd5990a1a788cef3001cf28cba882c2c261b551b66f2b",
+      "family": "engines",
+      "id": "yandex.search-004",
+      "input": "input.html",
+      "input_sha256": "a8282a2a182038f7804934d4920b7637fdfd1c3f1c6857fb8b00059944911431",
+      "item_kind": "mocked_transport",
+      "parser": "yandex",
+      "phase_0d_note": "DAN-1964 engines: CbirSites marker present, no captcha markers",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.yandex.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_yandex.py::TestStandingDown.test_a_good_answer",
+      "source_fixture_is_named_constant": false
+    },
+    {
+      "also_used_by": [],
+      "call": "call.json",
+      "call_sha256": "b6ec136bde97209f81ce79681b54d915d0d323e703931660f99d8ad2c159b623",
+      "dir": "corpus/engines/yandex.search/005",
+      "expected": "expected.json",
+      "expected_sha256": "53c7374c6a226e2b5dc929e2cf3e854f6fd6eac1a8d99b66dc9bb8fbe9472f7e",
+      "family": "engines",
+      "id": "yandex.search-005",
+      "input": "input.html",
+      "input_sha256": "b633a587c652d02386c4f16f8c6f6aab7352d97f16367c3c40576214372dd628",
+      "item_kind": "mocked_transport",
+      "parser": "yandex",
+      "phase_0d_note": "DAN-1964 engines: CbirSites marker present, no captcha markers",
+      "phase_0d_status": "live-match",
+      "python_callables": [
+        "core.yandex.search"
+      ],
+      "python_commit": "76c85c44fea050e06ae91c77ecc5b40e2f23f986",
+      "skipped_network_callables": [],
+      "source_fixture": "tests/test_yandex.py::TestStandingDown.test_a_success_clears_the_run_of_failures",
       "source_fixture_is_named_constant": false
     }
   ],

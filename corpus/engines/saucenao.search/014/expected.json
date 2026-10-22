@@ -1,0 +1,34 @@
+{
+  "results": {
+    "core.saucenao.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "daily_limit_reported": false,
+          "last_quota": {
+            "long_limit": 100,
+            "long_remaining": 100,
+            "short_limit": null,
+            "short_remaining": null
+          }
+        }
+      },
+      "returns": [
+        {
+          "similarity": 95.0,
+          "source_name": "danbooru",
+          "tags": [
+            {
+              "name": "someone",
+              "namespace": "creator",
+              "source": "Search engine"
+            }
+          ],
+          "thumb_url": "https://img1.saucenao.com/t.jpg",
+          "title": null,
+          "url": "https://danbooru.donmai.us/posts/1"
+        }
+      ]
+    }
+  }
+}

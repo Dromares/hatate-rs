@@ -1,0 +1,22 @@
+{
+  "header": {
+    "long_limit": 100,
+    "long_remaining": 100,
+    "status": 0
+  },
+  "results": [
+    {
+      "data": {
+        "ext_urls": [
+          "https://danbooru.donmai.us/posts/111",
+          "https://danbooru.donmai.us/posts/222"
+        ]
+      },
+      "header": {
+        "index_name": "danbooru",
+        "similarity": "95",
+        "thumbnail": "https://img1.saucenao.com/t.jpg"
+      }
+    }
+  ]
+}

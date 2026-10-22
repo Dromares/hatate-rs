@@ -1,0 +1,35 @@
+{
+  "args": {
+    "image_path": "<image>",
+    "timeout": 15
+  },
+  "callables": [
+    "core.iqdb.search"
+  ],
+  "kind": "mocked_transport",
+  "request": [
+    {
+      "allow_redirects": null,
+      "data_fields": null,
+      "file_fields": [
+        "file"
+      ],
+      "has_headers": null,
+      "json_body": false,
+      "layer": "net",
+      "method": "POST",
+      "params": null,
+      "timeout": 45.0,
+      "url": "https://iqdb.org/"
+    }
+  ],
+  "responses": [
+    {
+      "body": "input",
+      "body_kind": "text",
+      "json_unset": true,
+      "status": 200
+    }
+  ],
+  "state_before": "fresh module state (every module-level counter and latch at its import-time value)"
+}

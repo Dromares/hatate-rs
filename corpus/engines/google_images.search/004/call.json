@@ -1,0 +1,38 @@
+{
+  "args": {
+    "image_path": "<image>",
+    "timeout": 5.0
+  },
+  "callables": [
+    "core.google_images.search"
+  ],
+  "kind": "mocked_transport",
+  "request": [
+    {
+      "allow_redirects": true,
+      "data_fields": null,
+      "file_fields": [
+        "encoded_image"
+      ],
+      "has_headers": null,
+      "json_body": false,
+      "layer": "session",
+      "method": "POST",
+      "params": {
+        "hl": "en"
+      },
+      "timeout": 5.0,
+      "url": "https://www.google.com/searchbyimage/upload"
+    }
+  ],
+  "responses": [
+    {
+      "body": "input",
+      "body_kind": "text",
+      "json_unset": true,
+      "status": 500,
+      "url": "https://www.google.com/search?tbs=sbi:x"
+    }
+  ],
+  "state_before": "fresh module state (every module-level counter and latch at its import-time value)"
+}

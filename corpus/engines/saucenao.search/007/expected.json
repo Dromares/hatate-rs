@@ -1,0 +1,17 @@
+{
+  "results": {
+    "core.saucenao.search": {
+      "effects": {
+        "sleeps": [
+          30.0
+        ],
+        "state_after": {
+          "daily_limit_reported": false,
+          "last_quota": null
+        }
+      },
+      "message": "SauceNAO rate limit reached, slow down the search delay",
+      "raises": "SauceNaoError"
+    }
+  }
+}

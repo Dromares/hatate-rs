@@ -1,0 +1,14 @@
+{
+  "results": {
+    "core.google_images.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": true
+        }
+      },
+      "message": "Google is answering with a consent page or an \"unusual traffic\" check instead of results, so it won't accept uploads from this app right now. No setting fixes it - it clears on Google's schedule. Turn Google Images off under Settings > Engine, or try again later.",
+      "raises": "GoogleImagesBlockedError"
+    }
+  }
+}
