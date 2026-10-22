@@ -1171,3 +1171,114 @@ async fn a_referer_http_client_cannot_encode_is_raised_after_the_url_is_prepared
     );
     assert_eq!(w.server.request_count(), 0);
 }
+
+// -- local_md5 (core/boorus/__init__.py) -----------------------------------------------------------
+
+#[test]
+fn local_md5_hashes_a_file_reuses_the_digest_and_rehashes_a_changed_one() {
+    use std::io::Write;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("p.bin");
+    std::fs::write(&path, b"hello").unwrap();
+    let session = BooruSession::new();
+    // md5("hello")
+    let hello = "5d41402abc4b2a76b9719d911017c592";
+    assert_eq!(session.local_md5(Some(&path)).as_deref(), Some(hello));
+    assert_eq!(session.local_md5(Some(&path)).as_deref(), Some(hello));
+    assert_eq!(session.md5_cache_len(), 1, "the second call is the cache's");
+    // Same name, different size: another key, another digest (Python keys on mtime and size).
+    std::fs::File::options()
+        .append(true)
+        .open(&path)
+        .unwrap()
+        .write_all(b"!")
+        .unwrap();
+    let changed = session.local_md5(Some(&path));
+    assert_eq!(
+        changed.as_deref(),
+        Some("5a8dd3ad0756a93ded72b823b19dd877"), // md5("hello!")
+    );
+    assert_eq!(session.md5_cache_len(), 2);
+}
+
+#[test]
+fn local_md5_of_nothing_a_missing_file_or_a_directory_is_none_and_not_fatal() {
+    let dir = tempfile::tempdir().unwrap();
+    let session = BooruSession::new();
+    assert_eq!(session.local_md5(None), None);
+    assert_eq!(session.local_md5(Some(std::path::Path::new(""))), None);
+    assert_eq!(session.local_md5(Some(&dir.path().join("nope"))), None);
+    assert_eq!(session.local_md5(Some(dir.path())), None);
+    // A directory cannot be read and an unreadable file cannot either; each is remembered as a
+    // failure, so it is not opened again.
+    let locked = dir.path().join("locked.bin");
+    std::fs::write(&locked, b"x").unwrap();
+    std::fs::set_permissions(&locked, std::os::unix::fs::PermissionsExt::from_mode(0)).unwrap();
+    if std::fs::File::open(&locked).is_err() {
+        assert_eq!(session.local_md5(Some(&locked)), None);
+        assert_eq!(session.md5_cache_len(), 2);
+    }
+}
+
+// -- the Data-API fetch (`_fetch_post_from_api`, `_get_api_post`) ----------------------------------
+
+const XBOORU_POST: &str = "https://xbooru.com/index.php?page=post&s=view&id=987654";
+
+#[tokio::test]
+async fn the_data_api_answer_is_a_post_only_from_a_good_200_and_a_failure_is_remembered() {
+    // xbooru's real shape is a bare list; Gelbooru's is a {"post": [...]} envelope.
+    let w = world(
+        &["xbooru.com"],
+        routes(vec![
+            (
+                "id=987654",
+                json_reply(r#"[{"file_url": "https://x/f.png"}]"#),
+            ),
+            ("id=2", json_reply("[]")),
+            ("id=3", Reply::new(503, "down")),
+            ("id=4", Reply::ok("<html>challenge</html>")),
+            ("id=5", Reply::aborted()),
+        ]),
+    )
+    .await;
+    let session = BooruSession::new();
+    let get = |url: &str| {
+        let url = url.to_string();
+        let (session, client) = (&session, &w.client);
+        async move {
+            session
+                .dapi
+                .get_api_post(client, Family::Xbooru, &url)
+                .await
+        }
+    };
+    let post = get(XBOORU_POST).await.expect("a bare list is unwrapped");
+    assert_eq!(post["file_url"], "https://x/f.png");
+    let first = &w.server.recorded()[0];
+    assert_eq!(
+        first.target,
+        "/index.php?page=dapi&s=post&q=index&json=1&id=987654"
+    );
+    assert_eq!(first.header("user-agent"), Some(UA));
+    for id in 2..=5 {
+        let url = format!("https://xbooru.com/index.php?page=post&s=view&id={id}");
+        assert_eq!(get(&url).await, None, "id {id}");
+        assert_eq!(get(&url).await, None, "id {id} again");
+    }
+    // One request per post, answered or not: the failed ones are remembered, not retried.
+    assert_eq!(w.server.request_count(), 5);
+    assert_eq!(
+        session.dapi.memo(Family::Xbooru),
+        Some((
+            "https://xbooru.com/index.php?page=post&s=view&id=5".into(),
+            false
+        ))
+    );
+    // No post id in the URL: nothing is asked.
+    let before = w.server.request_count();
+    assert_eq!(
+        get("https://xbooru.com/index.php?page=post&s=list").await,
+        None
+    );
+    assert_eq!(w.server.request_count(), before);
+}
