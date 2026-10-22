@@ -643,7 +643,10 @@ mod tests {
 
     #[test]
     fn scratch() {
-        let r = kept(URL, &["auth=n22; Max-Age=0; Expires=Wed, 21 Oct 2099 07:28:00 GMT"]);
+        let r = kept(
+            URL,
+            &["auth=n22; Max-Age=0; Expires=Wed, 21 Oct 2099 07:28:00 GMT"],
+        );
         assert!(r.is_empty(), "{r:?}");
     }
 

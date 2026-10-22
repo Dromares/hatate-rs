@@ -510,6 +510,11 @@ pub async fn page_says_available(
     // The whole request, building it included, runs under the ticker: Python's `_do_request` is
     // the thread the ticker watches, so the clearing tick fires however it ends.
     let sent = ticked("Checking availability", timeout, on_tick, async {
+        // No time at all: Python's `done.wait(timeout)` gives up before anything can come back,
+        // and the request it started is abandoned.
+        if timeout.is_nan() || timeout <= 0.0 {
+            return Err(Ok(None));
+        }
         // `net.request` takes the URL's netloc before anything else, so a URL `urlparse` refuses
         // raises here and not as a `requests` error.
         if pyurl::try_urlparse(url, "").is_err() {
