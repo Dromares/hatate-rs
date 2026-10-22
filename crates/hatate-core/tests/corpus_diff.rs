@@ -70,14 +70,31 @@ static PORTS: &[&Port] = &[
     &corpus_ports::twitter::PORT,
     &corpus_ports::redditpost::PORT,
     &corpus_ports::reddit::PORT,
+    &corpus_ports::iqdb::PARSE,
+    &corpus_ports::iqdb::SEARCH,
+    &corpus_ports::iqdb::SEARCH_3D,
+    &corpus_ports::ascii2d::PARSE,
+    &corpus_ports::ascii2d::SEARCH,
+    &corpus_ports::tracemoe::PORT,
+    &corpus_ports::pawchive_lookup::PARSE,
+    &corpus_ports::pawchive_lookup::LOOKUP,
+    &corpus_ports::saucenao::TAGS,
+    &corpus_ports::saucenao::SEARCH,
 ];
 
 /// The Python exception class a `raises` item names, and the Rust error variant that stands for
 /// it. `BooruError` and `BooruContentGoneError` are `hatate_core::boorus::BooruError::{Fetch,
-/// ContentGone}`; later tickets add `IqdbError` and the others with their ports.
+/// ContentGone}`; the engine errors are `hatate_core::engines::*::*Error` (ascii2d's two are the
+/// variants `Ascii2dError::{Failed, Blocked}`).
 static ERROR_VARIANTS: &[(&str, &str)] = &[
     ("BooruError", "BooruError::Fetch"),
     ("BooruContentGoneError", "BooruError::ContentGone"),
+    ("IqdbError", "IqdbError"),
+    ("Ascii2dError", "Ascii2dError::Failed"),
+    ("Ascii2dBlockedError", "Ascii2dError::Blocked"),
+    ("TraceMoeError", "TraceMoeError"),
+    ("PawchiveLookupError", "PawchiveLookupError"),
+    ("SauceNaoError", "SauceNaoError"),
 ];
 
 /// The first argument of an item: the bytes of `input.*`.
@@ -111,6 +128,12 @@ impl Call<'_> {
             .and_then(|response| response["status"].as_u64())
             .and_then(|status| u16::try_from(status).ok())
             .expect("responses[-1].status is not an HTTP status")
+    }
+
+    /// The input as JSON: an engine that takes a decoded payload (trace.moe, Pawchive, a SauceNAO
+    /// result) has `input.json` in the canonical form of `corpus/README.md`.
+    pub fn json(&self) -> Value {
+        serde_json::from_slice(&self.input.bytes).expect("input.json is not JSON")
     }
 
     /// The post-page URL, `extra_args[0]` for a booru item.
@@ -197,6 +220,33 @@ fn load_items(root: &Path) -> Vec<Item> {
             }
         })
         .collect()
+}
+
+/// Runs `f` on every item of `unit` with the [`Call`] its files describe and the `expected.json`
+/// entry for the callable, for a port's own test of what the runner does not compare (a
+/// `mocked_transport` item's error message and its recorded effects). Returns how many items ran.
+pub fn replay_unit(unit: &str, mut f: impl FnMut(&str, &Call, &Value)) -> usize {
+    let root = repo_root();
+    let mut ran = 0;
+    for item in load_items(&root).iter().filter(|i| i.unit == unit) {
+        let read = |name: &str| fs::read(root.join(&item.dir).join(name)).expect("item file");
+        let input = Input {
+            bytes: read(&item.input),
+        };
+        let call: Value = serde_json::from_slice(&read(&item.call)).expect("call.json");
+        let expected: Value = serde_json::from_slice(&read(&item.expected)).expect("expected.json");
+        let empty = Map::new();
+        let args = Call {
+            call: &call,
+            input: &input,
+            extra_args: call["extra_args"].as_array().map_or(&[][..], Vec::as_slice),
+            kwargs: call["kwargs"].as_object().unwrap_or(&empty),
+            context: call["context"].as_object().unwrap_or(&empty),
+        };
+        f(&item.id, &args, &expected["results"][unit]);
+        ran += 1;
+    }
+    ran
 }
 
 // ---- comparing -------------------------------------------------------------------------

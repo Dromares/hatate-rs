@@ -56,6 +56,17 @@ pub fn text_of(el: ElementRef<'_>) -> String {
         .collect()
 }
 
+/// bs4's `tag.get_text(separator, strip=True)`: every string under the tag, each stripped, empty
+/// ones dropped, joined with `separator`. IQDB and ascii2d read a result's size off a whole box
+/// this way.
+pub fn text_stripped(el: ElementRef<'_>, separator: &str) -> String {
+    shown_strings(el)
+        .map(pycompat::strip)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(separator)
+}
+
 /// bs4's `tag.get_text(separator)`: every string under the tag, unstripped, joined with
 /// `separator`. Whitespace-only strings count, so the result keeps the page's own spacing. The
 /// Danbooru 1.x sidebar scrapes read the whole page this way.
@@ -89,6 +100,14 @@ mod tests {
     fn text_is_stripped_per_string_and_joined_with_nothing() {
         let html = soup_of("<a id=a> some <b> artist </b>\n <i>x</i> </a>");
         assert_eq!(text_of(first(&html, "#a")), "someartistx");
+    }
+
+    #[test]
+    fn stripped_text_joins_the_stripped_strings_with_the_separator() {
+        let html = soup_of("<div id=d> a <b> </b><b>b </b><script>x</script> c</div>");
+        assert_eq!(text_stripped(first(&html, "#d"), " "), "a b c");
+        assert_eq!(text_stripped(first(&html, "#d"), ""), "abc");
+        assert_eq!(text_stripped(first(&html, "#d"), "|"), "a|b|c");
     }
 
     #[test]
