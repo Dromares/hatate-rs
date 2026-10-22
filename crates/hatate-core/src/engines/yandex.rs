@@ -386,8 +386,10 @@ fn count_failure(state: &mut YandexState, message: String) -> YandexError {
 /// `_cbir_id`: the search id in the upload's JSON answer. `json` is `resp.json()`, `None` when
 /// it would not decode. `Ok(None)` where Python's `except (ValueError, AttributeError,
 /// IndexError, TypeError)` catches. `Err` where it does not: `blocks` a non-empty object
-/// (`KeyError`), or an id that is truthy and not a string (Python would carry it into the next
-/// request; a string id cannot hold it).
+/// (`KeyError`), or an id that is a non-empty array or object (Python would carry it into the
+/// next request as a repeated query parameter; a string id cannot hold it). A number or `true`
+/// is carried as its `str()`, which is what the next request's `f"{cbir_id}"` and `params=` write
+/// (DAN-2061: before the clients existed it was an error here).
 fn cbir_id(json: Option<&Value>) -> Result<Option<String>, UnexpectedInput> {
     let Some(Value::Object(answer)) = json else {
         return Ok(None);
@@ -407,6 +409,9 @@ fn cbir_id(json: Option<&Value>) -> Result<Option<String>, UnexpectedInput> {
     };
     match params.get("cbirId") {
         Some(Value::String(id)) if !id.is_empty() => Ok(Some(id.clone())),
+        Some(id @ (Value::Number(_) | Value::Bool(_))) if pycompat::truthy(id) => {
+            Ok(Some(crate::pyrepr::py_str(id)))
+        }
         Some(id) if pycompat::truthy(id) => Err(UnexpectedInput),
         _ => Ok(None),
     }
@@ -1193,10 +1198,37 @@ mod tests {
     }
 
     #[test]
+    fn a_number_or_true_for_an_id_is_carried_as_its_str() {
+        for (id, text) in [
+            (json!(7), "7"),
+            (json!(7.5), "7.5"),
+            (json!(7.0), "7.0"),
+            (json!(-3), "-3"),
+            (json!(true), "True"),
+        ] {
+            let json = json!({"blocks": [{"params": {"cbirId": id}}]});
+            let mut state = YandexState::default();
+            let got = upload_from_response(&mut state, CLOCK, &answer(UPLOAD_URL, ""), Some(&json));
+            assert_eq!(got, Ok(text.to_owned()), "{json}");
+        }
+        // Falsy ones are no id, as before.
+        for id in [json!(0), json!(0.0), json!(false)] {
+            let json = json!({"blocks": [{"params": {"cbirId": id}}]});
+            let mut state = YandexState::default();
+            assert!(
+                upload_from_response(&mut state, CLOCK, &answer(UPLOAD_URL, ""), Some(&json))
+                    .is_err()
+            );
+            assert_eq!(state.consecutive_failures, 1);
+        }
+    }
+
+    #[test]
     fn an_answer_python_raises_on_is_an_error_that_counts_nothing() {
         for json in [
             json!({"blocks": {"a": 1}}),
-            json!({"blocks": [{"params": {"cbirId": 7}}]}),
+            json!({"blocks": [{"params": {"cbirId": ["a"]}}]}),
+            json!({"blocks": [{"params": {"cbirId": {"a": 1}}}]}),
         ] {
             let mut state = YandexState::default();
             let error =

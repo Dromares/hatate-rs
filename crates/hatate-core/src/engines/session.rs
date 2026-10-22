@@ -657,11 +657,20 @@ impl Session {
             previous_headers = response.headers.clone();
 
             let status = response.status.as_u16();
+            // `get_redirect_target`: the header's bytes (`http.client` reads them as Latin-1)
+            // are decoded as UTF-8, so a `Location` with a non-ASCII path is followed.
             let location = response
-                .header("location")
+                .headers
+                .get("location")
                 .filter(|_| matches!(status, 301 | 302 | 303 | 307 | 308));
             let Some(location) = location else {
                 return Ok(response);
+            };
+            let Ok(location) = std::str::from_utf8(location.as_bytes()) else {
+                // Python raises `UnicodeDecodeError` out of `search` here.
+                return Err(Failure::Transport(
+                    "the redirect's Location header is not UTF-8".to_owned(),
+                ));
             };
             redirects += 1;
             if redirects > MAX_REDIRECTS {
