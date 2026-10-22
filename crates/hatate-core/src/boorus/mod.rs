@@ -18,11 +18,14 @@
 //! engine clients. This module has the part of `fetch_page_info` that runs after the body is in
 //! hand: [`page_info_from_body`].
 
+pub mod animepictures;
 pub mod danbooru;
 pub mod e621;
 pub mod eshuushuu;
 pub mod gelbooru;
 pub mod host;
+pub mod joyreactor;
+mod json_fields;
 pub mod mangadex;
 pub mod moebooru;
 pub mod paheal;
@@ -31,6 +34,7 @@ pub mod rating;
 pub mod rule34;
 pub mod rule34us;
 pub mod safebooru;
+pub mod sankaku;
 pub mod sizes;
 pub mod xbooru;
 pub mod zerochan;
@@ -219,7 +223,7 @@ pub static PARSERS: &[&SiteParser] = &[
     &e621::PARSER,
     &zerochan::PARSER,
     &eshuushuu::PARSER,
-    // animepictures
+    &animepictures::PARSER,
     &rule34::PARSER,
     &xbooru::PARSER,
     &paheal::PARSER,
@@ -227,10 +231,10 @@ pub static PARSERS: &[&SiteParser] = &[
     // redditpost
     // deviantart
     // pawchive
-    // sankaku
+    &sankaku::PARSER,
     // twitter
     &mangadex::PARSER,
-    // joyreactor
+    &joyreactor::PARSER,
 ];
 
 /// The parser that claims `url`, if any.
@@ -487,6 +491,55 @@ mod tests {
         assert!(find_parser("https://r34.app/posts/rule34.xxx/anna_(tekuho)").is_none());
         assert!(find_parser("https://mangadex.org/chapter/abc/").is_none());
         assert!(find_parser("https://e-hentai.org/g/1234567/abcdef0123/").is_none());
+    }
+
+    #[test]
+    fn the_api_and_markup_sites_are_found_by_their_legacy_and_modern_url_shapes() {
+        for (url, site) in [
+            ("https://anime-pictures.net/posts/596771", "animepictures"),
+            (
+                "https://anime-pictures.net/pictures/view_post/596771",
+                "animepictures",
+            ),
+            ("https://chan.sankakucomplex.com/post/show/12345", "sankaku"),
+            (
+                "https://chan.sankakucomplex.com/en/posts/4064096",
+                "sankaku",
+            ),
+            (
+                "https://www.sankakucomplex.com/posts/QyMk8vZ6Kak",
+                "sankaku",
+            ),
+            ("https://reactor.cc/post/5351071", "joyreactor"),
+            ("https://joyreactor.com/post/5351071", "joyreactor"),
+            ("https://joyreactor.cc/post/5351071", "joyreactor"),
+        ] {
+            assert_eq!(find_parser(url).map(|p| p.name), Some(site), "{url}");
+        }
+        // A reactor page that is not a post is nobody's.
+        assert!(find_parser("https://reactor.cc/tag/art").is_none());
+    }
+
+    #[test]
+    fn a_sankaku_hash_miss_reaches_the_page_info_as_an_explanation_and_only_then() {
+        let ctx = Context::default();
+        let url = "https://chan.sankakucomplex.com/en/posts/4604859";
+        let miss = page_info_from_body(&sankaku::PARSER, "[]", url, url, &ctx);
+        assert!(miss.tags.is_empty());
+        assert!(
+            miss.incomplete_reason
+                .as_deref()
+                .is_some_and(|r| r.contains("byte-identical"))
+        );
+        // With tags the post is real, so there is nothing to explain.
+        let body = r#"[{"id": "abc", "tags": [{"name": "cat", "type": 0}]}]"#;
+        let hit = page_info_from_body(&sankaku::PARSER, body, url, url, &ctx);
+        assert_eq!(hit.tags.len(), 1);
+        assert_eq!(hit.incomplete_reason, None);
+        assert_eq!(
+            hit.canonical_url.as_deref(),
+            Some("https://www.sankakucomplex.com/posts/abc")
+        );
     }
 
     #[test]

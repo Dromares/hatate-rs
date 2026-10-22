@@ -1,10 +1,15 @@
-//! Python's number coercions, for reading files the Python app wrote (or might read).
+//! Python's number coercions, for reading files the Python app wrote (or might read), and the
+//! one text routine (`html.unescape`) whose answer a parser's output depends on.
 //!
 //! The Python readers use `float(x)`, `int(x)` and `x or 0` on whatever `json.loads`
 //! returned, so a stored string `"12"` or `12.0` still counts as 12. These helpers copy
 //! the cases that can occur in a file; anything Python would raise `TypeError` on is
 //! `None` here, which every caller turns into "treat as malformed".
 
+use std::sync::LazyLock;
+
+use markup5ever::data::NAMED_ENTITIES;
+use regex::Regex;
 use serde_json::Value;
 
 /// Python truthiness of a JSON value (`x or default`).
@@ -67,6 +72,121 @@ pub fn split(s: &str) -> impl Iterator<Item = &str> {
     s.split(is_space).filter(|piece| !piece.is_empty())
 }
 
+/// `html.unescape(s)`: HTML5 character references decoded the way CPython's `html` module does,
+/// which is not the way a browser decodes an attribute. A named reference with no `;` is decoded
+/// when it is one of the legacy names (`&amp`, `&copy`), and also by its longest legacy prefix
+/// (`&ampfoo` is `&foo`), wherever it sits; a numeric one outside Unicode or in the C1 range is
+/// remapped as CPython remaps it. The named table is the WHATWG one `html5ever` decodes with.
+pub fn html_unescape(s: &str) -> String {
+    static CHARREF: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"&(#[0-9]+;?|#[xX][0-9a-fA-F]+;?|[^\t\n\x0c <&#;]{1,32};?)")
+            .expect("charref regex")
+    });
+    if !s.contains('&') {
+        return s.to_string();
+    }
+    CHARREF
+        .replace_all(s, |caps: &regex::Captures| {
+            let body = &caps[1];
+            match body.strip_prefix('#') {
+                Some(number) => numeric_charref(number),
+                None => named_charref(body),
+            }
+        })
+        .into_owned()
+}
+
+fn numeric_charref(number: &str) -> String {
+    let digits = number.trim_end_matches(';');
+    let parsed = match digits.strip_prefix(['x', 'X']) {
+        Some(hex) => u32::from_str_radix(hex, 16),
+        None => digits.parse(),
+    };
+    // Python's ints do not overflow; anything this large is past 0x10FFFF either way.
+    let num = parsed.unwrap_or(u32::MAX);
+    if let Some(&(_, replacement)) = INVALID_CHARREFS.iter().find(|(n, _)| *n == num) {
+        return replacement.to_string();
+    }
+    if (0xD800..=0xDFFF).contains(&num) || num > 0x10FFFF {
+        return '\u{fffd}'.to_string();
+    }
+    if is_invalid_codepoint(num) {
+        return String::new();
+    }
+    char::from_u32(num).map_or_else(String::new, String::from)
+}
+
+fn named_charref(name: &str) -> String {
+    let lookup = |key: &str| {
+        NAMED_ENTITIES
+            .get(key)
+            .filter(|(first, _)| *first != 0)
+            .map(|&(first, second)| {
+                [first, second]
+                    .into_iter()
+                    .filter(|&cp| cp != 0)
+                    .filter_map(char::from_u32)
+                    .collect::<String>()
+            })
+    };
+    if let Some(found) = lookup(name) {
+        return found;
+    }
+    // The longest prefix (two characters or more, never the whole name) that is a legacy name.
+    let ends: Vec<usize> = name.char_indices().map(|(i, _)| i).skip(2).collect();
+    for end in ends.into_iter().rev() {
+        if let Some(found) = lookup(&name[..end]) {
+            return found + &name[end..];
+        }
+    }
+    format!("&{name}")
+}
+
+/// `html._invalid_charrefs`: the numbers CPython maps to something other than their own
+/// character (the Windows-1252 reading of 0x80..=0x9F, NUL, and CR).
+const INVALID_CHARREFS: [(u32, char); 34] = [
+    (0x00, '\u{fffd}'),
+    (0x0d, '\r'),
+    (0x80, '\u{20ac}'),
+    (0x81, '\u{81}'),
+    (0x82, '\u{201a}'),
+    (0x83, '\u{192}'),
+    (0x84, '\u{201e}'),
+    (0x85, '\u{2026}'),
+    (0x86, '\u{2020}'),
+    (0x87, '\u{2021}'),
+    (0x88, '\u{2c6}'),
+    (0x89, '\u{2030}'),
+    (0x8a, '\u{160}'),
+    (0x8b, '\u{2039}'),
+    (0x8c, '\u{152}'),
+    (0x8d, '\u{8d}'),
+    (0x8e, '\u{17d}'),
+    (0x8f, '\u{8f}'),
+    (0x90, '\u{90}'),
+    (0x91, '\u{2018}'),
+    (0x92, '\u{2019}'),
+    (0x93, '\u{201c}'),
+    (0x94, '\u{201d}'),
+    (0x95, '\u{2022}'),
+    (0x96, '\u{2013}'),
+    (0x97, '\u{2014}'),
+    (0x98, '\u{2dc}'),
+    (0x99, '\u{2122}'),
+    (0x9a, '\u{161}'),
+    (0x9b, '\u{203a}'),
+    (0x9c, '\u{153}'),
+    (0x9d, '\u{9d}'),
+    (0x9e, '\u{17e}'),
+    (0x9f, '\u{178}'),
+];
+
+/// `html._invalid_codepoints`: control characters and noncharacters, which decode to nothing.
+fn is_invalid_codepoint(num: u32) -> bool {
+    matches!(num, 0x1..=0x8 | 0xb | 0xe..=0x1f | 0x7f..=0x9f | 0xfdd0..=0xfdef)
+        || (num & 0xfffe) == 0xfffe
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,5 +219,55 @@ mod tests {
         let pieces: Vec<&str> = split(" a\u{1c}b\t\u{85}c  ").collect();
         assert_eq!(pieces, ["a", "b", "c"]);
         assert_eq!(split("   ").count(), 0);
+    }
+
+    #[test]
+    fn html_unescape_matches_cpythons_html_module() {
+        // Each pair is `html.unescape(input)` as CPython 3.14 returns it.
+        let cases = [
+            ("Cat &amp; Dog", "Cat & Dog"),
+            ("&amp", "&"),
+            ("&ampx;", "&x;"),
+            ("&notit;", "\u{ac}it;"),
+            ("&not", "\u{ac}"),
+            ("&notin;", "\u{2209}"),
+            ("&#39;&#x27;&#X27;", "'''"),
+            (
+                "&#0;&#13;&#128;&#x9f;&#129;",
+                "\u{fffd}\r\u{20ac}\u{178}\u{81}",
+            ),
+            (
+                "&#x110000;&#xD800;&#1;&#xb;&#x7f;&#xfdd0;&#xfffe;&#x1ffff;",
+                "\u{fffd}\u{fffd}",
+            ),
+            ("&#65;&#00065;&#x41", "AAA"),
+            ("&unknown; & &; &#; &#x;", "&unknown; & &; &#; &#x;"),
+            ("&lt;b&gt; &quot;q&quot; &apos;", "<b> \"q\" '"),
+            ("&amp;amp;", "&amp;"),
+            ("&AMP &AMP;", "& &"),
+            ("&Eacute&eacutex;&eacutex", "\u{c9}\u{e9}x;\u{e9}x"),
+            ("&NotEqualTilde; &acE;", "\u{2242}\u{338} \u{223e}\u{333}"),
+            ("a=1&copy=2&copy2", "a=1\u{a9}=2\u{a9}2"),
+            ("&#99999999999999999999;", "\u{fffd}"),
+            ("&#x99999999999999999999;", "\u{fffd}"),
+            ("&hellip;&nbsp;x", "\u{2026}\u{a0}x"),
+            ("&\u{e9}t\u{e9};", "&\u{e9}t\u{e9};"),
+            (
+                "&aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+                "&aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+            ),
+            (
+                "&aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+                "&aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;",
+            ),
+            ("&ampersand;", "&ersand;"),
+            ("&notanentity", "\u{ac}anentity"),
+            ("&ltx", "<x"),
+        ];
+        for (input, want) in cases {
+            assert_eq!(html_unescape(input), want, "{input:?}");
+        }
+        assert_eq!(html_unescape("no references"), "no references");
+        assert_eq!(html_unescape(""), "");
     }
 }
