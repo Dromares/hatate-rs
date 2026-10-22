@@ -67,10 +67,42 @@ fn digit_value(c: char) -> Option<u32> {
 
 /// `int(raw.replace(",", ""))` for text the patterns above matched. `None` where the number does
 /// not fit an `i64` (Python has no such limit; no real page states one that large).
-fn to_int(raw: &str) -> Option<i64> {
+pub(super) fn to_int(raw: &str) -> Option<i64> {
     raw.chars().filter(|&c| c != ',').try_fold(0i64, |acc, c| {
         acc.checked_mul(10)?.checked_add(i64::from(digit_value(c)?))
     })
+}
+
+/// `int(raw)` for text Python's `int()` accepts: surrounding whitespace, one optional sign, then
+/// decimal digits of any script with single underscores between them. `None` where Python raises
+/// `ValueError`, or where the value does not fit an `i64`.
+pub(super) fn py_int(raw: &str) -> Option<i64> {
+    let s = pycompat::strip(raw);
+    let (negative, digits) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s.strip_prefix('+').unwrap_or(s)),
+    };
+    let well_formed = !digits.is_empty()
+        && !digits.starts_with('_')
+        && !digits.ends_with('_')
+        && !digits.contains("__")
+        && digits.chars().all(|c| c == '_' || is_decimal(c));
+    if !well_formed {
+        return None;
+    }
+    // Accumulate negatively so that i64::MIN parses.
+    digits
+        .chars()
+        .filter(|&c| c != '_')
+        .try_fold(0i64, |acc, c| {
+            let digit = i64::from(digit_value(c)?);
+            let acc = acc.checked_mul(10)?;
+            if negative {
+                acc.checked_sub(digit)
+            } else {
+                acc.checked_add(digit)
+            }
+        })
 }
 
 fn pair(text: &str, re: &Regex) -> (Option<i64>, Option<i64>) {
@@ -162,6 +194,33 @@ mod tests {
             parse_size_label("Size: 99999999999999999999x1"),
             (None, Some(1))
         );
+    }
+
+    #[test]
+    fn py_int_reads_what_pythons_int_reads() {
+        for (raw, want) in [
+            ("12", Some(12)),
+            (" +7\t", Some(7)),
+            ("-5", Some(-5)),
+            ("1_000", Some(1000)),
+            ("\u{661}\u{662}", Some(12)),
+            ("\u{2003}8\u{2003}", Some(8)),
+            ("-9223372036854775808", Some(i64::MIN)),
+            ("9223372036854775808", None),
+            ("", None),
+            ("+", None),
+            ("--1", None),
+            ("+ 1", None),
+            ("1__0", None),
+            ("_1", None),
+            ("1_", None),
+            ("1.5", None),
+            ("1e3", None),
+            ("0x10", None),
+            ("None", None),
+        ] {
+            assert_eq!(py_int(raw), want, "{raw:?}");
+        }
     }
 
     #[test]

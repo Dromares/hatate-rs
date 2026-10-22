@@ -50,6 +50,10 @@ pub struct Port {
 /// Every parser that has a Rust port.
 static PORTS: &[&Port] = &[
     &corpus_ports::danbooru::PORT,
+    &corpus_ports::e621::PORT,
+    &corpus_ports::moebooru::PORT,
+    &corpus_ports::paheal::PORT,
+    &corpus_ports::rule34us::PORT,
     &corpus_ports::gelbooru::PORT,
     &corpus_ports::safebooru::PORT,
     &corpus_ports::rule34::PORT,

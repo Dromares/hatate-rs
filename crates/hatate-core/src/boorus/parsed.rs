@@ -57,9 +57,15 @@ pub fn text_of(el: ElementRef<'_>) -> String {
 }
 
 /// bs4's `tag.get_text(separator)`: every string under the tag, unstripped, joined with
-/// `separator`. The Danbooru 1.x sidebar scrapes read the whole page this way.
+/// `separator`. Whitespace-only strings count, so the result keeps the page's own spacing. The
+/// Danbooru 1.x sidebar scrapes read the whole page this way.
 pub fn text_joined(el: ElementRef<'_>, separator: &str) -> String {
     shown_strings(el).collect::<Vec<_>>().join(separator)
+}
+
+/// `soup.get_text(separator)` for the whole document.
+pub fn page_text(soup: &Html, separator: &str) -> String {
+    text_joined(soup.root_element(), separator)
 }
 
 /// bs4's `tag.get("class")`: the class names, split as Python splits a string.
@@ -90,6 +96,14 @@ mod tests {
         let html = soup_of("<div id=d> a <b>b</b><script>x</script> c</div>");
         assert_eq!(text_joined(first(&html, "#d"), " "), " a  b  c");
         assert_eq!(text_joined(first(&html, "#d"), ""), " a b c");
+    }
+
+    #[test]
+    fn joined_text_skips_comments_and_page_text_reads_the_whole_document() {
+        let html = soup_of("<div id=d> a <b>b</b><script>x</script><!--c--> <i>c</i></div>");
+        assert_eq!(text_joined(first(&html, "#d"), "|"), " a |b| |c");
+        assert!(page_text(&soup_of("<p>one</p><p>two</p>"), " ").contains("one two"));
+        assert_eq!(page_text(&soup_of(""), " "), "");
     }
 
     #[test]
