@@ -82,11 +82,14 @@ stays on the page the site named. C2 and C3 only occur in damaged files and a da
 already hashes as noise. None of the three changes a hash for a well-formed Huffman JPEG, PNG,
 GIF, BMP, WebP, TIFF, PPM or ICO: 0 differing of 12 247.
 
-Found, not changed (outside this ticket's rule "do not change earlier behaviour"): `image_prep`'s
-`resample_axis` is horizontal-first always, whereas Pillow goes vertical-first when
-`in_h > 100 * in_w`. `pyraster` has the rule; `image_prep` (the upload-size downscale, not a hash
-path) does not, so for a picture more than 100 times taller than wide its output can differ from
-Pillow's by one grey level. Listed for the ticket that owns `image_prep`.
+Found in this ticket, fixed in DAN-2088: `image_prep`'s thumbnail passes were horizontal-first
+always, whereas Pillow goes vertical-first when `in_h > 100 * in_w` (`pyraster` already had the
+rule; `image_prep` is the upload-size downscale, not a hash path). For a picture more than 100
+times taller than wide the output differed from Pillow's by a grey level or so (a 5 x 520 grey
+picture thumbnailed to 3 x 312 differed in the sum of its bytes, 119,385 against Pillow's 119,374).
+`image_prep` now takes the same rule; the tests
+`a_picture_over_a_hundred_times_taller_than_wide_is_resampled_down_first` (three sizes, expected
+values from Pillow 12.3) and `the_across_pass_stays_first_at_exactly_a_hundred_to_one` pin it.
 
 ## 5. Mutation check
 

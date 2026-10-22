@@ -826,3 +826,106 @@ fn a_grey_jpeg_carries_only_the_quantization_table_it_uses() {
     let decoded = image::load_from_memory(&jpeg).unwrap();
     assert_eq!((decoded.width(), decoded.height()), (16, 16));
 }
+
+// Pillow's `resize` does the across pass first, except on a picture more than 100 times taller
+// than it is wide, where it does the down pass first; each pass rounds to 8 bits, so the order
+// shows in the pixels. The expected values are what Pillow 12.3 gave for
+// `Image.thumbnail(size, Image.LANCZOS)` on the same grey picture: (sum of all bytes, sum of
+// byte * (index + 1), first 8 bytes, last 8 bytes).
+
+/// A structured grey picture: the same formula the Pillow reference used.
+fn tall_grey(width: u32, height: u32) -> Pixels {
+    let data = (0..height)
+        .flat_map(|y| {
+            (0..width).map(move |x| (x * 37 + y * 91 + (x * y) % 53 + (y / 7) * 13) % 256)
+        })
+        .map(|v| v as u8)
+        .collect();
+    Pixels {
+        width,
+        height,
+        grey: true,
+        data,
+    }
+}
+
+fn digest(px: &Pixels) -> (u64, u64, Vec<u8>, Vec<u8>) {
+    let sum = px.data.iter().map(|&b| u64::from(b)).sum();
+    let weighted = px
+        .data
+        .iter()
+        .enumerate()
+        .map(|(i, &b)| (i as u64 + 1) * u64::from(b))
+        .sum();
+    (
+        sum,
+        weighted,
+        px.data[..8].to_vec(),
+        px.data[px.data.len() - 8..].to_vec(),
+    )
+}
+
+#[test]
+fn a_picture_over_a_hundred_times_taller_than_wide_is_resampled_down_first() {
+    // 520 > 100 * 5 and 700 > 100 * 6: down first. 20 x 3200 is the case a 3000 px cap meets.
+    for (w, h, size, out, expected) in [
+        (
+            5,
+            520,
+            (3, 400),
+            (3, 312),
+            (
+                119_374,
+                55_808_400,
+                vec![55, 118, 178, 146, 88, 127, 97, 149],
+                vec![90, 147, 130, 182, 134, 124, 121, 167],
+            ),
+        ),
+        (
+            6,
+            700,
+            (5, 350),
+            (3, 350),
+            (
+                133_935,
+                70_292_752,
+                vec![81, 131, 146, 117, 109, 130, 134, 136],
+                vec![117, 139, 140, 147, 128, 131, 129, 97],
+            ),
+        ),
+        (
+            20,
+            3200,
+            (3000, 3000),
+            (19, 3000),
+            (
+                7_250_384,
+                206_700_159_232,
+                vec![1, 41, 89, 129, 159, 202, 144, 0],
+                vec![19, 92, 94, 122, 188, 223, 35, 71],
+            ),
+        ),
+    ] {
+        let mut px = tall_grey(w, h);
+        px.thumbnail(size).unwrap();
+        assert_eq!((px.width, px.height), out, "{w}x{h}");
+        assert_eq!(digest(&px), expected, "{w}x{h}");
+    }
+}
+
+#[test]
+fn the_across_pass_stays_first_at_exactly_a_hundred_to_one() {
+    // 500 = 100 * 5 is not "more than": Pillow keeps the usual order.
+    let mut px = tall_grey(5, 500);
+    px.thumbnail((3, 300)).unwrap();
+    assert_eq!((px.width, px.height), (3, 300));
+    assert_eq!(
+        digest(&px),
+        (
+            114_680,
+            51_493_866,
+            vec![55, 118, 177, 145, 88, 128, 98, 149],
+            vec![175, 142, 126, 107, 156, 182, 80, 112],
+        )
+    );
+}

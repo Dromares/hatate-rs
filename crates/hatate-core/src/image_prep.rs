@@ -349,14 +349,23 @@ impl Pixels {
         let channels = self.channels();
         let mut data = std::mem::take(&mut self.data);
         let (mut cur_w, mut cur_h) = (self.width as usize, self.height as usize);
-        // Pillow resamples across first, then down, and skips an axis whose size is unchanged.
-        if w != self.width {
-            data = resample_axis(&data, cur_w, cur_h, channels, w as usize, true);
-            cur_w = w as usize;
-        }
-        if h != self.height {
-            data = resample_axis(&data, cur_w, cur_h, channels, h as usize, false);
-            cur_h = h as usize;
+        // Pillow resamples across first, then down, except on a picture more than 100 times
+        // taller than it is wide, where it goes down first (each pass rounds to 8 bits, so the
+        // order shows in the pixels; `pyraster::resize` measured the same rule). It skips an axis
+        // whose size is unchanged.
+        let down_first = u64::from(self.height) > 100 * u64::from(self.width);
+        for horizontal in if down_first {
+            [false, true]
+        } else {
+            [true, false]
+        } {
+            if horizontal && w != self.width {
+                data = resample_axis(&data, cur_w, cur_h, channels, w as usize, true);
+                cur_w = w as usize;
+            } else if !horizontal && h != self.height {
+                data = resample_axis(&data, cur_w, cur_h, channels, h as usize, false);
+                cur_h = h as usize;
+            }
         }
         debug_assert_eq!(data.len(), cur_w * cur_h * channels);
         self.width = w;
