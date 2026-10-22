@@ -440,7 +440,7 @@ fn the_rust_log_never_touches_app_log_files_even_when_rotating() {
 fn an_existing_log_is_appended_to_and_its_size_counts() {
     let sb = Sandbox::new();
     let path = sb.paths.rust_log_file();
-    put(&sb, "hatate-rs.log", &vec![b'a'; 95]);
+    put(&sb, "hatate-rs.log", &[b'a'; 95]);
     let mut log = RotatingLog::open(path.clone(), 100, 3).unwrap();
     log.record(1.0, Level::Info, "t", "pushes it over").unwrap();
     assert_eq!(fs::metadata(rotated(&path, 1)).unwrap().len(), 95);
