@@ -1060,7 +1060,7 @@ async fn finish(ui: Ui, opts: Options) {
                             under,
                             &with,
                             r,
-                            &[pal.ink_28.over(pal.raised), pal.raised],
+                            &[pal.ink_28.over(pal.raised)],
                             16,
                         );
                         println!(

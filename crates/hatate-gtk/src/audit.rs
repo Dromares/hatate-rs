@@ -195,9 +195,8 @@ pub fn popover_flatness(px: &Pixels) -> Option<Flatness> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CardFlatness {
-    /// The pixel one step in from each corner of the card is the card's own colour (edge or
-    /// fill), not the backdrop showing through a rounded corner. One step in, because the
-    /// bounds a toolkit reports can be a pixel off the painted edge.
+    /// The corner pixel of the painted card (the bounding box of its border-coloured pixels) is
+    /// the border colour, not the backdrop showing through a rounded corner.
     pub corners_square: [bool; 4],
     /// Pixels in the band just outside the card that differ from what the dimmed backdrop
     /// alone would show there: a drop shadow.
@@ -245,7 +244,7 @@ fn fit_dim(under: &Pixels, with: &Pixels, skip: Rect, ch: usize) -> (f64, f64) {
 /// Flatness of an in-window card (a dialog). `under` is the same window rendered without the
 /// dialog, `with` rendered with it. The backdrop is dimmed uniformly, so away from the card
 /// `with` is a straight line of `under`; inside the `band` around the card any pixel that
-/// leaves that line is shadow. `own` lists the card's own colours (border and fill).
+/// leaves that line is shadow. `own[0]` is the card's border colour.
 pub fn card_flatness(
     under: &Pixels,
     with: &Pixels,
@@ -256,19 +255,44 @@ pub fn card_flatness(
     let near = |a: Rgba, b: Rgba| {
         (a.0 - b.0).abs() < 3.0 && (a.1 - b.1).abs() < 3.0 && (a.2 - b.2).abs() < 3.0
     };
-    let (x0, y0) = (card.x.max(0) as usize + 1, card.y.max(0) as usize + 1);
-    let (x1, y1) = (
-        ((card.x + card.w - 2) as usize).min(with.w - 1),
-        ((card.y + card.h - 2) as usize).min(with.h - 1),
-    );
+    // The bounds a toolkit reports can sit a few pixels off the painted card, so find the
+    // painted card: the bounding box of border-coloured pixels near the reported rectangle.
+    let edge = own[0];
+    let search = card.grow(4);
+    let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0usize, 0usize);
+    for y in search.y.max(0)..(search.y + search.h).min(with.h as i64) {
+        for x in search.x.max(0)..(search.x + search.w).min(with.w as i64) {
+            if near(with.rgb(x as usize, y as usize), edge) {
+                x0 = x0.min(x as usize);
+                y0 = y0.min(y as usize);
+                x1 = x1.max(x as usize);
+                y1 = y1.max(y as usize);
+            }
+        }
+    }
+    if x0 == usize::MAX {
+        return CardFlatness {
+            corners_square: [false; 4],
+            shadow_px: usize::MAX,
+        };
+    }
+    let painted = Rect {
+        x: x0 as i64,
+        y: y0 as i64,
+        w: (x1 - x0 + 1) as i64,
+        h: (y1 - y0 + 1) as i64,
+    };
     let corners = [(x0, y0), (x1, y0), (x0, y1), (x1, y1)];
-    let corners_square = corners.map(|(x, y)| own.iter().any(|c| near(with.rgb(x, y), *c)));
-    let outer = card.grow(band);
+    let corners_square = corners.map(|(x, y)| near(with.rgb(x, y), edge));
+    let outer = painted.grow(band);
     let fit = [0, 1, 2].map(|ch| fit_dim(under, with, outer, ch));
     let mut shadow_px = 0;
     for y in outer.y.max(0)..(outer.y + outer.h).min(with.h as i64) {
         for x in outer.x.max(0)..(outer.x + outer.w).min(with.w as i64) {
-            let inside = x >= card.x && x < card.x + card.w && y >= card.y && y < card.y + card.h;
+            let inside = x >= painted.x
+                && x < painted.x + painted.w
+                && y >= painted.y
+                && y < painted.y + painted.h;
             if inside {
                 continue;
             }
@@ -282,6 +306,11 @@ pub fn card_flatness(
             });
             if off {
                 shadow_px += 1;
+                if shadow_px <= 6 && std::env::var_os("HATATE_AUDIT_DEBUG").is_some() {
+                    eprintln!(
+                        "AUDITDBG shadow px ({x},{y}) under={u:?} with={w:?} fit={fit:?}"
+                    );
+                }
             }
         }
     }
@@ -442,12 +471,12 @@ mod tests {
                 flat.set(x, y, if border { edge } else { [20, 20, 20, 255] });
             }
         }
-        let own = [Rgba::rgb(90, 87, 83), Rgba::rgb(20, 20, 20)];
+        let own = [Rgba::rgb(90, 87, 83)];
         let f = card_flatness(&under, &flat, card, &own, 12);
         assert!(f.square() && f.shadowless(), "{f:?}");
 
         let mut soft = flat.clone();
-        soft.set(31, 26, dimmed.get(31, 26)); // rounded corner shows the backdrop
+        soft.set(30, 25, dimmed.get(30, 25)); // rounded corner shows the backdrop
         for x in 30..90 {
             soft.set(x, 67, [0, 0, 0, 255]); // shadow band, darker than the dimmed page
         }
