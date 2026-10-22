@@ -1,6 +1,6 @@
 [package]
 name = "hatate-gtk"
-description = "GUI front end placeholder for the Hatate Rust rewrite (work in progress)"
+description = "GTK4 toolkit spike for the Hatate Rust rewrite: Review view and a 5,000-row Queue (work in progress)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,3 +9,17 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Aligned with Dromares/rv-rs crates/rv-gtk (gtk4 0.11.5, feature v4_12). rv-gtk does not use
+# libadwaita; the spike adds it to measure how its stylesheet fights the flat Ryoku look.
+gtk4 = { version = "0.11.5", features = ["v4_12"] }
+libadwaita = { version = "0.9", features = ["v1_4"] }
+# PNG and JPEG only: enough for the fixtures and for the load-failure path.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+[lib]
+name = "hatate_gtk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hatate-gtk"
+path = "src/main.rs"
