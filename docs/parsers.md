@@ -16,7 +16,11 @@ worked example.
 - **Explicit context.** State that Python keeps in a module global is a field of
   `boorus::Context` (the Gelbooru family's memoised Data-API post, Pawchive's creator-name
   cache), passed to every hook as its last argument. The corpus records the same state as
-  `context` in `call.json`. A site that needs none ignores the argument.
+  `context` in `call.json`. A site that needs none ignores the argument. The Gelbooru family's
+  `api_post` is the Data-API post already matched to the URL, or `None` for "the API gave
+  nothing"; the fetch that fills it, and Gelbooru's 401 latch, are the HTTP client's. rule34 and
+  Xbooru keep their own module (and so their own latch and memo) in Python for that reason; the
+  hooks themselves read the same thing, so they call Gelbooru's.
 - **A `static PARSER: SiteParser`** naming the hooks the module defines; every hook the Python
   module does not define stays `None`. `SiteParser::new(name, matches, parse)` fills the
   required two, and struct-update syntax adds the rest.
@@ -37,8 +41,9 @@ runs once the body is in hand.
 - `soup_of(html)` parses with html5ever through `scraper`; Python used bs4 with lxml.
 - `json_of(body)` is `serde_json::from_str`; Python used `json.loads`. An `Err` means "this is
   not JSON", which several hooks read as the signal to fall back to HTML.
-- `text_of(el)` is bs4's `get_text(strip=True)` and `classes_of(el)` is bs4's `get("class")`.
-  Use them rather than `scraper`'s own text and class iterators, which differ (see below).
+- `text_of(el)` is bs4's `get_text(strip=True)`, `text_joined(el, sep)` is bs4's `get_text(sep)` (the
+  Danbooru 1.x sidebar scrapes read the whole page this way) and `classes_of(el)` is bs4's
+  `get("class")`. Use them rather than `scraper`'s own text and class iterators, which differ (see below).
 - `pycompat::strip`, `pycompat::split` give Python's whitespace rules for `str.strip` and
   `str.split()`.
 

@@ -29,11 +29,11 @@ pub fn json_of(body: &str) -> Result<Value, serde_json::Error> {
     serde_json::from_str(body)
 }
 
-/// The strings bs4's `get_text` walks: the text nodes under `el`, in document order. One that bs4
-/// files under `<script>`, `<style>` or `<template>` is not page text and is left out, however
-/// deep inside it sits and wherever the tag being read is (bs4 decides when it parses, from the
-/// innermost such tag still open). A comment is not text either.
-fn visible_strings(el: ElementRef<'_>) -> impl Iterator<Item = &str> {
+/// Every string a page shows under `el`, in document order. A string that bs4 files under
+/// `<script>`, `<style>` or `<template>` is not page text and is left out, however deep inside it
+/// sits and wherever the tag being read is (bs4 decides when it parses, from the innermost such
+/// tag still open). A comment is not text either.
+fn shown_strings(el: ElementRef<'_>) -> impl Iterator<Item = &str> {
     el.descendants().filter_map(|node| match node.value() {
         Node::Text(text) => {
             let hidden = node.ancestors().any(|a| {
@@ -50,16 +50,17 @@ fn visible_strings(el: ElementRef<'_>) -> impl Iterator<Item = &str> {
 /// bs4's `tag.get_text(strip=True)`: every string under the tag, each stripped, empty ones
 /// dropped, joined with nothing.
 pub fn text_of(el: ElementRef<'_>) -> String {
-    visible_strings(el)
+    shown_strings(el)
         .map(pycompat::strip)
         .filter(|s| !s.is_empty())
         .collect()
 }
 
 /// bs4's `tag.get_text(separator)`: every string under the tag, unstripped, joined with
-/// `separator`. Whitespace-only strings count, so the result keeps the page's own spacing.
+/// `separator`. Whitespace-only strings count, so the result keeps the page's own spacing. The
+/// Danbooru 1.x sidebar scrapes read the whole page this way.
 pub fn text_joined(el: ElementRef<'_>, separator: &str) -> String {
-    visible_strings(el).collect::<Vec<_>>().join(separator)
+    shown_strings(el).collect::<Vec<_>>().join(separator)
 }
 
 /// `soup.get_text(separator)` for the whole document.
@@ -91,10 +92,16 @@ mod tests {
     }
 
     #[test]
-    fn joined_text_keeps_every_string_and_its_spacing() {
+    fn joined_text_keeps_every_string_unstripped() {
+        let html = soup_of("<div id=d> a <b>b</b><script>x</script> c</div>");
+        assert_eq!(text_joined(first(&html, "#d"), " "), " a  b  c");
+        assert_eq!(text_joined(first(&html, "#d"), ""), " a b c");
+    }
+
+    #[test]
+    fn joined_text_skips_comments_and_page_text_reads_the_whole_document() {
         let html = soup_of("<div id=d> a <b>b</b><script>x</script><!--c--> <i>c</i></div>");
         assert_eq!(text_joined(first(&html, "#d"), "|"), " a |b| |c");
-        assert_eq!(text_joined(first(&html, "#d"), ""), " a b c");
         assert!(page_text(&soup_of("<p>one</p><p>two</p>"), " ").contains("one two"));
         assert_eq!(page_text(&soup_of(""), " "), "");
     }

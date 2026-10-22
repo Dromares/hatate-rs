@@ -20,13 +20,17 @@
 
 pub mod danbooru;
 pub mod e621;
+pub mod gelbooru;
 pub mod host;
 pub mod moebooru;
 pub mod paheal;
 pub mod parsed;
 pub mod rating;
+pub mod rule34;
 pub mod rule34us;
+pub mod safebooru;
 pub mod sizes;
+pub mod xbooru;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -40,12 +44,26 @@ use crate::model::Tag;
 pub const SOFT_404_SCAN_BYTES: usize = 60_000;
 
 /// The state a parser reads that is not in its arguments. Python keeps this in module globals;
-/// the corpus records it as `context` in `call.json`. Empty until a site that needs some lands
-/// (`api_post` for the Gelbooru family, `artist_cache` for Pawchive): that ticket adds the field
-/// here and the key to the runner's mapping.
+/// the corpus records it as `context` in `call.json`. A field is added by the ticket of the first
+/// site that needs it (`artist_cache` for Pawchive is still to come), together with its key in
+/// the runner's mapping.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
-pub struct Context {}
+pub struct Context {
+    /// The Gelbooru family's Data-API post for the URL being parsed (Python's `_last_api_post`,
+    /// the single memoised `(url, post)` the fetch fills). `None` means "the API gave nothing",
+    /// which sends every hook down its HTML path. Whoever builds the context has already
+    /// matched the post to the URL; the parsers do not check.
+    pub api_post: Option<Map<String, Value>>,
+}
+
+impl Context {
+    /// A context carrying the Gelbooru family's Data-API post, or `None` for "the API gave
+    /// nothing".
+    pub fn with_api_post(api_post: Option<Map<String, Value>>) -> Context {
+        Context { api_post }
+    }
+}
 
 /// What `resolve_fetch_url_with_context` is given: the one thing a site with dead URLs needs to
 /// look a post up by. `local_md5` is computed only when a parser asks for it.
@@ -191,16 +209,16 @@ impl SiteParser {
 /// URL wins. A site that has no Rust port yet is its line, commented out, at its place.
 pub static PARSERS: &[&SiteParser] = &[
     &danbooru::PARSER,
-    // gelbooru
-    // safebooru
+    &gelbooru::PARSER,
+    &safebooru::PARSER,
     &moebooru::PARSER,
     // pixiv
     &e621::PARSER,
     // zerochan
     // eshuushuu
     // animepictures
-    // rule34
-    // xbooru
+    &rule34::PARSER,
+    &xbooru::PARSER,
     &paheal::PARSER,
     &rule34us::PARSER,
     // redditpost
