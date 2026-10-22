@@ -202,6 +202,9 @@ impl Queue {
         view.add_css_class("queue");
         view.set_show_row_separators(false);
         view.set_enable_rubberband(true);
+        // Default `All` makes Tab walk every row (measured: 60 presses, never leaves a
+        // 5,000-row list). `Item` makes the list one Tab stop; arrows move between rows.
+        view.set_tab_behavior(gtk4::ListTabBehavior::Item);
         view.set_vexpand(true);
 
         let filename_sorter = gtk4::StringSorter::new(Some(prop_expr("filename")));
@@ -278,6 +281,28 @@ impl Queue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn store_has_5000_unique_rows() {
+        use std::collections::HashSet;
+        let store = build_store(5000);
+        assert_eq!(store.n_items(), 5000);
+        let names: HashSet<String> = (0..5000)
+            .filter_map(|i| store.item(i).and_downcast::<RowObject>())
+            .map(|r| r.filename())
+            .collect();
+        assert_eq!(names.len(), 5000);
+    }
+
+    #[test]
+    fn only_matched_statuses_have_matches() {
+        let store = build_store(500);
+        for i in 0..500 {
+            let r = store.item(i).and_downcast::<RowObject>().unwrap();
+            let matched = matches!(Status::from_u32(r.status()), Status::Good | Status::Review);
+            assert_eq!(r.matches() > 0, matched);
+        }
+    }
 
     #[test]
     fn status_sort_key_matches_declaration_order() {

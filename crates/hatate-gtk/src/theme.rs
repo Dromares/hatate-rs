@@ -77,7 +77,7 @@ scrollbar, scrollbar trough { background: transparent; }
 .canvas:focus-visible { outline: 2px solid @ink; outline-offset: -2px; }
 scale trough { background: @ink_18; min-height: 3px; border-radius: 0; }
 scale highlight { background: @ink_28; border-radius: 0; }
-scale slider { background: @ink; min-width: 4px; min-height: 17px; border-radius: 0; border: none; box-shadow: none; }
+scale slider { background: @ink; margin: 0; min-width: 4px; min-height: 17px; border-radius: 0; border: none; box-shadow: none; }
 .error-text { color: @ink; }
 ";
 

@@ -148,11 +148,20 @@ fn build(app: &adw::Application, opts: &Options, start: Instant) {
     win.present();
 
     let clock_widget = win.clone().upcast::<gtk4::Widget>();
-    drive(&win, &clock_widget, &queue, opts.clone(), start, load_ms);
+    drive(
+        app,
+        &win,
+        &clock_widget,
+        &queue,
+        opts.clone(),
+        start,
+        load_ms,
+    );
 }
 
 /// Frame-driven state machine: settle, then shoot / measure / walk the Tab chain.
 fn drive(
+    app: &adw::Application,
     win: &adw::ApplicationWindow,
     widget: &gtk4::Widget,
     queue: &Queue,
@@ -172,7 +181,7 @@ fn drive(
     let update_at = Rc::new(Cell::new(None::<Instant>));
     let fling_active = Rc::new(Cell::new(false));
     let first_frame_ms = Rc::new(Cell::new(None::<f64>));
-    let win = win.clone();
+    let (win, app) = (win.clone(), app.clone());
     let queue_scroller = queue.scroller.clone();
     let queue_sel = queue.selection.clone();
     let queue_cols = queue.view.clone();
@@ -309,10 +318,7 @@ fn drive(
                         Err(e) => eprintln!("shot failed: {e}"),
                     }
                 }
-                w.activate_action("app.quit", None).ok();
-                if let Some(app) = gio::Application::default() {
-                    app.quit();
-                }
+                app.quit();
                 return glib::ControlFlow::Break;
             }
             _ => {}
@@ -346,13 +352,17 @@ fn describe(w: &gtk4::Widget) -> String {
         .map(|l| format!(" \"{l}\""))
         .unwrap_or_default();
     let css = w.css_classes().join(".");
-    format!("{name}{label} [{css}]")
+    // The pointer tells apart widgets that otherwise describe the same (list rows).
+    format!("{name}{label} [{css}] @{:p}", w.as_ptr())
 }
 
 /// Walk the Tab chain with `child_focus`, the same call the toolkit makes for Tab.
 fn print_tab_order(win: &adw::ApplicationWindow) {
     let mut seen: Vec<String> = Vec::new();
-    for step in 1..=40 {
+    if let Some(w) = GtkWindowExt::focus(win) {
+        println!("TAB 0 (initial focus): {}", describe(&w));
+    }
+    for step in 1..=60 {
         if !win.child_focus(gtk4::DirectionType::TabForward) {
             println!("TAB step {step}: no widget accepted focus (chain ends)");
             break;
