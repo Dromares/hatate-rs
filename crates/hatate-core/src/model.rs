@@ -163,6 +163,13 @@ pub struct Candidate {
     /// recomputes it on every write and ignores the stored one when it reads a session,
     /// so a candidate always carries the value for its own URL.
     pub tag_version: i64,
+    /// `MatchCandidate.thumb_bytes`: the thumbnail the engine sent inline (Google Lens does).
+    /// Session-only: `_candidate_to_dict` does not write it.
+    #[serde(skip)]
+    pub thumb_bytes: Option<Vec<u8>>,
+    /// `MatchCandidate.page_index`: which image of a multi-image post this is. Session-only.
+    #[serde(skip)]
+    pub page_index: i64,
 }
 
 impl Candidate {
@@ -190,6 +197,8 @@ impl Candidate {
             availability_checked_at: None,
             restricted: None,
             tag_version,
+            thumb_bytes: None,
+            page_index: 0,
         }
     }
 

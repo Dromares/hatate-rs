@@ -49,7 +49,7 @@ fn is_decimal(c: char) -> bool {
 /// The value of a decimal digit in any script (`int("١٢")` is 12 in Python). Decimal digits come
 /// in unbroken runs of ten, zero first (a Unicode stability guarantee), so the value is the
 /// offset into the run it sits in.
-fn digit_value(c: char) -> Option<u32> {
+pub(crate) fn digit_value(c: char) -> Option<u32> {
     if let Some(d) = c.to_digit(10) {
         return Some(d);
     }
