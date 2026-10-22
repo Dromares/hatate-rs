@@ -75,12 +75,8 @@ static GOOGLE_DOMAIN_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 /// String literals inside a Lens data blob, in document order. Slashes are escaped in that JSON,
 /// which is why the scheme is matched loosely.
-static JS_STRING_RE: LazyLock<Regex> = LazyLock::new(|| {
-    regex::RegexBuilder::new(r#""((?:[^"\\]|\\.){2,400})""#)
-        .size_limit(1 << 28)
-        .build()
-        .expect("js string regex")
-});
+static JS_STRING_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#""((?:[^"\\]|\\.){2,400})""#).expect("js string regex"));
 
 static TAG_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<[^>]+>").expect("tag regex"));
 static UNICODE_ESCAPE_RE: LazyLock<Regex> =
@@ -941,6 +937,137 @@ mod tests {
         assert_eq!(
             m.thumb_url.as_deref(),
             Some("  https://a.example/i.jpg#f  ")
+        );
+    }
+
+    #[test]
+    fn every_google_host_in_the_list_is_one() {
+        let listed = [
+            "gstatic.com",
+            "googleusercontent.com",
+            "googleapis.com",
+            "googleadservices.com",
+            "googlesyndication.com",
+            "googletagmanager.com",
+            "google-analytics.com",
+            "ggpht.com",
+            "goo.gl",
+            "schema.org",
+            "w3.org",
+        ];
+        assert_eq!(GOOGLE_HOST_SUFFIXES, listed);
+        for suffix in GOOGLE_HOST_SUFFIXES {
+            assert!(is_google_host(suffix), "{suffix}");
+            assert!(is_google_host(&format!("sub.{suffix}")), "sub.{suffix}");
+            assert!(!is_google_host(&format!("not{suffix}")), "not{suffix}");
+        }
+    }
+
+    #[test]
+    fn a_redirector_names_its_target_by_q_then_url_then_imgrefurl() {
+        let page = |href: &str| format!(r#"<a href="{href}"><h3>t</h3></a>"#);
+        let one = |href: &str| {
+            parse_results(&page(href), "https://www.google.com/")
+                .unwrap()
+                .into_iter()
+                .map(|m| m.url)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            one("/url?imgrefurl=https://r.example/"),
+            ["https://r.example/"]
+        );
+        assert_eq!(
+            one("/url?url=https://u.example/&imgrefurl=https://r.example/"),
+            ["https://u.example/"]
+        );
+        assert_eq!(
+            one("/url?q=https://q.example/&url=https://u.example/"),
+            ["https://q.example/"]
+        );
+        // /imgres is a redirector too; a target that is not http(s), or none, is dropped.
+        assert_eq!(
+            one("/imgres?imgrefurl=http://x.example/y"),
+            ["http://x.example/y"]
+        );
+        assert_eq!(one("/url?q=ftp://x/"), Vec::<String>::new());
+        assert_eq!(one("/imgres?q=x"), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_same_link_twice_is_one_result() {
+        let page = concat!(
+            r#"<a href="https://a.example/p"><h3>first</h3></a>"#,
+            r#"<a href="/url?q=https://a.example/p"><h3>second</h3></a>"#
+        );
+        let matches = parse_results(page, "").unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].title.as_deref(), Some("first"));
+    }
+
+    #[test]
+    fn a_lens_title_is_between_three_and_two_hundred_characters() {
+        let blob = |title: &str| format!(r#"["https://a.example/p","{title}"]"#);
+        let title = |n: usize| parse_lens_results(&blob(&"t".repeat(n)))[0].title.clone();
+        assert_eq!(title(2), None);
+        assert_eq!(title(3).map(|t| t.len()), Some(3));
+        assert_eq!(title(200).map(|t| t.len()), Some(200));
+        assert_eq!(title(201), None);
+    }
+
+    #[test]
+    fn a_lens_title_is_looked_for_in_the_next_three_literals_only() {
+        let blob = r#"["https://a.example/p","/x","1234","A Title"]"#;
+        assert_eq!(
+            parse_lens_results(blob)[0].title.as_deref(),
+            Some("A Title")
+        );
+        let blob = r#"["https://a.example/p","/x","1234","!!!","A Title"]"#;
+        assert_eq!(parse_lens_results(blob)[0].title, None);
+    }
+
+    #[test]
+    fn vision_stops_at_eight_results_across_the_bands() {
+        let images: Vec<Value> = (0..12)
+            .map(|i| json!({"url": format!("https://i{i}.example/a.jpg")}))
+            .collect();
+        let payload = json!({"responses": [{"webDetection": {"fullMatchingImages": images}}]});
+        let matches = parse_vision_results(&payload).unwrap();
+        assert_eq!(matches.len(), MAX_RESULTS);
+        assert_eq!(matches[7].similarity, 64.0);
+    }
+
+    #[test]
+    fn a_pages_image_is_its_thumbnail_unless_a_cdn_image_stands_for_the_post() {
+        // The page names a CDN image that is a post: the post becomes the url, and the image,
+        // as the page gave it, the thumbnail.
+        let payload = json!({"responses": [{"webDetection": {"fullMatchingImages": [
+            {"url": "  https://rule34storage.b-cdn.net/posts/1/2/3.jpg#f "},
+            {"url": "https://rule34storage.b-cdn.net/posts/1/2/4.jpg"},
+        ]}}]});
+        let matches = parse_vision_results(&payload).unwrap();
+        assert_eq!(
+            matches[0].url,
+            "https://rule34.us/index.php?r=posts/view&id=2"
+        );
+        assert_eq!(
+            matches[0].thumb_url.as_deref(),
+            Some("  https://rule34storage.b-cdn.net/posts/1/2/3.jpg#f ")
+        );
+        // The second image names the same post: one result.
+        assert_eq!(matches.len(), 1);
+        // A page with no image of its own gets the image it was recovered from.
+        let payload = json!({"responses": [{"webDetection": {"pagesWithMatchingImages": [
+            {"url": "https://rule34storage.b-cdn.net/posts/1/2/3.jpg"},
+        ]}}]});
+        let matches = parse_vision_results(&payload).unwrap();
+        assert_eq!(
+            matches[0].url,
+            "https://rule34.us/index.php?r=posts/view&id=2"
+        );
+        assert_eq!(
+            matches[0].thumb_url.as_deref(),
+            Some("https://rule34storage.b-cdn.net/posts/1/2/3.jpg")
         );
     }
 }

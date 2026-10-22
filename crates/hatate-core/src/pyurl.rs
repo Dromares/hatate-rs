@@ -306,8 +306,8 @@ fn is_ipv6(text: &str) -> bool {
         return false;
     }
     let mut skip_index = None;
-    for i in 1..parts.len() - 1 {
-        if parts[i].is_empty() {
+    for (i, part) in parts.iter().enumerate().take(parts.len() - 1).skip(1) {
+        if part.is_empty() {
             if skip_index.is_some() {
                 return false;
             }

@@ -451,4 +451,14 @@ mod tests {
             Some("https://danbooru.donmai.us/posts/12")
         );
     }
+
+    #[test]
+    fn a_data_state_without_cbir_sites_is_not_read_at_all() {
+        // Python skips it before it decodes it, so a blob that would raise is never looked at.
+        let page = format!(
+            "<div data-state=\"[1]\"></div><div data-state=\"5\"></div>{}",
+            page(&sites())
+        );
+        assert_eq!(parse_sites(&page).unwrap().unwrap().len(), sites().len());
+    }
 }
