@@ -1,0 +1,546 @@
+//! Booru page parsers (`core/boorus/__init__.py` and its shared helpers).
+//!
+//! Each parser turns a booru's page, or its API's response, into a list of namespaced
+//! [`Tag`]s plus whatever else the page states: the direct URL of the full-resolution file (as
+//! opposed to the booru's viewer page, which serves HTML and would give wrong answers for
+//! anything that expects an image), a mid-size preview, the original's dimensions, rating, format
+//! and byte size, and whether the post is gated or gone.
+//!
+//! **Pattern for a site** (the long form is in `docs/parsers.md`): one module per site, named
+//! after the Python module; plain `pub fn`s that take the body and the post-page URL and return
+//! owned values; no I/O and no globals. State that Python keeps in module globals (the Data-API
+//! post that the Gelbooru family memoises, Pawchive's creator-name cache) is an explicit
+//! parameter, carried in [`Context`]. The module exports a `static PARSER: SiteParser` naming
+//! the hooks it defines, and is added to [`PARSERS`] in Python's order.
+//!
+//! What stays out: `fetch_page_info`'s HTTP, retry and cookie handling, the
+//! file-hash LRU (`local_md5`) and `_remote_size.py`, which opens a socket. They belong with the
+//! engine clients. This module has the part of `fetch_page_info` that runs after the body is in
+//! hand: [`page_info_from_body`].
+
+pub mod danbooru;
+pub mod host;
+pub mod parsed;
+pub mod rating;
+pub mod sizes;
+
+use serde_json::{Map, Value};
+use tracing::{debug, info, warn};
+
+use crate::model::Tag;
+
+/// Mirrors the bound used for availability checks: far enough to reach a deletion notice, never
+/// the whole page.
+pub const SOFT_404_SCAN_BYTES: usize = 60_000;
+
+/// The state a parser reads that is not in its arguments. Python keeps this in module globals;
+/// the corpus records it as `context` in `call.json`. Empty until a site that needs some lands
+/// (`api_post` for the Gelbooru family, `artist_cache` for Pawchive): that ticket adds the field
+/// here and the key to the runner's mapping.
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct Context {}
+
+/// What `resolve_fetch_url_with_context` is given: the one thing a site with dead URLs needs to
+/// look a post up by. `local_md5` is computed only when a parser asks for it.
+#[derive(Debug, Clone, Default)]
+pub struct FetchContext {
+    pub local_md5: Option<String>,
+}
+
+/// One entry of `parse_pages`: the Python hook returns a list of dicts, one per image.
+pub type Page = Map<String, Value>;
+
+pub type MatchesFn = fn(&str) -> bool;
+pub type ParseFn = fn(&str, &str, &Context) -> Vec<Tag>;
+pub type StringHook = fn(&str, &str, &Context) -> Option<String>;
+pub type DimensionsHook = fn(&str, &str, &Context) -> (Option<i64>, Option<i64>);
+pub type FileInfoHook = fn(&str, &str, &Context) -> (Option<String>, Option<i64>);
+pub type PageCountHook = fn(&str, &str, &Context) -> i64;
+pub type PagesHook = fn(&str, &str, &Context) -> Vec<Page>;
+pub type StatusHook = fn(u16, &str, &str, &Context) -> Option<String>;
+
+/// What a site module provides: `matches` and `parse` are required, every other hook is optional
+/// and is `None` when the Python module does not define it. This is the `SiteParser` protocol
+/// and `OPTIONAL_PARSER_HOOKS` of Python, as a struct, so that a hook with a misspelled name is
+/// a compile error and not a hook that silently never runs.
+#[derive(Clone, Copy)]
+pub struct SiteParser {
+    /// The Python module's short name, as the corpus and the log call it.
+    pub name: &'static str,
+    /// `EMPTY_RESULT_IS_NORMAL`: for a site that finds posts by file hash, a miss just means the
+    /// local file is not the site's copy, which is not worth a warning.
+    pub empty_result_is_normal: bool,
+    pub matches: MatchesFn,
+    pub parse: ParseFn,
+    pub resolve_fetch_url: Option<fn(&str) -> String>,
+    pub resolve_fetch_url_with_context: Option<fn(&str, &FetchContext) -> String>,
+    pub parse_file_url: Option<StringHook>,
+    pub parse_preview_url: Option<StringHook>,
+    pub parse_dimensions: Option<DimensionsHook>,
+    pub parse_rating: Option<StringHook>,
+    pub parse_file_info: Option<FileInfoHook>,
+    pub parse_page_count: Option<PageCountHook>,
+    pub parse_pages: Option<PagesHook>,
+    pub pages_api_url: Option<fn(&str) -> Option<String>>,
+    pub parse_restriction: Option<StringHook>,
+    pub restriction_for_status: Option<StatusHook>,
+    pub parse_canonical_url: Option<StringHook>,
+    pub incomplete_reason: Option<StringHook>,
+}
+
+impl SiteParser {
+    /// A parser with only the two required hooks; add the rest with struct-update syntax.
+    pub const fn new(name: &'static str, matches: MatchesFn, parse: ParseFn) -> SiteParser {
+        SiteParser {
+            name,
+            empty_result_is_normal: false,
+            matches,
+            parse,
+            resolve_fetch_url: None,
+            resolve_fetch_url_with_context: None,
+            parse_file_url: None,
+            parse_preview_url: None,
+            parse_dimensions: None,
+            parse_rating: None,
+            parse_file_info: None,
+            parse_page_count: None,
+            parse_pages: None,
+            pages_api_url: None,
+            parse_restriction: None,
+            restriction_for_status: None,
+            parse_canonical_url: None,
+            incomplete_reason: None,
+        }
+    }
+}
+
+/// The optional hooks, as `(name, what it is for)`: `OPTIONAL_PARSER_HOOKS`.
+pub const OPTIONAL_PARSER_HOOKS: [(&str, &str); 14] = [
+    (
+        "resolve_fetch_url",
+        "fetch something other than the URL itself (an API, usually)",
+    ),
+    (
+        "resolve_fetch_url_with_context",
+        "same, when the choice needs the local file's hash",
+    ),
+    ("parse_file_url", "the full-resolution image"),
+    ("parse_preview_url", "a mid-size sample image"),
+    ("parse_dimensions", "width and height of the original"),
+    (
+        "parse_rating",
+        "the post's age rating, where the site states one",
+    ),
+    ("parse_file_info", "format and byte size of the original"),
+    ("parse_page_count", "how many images the post holds"),
+    ("parse_pages", "the per-page URLs, for multi-page posts"),
+    ("pages_api_url", "where that page list is fetched from"),
+    (
+        "parse_restriction",
+        "the post exists but the site won't serve it",
+    ),
+    (
+        "restriction_for_status",
+        "the same, recognised from an HTTP status",
+    ),
+    (
+        "parse_canonical_url",
+        "where a legacy URL actually lives now",
+    ),
+    (
+        "incomplete_reason",
+        "why a match came back without its tags or its file",
+    ),
+];
+
+impl SiteParser {
+    /// Which optional hooks this parser defines, by `OPTIONAL_PARSER_HOOKS` name.
+    pub fn defined_hooks(&self) -> Vec<&'static str> {
+        let defined = [
+            self.resolve_fetch_url.is_some(),
+            self.resolve_fetch_url_with_context.is_some(),
+            self.parse_file_url.is_some(),
+            self.parse_preview_url.is_some(),
+            self.parse_dimensions.is_some(),
+            self.parse_rating.is_some(),
+            self.parse_file_info.is_some(),
+            self.parse_page_count.is_some(),
+            self.parse_pages.is_some(),
+            self.pages_api_url.is_some(),
+            self.parse_restriction.is_some(),
+            self.restriction_for_status.is_some(),
+            self.parse_canonical_url.is_some(),
+            self.incomplete_reason.is_some(),
+        ];
+        OPTIONAL_PARSER_HOOKS
+            .iter()
+            .zip(defined)
+            .filter_map(|((name, _), is_defined)| is_defined.then_some(*name))
+            .collect()
+    }
+}
+
+/// Every site, in the order Python's `PARSERS` lists them: the first whose `matches` claims a
+/// URL wins. A site that has no Rust port yet is its line, commented out, at its place.
+pub static PARSERS: &[&SiteParser] = &[
+    &danbooru::PARSER,
+    // gelbooru
+    // safebooru
+    // moebooru
+    // pixiv
+    // e621
+    // zerochan
+    // eshuushuu
+    // animepictures
+    // rule34
+    // xbooru
+    // paheal
+    // rule34us
+    // redditpost
+    // deviantart
+    // pawchive
+    // sankaku
+    // twitter
+    // mangadex
+    // joyreactor
+];
+
+/// The parser that claims `url`, if any.
+pub fn find_parser(url: &str) -> Option<&'static SiteParser> {
+    PARSERS.iter().copied().find(|p| (p.matches)(url))
+}
+
+/// `BooruError` and `BooruContentGoneError`. Raised by the fetch, which is not here yet; the
+/// type is, so the corpus runner's error-variant map and the engine clients agree on it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BooruError {
+    /// The fetch did not work (a timeout, a rate limit, a server error, an unexpected status).
+    Fetch(String),
+    /// The post itself is definitively gone (HTTP 404/410), as opposed to a transient failure.
+    /// Python subclasses `BooruError` so handlers that only want "the fetch didn't work" keep
+    /// working; match both variants for that.
+    ContentGone(String),
+}
+
+impl std::fmt::Display for BooruError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BooruError::Fetch(msg) | BooruError::ContentGone(msg) => f.write_str(msg),
+        }
+    }
+}
+
+impl std::error::Error for BooruError {}
+
+/// What a fetch of a booru post page yields (`BooruPageInfo`). See the Python class for why each
+/// field is kept apart from the others; the ones that are easy to conflate:
+///
+/// - `rating` stays out of `tags` on purpose: whether it becomes a tag at all is the user's
+///   setting, and parser health judges a parser by the tags it scraped.
+/// - `restricted` (the post is gated behind an account tier) is not `gone_reason` (it is
+///   deleted) and not `incomplete_reason` (it is fine and reachable, this app just cannot get its
+///   tags).
+/// - `page_count > 1` means `file_url`, `preview_url` and the dimensions describe only the FIRST
+///   image, so the caller has to establish which one matched.
+/// - `fetched` is true only if a parser actually fetched the page. False means no parser matched
+///   the site, which is not the same as "fetched and found nothing".
+#[derive(Debug, Clone, PartialEq)]
+pub struct BooruPageInfo {
+    pub tags: Vec<Tag>,
+    pub file_url: Option<String>,
+    pub preview_url: Option<String>,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub file_format: Option<String>,
+    pub file_size_bytes: Option<i64>,
+    pub rating: Option<String>,
+    pub gone_reason: Option<String>,
+    pub page_count: i64,
+    pub incomplete_reason: Option<String>,
+    pub restricted: Option<String>,
+    pub canonical_url: Option<String>,
+    pub fetched_url: Option<String>,
+    pub body: Option<String>,
+    pub fetched: bool,
+}
+
+impl Default for BooruPageInfo {
+    fn default() -> Self {
+        BooruPageInfo {
+            tags: Vec::new(),
+            file_url: None,
+            preview_url: None,
+            width: None,
+            height: None,
+            file_format: None,
+            file_size_bytes: None,
+            rating: None,
+            gone_reason: None,
+            page_count: 1,
+            incomplete_reason: None,
+            restricted: None,
+            canonical_url: None,
+            fetched_url: None,
+            body: None,
+            fetched: false,
+        }
+    }
+}
+
+/// The first of `markers` that appears in the first [`SOFT_404_SCAN_BYTES`] of the body,
+/// compared case-insensitively. Some sites keep a deleted post's URL alive and answer HTTP 200
+/// with a notice where the image should be; the body is already in hand, so checking is free,
+/// and it is the ONLY check a single-candidate match gets. `markers` are lower-case.
+pub fn gone_marker(body: &str, markers: &[&str]) -> Option<String> {
+    let mut end = body.len().min(SOFT_404_SCAN_BYTES);
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+    let lowered = body[..end].to_lowercase();
+    markers.iter().find(|m| lowered.contains(*m)).map(|m| {
+        info!("post says it has been deleted (matched {m:?})");
+        (*m).to_string()
+    })
+}
+
+/// The half of `fetch_page_info` that runs once the body is in hand and its status was 200:
+/// every hook asked of the one body, and `incomplete_reason` asked when the match came back
+/// missing its tags or its file. Sets `fetched`, `body` and `fetched_url`; the caller adds
+/// `gone_reason` (from [`gone_marker`] or a redirect).
+///
+/// Python wraps each hook in `try/except` so one parser slip cannot take the others down. Ported
+/// hooks return values, so there is nothing to catch here. Parser-health counters
+/// (`record_empty`, `record_success`) are the caller's: the result says whether `tags` is empty
+/// and whether the parser calls that normal (`empty_result_is_normal`).
+pub fn page_info_from_body(
+    parser: &SiteParser,
+    body: &str,
+    url: &str,
+    fetched_url: &str,
+    ctx: &Context,
+) -> BooruPageInfo {
+    let tags = (parser.parse)(body, url, ctx);
+    let file_url = parser.parse_file_url.and_then(|hook| hook(body, url, ctx));
+    let preview_url = parser
+        .parse_preview_url
+        .and_then(|hook| hook(body, url, ctx));
+    let restricted = parser
+        .parse_restriction
+        .and_then(|hook| hook(body, url, ctx));
+    let page_count = parser
+        .parse_page_count
+        .map_or(1, |hook| hook(body, url, ctx).max(1));
+    let (width, height) = parser
+        .parse_dimensions
+        .map_or((None, None), |hook| hook(body, url, ctx));
+    let rating = parser.parse_rating.and_then(|hook| hook(body, url, ctx));
+    let (file_format, file_size_bytes) = parser
+        .parse_file_info
+        .map_or((None, None), |hook| hook(body, url, ctx));
+    let canonical_url = parser
+        .parse_canonical_url
+        .and_then(|hook| hook(body, url, ctx));
+
+    // Asked when the match came back missing something a complete one would have, its tags, its
+    // file, or both, and only of a parser with something to say about why. The file matters as
+    // much as the tags: e621 hands back a withheld post's tags in full and nulls only its file
+    // url, so a tags-only condition would never fire for the case that needs explaining.
+    let incomplete_reason = if tags.is_empty() || file_url.is_none() {
+        parser
+            .incomplete_reason
+            .and_then(|hook| hook(body, url, ctx))
+    } else {
+        None
+    };
+    if tags.is_empty() {
+        // For most sites an empty result means the markup moved. For one that finds posts by
+        // file hash, a miss just means the local file isn't the site's copy.
+        if parser.empty_result_is_normal {
+            debug!("No match for {url} (parser: {})", parser.name);
+        } else {
+            warn!(
+                "No tags extracted from {url} - the site's markup may have changed (parser: {})",
+                parser.name
+            );
+        }
+    }
+    if let Some(reason) = &restricted {
+        info!("{url} is restricted: {reason}");
+    }
+
+    BooruPageInfo {
+        tags,
+        file_url,
+        preview_url,
+        width,
+        height,
+        file_format,
+        file_size_bytes,
+        rating,
+        gone_reason: None,
+        page_count,
+        incomplete_reason,
+        restricted,
+        canonical_url,
+        fetched_url: Some(fetched_url.to_string()),
+        body: Some(body.to_string()),
+        fetched: true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::TagSource;
+
+    fn tag(name: &str) -> Tag {
+        Tag {
+            name: name.to_string(),
+            namespace: None,
+            source: TagSource::Booru,
+        }
+    }
+
+    #[test]
+    fn the_registry_routes_a_url_to_its_site_or_to_nothing() {
+        assert_eq!(
+            find_parser("https://danbooru.donmai.us/posts/1").map(|p| p.name),
+            Some("danbooru")
+        );
+        assert!(find_parser("https://example.com/").is_none());
+        assert!(find_parser("").is_none());
+    }
+
+    #[test]
+    fn every_parser_is_registered_once_under_its_own_name() {
+        let mut names: Vec<_> = PARSERS.iter().map(|p| p.name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), PARSERS.len());
+        for parser in PARSERS {
+            let url = format!("https://{}.invalid/", parser.name);
+            assert!(
+                !(parser.matches)(&url),
+                "{} claims an unrelated host",
+                parser.name
+            );
+        }
+    }
+
+    #[test]
+    fn danbooru_defines_exactly_the_hooks_python_does() {
+        assert_eq!(
+            danbooru::PARSER.defined_hooks(),
+            [
+                "resolve_fetch_url",
+                "parse_file_url",
+                "parse_preview_url",
+                "parse_dimensions",
+                "parse_rating",
+                "parse_restriction",
+            ]
+        );
+        assert!(danbooru::PARSER.incomplete_reason.is_none());
+    }
+
+    fn two_tags(_: &str, _: &str, _: &Context) -> Vec<Tag> {
+        vec![tag("a"), tag("b")]
+    }
+
+    fn no_tags(_: &str, _: &str, _: &Context) -> Vec<Tag> {
+        Vec::new()
+    }
+
+    fn never_matches(_: &str) -> bool {
+        false
+    }
+
+    fn why(_: &str, _: &str, _: &Context) -> Option<String> {
+        Some("withheld".to_string())
+    }
+
+    fn file(_: &str, _: &str, _: &Context) -> Option<String> {
+        Some("https://f/x.png".to_string())
+    }
+
+    #[test]
+    fn incomplete_reason_is_asked_only_of_a_match_missing_its_tags_or_its_file() {
+        let ctx = Context::default();
+        let with = |parse, file_url| SiteParser {
+            incomplete_reason: Some(why),
+            parse_file_url: file_url,
+            ..SiteParser::new("t", never_matches, parse)
+        };
+        // Tags but no file: asked (the e621 case).
+        let info = page_info_from_body(&with(two_tags, None), "b", "u", "f", &ctx);
+        assert_eq!(info.incomplete_reason.as_deref(), Some("withheld"));
+        // File but no tags: asked.
+        let info = page_info_from_body(&with(no_tags, Some(file)), "b", "u", "f", &ctx);
+        assert_eq!(info.incomplete_reason.as_deref(), Some("withheld"));
+        // Complete: not asked.
+        let info = page_info_from_body(&with(two_tags, Some(file)), "b", "u", "f", &ctx);
+        assert_eq!(info.incomplete_reason, None);
+        // A parser with no such hook has no reason.
+        let bare = SiteParser::new("t", never_matches, no_tags);
+        assert_eq!(
+            page_info_from_body(&bare, "b", "u", "f", &ctx).incomplete_reason,
+            None
+        );
+    }
+
+    #[test]
+    fn a_page_is_assembled_from_every_hook_the_parser_defines() {
+        let ctx = Context::default();
+        let body = r#"{"id": 5, "image_width": 3, "image_height": 4, "rating": "q",
+                       "file_url": "F", "large_file_url": "L", "tag_string_general": "x y"}"#;
+        let url = "https://danbooru.donmai.us/posts/5";
+        let fetched = "https://danbooru.donmai.us/posts/5.json";
+        let info = page_info_from_body(&danbooru::PARSER, body, url, fetched, &ctx);
+        assert_eq!(info.tags.len(), 2);
+        assert_eq!(info.file_url.as_deref(), Some("F"));
+        assert_eq!(info.preview_url.as_deref(), Some("L"));
+        assert_eq!((info.width, info.height), (Some(3), Some(4)));
+        assert_eq!(info.rating.as_deref(), Some("questionable"));
+        assert_eq!(info.restricted, None);
+        assert_eq!(info.page_count, 1);
+        assert_eq!(info.fetched_url.as_deref(), Some(fetched));
+        assert_eq!(info.body.as_deref(), Some(body));
+        assert!(info.fetched);
+        // No parser matched: nothing was requested, which is not "fetched and found nothing".
+        assert!(!BooruPageInfo::default().fetched);
+    }
+
+    #[test]
+    fn a_page_count_below_one_is_one() {
+        let parser = SiteParser {
+            parse_page_count: Some(|_, _, _| 0),
+            ..SiteParser::new("t", never_matches, no_tags)
+        };
+        let info = page_info_from_body(&parser, "", "u", "f", &Context::default());
+        assert_eq!(info.page_count, 1);
+    }
+
+    #[test]
+    fn a_deletion_notice_is_found_in_the_scanned_prefix_only() {
+        assert_eq!(
+            gone_marker("<p>This Post Was Deleted.</p>", &["was deleted"]).as_deref(),
+            Some("was deleted")
+        );
+        assert_eq!(gone_marker("fine", &["was deleted"]), None);
+        let late = format!("{}was deleted", "a".repeat(SOFT_404_SCAN_BYTES));
+        assert_eq!(gone_marker(&late, &["was deleted"]), None);
+        // The cut falls inside a multi-byte character: it is moved back, not split.
+        let wide = "\u{e9}".repeat(SOFT_404_SCAN_BYTES);
+        assert_eq!(gone_marker(&wide, &["was deleted"]), None);
+    }
+
+    #[test]
+    fn the_two_error_kinds_stay_apart_and_print_their_message() {
+        assert_ne!(
+            BooruError::Fetch("x".into()),
+            BooruError::ContentGone("x".into())
+        );
+        assert_eq!(BooruError::ContentGone("gone".into()).to_string(), "gone");
+    }
+}
