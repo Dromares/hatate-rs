@@ -41,6 +41,7 @@ use super::json_fields::{absolute_url, dimensions, size_bytes, tag_type_id};
 use super::parsed::json_of;
 use crate::model::{Tag, TagSource};
 use crate::pycompat;
+use crate::pyrepr::py_str;
 
 const HOST: &str = "anime-pictures.net";
 const API_HOST: &str = "https://api.anime-pictures.net";
@@ -174,45 +175,6 @@ pub fn restriction_for_status(status_code: u16, body: &str, _url: &str) -> Optio
         "Anime-Pictures returned {reason} for this post - it is account-only. \
          Add cookies from a logged-in account under Settings > Site Logins to see it."
     ))
-}
-
-/// `str(x)` of a JSON value, for the one message that interpolates whatever the API sent.
-fn py_str(v: &Value) -> String {
-    match v {
-        Value::String(s) => s.clone(),
-        other => py_repr(other),
-    }
-}
-
-/// `repr(x)` of a JSON value. Floats print as Rust prints them, which is Python's `repr` for
-/// every value that is not an exponent form; a string holding a control character or a
-/// non-printable one is not escaped the way Python escapes it.
-fn py_repr(v: &Value) -> String {
-    match v {
-        Value::Null => "None".to_string(),
-        Value::Bool(true) => "True".to_string(),
-        Value::Bool(false) => "False".to_string(),
-        Value::Number(n) => n.to_string(),
-        Value::String(s) => {
-            // Python picks double quotes when the text holds a single quote and no double quote.
-            if s.contains('\'') && !s.contains('"') {
-                format!("\"{}\"", s.replace('\\', "\\\\"))
-            } else {
-                format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
-            }
-        }
-        Value::Array(items) => {
-            let inner: Vec<_> = items.iter().map(py_repr).collect();
-            format!("[{}]", inner.join(", "))
-        }
-        Value::Object(map) => {
-            let inner: Vec<_> = map
-                .iter()
-                .map(|(k, v)| format!("{}: {}", py_repr(&Value::String(k.clone())), py_repr(v)))
-                .collect();
-            format!("{{{}}}", inner.join(", "))
-        }
-    }
 }
 
 /// `(format, size_in_bytes)` for the original file, straight from the API.
@@ -470,18 +432,5 @@ mod tests {
         ] {
             assert_eq!(gate(status, body), None, "{status} {body}");
         }
-    }
-
-    #[test]
-    fn python_reprs_a_value_the_way_it_prints_it() {
-        use serde_json::json;
-        assert_eq!(py_repr(&json!(null)), "None");
-        assert_eq!(
-            py_repr(&json!([true, false, 1, "a"])),
-            "[True, False, 1, 'a']"
-        );
-        assert_eq!(py_repr(&json!({"a": [1]})), "{'a': [1]}");
-        assert_eq!(py_repr(&json!("it's")), "\"it's\"");
-        assert_eq!(py_repr(&json!("both ' and \"")), "'both \\' and \"'");
     }
 }

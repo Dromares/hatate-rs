@@ -285,6 +285,20 @@ pub fn urljoin(base: &str, url: &str) -> String {
     )
 }
 
+/// `quote(s)` with the default `safe="/"`: the UTF-8 bytes of every character other than an ASCII
+/// letter, digit, `_.-~/` become `%XX` (upper-case hex).
+pub fn quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for byte in s.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-' | b'~' | b'/') {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
 /// `unquote(s)`: `%XX` runs are decoded as UTF-8 with U+FFFD for what is not; a `%` not followed
 /// by two hex digits stays as it is.
 pub fn unquote(s: &str) -> String {
@@ -388,6 +402,16 @@ mod tests {
         assert_eq!(unquote("%zz%4"), "%zz%4");
         assert_eq!(unquote("%C3x"), "\u{fffd}x");
         assert_eq!(unquote("caf\u{e9}%21"), "caf\u{e9}!");
+    }
+
+    #[test]
+    fn quote_keeps_unreserved_and_slash_and_encodes_the_rest_as_utf8() {
+        assert_eq!(quote("a.jpg"), "a.jpg");
+        assert_eq!(quote("a b&c.jpg"), "a%20b%26c.jpg");
+        assert_eq!(quote("dir/file_name-1~x"), "dir/file_name-1~x");
+        assert_eq!(quote("\u{3042}.png"), "%E3%81%82.png");
+        assert_eq!(quote("100%+?#"), "100%25%2B%3F%23");
+        assert_eq!(quote(""), "");
     }
 
     #[test]

@@ -3,6 +3,7 @@
 
 pub mod animepictures;
 pub mod danbooru;
+pub mod deviantart;
 pub mod e621;
 pub mod eshuushuu;
 pub mod gelbooru;
@@ -10,6 +11,7 @@ pub mod joyreactor;
 pub mod mangadex;
 pub mod moebooru;
 pub mod paheal;
+pub mod pawchive;
 pub mod pixiv;
 pub mod reddit;
 pub mod redditpost;

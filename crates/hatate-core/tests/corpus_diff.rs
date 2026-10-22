@@ -64,6 +64,8 @@ static PORTS: &[&Port] = &[
     &corpus_ports::eshuushuu::PORT,
     &corpus_ports::zerochan::PORT,
     &corpus_ports::mangadex::PORT,
+    &corpus_ports::deviantart::PORT,
+    &corpus_ports::pawchive::PORT,
     &corpus_ports::pixiv::PORT,
     &corpus_ports::twitter::PORT,
     &corpus_ports::redditpost::PORT,

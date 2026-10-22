@@ -76,7 +76,7 @@ pub(super) fn to_int(raw: &str) -> Option<i64> {
 /// `int(raw)` for text Python's `int()` accepts: surrounding whitespace, one optional sign, then
 /// decimal digits of any script with single underscores between them. `None` where Python raises
 /// `ValueError`, or where the value does not fit an `i64`.
-pub(super) fn py_int(raw: &str) -> Option<i64> {
+pub(crate) fn py_int(raw: &str) -> Option<i64> {
     let s = pycompat::strip(raw);
     let (negative, digits) = match s.strip_prefix('-') {
         Some(rest) => (true, rest),

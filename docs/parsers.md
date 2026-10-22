@@ -15,7 +15,7 @@ worked example.
   fetch is told what to fetch by `resolve_fetch_url`, which returns a URL and fetches nothing.
 - **Explicit context.** State that Python keeps in a module global is a field of
   `boorus::Context` (the Gelbooru family's memoised Data-API post, Pawchive's creator-name
-  cache), passed to every hook as its last argument. The corpus records the same state as
+  cache and remote image sizes), passed to every hook as its last argument. The corpus records the same state as
   `context` in `call.json`. A site that needs none ignores the argument. The Gelbooru family's
   `api_post` is the Data-API post already matched to the URL, or `None` for "the API gave
   nothing"; the fetch that fills it, and Gelbooru's 401 latch, are the HTTP client's. rule34 and
@@ -63,9 +63,11 @@ has needed yet:
 - **Class lists** split on Python whitespace (which includes `\x1f`), not on ASCII whitespace.
 - **`json.loads` accepts what `serde_json` rejects:** `NaN`, `Infinity`, `-Infinity` and lone
   surrogate escapes. A body using them is "not JSON" here. No corpus item reaches this.
-- **`int(x)` in Python reads what `pycompat::int` does not:** digit separators (`"1_000"`),
-  non-ASCII digits, and integers past `i64`. A record using them gives "unknown" here. No corpus
-  item reaches this.
+- **`int(x)` in Python and `pycompat::int`.** `pycompat::int` reads a string as `int()` does
+  (`sizes::py_int`: surrounding whitespace, a sign, any script's decimal digits, single
+  underscores), since DeviantArt's `int(original.get("width") or 0)` is applied to whatever the
+  page holds. It still stops at `i64`: an integer past it is "unknown" here. No corpus item
+  reaches that.
 
 - **`get_text(separator)` without `strip`** is `parsed::text_joined`: the same strings as
   `text_of`, unstripped and joined with the separator. `parsed::page_text` is the whole document
@@ -124,6 +126,37 @@ has needed yet:
 
 A new difference found by a later port is written down here, with the corpus item that exposed
 it, and then matched. No item is allowed to fail instead.
+
+- **A request the parser used to make itself** (Pawchive, DAN-2007). Python's `pawchive.parse`
+  fetches the creator's profile on a cache miss, and `parse_dimensions` reads the first bytes of
+  the original over a Range request. Neither is here. The module says what is needed
+  (`pawchive::artist_profile_request`, `pawchive::dimensions_request`), the engine client does
+  the fetch, and the answer goes into `Context` under Python's own cache key
+  (`Context::remember_artist`, `Context::remember_image_size`) before the hooks run. A hook that
+  finds its entry missing answers as Python does when the request fails: no artist tag,
+  `(None, None)`. The 512-entry and 1024-entry LRU bounds on those two caches, the timeouts and
+  the user agent belong to the client; a failed request is simply not remembered.
+- **`str(x)` and `repr(x)` of a JSON value** (`crate::pyrepr`). An f-string key
+  (`f"{service}/{user}"`), `str(author_id)` and `str(t).strip()` over a tag list print whatever
+  the API sent: `True`, `None`, `1e+16`, `['a']`. `py_str` and `py_repr` print what CPython 3.14
+  prints, with `str.isprintable()` read off CPython (Unicode 16.0) as a range table. This replaces
+  the private copy Anime-Pictures had.
+- **`csv.reader`** (`crate::pycsv`). Pawchive's tag list is a Postgres array literal read with
+  `next(csv.reader(StringIO(text), quotechar='"', escapechar="\\"))`. `first_record` is
+  `_csv.c`'s state machine (3.14) for that dialect, including its odd corners: only the first
+  record is read, a quoted field may span lines, a backslash before the end of the input is a
+  newline, a bare `\r` inside an unquoted field and a field over 131072 characters are
+  `csv.Error` (no tags). A plain `split(',')` is wrong on all of them.
+- **`urllib.parse.quote`** is `pyurl::quote` (default `safe="/"`, UTF-8, upper-case hex).
+- **Python's `\s` and `$` in a hand-written regex** (DeviantArt's state line). Python's `\s`
+  counts U+001C..U+001F and the `regex` crate's does not, so the state regex spells
+  `[\s\x1c-\x1f]`; Python's `$` also matches before one final `\n`, so the "id at the end of the
+  URL" pattern ends `\n?\z`.
+- **A state of an unexpected shape.** DeviantArt's `deviation` table that is a list, a `types`
+  entry whose `t` is a list, a `state` that is the number 5: Python raises, and the hook has
+  nothing to say (`[]`, `None`, `(None, None)`). Pawchive's `attachments` that is the number 5
+  is the same. `types` is a dict keyed by `t`, so a later entry of the same name replaces an
+  earlier one.
 
 ## Registering a port in the corpus runner
 
