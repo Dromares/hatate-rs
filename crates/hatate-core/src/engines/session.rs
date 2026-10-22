@@ -45,8 +45,11 @@ struct Cookie {
 /// included: a replaced cookie keeps its place, a cleared one leaves its (empty) containers.
 #[derive(Debug, Default)]
 pub(crate) struct CookieJar {
-    domains: Vec<(String, Vec<(String, Vec<Cookie>)>)>,
+    domains: Vec<(String, Paths)>,
 }
+
+/// The cookies of one domain, by path, each path holding its cookies by name.
+type Paths = Vec<(String, Vec<Cookie>)>;
 
 /// Where `request_host` / `eff_request_host` read from: the URL being asked.
 struct Target {
