@@ -77,7 +77,7 @@ Each is counted over the runs above and is brought to Cloud on DAN-2062 before t
 
 What each means for the product: C1 is a rare real-world file (a booru does not serve arithmetic
 or lossless JPEG); where one turns up, the candidate keeps its ordinal score instead of a measured
-one (`similarity_check`'s existing "could not hash" path, an INFO line) and a multi-page post
+one (`similarity_check`'s existing "could not hash" path: an INFO line naming the file and the reason, e.g. `arith.jpg: could not hash the local file (unsupported JPEG: arithmetic, lossless or hierarchical JPEG) - leaving ordinal scores alone ...`; pinned by `test_a_jpeg_the_port_cannot_decode_says_why_at_info`) and a multi-page post
 stays on the page the site named. C2 and C3 only occur in damaged files and a damaged picture
 already hashes as noise. None of the three changes a hash for a well-formed Huffman JPEG, PNG,
 GIF, BMP, WebP, TIFF, PPM or ICO: 0 differing of 12 247.

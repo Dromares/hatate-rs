@@ -297,7 +297,13 @@ fn shapes(image: &Image) -> Vec<Image> {
 /// `local_prints`: hash the local image once, in every shape a thumbnail is compared against.
 /// `None` if it cannot be read (Python also catches the decompression bomb here).
 pub fn local_prints(source: Source<'_>) -> Option<LocalPrints> {
-    let image = load(source, Some((LOCAL_WORKING_SIZE, LOCAL_WORKING_SIZE))).ok()?;
+    local_prints_or_reason(source).ok()
+}
+
+/// [`local_prints`] with the reason a file could not be read (`Err`), so a caller can log why
+/// instead of only that: an arithmetic-coded JPEG and a text file both give `None` otherwise.
+pub fn local_prints_or_reason(source: Source<'_>) -> Result<LocalPrints, OpenError> {
+    let image = load(source, Some((LOCAL_WORKING_SIZE, LOCAL_WORKING_SIZE)))?;
     let mut image = image.to_rgb();
     image.thumbnail(LOCAL_WORKING_SIZE as i64, LOCAL_WORKING_SIZE as i64);
     let trimmed = trim_border(&image);
@@ -310,7 +316,7 @@ pub fn local_prints(source: Source<'_>) -> Option<LocalPrints> {
     let mirror = trimmed.as_ref().unwrap_or(&image).mirror();
     let straight: Vec<Hash> = all.iter().map(|s| hash_of(s, 8)).collect();
     let fine: Vec<Hash> = all.iter().map(|s| hash_of(s, FINE_HASH_SIZE)).collect();
-    Some(LocalPrints {
+    Ok(LocalPrints {
         straight,
         mirrored: Some(hash_of(&mirror, 8)),
         fine_straight: fine,

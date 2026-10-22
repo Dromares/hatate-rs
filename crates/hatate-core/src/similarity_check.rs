@@ -25,7 +25,9 @@ use crate::availability::run_bounded;
 use crate::boorus::BooruPageInfo;
 use crate::config::Settings;
 use crate::engine_ids::reports_real_similarity;
-use crate::image_compare::{Source, aligned_similarity, image_dimensions, local_prints};
+use crate::image_compare::{
+    Source, aligned_similarity, image_dimensions, local_prints, local_prints_or_reason,
+};
 use crate::image_prep::basename;
 use crate::model::{Candidate, Entry};
 use crate::net::NetClient;
@@ -222,13 +224,16 @@ pub async fn measure_ordinal_similarities(
     }
 
     // Hashed once, in every shape a thumbnail is compared against.
-    let Some(prints) = local_prints(Source::Path(Path::new(&entry.path))) else {
-        info!(
-            "{filename}: could not hash the local file - leaving ordinal scores alone for all {} \
-             candidate(s)",
-            pending.len()
-        );
-        return Ok(());
+    let prints = match local_prints_or_reason(Source::Path(Path::new(&entry.path))) {
+        Ok(p) => p,
+        Err(why) => {
+            info!(
+                "{filename}: could not hash the local file ({why}) - leaving ordinal scores alone \
+                 for all {} candidate(s)",
+                pending.len()
+            );
+            return Ok(());
+        }
     };
 
     let snapshot: &[Candidate] = candidates;

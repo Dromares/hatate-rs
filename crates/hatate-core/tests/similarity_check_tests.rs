@@ -424,6 +424,41 @@ async fn test_a_local_file_that_could_not_be_hashed_says_so_at_info() {
     assert_eq!(w.requests(), 0);
 }
 
+/// DAN-2083 (C1): a file Pillow reads but the port does not - an arithmetic-coded JPEG - is logged
+/// with the file and the reason, so a real hit can be diagnosed from the log.
+#[tokio::test]
+async fn test_a_jpeg_the_port_cannot_decode_says_why_at_info() {
+    capture_logs();
+    let w = world().await;
+    let mut cs: Vec<Candidate> = (0..2)
+        .map(|i| {
+            let mut c = Candidate::new(format!("https://e.test/post/{i}"));
+            c.thumb_url = Some(format!("https://t.test/{i}.jpg"));
+            c.similarity = 80.0;
+            c.engine = "Google Lens".into();
+            c
+        })
+        .collect();
+    // SOI, an SOF9 (extended sequential, arithmetic coded) 16x16 one-component frame, SOS, EOI.
+    let jpeg = [
+        0xFF, 0xD8, 0xFF, 0xC9, 0x00, 0x0B, 0x08, 0x00, 0x10, 0x00, 0x10, 0x01, 0x01, 0x11, 0x00,
+        0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0x00, 0xFF, 0xD9,
+    ];
+    let path = w.write("arith.jpg", jpeg.to_vec());
+    measure(&w, &path, &mut cs).await;
+    let text = logged();
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|l| l.contains("could not hash the local file"))
+        .collect();
+    assert_eq!(lines.len(), 1, "{text}");
+    assert!(lines[0].contains("INFO"), "{}", lines[0]);
+    assert!(lines[0].contains("arith.jpg"), "{}", lines[0]);
+    assert!(lines[0].contains("arithmetic"), "{}", lines[0]);
+    assert!(!cs.iter().any(|c| c.similarity_measured));
+    assert_eq!(w.requests(), 0);
+}
+
 // -- test_similarity_marking.TestTheFlagSurvivesARestart
 
 #[tokio::test]
