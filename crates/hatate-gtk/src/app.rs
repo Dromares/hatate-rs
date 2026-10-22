@@ -421,6 +421,14 @@ fn drive(ui: Ui, opts: Options, start: Instant, load_ms: f64) {
                     println!("MEASURE store_and_view_build_ms={load_ms:.1}");
                     println!("MEASURE rss_after_load_kib={rss} peak_kib={hwm}");
                     println!("MEASURE window_size={}x{}", w.width(), w.height());
+                    println!(
+                        "MEASURE renderer={} scheme={} thumbs={}",
+                        w.native()
+                            .and_then(|n| n.renderer())
+                            .map_or("none".to_string(), |r| r.type_().name().to_string()),
+                        opts2.scheme.name(),
+                        opts2.thumbs.is_some()
+                    );
                 }
                 phase.set(if opts2.measure && opts2.rows > 0 { 1 } else { 9 });
             }
