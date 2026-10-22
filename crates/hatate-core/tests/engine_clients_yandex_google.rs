@@ -955,8 +955,11 @@ async fn a_json_answer_with_a_utf_16_body_and_no_charset_is_read_as_requests_rea
 
 // ---- Yandex: the pacing and the clock ------------------------------------------------------
 
-fn ticks() -> (OnTick, Arc<Mutex<Vec<(String, f64, f64)>>>) {
-    let seen: Arc<Mutex<Vec<(String, f64, f64)>>> = Arc::default();
+/// What the countdown reported: `(label, seconds left, total)`.
+type Ticks = Arc<Mutex<Vec<(String, f64, f64)>>>;
+
+fn ticks() -> (OnTick, Ticks) {
+    let seen: Ticks = Arc::default();
     let sink = seen.clone();
     let on_tick: OnTick = Arc::new(move |label, left, total| {
         sink.lock().unwrap().push((label.to_owned(), left, total));
