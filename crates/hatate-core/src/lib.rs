@@ -12,6 +12,7 @@ mod fsutil;
 pub mod hard_timeout;
 pub mod hydrus_url;
 pub mod image_prep;
+pub mod localtime;
 pub mod lru;
 pub mod model;
 pub mod net;
