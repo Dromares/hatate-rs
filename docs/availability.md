@@ -100,7 +100,7 @@ opens.
 
 ## 5. The tests
 
-`crates/hatate-core/tests/availability_https.rs` (68 tests) drives every function through
+`crates/hatate-core/tests/availability_https.rs` (69 tests) drives every function through
 `NetClient::new` (rustls with the explicit CryptoProvider) against a local https server; the pure
 functions are plain tests. `hatate_core::net::setcookie` has its own unit tests.
 
