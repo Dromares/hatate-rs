@@ -7,9 +7,11 @@
 //! no scheme, a query with a bare `&`, a stray `%`). The corpus is Python's output, so this is
 //! Python's algorithm, not the standard's.
 //!
-//! Left out: `ValueError` for a malformed bracketed host or a netloc that NFKC normalisation changes. Python
-//! raises there, the hook that called it is then skipped by `fetch_page_info`, and the port
-//! reads such a URL as it would any other.
+//! `urlparse` never fails here: Python raises `ValueError` for a malformed bracketed host or a
+//! netloc that NFKC normalisation changes, and the booru hooks that call `urlparse` are then
+//! skipped by `fetch_page_info`, so they read such a URL as any other. [`try_urlparse`] is the
+//! one that fails where Python does, for the engine parsers (DAN-2009), whose Python code
+//! catches that `ValueError` (Yandex's `post_url`, `host_label`) or lets it propagate.
 
 /// Schemes that take a `;params` part on the last path segment (`uses_params`).
 const USES_PARAMS: [&str; 16] = [
@@ -154,9 +156,223 @@ fn unsplit(
     url
 }
 
+/// What `urlparse` raises as `ValueError`: an unbalanced or invalid bracketed host, or a netloc
+/// whose NFKC form carries `/ ? # @ :`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UrlValueError;
+
+impl std::fmt::Display for UrlValueError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("urlparse raised ValueError")
+    }
+}
+
+impl std::error::Error for UrlValueError {}
+
 /// `urlparse(url, scheme)`: `scheme` is what a URL with no scheme of its own gets.
 pub fn urlparse(url: &str, default_scheme: &str) -> Parsed {
+    parsed_from(split(url, Some(default_scheme)))
+}
+
+/// `urlparse(url, scheme)` with the `ValueError`s `_urlsplit` raises for the netloc (CPython
+/// 3.14): a `[` without a `]` or the reverse, a bracketed host that is not an IPv6 address (or an
+/// IPvFuture literal), data before the `[` or between the `]` and the port, and a non-ASCII
+/// netloc that NFKC normalisation turns into one with `/ ? # @ :` in it.
+pub fn try_urlparse(url: &str, default_scheme: &str) -> Result<Parsed, UrlValueError> {
     let s = split(url, Some(default_scheme));
+    if let Some(netloc) = &s.netloc {
+        check_netloc(netloc)?;
+    }
+    Ok(parsed_from(s))
+}
+
+/// `urlunparse(parts)` (`ParseResult.geturl()`): empty components are left out, as Python does.
+pub fn urlunparse(p: &Parsed) -> String {
+    let netloc = if !p.netloc.is_empty() {
+        Some(p.netloc.as_str())
+    } else if USES_NETLOC.contains(&p.scheme.as_str())
+        && !p.scheme.is_empty()
+        && (p.path.is_empty() || p.path.starts_with('/'))
+    {
+        Some("")
+    } else {
+        None
+    };
+    let path = if p.params.is_empty() {
+        p.path.clone()
+    } else {
+        format!("{};{}", p.path, p.params)
+    };
+    fn some(s: &str) -> Option<&str> {
+        (!s.is_empty()).then_some(s)
+    }
+    unsplit(
+        some(&p.scheme),
+        netloc,
+        &path,
+        some(&p.query),
+        some(&p.fragment),
+    )
+}
+
+fn check_netloc(netloc: &str) -> Result<(), UrlValueError> {
+    let (open, close) = (netloc.contains('['), netloc.contains(']'));
+    if open != close {
+        return Err(UrlValueError);
+    }
+    if open {
+        check_bracketed_netloc(netloc)?;
+    }
+    // `_checknetloc`: looking for characters like U+2100 that expand to `a/c`.
+    if netloc.is_ascii() {
+        return Ok(());
+    }
+    let n: String = netloc
+        .chars()
+        .filter(|c| !matches!(c, '@' | ':' | '#' | '?'))
+        .collect();
+    let normalised = icu_normalizer::ComposingNormalizerBorrowed::new_nfkc().normalize(&n);
+    if n == normalised {
+        return Ok(());
+    }
+    if normalised.contains(['/', '?', '#', '@', ':']) {
+        return Err(UrlValueError);
+    }
+    Ok(())
+}
+
+/// `_check_bracketed_netloc`, which mirrors how `_hostinfo` splits a netloc.
+fn check_bracketed_netloc(netloc: &str) -> Result<(), UrlValueError> {
+    let host_port = netloc.rsplit_once('@').map_or(netloc, |(_, rest)| rest);
+    let hostname = if let Some((before, bracketed)) = host_port.split_once('[') {
+        if !before.is_empty() {
+            return Err(UrlValueError);
+        }
+        let (hostname, port) = bracketed.split_once(']').unwrap_or((bracketed, ""));
+        if !port.is_empty() && !port.starts_with(':') {
+            return Err(UrlValueError);
+        }
+        hostname
+    } else {
+        host_port.split_once(':').map_or(host_port, |(h, _)| h)
+    };
+    // `_check_bracketed_host`: an IPvFuture literal, or an address that is IPv6 (an IPv4 one
+    // "cannot be in brackets").
+    if hostname.starts_with(['v', 'V']) {
+        let mut chars = hostname.chars();
+        chars.next();
+        let rest = chars.as_str();
+        let digits = rest.chars().take_while(char::is_ascii_hexdigit).count();
+        let after = &rest[digits..];
+        // `\A[vV][a-fA-F0-9]+\..+\z`; `.` is any character but a newline.
+        let ok =
+            digits > 0 && after.starts_with('.') && after.len() > 1 && !after[1..].contains('\n');
+        return if ok { Ok(()) } else { Err(UrlValueError) };
+    }
+    if is_ipv6(hostname) {
+        Ok(())
+    } else {
+        Err(UrlValueError)
+    }
+}
+
+/// `ipaddress.IPv6Address(text)` succeeds (CPython 3.14): up to eight hextets of one to four hex
+/// digits with at most one `::`, an IPv4 dotted quad allowed as the last piece, and an optional
+/// `%scope` that is non-empty and holds no `%` or `/`.
+fn is_ipv6(text: &str) -> bool {
+    if text.contains('/') {
+        return false;
+    }
+    let addr = match text.split_once('%') {
+        Some((_, scope)) if scope.is_empty() || scope.contains('%') => return false,
+        Some((addr, _)) => addr,
+        None => text,
+    };
+    if addr.is_empty() {
+        return false;
+    }
+    let mut parts: Vec<String> = addr.split(':').map(str::to_string).collect();
+    if parts.len() < 3 {
+        return false;
+    }
+    if parts[parts.len() - 1].contains('.') {
+        let Some(quad) = parts.pop().as_deref().and_then(ipv4_quad) else {
+            return false;
+        };
+        parts.push(format!("{:x}", quad >> 16));
+        parts.push(format!("{:x}", quad & 0xFFFF));
+    }
+    if parts.len() > 9 {
+        return false;
+    }
+    let mut skip_index = None;
+    for (i, part) in parts.iter().enumerate().take(parts.len() - 1).skip(1) {
+        if part.is_empty() {
+            if skip_index.is_some() {
+                return false;
+            }
+            skip_index = Some(i);
+        }
+    }
+    let (hi, lo) = match skip_index {
+        Some(skip) => {
+            let mut hi = skip;
+            let mut lo = parts.len() - skip - 1;
+            if parts[0].is_empty() {
+                hi -= 1;
+                if hi != 0 {
+                    return false;
+                }
+            }
+            if parts[parts.len() - 1].is_empty() {
+                lo -= 1;
+                if lo != 0 {
+                    return false;
+                }
+            }
+            if 8 < hi + lo + 1 {
+                return false;
+            }
+            (hi, lo)
+        }
+        None => {
+            if parts.len() != 8 || parts[0].is_empty() || parts[parts.len() - 1].is_empty() {
+                return false;
+            }
+            (parts.len(), 0)
+        }
+    };
+    let hextet =
+        |s: &String| s.len() <= 4 && !s.is_empty() && s.chars().all(|c| c.is_ascii_hexdigit());
+    parts[..hi].iter().all(hextet) && parts[parts.len() - lo..].iter().all(hextet)
+}
+
+/// `IPv4Address(text)`'s integer: four dot-separated decimal octets of at most three ASCII
+/// digits, no leading zero, each at most 255.
+fn ipv4_quad(text: &str) -> Option<u32> {
+    let octets: Vec<&str> = text.split('.').collect();
+    if octets.len() != 4 {
+        return None;
+    }
+    let mut value = 0u32;
+    for octet in octets {
+        if octet.is_empty()
+            || octet.len() > 3
+            || !octet.bytes().all(|b| b.is_ascii_digit())
+            || (octet != "0" && octet.starts_with('0'))
+        {
+            return None;
+        }
+        let n: u32 = octet.parse().ok()?;
+        if n > 255 {
+            return None;
+        }
+        value = (value << 8) | n;
+    }
+    Some(value)
+}
+
+fn parsed_from(s: Split) -> Parsed {
     let scheme = s.scheme.unwrap_or_default();
     let (path, params) = if USES_PARAMS.contains(&scheme.as_str()) && s.path.contains(';') {
         let (path, params) = split_params(&s.path);
@@ -283,6 +499,19 @@ pub fn urljoin(base: &str, url: &str) -> String {
         u.query.as_deref(),
         u.fragment.as_deref(),
     )
+}
+
+/// `urljoin(base, url)` with the `ValueError`s the two `urlsplit` calls inside it raise. Nothing
+/// is split when either side is empty, as in Python.
+pub fn try_urljoin(base: &str, url: &str) -> Result<String, UrlValueError> {
+    if !base.is_empty() && !url.is_empty() {
+        for part in [base, url] {
+            if let Some(netloc) = split(part, None).netloc {
+                check_netloc(&netloc)?;
+            }
+        }
+    }
+    Ok(urljoin(base, url))
 }
 
 /// `quote(s)` with the default `safe="/"`: the UTF-8 bytes of every character other than an ASCII
@@ -445,5 +674,80 @@ mod tests {
         // No scheme: the colon is in the path.
         let p = urlparse("a b:c?q=1", "");
         assert_eq!((p.scheme.as_str(), p.query.as_str()), ("", "q=1"));
+    }
+
+    #[test]
+    fn urlsplit_s_value_errors_are_kept_by_try_urlparse() {
+        // Answers read off CPython 3.14.8's `urlparse`.
+        for (url, raises) in [
+            ("http://[::1]/x", false),
+            ("http://[::1]:80/x", false),
+            ("http://u@[::1]:80/", false),
+            ("http://[::ffff:1.2.3.4]/x", false),
+            ("http://[fe80::1%eth0]/x", false),
+            ("http://[v1.x]/x", false),
+            ("http://[1:2:3:4:5:6:7:8]/", false),
+            ("http://[1:2:3:4:5:6:7::]/", false),
+            ("http://[::]/", false),
+            ("http://[1:2:3:4:5:6:1.2.3.4]/", false),
+            ("http://\u{e9}.example/", false),
+            ("pixiv.net\u{ff0f}/comments/1", false),
+            ("http://[::1/x", true),
+            ("http://::1]/x", true),
+            ("http://[1.2.3.4]/x", true),
+            ("http://[fe80::1%]/x", true),
+            ("http://[v1]/x", true),
+            ("http://[x]@e621.net/", true),
+            ("http://[::1]x/", true),
+            ("http://x[::1]/", true),
+            ("http://[1:2:3:4:5:6:7:8:9]/", true),
+            ("http://[1::2::3]/", true),
+            ("http://[:1:2:3:4:5:6:7]/", true),
+            ("http://[1:2:3:4:5:6:7:1.2.3.4]/", true),
+            ("http://[::01.2.3.4]/", true),
+            // A netloc that NFKC turns into one with `/ ? # @ :` in it.
+            ("http://a\u{2100}/x", true),
+            ("http://\u{ff0f}.example/", true),
+            ("http://a\u{ff1a}80/", true),
+            ("//host\u{fe56}x/", true),
+        ] {
+            assert_eq!(try_urlparse(url, "").is_err(), raises, "{url}");
+            // `urlparse` itself still reads all of them.
+            let _ = urlparse(url, "");
+        }
+    }
+
+    #[test]
+    fn urljoin_raises_only_when_both_sides_are_split() {
+        assert!(try_urljoin("https://www.google.com/", "https://x]/y").is_err());
+        assert!(try_urljoin("https://[bad/", "rel").is_err());
+        assert_eq!(
+            try_urljoin("", "https://x]/y").as_deref(),
+            Ok("https://x]/y")
+        );
+        assert_eq!(
+            try_urljoin("https://www.google.com/", "").as_deref(),
+            Ok("https://www.google.com/")
+        );
+    }
+
+    #[test]
+    fn urlunparse_drops_empty_parts_as_python_does() {
+        let swap = |url: &str| {
+            let mut parts = urlparse(url, "");
+            parts.netloc = "x.y".to_string();
+            urlunparse(&parts)
+        };
+        assert_eq!(
+            swap("http://Danbooru.Donmai.US/posts/1;p?q#f"),
+            "http://x.y/posts/1;p?q#f"
+        );
+        assert_eq!(swap("/posts/1?q"), "//x.y/posts/1?q");
+        assert_eq!(swap("https://h?"), "https://x.y");
+        let bare = Parsed {
+            scheme: "https".to_string(),
+            ..Parsed::default()
+        };
+        assert_eq!(urlunparse(&bare), "https://");
     }
 }

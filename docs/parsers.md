@@ -219,7 +219,69 @@ callable (`core.iqdb._parse_results`, `core.saucenao.search`, ...).
 - **`float()` of page text** is `sizes::py_float` (SauceNAO HTML similarity, IQDB's percent):
   any script's digits, single underscores between digits, `inf` and `nan`.
 - **`sites::guess_site_name`** (`core/sites.py`) is ported with its `HOST_MAP` because IQDB labels
-  each match with it; `classify_site` and `canonicalize_url` come with the code that uses them.
+  each match with it; `classify_site` comes with the code that uses it. `canonicalize_url` is here too, for Yandex
+  (DAN-2009).
+
+## Engine result parsers: Yandex and Google Images (DAN-2009)
+
+`crates/hatate-core/src/engines/` holds what an engine's answer says once it is in hand
+(`yandex.rs`, `google_images.rs`). The request half is Phase 3 and nothing here opens a socket:
+the upload, the `cbirId`, the Vision call, the consent cookie, the error mapping for a rejected
+key or an exhausted quota, the captcha rest, the stand-down latches and the pacing. The corpus
+items for `core.yandex.search` and `core.google_images.search` are `mocked_transport` items and
+stay with that client.
+
+- **Where Python raises on an input the service never sends.** The engine code reads JSON it did
+  not check: `site["thumb"]` that is a list, a `url` that is a number, Vision's `responses` that
+  is a string. Python raises, the exception leaves `search`, and the engine runner reports the
+  engine as failed. That is not "no results", which would be recorded as a search that found
+  nothing and cached. So `parse_sites`, `keep_post_pages`, `post_url`, `parse_results` and
+  `parse_vision_results` return `Result<_, engines::UnexpectedInput>`, and the Phase 3 client maps
+  the `Err` to its own failure. `parse_lens_results` cannot raise and returns a plain `Vec`.
+  The one case Python does *not* raise on and `Err` stands in for anyway: `keep_post_pages` with an
+  `originalImage.url` that is neither a string nor `null` and no non-empty `thumb.url` (Python keeps
+  the value in `thumb_url`; a `YandexMatch` cannot hold it).
+- **`urlparse` and `urljoin` raise `ValueError`.** CPython 3.14 refuses an unbalanced or invalid
+  bracketed host and a non-ASCII netloc that NFKC normalisation turns into one with `/ ? # @ :`.
+  Yandex's `post_url` and Google's `host_label` catch it; Google's `_resolve_href` does not, so one
+  such link makes `parse_results` raise, and `find_parser` (every site's `matches` is `on_host`,
+  and Danbooru's is asked first) raises out of `post_url`. `pyurl::try_urlparse`,
+  `pyurl::try_urljoin` and `boorus::host::raises_value_error` say when. `urlparse` and `urljoin`
+  themselves are unchanged and still read such a URL, for the booru hooks that skip it. The
+  IPv6 test is `ipaddress.IPv6Address`'s algorithm written out (scope id, embedded IPv4, at most
+  one `::`); NFKC is `icu_normalizer` (Unicode 17 data, CPython 3.14.8 has 16.0), already in the
+  lockfile through `url`.
+- **`re.IGNORECASE` again.** `i` also matches `ı` and `İ` in Python (and so does `[a-z]`), which
+  `(?i)` does not give; `POST_URL_RE`, the Danbooru mirror pattern, the reactor pattern and the
+  Google domain pattern spell them out. `ſ` and the Kelvin sign `(?i)` already has.
+- **`$` and lookahead.** `$` is `\n?\z`. `REACTOR_PICS_POST_RE`'s `(?!full/)(.+)$` has no
+  lookahead to land on, so `sites::canonicalize_url` reads the rest by hand (and drops one final
+  newline, as `$` leaves it out of the group).
+- **`isalpha()`** (the Lens title test) is general category `L`, so it is `\p{L}`, not
+  `char::is_alphabetic` (which counts marks and number letters).
+- **JS string literals in a Lens blob.** `"((?:[^"\\]|\\.){2,400})"` ports as written (`.` stops at a newline in both, and a
+  literal over 400 characters is not matched in either). `_unescape` turns `\uXXXX` into a character
+  by hand. A surrogate escape (`\ud83d`) is a lone surrogate in Python and cannot be a Rust
+  `char`; it becomes U+FFFD, and a pair is two of them, where Python keeps two surrogates.
+- **html5ever and libxml2 (lxml) differ on two shapes Google's markup does not use.** A heading
+  inside a `<p>` closes the `<p>` in html5ever and does not in libxml2, and a `</a>` across an open
+  `<h3>` closes differently. Python's `parse_results` finds the anchor by the heading under it, so
+  `<p><a href><span><h3>` is a result in Python and not here. Found by the differential run
+  below; no corpus item has either shape. A page built from `div`s, tables and well-formed anchors
+  (the SERP in the Python tests, 300+ random ones per 6,000 cases) matches.
+- **`json.loads`** (Yandex's `data-state`): `NaN`/`Infinity` and lone surrogates are "not JSON"
+  here (as above), an integer past `u64` is a float here and exact in Python, and nesting past
+  serde_json's 128 levels is "not JSON" where Python parses deeper (and raises `RecursionError`
+  further down). `int(width)` stops at `i64`, as before.
+- **Measured against Python.** The corpus has 19 items for these five callables. Beyond them, a
+  throw-away generator (outside the repo: a Python script and a Rust test) ran `post_url`,
+  `canonicalize_url`, `parse_sites`, `keep_post_pages`, `parse_results`, `parse_lens_results`,
+  `parse_vision_results`, `is_google_host`, `host_label`, `urlparse` and `post_url_for_image` on
+  100,000 random inputs against the real modules at `76c85c4` (CPython 3.14.8, bs4 4.15, lxml),
+  comparing values, and "raised" with "returned an error" (17,284 cases Python raised on). The only
+  differences are `parse_results` on markup with a heading inside a `<p>`, a `</a>` across an open
+  heading, or characters deleted from tags (1,601 of 8,840 such cases); the 5,169 well-formed
+  `parse_results` pages and every other function had none.
 
 ## Registering a port in the corpus runner
 

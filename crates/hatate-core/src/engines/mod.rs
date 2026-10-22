@@ -16,13 +16,19 @@
 //! A function that reads more than one response (ascii2d's colour page, then the feature page it
 //! points at) takes them all as arguments. A response is `(status, final URL, text)`.
 //!
+//! **Yandex and Google Images.** `core/yandex.py` and `core/google_images.py` are cut the same
+//! way; the request half of each (`search`, the module state `yandex._blocked` and
+//! `google_images._blocked`) is Phase 3.
+//!
 //! No function here opens a socket or reads a file.
 
 pub mod ascii2d;
+pub mod google_images;
 pub mod iqdb;
 pub mod pawchive_lookup;
 pub mod saucenao;
 pub mod tracemoe;
+pub mod yandex;
 
 use std::sync::LazyLock;
 
@@ -59,6 +65,38 @@ pub(crate) fn extract_dimensions(text: &str) -> (Option<i64>, Option<i64>) {
 pub(crate) fn looks_like_url(href: &str) -> bool {
     let href = crate::pycompat::strip(href);
     href.starts_with("//") || href.starts_with("http://") || href.starts_with("https://")
+}
+
+/// Python raised, instead of returning, because of an input the service never sends: a value of
+/// a type the code does not check (a results `thumb` that is a list, a `url` that is a number, a
+/// Vision `responses` that is a string), or a URL `urlparse` refuses with `ValueError`. In Python the exception leaves the engine's `search` and the engine runner reports
+/// the engine as failed; it is not "no results", which would be recorded as a search that found
+/// nothing. The Phase 3 client is told which, and maps this to its own failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnexpectedInput;
+
+impl std::fmt::Display for UnexpectedInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("an input on which the Python parser raises")
+    }
+}
+
+impl std::error::Error for UnexpectedInput {}
+
+/// What `for x in value or []` visits, for the elements that are objects. A falsy value is empty;
+/// an array is its items; a non-empty object or string is iterated by key or by character, and
+/// neither is an object; a number or `true` is not iterable, which Python raises on.
+pub(crate) fn objects_in(
+    value: Option<&serde_json::Value>,
+) -> Result<Vec<&serde_json::Map<String, serde_json::Value>>, UnexpectedInput> {
+    use serde_json::Value;
+    match value {
+        None | Some(Value::Null | Value::Bool(false)) => Ok(Vec::new()),
+        Some(Value::Array(items)) => Ok(items.iter().filter_map(Value::as_object).collect()),
+        Some(Value::Object(_) | Value::String(_)) => Ok(Vec::new()),
+        Some(Value::Number(n)) if n.as_f64() == Some(0.0) => Ok(Vec::new()),
+        Some(Value::Bool(true) | Value::Number(_)) => Err(UnexpectedInput),
+    }
 }
 
 #[cfg(test)]
