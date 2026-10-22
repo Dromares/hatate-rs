@@ -227,3 +227,31 @@ pub(crate) fn clear_entries(conn: &mut Connection) -> Result<bool, SaveError> {
     tx.commit()?;
     Ok(had)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Rule 6.2.7: `synchronous=FULL` is a property of the connection, so it is checked on
+    // the connection a save uses (the file cannot show it).
+    #[test]
+    fn a_writer_connection_is_wal_and_synchronous_full() {
+        let dir = tempfile::Builder::new()
+            .prefix("hatate-core-test-")
+            .tempdir()
+            .unwrap();
+        let conn = open_for_write(&dir.path().join("session.db")).unwrap();
+        let sync: i64 = conn
+            .query_row("PRAGMA synchronous", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sync, 2, "FULL");
+        let mode: String = conn
+            .query_row("PRAGMA journal_mode", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(mode, "wal");
+        let timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(timeout, 30_000);
+    }
+}
