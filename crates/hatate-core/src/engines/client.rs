@@ -146,12 +146,23 @@ pub(crate) struct Upload {
 /// than through `reqwest`'s multipart, which writes a backslash before `"` and before a newline,
 /// so a filename with either would not be the filename Python sends.
 pub(crate) fn multipart_upload(field: &str, filename: &str, data: &[u8]) -> Upload {
+    multipart_upload_as(field, filename, "application/octet-stream", data)
+}
+
+/// [`multipart_upload`] for a file given with its own content type, `files={field: (filename,
+/// data, content_type)}`.
+pub(crate) fn multipart_upload_as(
+    field: &str,
+    filename: &str,
+    content_type: &str,
+    data: &[u8],
+) -> Upload {
     let boundary = boundary();
     let mut body = Vec::with_capacity(data.len() + 256);
     body.extend_from_slice(
         format!(
             "--{boundary}\r\nContent-Disposition: form-data; {}; {}\r\n\
-             Content-Type: application/octet-stream\r\n\r\n",
+             Content-Type: {content_type}\r\n\r\n",
             header_param("name", field),
             header_param("filename", filename)
         )

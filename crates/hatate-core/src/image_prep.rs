@@ -366,11 +366,16 @@ impl Pixels {
     }
 
     fn to_jpeg(&self, quality: u8) -> Result<Vec<u8>, String> {
+        self.to_jpeg_with(quality, true)
+    }
+
+    /// `save(out, "JPEG", quality=quality[, optimize=True])`.
+    fn to_jpeg_with(&self, quality: u8, optimize: bool) -> Result<Vec<u8>, String> {
         let side = |n: u32| u16::try_from(n).map_err(|_| "image too large for JPEG".to_owned());
         let mut out = Vec::new();
         let mut enc = Encoder::new(&mut out, quality);
-        // Pillow's `optimize=True` and its default 4:2:0 subsampling.
-        enc.set_optimized_huffman_tables(true);
+        // Pillow's `optimize` and its default 4:2:0 subsampling.
+        enc.set_optimized_huffman_tables(optimize);
         enc.set_sampling_factor(SamplingFactor::F_2_2);
         if self.grey {
             enc.encode(
@@ -682,6 +687,34 @@ fn thumbnail_size(width: u32, height: u32, size: (i64, i64)) -> Result<Option<(u
         u32::try_from(x).map_err(|_| "size out of range".to_owned())?,
         u32::try_from(y).map_err(|_| "size out of range".to_owned())?,
     )))
+}
+
+/// What `yandex.prepare_upload` does to the prepared bytes: opens them, takes the first frame,
+/// converts to RGB, fits it in a `max_side` square (`Image.thumbnail`, Lanczos) and saves a JPEG
+/// at `quality` (Pillow's defaults otherwise: standard Huffman tables, 4:2:0).
+///
+/// `Err` where Python's `except (OSError, ValueError, EOFError, DecompressionBombError)` catches:
+/// bytes Pillow cannot open or decode, and a picture past its decompression-bomb limit. As with
+/// [`prepare_upload_bytes`], the JPEG's bytes are not Pillow's (the DCT and the entropy coder are
+/// the `jpeg-encoder` crate's); its dimensions and colour are.
+pub fn reencode_jpeg(data: &[u8], max_side: u32, quality: u8) -> Result<Vec<u8>, String> {
+    if let Err(bomb) = crate::pyimage::image_size_checked(data) {
+        return Err(bomb.to_string());
+    }
+    let mode = mode_from_header(&data[..data.len().min(1100)]);
+    let img = image::ImageReader::new(std::io::Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map_err(|e| e.to_string())?;
+    let mut picture = Pixels::from_image(img, mode);
+    if picture.grey {
+        // `convert("RGB")`: the grey in all three channels.
+        picture.data = picture.data.iter().flat_map(|&g| [g, g, g]).collect();
+        picture.grey = false;
+    }
+    picture.thumbnail((i64::from(max_side), i64::from(max_side)))?;
+    picture.to_jpeg_with(quality, false)
 }
 
 /// `_downscale_to_fit`: the JPEG bytes and the `.jpg` filename.

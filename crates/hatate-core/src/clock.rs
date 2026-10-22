@@ -27,7 +27,11 @@ pub trait Clock: Send + Sync {
     /// process's own zone.
     fn local_hhmm(&self, epoch: f64) -> String {
         let seconds_of_day = (epoch.floor() as i64).rem_euclid(86_400);
-        format!("{:02}:{:02}", seconds_of_day / 3600, seconds_of_day % 3600 / 60)
+        format!(
+            "{:02}:{:02}",
+            seconds_of_day / 3600,
+            seconds_of_day % 3600 / 60
+        )
     }
 }
 

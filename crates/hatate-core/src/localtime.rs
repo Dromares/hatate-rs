@@ -23,7 +23,11 @@ pub fn local_hhmm(epoch: f64) -> String {
 fn hhmm(epoch: f64, zone: &Zone) -> String {
     let local = epoch.floor() as i64 + zone.utc_offset(epoch.floor() as i64);
     let seconds_of_day = local.rem_euclid(86_400);
-    format!("{:02}:{:02}", seconds_of_day / 3600, seconds_of_day % 3600 / 60)
+    format!(
+        "{:02}:{:02}",
+        seconds_of_day / 3600,
+        seconds_of_day % 3600 / 60
+    )
 }
 
 /// A zone: explicit transitions, then a rule for everything after them.
@@ -450,7 +454,14 @@ mod tests {
 
     #[test]
     fn a_bad_rule_is_not_a_zone() {
-        for bad in ["", "A", "CET", "CET-1CEST", "CET-1CEST,M3.5.0", "UTC0 extra"] {
+        for bad in [
+            "",
+            "A",
+            "CET",
+            "CET-1CEST",
+            "CET-1CEST,M3.5.0",
+            "UTC0 extra",
+        ] {
             assert_eq!(Rule::parse(bad), None, "{bad:?}");
         }
     }

@@ -198,6 +198,19 @@ impl CookieJar {
         }
     }
 
+    /// `jar.set(name, value, domain=domain)`: a session cookie for `domain` (a dotted name, as
+    /// `requests` stores it), path `/`, not `Secure`.
+    fn set(&mut self, name: &str, value: &str, domain: &str) {
+        self.store(Cookie {
+            name: name.to_owned(),
+            value: Some(value.to_owned()),
+            domain: domain.to_owned(),
+            path: "/".to_owned(),
+            secure: false,
+            expires: None,
+        });
+    }
+
     fn clear(&mut self, domain: &str, path: &str, name: &str) {
         for (d, paths) in &mut self.domains {
             if d != domain {
@@ -564,6 +577,12 @@ impl Session {
             headers,
             jar: CookieJar::default(),
         }
+    }
+
+    /// `session.cookies.set(name, value, domain=domain)`: a cookie the session starts with.
+    pub(crate) fn with_cookie(mut self, name: &str, value: &str, domain: &str) -> Self {
+        self.jar.set(name, value, domain);
+        self
     }
 
     /// `session.post/get(url, timeout=timeout, allow_redirects=True)` under a hard deadline of

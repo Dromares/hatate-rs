@@ -14,23 +14,44 @@
 //! (`_blocked`) is not kept here: an error that [`GoogleImagesError::latches`] is the signal for
 //! the client to set it. The request half (reading and downscaling the picture, the Vision body
 //! and the multipart upload, the consent cookie and headers, the deadline, the network errors,
-//! `reset_blocked_flag` at the start of a search) is Phase 3.
+//! `reset_blocked_flag` at the start of a search) is [`GoogleImagesClient`] (Phase 3.e,
+//! DAN-2061).
 
 use std::collections::HashSet;
-use std::sync::LazyLock;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
+use std::time::Instant;
 
 use regex::Regex;
 use scraper::{ElementRef, Selector};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
+use tracing::{debug, error};
+
+use super::client::{
+    Failure, OnTick, multipart_upload, read_upload, response_text, ticking, urlencode,
+};
+use super::session::{Session, SessionRequest};
 use super::{Response, UnexpectedInput, objects_in};
 use crate::boorus::parsed::{soup_of, text_stripped};
+use crate::hard_timeout::HardTimeoutError;
+use crate::net::{Method, NetClient, Secret};
 use crate::pycompat;
 use crate::pyrepr::py_str;
+use crate::pyresponse::PyResponse;
 use crate::pyurl;
 
 pub const GOOGLE_URL: &str = "https://www.google.com/";
+/// The `User-Agent` of both routes.
+pub const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+/// Records a consent choice so the EU interstitial doesn't stand between the upload and the
+/// results. Without it every request from an EU exit lands on consent.google.com.
+pub const CONSENT_COOKIE: &str = "CAESHAgBEhIaAB";
+/// How many web-detection entries Vision is asked for: more than [`MAX_RESULTS`] because the
+/// response mixes exact and partial pages and some are dropped as Google's own hosts.
+pub const VISION_MAX_RESULTS: u32 = 20;
 /// The public upload (a multipart `encoded_image`, `hl=en`, redirects followed).
 pub const SEARCH_BY_IMAGE_URL: &str = "https://www.google.com/searchbyimage/upload";
 /// The Cloud Vision call (a JSON body, `key=<api key>`).
@@ -789,6 +810,247 @@ fn vision_error(
     } else {
         GoogleImagesError::Failed(format!("Google Vision: {message}"))
     })
+}
+
+// ----------------------------------------------------------------------
+// The request half (Phase 3.e)
+// ----------------------------------------------------------------------
+
+/// The request half of `core/google_images.py`: `search`, `is_blocked` and `reset_blocked_flag`.
+///
+/// With a Cloud Vision key, one JSON POST (`WEB_DETECTION`) to [`VISION_URL`] with the key in the
+/// query; without one, the public upload: a multipart POST to [`SEARCH_BY_IMAGE_URL`] on a
+/// `requests.Session` that carries the consent cookie and follows redirects. What the answers
+/// mean is [`vision_from_response`] and [`public_from_response`]; an error that
+/// [`GoogleImagesError::latches`] sets the `_blocked` latch, which Python keeps in a module
+/// global and this client keeps itself (clones share it).
+///
+/// Both addresses come from the constructor, so a test serves them from a local server; `new`
+/// uses the real ones. The key is a [`Secret`]: it goes on the wire and nowhere else (no log
+/// line, no error message).
+#[derive(Clone)]
+pub struct GoogleImagesClient {
+    net: NetClient,
+    search_by_image_url: String,
+    vision_url: String,
+    blocked: Arc<AtomicBool>,
+}
+
+impl GoogleImagesClient {
+    /// The real Google.
+    pub fn new(net: NetClient) -> Self {
+        Self::with_urls(net, SEARCH_BY_IMAGE_URL, VISION_URL)
+    }
+
+    /// The same client against other addresses (a local https server in tests). Not reachable
+    /// from `config.json`, the environment or a flag.
+    pub fn with_urls(net: NetClient, search_by_image_url: &str, vision_url: &str) -> Self {
+        GoogleImagesClient {
+            net,
+            search_by_image_url: search_by_image_url.to_owned(),
+            vision_url: vision_url.to_owned(),
+            blocked: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// `is_blocked`: Google will not answer this app for the rest of the session.
+    pub fn is_blocked(&self) -> bool {
+        self.blocked.load(Ordering::SeqCst)
+    }
+
+    /// `reset_blocked_flag`: cleared when a new search starts.
+    pub fn reset_blocked_flag(&self) {
+        self.blocked.store(false, Ordering::SeqCst);
+    }
+
+    /// `_latch`: an error that stands the engine down also sets the flag.
+    fn latched(&self, err: GoogleImagesError) -> GoogleImagesError {
+        if err.latches() {
+            self.blocked.store(true, Ordering::SeqCst);
+        }
+        err
+    }
+
+    /// `search`: the pages Google knows this image from. Uses the Cloud Vision web-detection API
+    /// when a key is configured and the public upload endpoint when one is not.
+    ///
+    /// `timeout` is both the per-read timeout and a deadline over the whole exchange, as
+    /// `run_with_hard_timeout(..., timeout)` is around it in Python. `on_tick` is the UI
+    /// countdown, see [`OnTick`].
+    pub async fn search(
+        &self,
+        image_path: &Path,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+        api_key: &Secret,
+    ) -> Result<Vec<GoogleImagesMatch>, GoogleImagesError> {
+        let (data, filename) = read_upload(image_path).await.map_err(|e| {
+            error!(
+                "Could not read {} for the Google search",
+                image_path.display()
+            );
+            GoogleImagesError::Failed(format!("Could not read image: {}", e.0))
+        })?;
+        match vision_key(api_key.expose()) {
+            Some(key) => self.search_vision(&data, key, timeout, on_tick).await,
+            None => self.search_public(&data, &filename, timeout, on_tick).await,
+        }
+    }
+
+    async fn search_vision(
+        &self,
+        data: &[u8],
+        key: &str,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+    ) -> Result<Vec<GoogleImagesMatch>, GoogleImagesError> {
+        // `json=body`: `json.dumps` with its default separators.
+        let body = format!(
+            "{{\"requests\": [{{\"image\": {{\"content\": \"{}\"}}, \"features\": [{{\"type\": \
+             \"WEB_DETECTION\", \"maxResults\": {VISION_MAX_RESULTS}}}]}}]}}",
+            base64(data)
+        );
+        let upload = super::client::Upload {
+            content_type: "application/json".to_owned(),
+            body: body.into(),
+        };
+        // `requests.post(...)` is a one-off session: only the `User-Agent` it was given.
+        let mut session = Session::new(
+            self.net.clone(),
+            vec![("User-Agent", USER_AGENT.to_owned())],
+        );
+        let url = format!("{}?{}", self.vision_url, urlencode(&[("key", key)]));
+        let sent = ticking(
+            "Waiting on Google (Vision)",
+            timeout,
+            on_tick,
+            session.send(
+                SessionRequest {
+                    method: Method::Post,
+                    url: &url,
+                    upload: Some(&upload),
+                },
+                timeout,
+                Instant::now(),
+            ),
+        )
+        .await;
+        let resp = match sent {
+            Ok(resp) => resp,
+            Err(Failure::Deadline(HardTimeoutError(why))) => {
+                error!("Google Vision request exceeded the hard deadline");
+                return Err(GoogleImagesError::Failed(format!(
+                    "Google Vision request timed out: {why}"
+                )));
+            }
+            Err(Failure::Transport(why)) => {
+                error!("Google Vision request failed");
+                return Err(GoogleImagesError::Failed(format!(
+                    "Google Vision request failed: {why}"
+                )));
+            }
+        };
+        let status = resp.status.as_u16();
+        // `try: payload = resp.json() except ValueError: payload = {}`
+        let payload = PyResponse::from_net(resp).json().ok();
+        let matches =
+            vision_from_response(status, payload.as_ref()).map_err(|e| self.latched(e))?;
+        debug!("Google Vision returned {} match(es)", matches.len());
+        Ok(matches)
+    }
+
+    async fn search_public(
+        &self,
+        data: &[u8],
+        filename: &str,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+    ) -> Result<Vec<GoogleImagesMatch>, GoogleImagesError> {
+        debug!("Uploading to Google Images (no Vision key configured)");
+        let upload = multipart_upload("encoded_image", filename, data);
+        let mut session = Session::new(
+            self.net.clone(),
+            vec![
+                ("User-Agent", USER_AGENT.to_owned()),
+                ("Accept-Language", "en-US,en;q=0.9".to_owned()),
+                ("Referer", GOOGLE_URL.to_owned()),
+            ],
+        )
+        .with_cookie("SOCS", CONSENT_COOKIE, ".google.com");
+        let url = format!(
+            "{}?{}",
+            self.search_by_image_url,
+            urlencode(&[("hl", "en")])
+        );
+        let sent = ticking(
+            "Waiting on Google Images",
+            timeout,
+            on_tick,
+            session.send(
+                SessionRequest {
+                    method: Method::Post,
+                    url: &url,
+                    upload: Some(&upload),
+                },
+                timeout,
+                Instant::now(),
+            ),
+        )
+        .await;
+        let resp = match sent {
+            Ok(resp) => resp,
+            Err(Failure::Deadline(HardTimeoutError(why))) => {
+                error!("Google request exceeded the hard deadline");
+                return Err(GoogleImagesError::Failed(format!(
+                    "Google request timed out: {why}"
+                )));
+            }
+            Err(Failure::Transport(why)) => {
+                error!("Google request failed");
+                return Err(GoogleImagesError::Failed(format!(
+                    "Google request failed: {why}"
+                )));
+            }
+        };
+        let text = response_text(&resp);
+        let final_url = resp.url.as_str().to_owned();
+        let answer = Response {
+            status: resp.status.as_u16(),
+            url: &final_url,
+            text: &text,
+        };
+        let matches = public_from_response(&answer).map_err(|e| {
+            if e.latches() {
+                error!(
+                    "Google stood down for the rest of this search (HTTP {})",
+                    answer.status
+                );
+            }
+            self.latched(e)
+        })?;
+        debug!("Google results parsed into {} match(es)", matches.len());
+        Ok(matches)
+    }
+}
+
+/// `base64.b64encode(data).decode("ascii")`.
+fn base64(data: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |n, (i, &b)| n | u32::from(b) << (16 - 8 * i));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(char::from(ALPHABET[(n >> (18 - 6 * i) & 63) as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]
