@@ -261,6 +261,23 @@ fn test_double_digit_pages() {
     assert_eq!(index(Some(url), Some("104759687")), Some(32));
 }
 
+/// Python's `int` has no limit; this one stops at `i128::MAX` (`docs/image-compare.md`, C5). A
+/// 20-digit page is exact, a 40-digit one saturates, and both are past any real page count.
+#[test]
+fn test_a_page_number_past_the_integer_width_saturates() {
+    let url =
+        |digits: &str| format!("https://img1.saucenao.com/res/pixiv/1/manga/12_p{digits}.jpg");
+    let twenty = "9".repeat(20);
+    assert_eq!(
+        index(Some(&url(&twenty)), Some("12")),
+        Some(99_999_999_999_999_999_999)
+    );
+    assert_eq!(
+        index(Some(&url(&"9".repeat(40))), Some("12")),
+        Some(i128::MAX)
+    );
+}
+
 #[test]
 fn test_single_page_thumbnail_form() {
     let url = "https://img1.saucenao.com/res/pixiv/7305/73053388_p0_master1200.jpg";
