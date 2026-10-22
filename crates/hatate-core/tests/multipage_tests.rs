@@ -509,12 +509,15 @@ struct World {
     _sandbox: Sandbox,
 }
 
-const HOSTS: [&str; 5] = [
+const HOSTS: [&str; 8] = [
     "www.pixiv.net",
     "i.pximg.net",
     "pbs.twimg.com",
     "api.fxtwitter.com",
     "danbooru.donmai.us",
+    "pawchive.pw",
+    "file.pawchive.pw",
+    "img.pawchive.pw",
 ];
 
 async fn world() -> World {
@@ -1197,4 +1200,146 @@ async fn a_dropped_connection_on_the_page_list_keeps_the_first_page() {
         c, before,
         "a network error leaves the candidate exactly as it was"
     );
+}
+
+// -- the other sites that opt in (test_parsers_and_tags.TestMultipageResolverIsNotPixivOnly and
+//    TestParsedOnce, test_search_quality.TestPawchivePagesByHash, test_pawchive_index)
+
+fn sha(n: u8) -> String {
+    format!("{n:02x}").repeat(32)
+}
+
+fn pawchive_post(shas: &[String], has_full: bool) -> String {
+    let files: Vec<_> = shas
+        .iter()
+        .enumerate()
+        .map(|(i, h)| json!({"name": format!("{i}.png"), "path": format!("/{}/{}/{h}.png", &h[..2], &h[2..4])}))
+        .collect();
+    json!({"post": {"id": "9", "user": "1", "service": "fanbox", "has_full": has_full,
+        "file": files[0], "attachments": files}})
+    .to_string()
+}
+
+const PAWCHIVE_POST: &str = "https://pawchive.pw/fanbox/user/1/post/9";
+const PAWCHIVE_API: &str = "https://pawchive.pw/api/v1/fanbox/user/1/post/9";
+
+#[tokio::test]
+async fn test_the_local_files_hash_picks_its_page_without_downloading_anything() {
+    use sha2::{Digest, Sha256};
+    let w = world().await;
+    let local = w.write(b"the third image".to_vec());
+    let mine = format!("{:x}", Sha256::digest(b"the third image"));
+    let shas = vec!["a".repeat(64), "b".repeat(64), mine.clone()];
+    w.serve(PAWCHIVE_API, pawchive_post(&shas, true).into_bytes());
+    let mut c = Candidate::new(PAWCHIVE_POST);
+    c.direct_file_url = Some("https://file.pawchive.pw/data/aa/aa/first.png".into());
+    resolve_multipage_candidate(&w.net, &mut c, 3, &w.settings, &local, None)
+        .await
+        .unwrap();
+    assert_eq!(c.page_index, 2);
+    assert_eq!(
+        c.direct_file_url.as_deref(),
+        Some(
+            format!(
+                "https://file.pawchive.pw/data/{}/{}/{mine}.png",
+                &mine[..2],
+                &mine[2..4]
+            )
+            .as_str()
+        )
+    );
+    assert_eq!(
+        w.requests_to("img.pawchive.pw"),
+        0,
+        "not a single thumbnail is downloaded"
+    );
+}
+
+#[tokio::test]
+async fn test_its_thumbnail_names_the_image_in_a_multi_image_post() {
+    let w = world().await;
+    let shas = vec![sha(21), sha(22), sha(23)];
+    w.serve(PAWCHIVE_API, pawchive_post(&shas, true).into_bytes());
+    // A picture that is not byte-identical to any page.
+    let local = w.write(common::art::picture(1, 200, 200).jpeg(90));
+    let mut c = Candidate::new(PAWCHIVE_POST);
+    c.thumb_url = Some(format!(
+        "https://img.pawchive.pw/thumbnail/data/{}/{}/{}.png",
+        &shas[2][..2],
+        &shas[2][2..4],
+        shas[2]
+    ));
+    resolve_multipage_candidate(&w.net, &mut c, 3, &w.settings, &local, None)
+        .await
+        .unwrap();
+    assert_eq!(c.page_index, 2);
+    assert_eq!(w.requests_to("img.pawchive.pw"), 0);
+}
+
+#[tokio::test]
+async fn test_the_page_list_reuses_the_record_just_fetched() {
+    let w = world().await;
+    let shas = vec!["a".repeat(64), "b".repeat(64)];
+    let info = BooruPageInfo {
+        page_count: 2,
+        fetched_url: Some(PAWCHIVE_API.into()),
+        body: Some(pawchive_post(&shas, true)),
+        fetched: true,
+        ..BooruPageInfo::default()
+    };
+    let mut c = Candidate::new(PAWCHIVE_POST);
+    c.similarity = 90.0;
+    c.engine = "x".into();
+    resolve_multipage_candidate(&w.net, &mut c, 2, &w.settings, "/nonexistent", Some(&info))
+        .await
+        .unwrap();
+    assert_eq!(
+        w.requests_to("pawchive.pw"),
+        0,
+        "the record in hand is not fetched again"
+    );
+}
+
+#[test]
+fn test_twitter_offers_the_page_list_hooks() {
+    let p = hatate_core::boorus::find_parser(TWEET).unwrap();
+    assert!(p.pages_api_url.is_some() && p.parse_pages.is_some());
+}
+
+#[test]
+fn test_pixiv_still_offers_them() {
+    let p = hatate_core::boorus::find_parser(ARTWORK).unwrap();
+    assert!(p.pages_api_url.is_some() && p.parse_pages.is_some());
+}
+
+#[test]
+fn test_a_parser_without_the_hooks_is_left_alone() {
+    let p = hatate_core::boorus::find_parser("https://danbooru.donmai.us/posts/1").unwrap();
+    assert!(p.pages_api_url.is_none() && p.parse_pages.is_none());
+}
+
+#[tokio::test]
+async fn a_single_image_site_falls_straight_through_without_a_request() {
+    let w = world().await;
+    let mut c = Candidate::new("https://danbooru.donmai.us/posts/1");
+    c.direct_file_url = Some("https://danbooru.donmai.us/data/x.jpg".into());
+    let before = c.clone();
+    resolve_multipage_candidate(&w.net, &mut c, 4, &w.settings, "/nonexistent", None)
+        .await
+        .unwrap();
+    assert_eq!(c, before);
+    assert_eq!(w.server.recorded().len(), 0);
+}
+
+#[tokio::test]
+async fn test_saucenaos_page_hint_stays_pixiv_only() {
+    // SauceNAO's Pixiv thumbnail format on a TWEET candidate: reading it would invent page 2 out
+    // of nothing. With no picture evidence either way, the tweet must stay on its first photo.
+    let w = world().await;
+    let mut c = tweet_candidate();
+    c.thumb_url =
+        Some("https://img1.saucenao.com/res/pixiv/8986/manga/2011168979038142698_p2.jpg".into());
+    let local = "/nonexistent";
+    resolve_tweet(&w, &mut c, local, &[], &MEDIA, None).await;
+    assert_eq!(c.page_index, 0);
 }
