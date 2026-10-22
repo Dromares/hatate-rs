@@ -293,7 +293,8 @@ All local; no live site is contacted. TLS certificates (a throw-away CA and a le
 | A real TLS request completes through the constructor the binaries use (DAN-1909) | `tests/net_https_local.rs::real_tls_request_completes_through_the_binaries_constructor` |
 | The client builds in a fresh process with no provider installed | `tests/net_fresh_process.rs` (one test, so its own process; it asserts `CryptoProvider::get_default()` is `None` before and `Some` after) |
 | Second install is harmless | `src/net/provider.rs::second_install_is_harmless` |
-| Untrusted CA, wrong name, `verify_tls = false` | `tests/net_https_local.rs` (the other three tests) |
+| Untrusted CA, wrong name, `verify_tls = false` | `tests/net_https_local.rs` (three tests: `a_certificate_from_an_untrusted_authority_is_rejected`, `certificate_checks_can_be_switched_off_for_a_self_signed_hydrus`, `a_certificate_for_another_name_is_rejected`) |
+| Credentials are not forwarded on an https-to-http redirect, same host name (header and cookie-jar paths, with a positive control that the https hop carried them) | `tests/net_https_local.rs::credentials_are_not_forwarded_on_an_https_to_http_redirect` |
 | Host `x-ratelimit-*` wait, 30 s refusal, junk headers, `inf` | `src/net/stack_tests.rs` (exact, paused clock); `tests/net_http_behaviour.rs` (measured) |
 | 429 retry once, wait values, HEAD, POST, `Never`, deadline fit | `src/net/stack_tests.rs`; `src/net/retry.rs`; `tests/net_http_behaviour.rs` |
 | Pawchive pattern (3 retries, 30 s default, 1 s gap) | `src/net/stack_tests.rs::polite_*`; `tests/net_http_behaviour.rs::polite_mode_retries_a_429_up_to_three_times` |

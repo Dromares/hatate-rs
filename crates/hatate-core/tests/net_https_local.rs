@@ -10,7 +10,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use common::{Reply, TestPki, TestServer};
-use hatate_core::net::{ErrorKind, NetClient, NetConfig, NetRequest};
+use hatate_core::net::{Cookies, ErrorKind, NetClient, NetConfig, NetRequest, Secret};
 
 const T: Duration = Duration::from_secs(10);
 
@@ -100,5 +100,76 @@ async fn a_certificate_for_another_name_is_rejected() {
             ErrorKind::Connect | ErrorKind::Tls | ErrorKind::Timeout
         ),
         "{err}"
+    );
+}
+
+/// docs/net.md section 8: credentials never go from https to http, even on the same
+/// host name. Stricter than Python; this test fails if that rule is dropped.
+#[tokio::test]
+async fn credentials_are_not_forwarded_on_an_https_to_http_redirect() {
+    let pki = TestPki::generate();
+    // The plain-http server is the redirect target: same host (127.0.0.1), another port.
+    let plain = TestServer::http(|_| Reply::ok("downgraded")).await;
+    let landing = plain.url("/landing");
+    let secure = TestServer::https(&pki, move |_| {
+        Reply::new(302, "").header("Location", &landing)
+    })
+    .await;
+    let client =
+        NetClient::new(NetConfig::default().with_root_certificate_der(pki.ca_der.clone())).unwrap();
+
+    let secret = Secret::new("synthetic-bearer");
+    let mut jar = Cookies::new();
+    jar.set("sid", "synthetic-sid");
+
+    // Credentials attached by header and by the cookie jar.
+    let by_header = NetRequest::get(&secure.url("/start"), T)
+        .unwrap()
+        .secret_header("Authorization", &secret)
+        .unwrap()
+        .secret_header("Hydrus-Client-API-Access-Key", &secret)
+        .unwrap()
+        .secret_header("Cookie", &Secret::new("sid=synthetic-header-cookie"))
+        .unwrap()
+        .header("Referer", "https://example.test/")
+        .unwrap();
+    let by_jar = NetRequest::get(&secure.url("/start"), T)
+        .unwrap()
+        .with_cookies(jar);
+
+    let resp = client.send(by_header).await.unwrap();
+    assert_eq!(resp.url.scheme(), "http", "the redirect was followed");
+    assert_eq!(resp.text(), "downgraded");
+    client.send(by_jar).await.unwrap();
+
+    // Positive control: the https hop carried every credential.
+    let first_hops = secure.recorded();
+    assert_eq!(first_hops.len(), 2);
+    assert_eq!(
+        first_hops[0].header("authorization"),
+        Some("synthetic-bearer")
+    );
+    assert_eq!(
+        first_hops[0].header("hydrus-client-api-access-key"),
+        Some("synthetic-bearer")
+    );
+    assert_eq!(
+        first_hops[0].header("cookie"),
+        Some("sid=synthetic-header-cookie")
+    );
+    assert_eq!(first_hops[1].header("cookie"), Some("sid=synthetic-sid"));
+
+    // The http hop saw none of them; an ordinary header still travels.
+    let downgraded = plain.recorded();
+    assert_eq!(downgraded.len(), 2);
+    for rec in &downgraded {
+        assert_eq!(rec.target, "/landing");
+        assert_eq!(rec.header("authorization"), None);
+        assert_eq!(rec.header("hydrus-client-api-access-key"), None);
+        assert_eq!(rec.header("cookie"), None);
+    }
+    assert_eq!(
+        downgraded[0].header("referer"),
+        Some("https://example.test/")
     );
 }
