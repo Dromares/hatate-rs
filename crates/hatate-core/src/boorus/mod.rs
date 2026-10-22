@@ -827,9 +827,9 @@ mod tests {
         assert_eq!(gone_marker("fine", &["was deleted"]), None);
         let late = format!("{}was deleted", "a".repeat(SOFT_404_SCAN_BYTES));
         assert_eq!(gone_marker(&late, &["was deleted"]), None);
-        // The scan is 60,000 CHARACTERS, as Python slices a `str`: a marker 59,990 characters in is
+        // The scan is 60,000 CHARACTERS, as Python slices a `str`: a marker ending at character 60,000 is
         // found even though it sits past byte 60,000, and one at 60,000 is not.
-        let wide = format!("{}was deleted", "\u{e9}".repeat(SOFT_404_SCAN_BYTES - 10));
+        let wide = format!("{}was deleted", "\u{e9}".repeat(SOFT_404_SCAN_BYTES - 11));
         assert_eq!(
             gone_marker(&wide, &["was deleted"]).as_deref(),
             Some("was deleted")
