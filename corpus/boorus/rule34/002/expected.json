@@ -1,0 +1,38 @@
+{
+  "results": {
+    "core.boorus.rule34.parse": {
+      "returns": [
+        {
+          "name": "fire_emblem",
+          "namespace": "copyright",
+          "source": "Booru"
+        },
+        {
+          "name": "someone",
+          "namespace": "artist",
+          "source": "Booru"
+        },
+        {
+          "name": "1boy",
+          "namespace": "general",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.rule34.parse_dimensions": {
+      "returns": [
+        1500,
+        2000
+      ]
+    },
+    "core.boorus.rule34.parse_file_url": {
+      "returns": "https://img2.rule34.xxx/images/a/b/real.png"
+    },
+    "core.boorus.rule34.parse_preview_url": {
+      "returns": "https://img2.rule34.xxx/samples/a/b/real.jpg"
+    },
+    "core.boorus.rule34.parse_rating": {
+      "returns": null
+    }
+  }
+}

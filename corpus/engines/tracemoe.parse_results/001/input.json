@@ -1,0 +1,32 @@
+{
+  "error": "",
+  "result": [
+    {
+      "anilist": {
+        "id": 21,
+        "title": {
+          "english": "One Piece",
+          "native": "ワンピース",
+          "romaji": "One Piece"
+        }
+      },
+      "episode": 15,
+      "filename": "One Piece - 15.mp4",
+      "image": "https://media.trace.moe/image/21/15.jpg",
+      "similarity": 0.94
+    },
+    {
+      "anilist": 21,
+      "similarity": 0.9
+    },
+    {
+      "anilist": {
+        "id": 99,
+        "title": {
+          "romaji": "Miss"
+        }
+      },
+      "similarity": 0.5
+    }
+  ]
+}

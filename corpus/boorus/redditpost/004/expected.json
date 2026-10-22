@@ -1,0 +1,22 @@
+{
+  "results": {
+    "core.boorus.redditpost.incomplete_reason": {
+      "returns": "Reddit's feed for this post was empty"
+    },
+    "core.boorus.redditpost.parse": {
+      "returns": []
+    },
+    "core.boorus.redditpost.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.redditpost.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.redditpost.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

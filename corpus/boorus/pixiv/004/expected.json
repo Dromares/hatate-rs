@@ -1,0 +1,25 @@
+{
+  "results": {
+    "core.boorus.pixiv.parse": {
+      "returns": []
+    },
+    "core.boorus.pixiv.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.pixiv.parse_file_url": {
+      "returns": "x"
+    },
+    "core.boorus.pixiv.parse_page_count": {
+      "returns": 1
+    },
+    "core.boorus.pixiv.parse_pages": {
+      "returns": []
+    },
+    "core.boorus.pixiv.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

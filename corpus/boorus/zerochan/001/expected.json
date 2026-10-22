@@ -1,0 +1,45 @@
+{
+  "results": {
+    "core.boorus.zerochan.parse": {
+      "returns": [
+        {
+          "name": "Some_Artist",
+          "namespace": "creator",
+          "source": "Booru"
+        },
+        {
+          "name": "Unit_X",
+          "namespace": "character",
+          "source": "Booru"
+        },
+        {
+          "name": "Fire_Emblem",
+          "namespace": "series",
+          "source": "Booru"
+        },
+        {
+          "name": "1boy",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "fire_emblem",
+          "namespace": null,
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.zerochan.parse_dimensions": {
+      "returns": [
+        2976,
+        4055
+      ]
+    },
+    "core.boorus.zerochan.parse_file_url": {
+      "returns": "https://cdn.zerochan.net/full/f.png"
+    },
+    "core.boorus.zerochan.parse_preview_url": {
+      "returns": "https://cdn.zerochan.net/large/l.webp"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "results": {
+    "core.boorus.redditpost.incomplete_reason": {
+      "returns": "the post links to something other than a picture Reddit hosts"
+    },
+    "core.boorus.redditpost.parse": {
+      "returns": [
+        {
+          "name": "5ToubunNoHanayome",
+          "namespace": "subreddit",
+          "source": "Booru"
+        },
+        {
+          "name": "Fuu with Miku and Itsuki ~",
+          "namespace": "title",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.redditpost.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.redditpost.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.redditpost.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

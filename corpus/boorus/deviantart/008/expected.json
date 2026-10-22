@@ -1,0 +1,28 @@
+{
+  "results": {
+    "core.boorus.deviantart.parse": {
+      "returns": []
+    },
+    "core.boorus.deviantart.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.deviantart.parse_file_info": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.deviantart.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.deviantart.parse_preview_url": {
+      "returns": null
+    },
+    "core.boorus.deviantart.parse_restriction": {
+      "returns": null
+    }
+  }
+}

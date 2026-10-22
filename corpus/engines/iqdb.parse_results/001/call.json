@@ -1,0 +1,10 @@
+{
+  "callables": [
+    "core.iqdb._parse_results"
+  ],
+  "context": {},
+  "extra_args": [],
+  "kwargs": {
+    "base_url": "https://iqdb.org/"
+  }
+}

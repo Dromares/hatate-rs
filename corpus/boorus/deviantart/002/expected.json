@@ -1,0 +1,34 @@
+{
+  "results": {
+    "core.boorus.deviantart.parse": {
+      "returns": [
+        {
+          "name": "Rad'Profile",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.deviantart.parse_dimensions": {
+      "returns": [
+        2400,
+        4000
+      ]
+    },
+    "core.boorus.deviantart.parse_file_info": {
+      "returns": [
+        "PNG",
+        4845515
+      ]
+    },
+    "core.boorus.deviantart.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.deviantart.parse_preview_url": {
+      "returns": "https://images-wixmp.example/f/uuid/name.jpg/v1/fill/w_1024,h_1707,q_80,strp,blur_73/a_deviation_by_radprofile-fullview.jpg?token=signing-token"
+    },
+    "core.boorus.deviantart.parse_restriction": {
+      "returns": "DeviantArt is only serving a blurred copy of this adult deviation, which is what it shows when logged out. Add cookies from a logged-in account under Settings > Site Logins to see it properly."
+    }
+  }
+}

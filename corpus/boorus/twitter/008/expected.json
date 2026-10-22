@@ -1,0 +1,41 @@
+{
+  "results": {
+    "core.boorus.twitter.parse": {
+      "returns": [
+        {
+          "name": "poppuqn",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.twitter.parse_dimensions": {
+      "returns": [
+        1,
+        2
+      ]
+    },
+    "core.boorus.twitter.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.twitter.parse_page_count": {
+      "returns": 2
+    },
+    "core.boorus.twitter.parse_pages": {
+      "returns": [
+        {
+          "height": 4,
+          "urls": {
+            "original": "https://pbs.twimg.com/media/CCC.png?name=orig",
+            "regular": "https://pbs.twimg.com/media/CCC.png?name=large",
+            "small": "https://pbs.twimg.com/media/CCC.png?name=small"
+          },
+          "width": 3
+        }
+      ]
+    },
+    "core.boorus.twitter.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

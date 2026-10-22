@@ -1,0 +1,31 @@
+{
+  "results": {
+    "core.boorus.twitter.parse": {
+      "returns": [
+        {
+          "name": "poppuqn",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.twitter.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.twitter.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.twitter.parse_page_count": {
+      "returns": 1
+    },
+    "core.boorus.twitter.parse_pages": {
+      "returns": []
+    },
+    "core.boorus.twitter.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "callables": [
+    "core.boorus.rule34.parse",
+    "core.boorus.rule34.parse_dimensions",
+    "core.boorus.rule34.parse_file_url",
+    "core.boorus.rule34.parse_preview_url",
+    "core.boorus.rule34.parse_rating"
+  ],
+  "context": {
+    "api_post": {
+      "file_url": "https://img2.rule34.xxx/images/a/b/api.png",
+      "height": 2000,
+      "id": 10755716,
+      "rating": "s",
+      "sample_url": "https://img2.rule34.xxx/samples/a/b/api.jpg",
+      "width": 1500
+    }
+  },
+  "extra_args": [
+    "https://rule34.xxx/index.php?page=post&s=view&id=5"
+  ],
+  "kwargs": {}
+}

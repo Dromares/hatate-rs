@@ -1,0 +1,15 @@
+{
+  "callables": [
+    "core.boorus.twitter.parse",
+    "core.boorus.twitter.parse_dimensions",
+    "core.boorus.twitter.parse_file_url",
+    "core.boorus.twitter.parse_page_count",
+    "core.boorus.twitter.parse_pages",
+    "core.boorus.twitter.parse_preview_url"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://twitter.com/i/web/status/1060134528432230400/photo/1"
+  ],
+  "kwargs": {}
+}

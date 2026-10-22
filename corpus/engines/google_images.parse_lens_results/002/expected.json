@@ -1,0 +1,15 @@
+{
+  "results": {
+    "core.google_images.parse_lens_results": {
+      "returns": [
+        {
+          "similarity": 78.0,
+          "source_name": "deviantart.com",
+          "thumb_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:XYZ",
+          "title": "A Picture by someone",
+          "url": "https://www.deviantart.com/someone/art/A-Picture-123"
+        }
+      ]
+    }
+  }
+}

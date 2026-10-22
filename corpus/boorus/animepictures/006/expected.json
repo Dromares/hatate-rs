@@ -1,0 +1,56 @@
+{
+  "results": {
+    "core.boorus.animepictures.parse": {
+      "returns": [
+        {
+          "name": "hatsune_miku",
+          "namespace": "character",
+          "source": "Booru"
+        },
+        {
+          "name": "multiple_girls",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "nekoda_(maoda)",
+          "namespace": "artist",
+          "source": "Booru"
+        },
+        {
+          "name": "houchi_shoujo",
+          "namespace": "copyright",
+          "source": "Booru"
+        },
+        {
+          "name": "original",
+          "namespace": "copyright",
+          "source": "Booru"
+        },
+        {
+          "name": "girl",
+          "namespace": "general",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.animepictures.parse_dimensions": {
+      "returns": [
+        5728,
+        4000
+      ]
+    },
+    "core.boorus.animepictures.parse_file_info": {
+      "returns": [
+        "JPEG",
+        5646846
+      ]
+    },
+    "core.boorus.animepictures.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.animepictures.parse_preview_url": {
+      "returns": "https://opreviews.anime-pictures.net/aa2/aa2be7199bfa9bd93dc51d3efd4334df_bp.avif"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "callables": [
+    "core.boorus.gelbooru.parse",
+    "core.boorus.gelbooru.parse_dimensions",
+    "core.boorus.gelbooru.parse_dimensions_from_html",
+    "core.boorus.gelbooru.parse_file_url",
+    "core.boorus.gelbooru.parse_file_url_from_html",
+    "core.boorus.gelbooru.parse_preview_url",
+    "core.boorus.gelbooru.parse_preview_url_from_html",
+    "core.boorus.gelbooru.parse_rating",
+    "core.boorus.gelbooru.parse_rating_from_html"
+  ],
+  "context": {
+    "api_post": null
+  },
+  "extra_args": [
+    "https://gelbooru.com/index.php?page=post&s=view&id=6352196"
+  ],
+  "kwargs": {}
+}

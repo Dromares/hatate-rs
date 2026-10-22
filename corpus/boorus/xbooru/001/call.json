@@ -1,0 +1,23 @@
+{
+  "callables": [
+    "core.boorus.xbooru.parse",
+    "core.boorus.xbooru.parse_dimensions",
+    "core.boorus.xbooru.parse_file_url",
+    "core.boorus.xbooru.parse_preview_url",
+    "core.boorus.xbooru.parse_rating"
+  ],
+  "context": {
+    "api_post": {
+      "file_url": "https://img2.rule34.xxx/images/a/b/api.png",
+      "height": 2000,
+      "id": 10755716,
+      "rating": "s",
+      "sample_url": "https://img2.rule34.xxx/samples/a/b/api.jpg",
+      "width": 1500
+    }
+  },
+  "extra_args": [
+    "https://xbooru.com/index.php?page=post&s=view&id=42"
+  ],
+  "kwargs": {}
+}

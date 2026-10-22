@@ -1,0 +1,25 @@
+{
+  "results": {
+    "core.boorus.e621.incomplete_reason": {
+      "returns": null
+    },
+    "core.boorus.e621.parse": {
+      "returns": []
+    },
+    "core.boorus.e621.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.e621.parse_file_url": {
+      "returns": "https://x/y.jpg"
+    },
+    "core.boorus.e621.parse_preview_url": {
+      "returns": "https://x/y.jpg"
+    },
+    "core.boorus.e621.parse_rating": {
+      "returns": null
+    }
+  }
+}

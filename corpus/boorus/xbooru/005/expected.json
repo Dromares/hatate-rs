@@ -1,0 +1,28 @@
+{
+  "results": {
+    "core.boorus.xbooru.parse": {
+      "returns": [
+        {
+          "name": "someone",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.xbooru.parse_dimensions": {
+      "returns": [
+        3000,
+        4000
+      ]
+    },
+    "core.boorus.xbooru.parse_file_url": {
+      "returns": "https://xbooru.com//images/a/b/api-original.png"
+    },
+    "core.boorus.xbooru.parse_preview_url": {
+      "returns": "https://xbooru.com//samples/a/b/api-sample.jpg"
+    },
+    "core.boorus.xbooru.parse_rating": {
+      "returns": null
+    }
+  }
+}

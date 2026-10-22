@@ -1,0 +1,16 @@
+{
+  "callables": [
+    "core.boorus.redditpost.incomplete_reason",
+    "core.boorus.redditpost.parse",
+    "core.boorus.redditpost.parse_file_url",
+    "core.boorus.redditpost.parse_preview_url"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://www.reddit.com/r/5ToubunNoHanayome/comments/1hhrx0v/fuu_with_miku_and_itsuki/"
+  ],
+  "kwargs": {},
+  "skipped_network_callables": [
+    "core.boorus.redditpost.parse_dimensions"
+  ]
+}

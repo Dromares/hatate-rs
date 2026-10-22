@@ -1,0 +1,10 @@
+{
+  "results": {
+    "core.boorus.joyreactor.parse": {
+      "returns": []
+    },
+    "core.boorus.joyreactor.parse_file_url": {
+      "returns": "https://img10.reactor.cc/pics/post/full/own-image.jpeg"
+    }
+  }
+}

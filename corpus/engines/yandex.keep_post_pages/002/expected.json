@@ -1,0 +1,16 @@
+{
+  "results": {
+    "core.yandex.keep_post_pages": {
+      "returns": [
+        {
+          "height": 1400,
+          "similarity": 80.0,
+          "source_name": "rule34.us",
+          "thumb_url": "https://avatars.mds.yandex.net/i?id=abc&n=13",
+          "url": "https://rule34.us/index.php?r=posts%2Fview&id=757670",
+          "width": 1000
+        }
+      ]
+    }
+  }
+}

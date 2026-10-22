@@ -1,0 +1,17 @@
+{
+  "callables": [
+    "core.boorus.sankaku.incomplete_reason",
+    "core.boorus.sankaku.parse",
+    "core.boorus.sankaku.parse_canonical_url",
+    "core.boorus.sankaku.parse_dimensions",
+    "core.boorus.sankaku.parse_file_info",
+    "core.boorus.sankaku.parse_file_url",
+    "core.boorus.sankaku.parse_preview_url",
+    "core.boorus.sankaku.parse_rating"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://chan.sankakucomplex.com/post/show/5255732"
+  ],
+  "kwargs": {}
+}

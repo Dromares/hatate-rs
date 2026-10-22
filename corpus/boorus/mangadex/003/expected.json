@@ -1,0 +1,19 @@
+{
+  "results": {
+    "core.boorus.mangadex.parse": {
+      "returns": []
+    },
+    "core.boorus.mangadex.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.mangadex.parse_page_count": {
+      "returns": 1
+    },
+    "core.boorus.mangadex.parse_pages": {
+      "returns": []
+    },
+    "core.boorus.mangadex.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

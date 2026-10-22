@@ -1,0 +1,10 @@
+{
+  "callables": [
+    "core.pawchive_lookup.parse_response"
+  ],
+  "context": {},
+  "extra_args": [
+    "3fac89759d85abce1ebcbff0c27d838d9a52c47ffc5a6fdcf31c6986064bbefb"
+  ],
+  "kwargs": {}
+}

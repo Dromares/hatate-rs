@@ -1,0 +1,31 @@
+{
+  "results": {
+    "core.boorus.e621.incomplete_reason": {
+      "returns": "e621 is withholding this post's file. An account may show it - add an e621 username and API key in Settings > Sites, and check the content settings on your e621 account - though some posts are withheld from everyone."
+    },
+    "core.boorus.e621.parse": {
+      "returns": [
+        {
+          "name": "1boy",
+          "namespace": "general",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.e621.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.e621.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.e621.parse_preview_url": {
+      "returns": null
+    },
+    "core.boorus.e621.parse_rating": {
+      "returns": "explicit"
+    }
+  }
+}

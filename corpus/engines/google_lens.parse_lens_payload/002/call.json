@@ -1,0 +1,8 @@
+{
+  "callables": [
+    "core.google_lens.parse_lens_payload"
+  ],
+  "context": {},
+  "extra_args": [],
+  "kwargs": {}
+}

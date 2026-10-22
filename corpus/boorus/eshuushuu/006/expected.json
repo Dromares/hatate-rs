@@ -1,0 +1,30 @@
+{
+  "results": {
+    "core.boorus.eshuushuu.parse": {
+      "returns": [
+        {
+          "name": ":3",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "^_^",
+          "namespace": null,
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.eshuushuu.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.eshuushuu.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.eshuushuu.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

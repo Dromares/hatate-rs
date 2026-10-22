@@ -1,0 +1,25 @@
+{
+  "results": {
+    "core.boorus.e621.incomplete_reason": {
+      "returns": null
+    },
+    "core.boorus.e621.parse": {
+      "returns": []
+    },
+    "core.boorus.e621.parse_dimensions": {
+      "returns": [
+        664,
+        909
+      ]
+    },
+    "core.boorus.e621.parse_file_url": {
+      "returns": "https://e621.net/data/f.jpg"
+    },
+    "core.boorus.e621.parse_preview_url": {
+      "returns": "https://e621.net/data/sample/s.jpg"
+    },
+    "core.boorus.e621.parse_rating": {
+      "returns": null
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "results": {
+    "core.boorus.twitter.parse": {
+      "returns": [
+        {
+          "name": "DARKMETAKNIGH12",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.twitter.parse_dimensions": {
+      "returns": [
+        1216,
+        832
+      ]
+    },
+    "core.boorus.twitter.parse_file_url": {
+      "returns": "https://pbs.twimg.com/media/G-kbgPfa0AAXsZh.jpg?name=orig"
+    },
+    "core.boorus.twitter.parse_page_count": {
+      "returns": 4
+    },
+    "core.boorus.twitter.parse_pages": {
+      "returns": [
+        {
+          "height": 832,
+          "urls": {
+            "original": "https://pbs.twimg.com/media/G-kbgPfa0AAXsZh.jpg?name=orig",
+            "regular": "https://pbs.twimg.com/media/G-kbgPfa0AAXsZh.jpg?name=large",
+            "small": "https://pbs.twimg.com/media/G-kbgPfa0AAXsZh.jpg?name=small"
+          },
+          "width": 1216
+        },
+        {
+          "height": 2048,
+          "urls": {
+            "original": "https://pbs.twimg.com/media/G-kbgizbQAAakdJ.jpg?name=orig",
+            "regular": "https://pbs.twimg.com/media/G-kbgizbQAAakdJ.jpg?name=large",
+            "small": "https://pbs.twimg.com/media/G-kbgizbQAAakdJ.jpg?name=small"
+          },
+          "width": 1365
+        },
+        {
+          "height": 2048,
+          "urls": {
+            "original": "https://pbs.twimg.com/media/G-kbhHJaoAAgMek.jpg?name=orig",
+            "regular": "https://pbs.twimg.com/media/G-kbhHJaoAAgMek.jpg?name=large",
+            "small": "https://pbs.twimg.com/media/G-kbhHJaoAAgMek.jpg?name=small"
+          },
+          "width": 2048
+        },
+        {
+          "height": 2048,
+          "urls": {
+            "original": "https://pbs.twimg.com/media/G-kbhl1bAAAxpzn.jpg?name=orig",
+            "regular": "https://pbs.twimg.com/media/G-kbhl1bAAAxpzn.jpg?name=large",
+            "small": "https://pbs.twimg.com/media/G-kbhl1bAAAxpzn.jpg?name=small"
+          },
+          "width": 1171
+        }
+      ]
+    },
+    "core.boorus.twitter.parse_preview_url": {
+      "returns": "https://pbs.twimg.com/media/G-kbgPfa0AAXsZh.jpg?name=large"
+    }
+  }
+}

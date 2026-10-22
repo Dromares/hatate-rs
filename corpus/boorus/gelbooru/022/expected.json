@@ -1,0 +1,43 @@
+{
+  "results": {
+    "core.boorus.gelbooru.parse": {
+      "returns": [
+        {
+          "name": "hakurei_reimu",
+          "namespace": "character",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.gelbooru.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.gelbooru.parse_dimensions_from_html": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.gelbooru.parse_file_url": {
+      "returns": "https://img.gelbooru.com/x.jpg"
+    },
+    "core.boorus.gelbooru.parse_file_url_from_html": {
+      "returns": "https://img.gelbooru.com/x.jpg"
+    },
+    "core.boorus.gelbooru.parse_preview_url": {
+      "returns": "https://img.gelbooru.com/x.jpg"
+    },
+    "core.boorus.gelbooru.parse_preview_url_from_html": {
+      "returns": "https://img.gelbooru.com/x.jpg"
+    },
+    "core.boorus.gelbooru.parse_rating": {
+      "returns": null
+    },
+    "core.boorus.gelbooru.parse_rating_from_html": {
+      "returns": null
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "callables": [
+    "core.ascii2d.parse_results"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://ascii2d.net/search/color/x"
+  ],
+  "kwargs": {}
+}

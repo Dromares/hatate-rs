@@ -1,0 +1,35 @@
+{
+  "results": {
+    "core.boorus.zerochan.parse": {
+      "returns": [
+        {
+          "name": "An_Artist",
+          "namespace": "creator",
+          "source": "Booru"
+        },
+        {
+          "name": "A_Char",
+          "namespace": "character",
+          "source": "Booru"
+        },
+        {
+          "name": "Long_Hair",
+          "namespace": null,
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.zerochan.parse_dimensions": {
+      "returns": [
+        1200,
+        1600
+      ]
+    },
+    "core.boorus.zerochan.parse_file_url": {
+      "returns": "https://static.zerochan.net/full.jpg"
+    },
+    "core.boorus.zerochan.parse_preview_url": {
+      "returns": "https://s1.zerochan.net/medium.jpg"
+    }
+  }
+}

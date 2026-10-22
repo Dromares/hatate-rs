@@ -1,0 +1,26 @@
+{
+  "results": {
+    "core.ascii2d.parse_results": {
+      "returns": [
+        {
+          "height": 1600,
+          "search_kind": "color",
+          "similarity": 86.0,
+          "source_name": "pixiv.net",
+          "thumb_url": "https://ascii2d.net/thumbnail/hit.jpg",
+          "url": "https://www.pixiv.net/artworks/12345",
+          "width": 1200
+        },
+        {
+          "height": 1600,
+          "search_kind": "color",
+          "similarity": 86.0,
+          "source_name": "twitter.com",
+          "thumb_url": "https://ascii2d.net/thumbnail/hit.jpg",
+          "url": "https://twitter.com/i/web/status/99",
+          "width": 1200
+        }
+      ]
+    }
+  }
+}

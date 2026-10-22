@@ -1,0 +1,34 @@
+{
+  "results": {
+    "core.boorus.danbooru.parse": {
+      "returns": [
+        {
+          "name": "some_artist",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.danbooru.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.danbooru.parse_file_size": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_preview_url": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_rating": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_restriction": {
+      "returns": null
+    }
+  }
+}

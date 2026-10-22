@@ -1,0 +1,37 @@
+{
+  "results": {
+    "core.boorus.gelbooru.parse": {
+      "returns": []
+    },
+    "core.boorus.gelbooru.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.gelbooru.parse_dimensions_from_html": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.gelbooru.parse_file_url": {
+      "returns": "x.jpg"
+    },
+    "core.boorus.gelbooru.parse_file_url_from_html": {
+      "returns": "x.jpg"
+    },
+    "core.boorus.gelbooru.parse_preview_url": {
+      "returns": "x.jpg"
+    },
+    "core.boorus.gelbooru.parse_preview_url_from_html": {
+      "returns": "x.jpg"
+    },
+    "core.boorus.gelbooru.parse_rating": {
+      "returns": null
+    },
+    "core.boorus.gelbooru.parse_rating_from_html": {
+      "returns": null
+    }
+  }
+}

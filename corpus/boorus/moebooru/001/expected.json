@@ -1,0 +1,38 @@
+{
+  "results": {
+    "core.boorus.moebooru.parse": {
+      "returns": [
+        {
+          "name": "sol",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "unit_x",
+          "namespace": "character",
+          "source": "Booru"
+        },
+        {
+          "name": "artist_name",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.moebooru.parse_dimensions": {
+      "returns": [
+        1500,
+        2000
+      ]
+    },
+    "core.boorus.moebooru.parse_file_url": {
+      "returns": "https://cdn.yande.re/images/a/b/real.png"
+    },
+    "core.boorus.moebooru.parse_preview_url": {
+      "returns": "https://cdn.yande.re/sample/a/b/sample.jpg"
+    },
+    "core.boorus.moebooru.parse_rating": {
+      "returns": "questionable"
+    }
+  }
+}

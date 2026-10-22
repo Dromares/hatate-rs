@@ -1,0 +1,15 @@
+{
+  "callables": [
+    "core.boorus.deviantart.parse",
+    "core.boorus.deviantart.parse_dimensions",
+    "core.boorus.deviantart.parse_file_info",
+    "core.boorus.deviantart.parse_file_url",
+    "core.boorus.deviantart.parse_preview_url",
+    "core.boorus.deviantart.parse_restriction"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://www.deviantart.com/radprofile/art/A-Deviation-470555824"
+  ],
+  "kwargs": {}
+}

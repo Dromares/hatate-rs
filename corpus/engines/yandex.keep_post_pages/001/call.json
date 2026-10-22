@@ -1,0 +1,8 @@
+{
+  "callables": [
+    "core.yandex.keep_post_pages"
+  ],
+  "context": {},
+  "extra_args": [],
+  "kwargs": {}
+}

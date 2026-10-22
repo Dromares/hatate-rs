@@ -1,0 +1,25 @@
+{
+  "results": {
+    "core.boorus.e621.incomplete_reason": {
+      "returns": "This e621 post has been deleted - e621 still describes it but withholds the file, so there is no picture to preview or download. Signing in does not bring a deleted post back."
+    },
+    "core.boorus.e621.parse": {
+      "returns": []
+    },
+    "core.boorus.e621.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.e621.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.e621.parse_preview_url": {
+      "returns": null
+    },
+    "core.boorus.e621.parse_rating": {
+      "returns": null
+    }
+  }
+}

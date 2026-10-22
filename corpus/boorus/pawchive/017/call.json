@@ -1,0 +1,19 @@
+{
+  "callables": [
+    "core.boorus.pawchive.parse_dimensions",
+    "core.boorus.pawchive.parse_file_url",
+    "core.boorus.pawchive.parse_page_count",
+    "core.boorus.pawchive.parse_pages",
+    "core.boorus.pawchive.parse_preview_url"
+  ],
+  "context": {
+    "artist_cache": {}
+  },
+  "extra_args": [
+    "https://x/"
+  ],
+  "kwargs": {},
+  "skipped_network_callables": [
+    "core.boorus.pawchive.parse"
+  ]
+}

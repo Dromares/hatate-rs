@@ -1,0 +1,13 @@
+{
+  "callables": [
+    "core.boorus.eshuushuu.parse",
+    "core.boorus.eshuushuu.parse_dimensions",
+    "core.boorus.eshuushuu.parse_file_url",
+    "core.boorus.eshuushuu.parse_preview_url"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://e-shuushuu.net/images/331875"
+  ],
+  "kwargs": {}
+}

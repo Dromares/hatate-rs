@@ -1,0 +1,14 @@
+{
+  "callables": [
+    "core.boorus.animepictures.parse",
+    "core.boorus.animepictures.parse_dimensions",
+    "core.boorus.animepictures.parse_file_info",
+    "core.boorus.animepictures.parse_file_url",
+    "core.boorus.animepictures.parse_preview_url"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://www.anime-pictures.net/pictures/view_post/33000000"
+  ],
+  "kwargs": {}
+}

@@ -1,0 +1,34 @@
+{
+  "results": {
+    "core.boorus.sankaku.incomplete_reason": {
+      "returns": null
+    },
+    "core.boorus.sankaku.parse": {
+      "returns": []
+    },
+    "core.boorus.sankaku.parse_canonical_url": {
+      "returns": "https://www.sankakucomplex.com/posts/QyMk8vZ6Kak"
+    },
+    "core.boorus.sankaku.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.sankaku.parse_file_info": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.sankaku.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.sankaku.parse_preview_url": {
+      "returns": null
+    },
+    "core.boorus.sankaku.parse_rating": {
+      "returns": "safe"
+    }
+  }
+}

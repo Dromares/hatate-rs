@@ -1,0 +1,27 @@
+{
+  "results": {
+    "core.boorus.redditpost.incomplete_reason": {
+      "returns": null
+    },
+    "core.boorus.redditpost.parse": {
+      "returns": [
+        {
+          "name": "5ToubunNoHanayome",
+          "namespace": "subreddit",
+          "source": "Booru"
+        },
+        {
+          "name": "Fuu with Miku and Itsuki ~",
+          "namespace": "title",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.redditpost.parse_file_url": {
+      "returns": "https://i.redd.it/m42sxjdyus7e1.jpeg"
+    },
+    "core.boorus.redditpost.parse_preview_url": {
+      "returns": "https://preview.redd.it/m42sxjdyus7e1.jpeg?width=640&crop=smart&auto=webp&s=9513506b3c997974c7b4cdc34416f5312734a1e1"
+    }
+  }
+}

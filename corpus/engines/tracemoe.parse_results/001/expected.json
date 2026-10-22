@@ -1,0 +1,27 @@
+{
+  "results": {
+    "core.tracemoe.parse_results": {
+      "returns": [
+        {
+          "episode": "15",
+          "similarity": 94.0,
+          "tags": [
+            {
+              "name": "One_Piece",
+              "namespace": "series",
+              "source": "Search engine"
+            },
+            {
+              "name": "episode 15",
+              "namespace": "meta",
+              "source": "Search engine"
+            }
+          ],
+          "thumb_url": "https://media.trace.moe/image/21/15.jpg",
+          "title": "One Piece",
+          "url": "https://anilist.co/anime/21"
+        }
+      ]
+    }
+  }
+}

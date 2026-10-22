@@ -1,0 +1,38 @@
+{
+  "results": {
+    "core.boorus.pixiv.parse": {
+      "returns": []
+    },
+    "core.boorus.pixiv.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.pixiv.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.pixiv.parse_page_count": {
+      "returns": 1
+    },
+    "core.boorus.pixiv.parse_pages": {
+      "returns": [
+        {
+          "urls": {
+            "original": "o0",
+            "small": "s0"
+          }
+        },
+        {
+          "urls": {
+            "original": "o1",
+            "small": "s1"
+          }
+        }
+      ]
+    },
+    "core.boorus.pixiv.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

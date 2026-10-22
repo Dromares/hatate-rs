@@ -1,0 +1,41 @@
+{
+  "results": {
+    "core.boorus.joyreactor.parse": {
+      "returns": [
+        {
+          "name": "Rebecca (Edgerunners)",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "Cyberpunk Edgerunners",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "Cyberpunk 2077",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "Игры",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "Игровая эротика",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "celtisart",
+          "namespace": null,
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.joyreactor.parse_file_url": {
+      "returns": "https://img10.reactor.cc/pics/post/full/Rebecca-%28Edgerunners%29-Cyberpunk-Edgerunners-Cyberpunk-2077-%D0%98%D0%B3%D1%80%D1%8B-7630589.jpeg"
+    }
+  }
+}

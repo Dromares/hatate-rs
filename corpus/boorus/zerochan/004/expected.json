@@ -1,0 +1,19 @@
+{
+  "results": {
+    "core.boorus.zerochan.parse": {
+      "returns": []
+    },
+    "core.boorus.zerochan.parse_dimensions": {
+      "returns": [
+        2976,
+        4055
+      ]
+    },
+    "core.boorus.zerochan.parse_file_url": {
+      "returns": "https://z/f.jpg"
+    },
+    "core.boorus.zerochan.parse_preview_url": {
+      "returns": "https://z/m.avif"
+    }
+  }
+}

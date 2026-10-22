@@ -1,0 +1,35 @@
+{
+  "results": {
+    "core.boorus.eshuushuu.parse": {
+      "returns": [
+        {
+          "name": "Fagi_of_Note",
+          "namespace": "creator",
+          "source": "Booru"
+        },
+        {
+          "name": "Touhou",
+          "namespace": "series",
+          "source": "Booru"
+        },
+        {
+          "name": "smile",
+          "namespace": null,
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.eshuushuu.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.eshuushuu.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.eshuushuu.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

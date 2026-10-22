@@ -1,0 +1,125 @@
+{
+  "results": {
+    "core.google_lens.parse_lens_payload": {
+      "returns": [
+        {
+          "height": null,
+          "similarity": 80.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 0 of many",
+          "url": "https://www.pinterest.com/pin/0/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 78.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 1 of many",
+          "url": "https://www.pinterest.com/pin/1/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 76.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 2 of many",
+          "url": "https://www.pinterest.com/pin/2/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 74.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 3 of many",
+          "url": "https://www.pinterest.com/pin/3/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 72.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 4 of many",
+          "url": "https://www.pinterest.com/pin/4/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 70.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 5 of many",
+          "url": "https://www.pinterest.com/pin/5/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 68.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 6 of many",
+          "url": "https://www.pinterest.com/pin/6/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 66.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 7 of many",
+          "url": "https://www.pinterest.com/pin/7/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 64.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 8 of many",
+          "url": "https://www.pinterest.com/pin/8/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 62.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 9 of many",
+          "url": "https://www.pinterest.com/pin/9/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 60.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 10 of many",
+          "url": "https://www.pinterest.com/pin/10/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 58.0,
+          "source_name": "pinterest.com",
+          "thumb_url": null,
+          "title": "Pin number 11 of many",
+          "url": "https://www.pinterest.com/pin/11/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 56.0,
+          "source_name": "danbooru.donmai.us",
+          "thumb_url": null,
+          "title": "Danbooru post forty two",
+          "url": "https://danbooru.donmai.us/posts/42",
+          "width": null
+        }
+      ]
+    }
+  }
+}

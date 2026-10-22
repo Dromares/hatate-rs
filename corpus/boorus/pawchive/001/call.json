@@ -1,0 +1,21 @@
+{
+  "callables": [
+    "core.boorus.pawchive.parse",
+    "core.boorus.pawchive.parse_file_url",
+    "core.boorus.pawchive.parse_page_count",
+    "core.boorus.pawchive.parse_pages",
+    "core.boorus.pawchive.parse_preview_url"
+  ],
+  "context": {
+    "artist_cache": {
+      "pixiv/6714576": "someArtist"
+    }
+  },
+  "extra_args": [
+    "https://pawchive.pw/pixiv/user/6714576/post/154701291"
+  ],
+  "kwargs": {},
+  "skipped_network_callables": [
+    "core.boorus.pawchive.parse_dimensions"
+  ]
+}

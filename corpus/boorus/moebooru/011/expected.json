@@ -1,0 +1,28 @@
+{
+  "results": {
+    "core.boorus.moebooru.parse": {
+      "returns": [
+        {
+          "name": "sol",
+          "namespace": "general",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.moebooru.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.moebooru.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.moebooru.parse_preview_url": {
+      "returns": null
+    },
+    "core.boorus.moebooru.parse_rating": {
+      "returns": null
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "results": {
+    "core.google_lens.parse_exact_matches": {
+      "returns": [
+        {
+          "height": null,
+          "similarity": 0.0,
+          "source_name": "rule34.us",
+          "thumb_url": null,
+          "title": "/ 368224 - Rule34.us",
+          "url": "https://rule34.us/index.php?r=posts/view&id=368224",
+          "width": null
+        }
+      ]
+    }
+  }
+}

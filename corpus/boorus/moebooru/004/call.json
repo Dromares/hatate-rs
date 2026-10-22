@@ -1,0 +1,14 @@
+{
+  "callables": [
+    "core.boorus.moebooru.parse",
+    "core.boorus.moebooru.parse_dimensions",
+    "core.boorus.moebooru.parse_file_url",
+    "core.boorus.moebooru.parse_preview_url",
+    "core.boorus.moebooru.parse_rating"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://yande.re/post/show/123456"
+  ],
+  "kwargs": {}
+}

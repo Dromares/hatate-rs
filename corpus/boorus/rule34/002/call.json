@@ -1,0 +1,16 @@
+{
+  "callables": [
+    "core.boorus.rule34.parse",
+    "core.boorus.rule34.parse_dimensions",
+    "core.boorus.rule34.parse_file_url",
+    "core.boorus.rule34.parse_preview_url",
+    "core.boorus.rule34.parse_rating"
+  ],
+  "context": {
+    "api_post": null
+  },
+  "extra_args": [
+    "https://rule34.xxx/index.php?page=post&s=view&id=10755716"
+  ],
+  "kwargs": {}
+}

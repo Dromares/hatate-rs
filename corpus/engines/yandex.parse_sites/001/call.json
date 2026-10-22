@@ -1,0 +1,8 @@
+{
+  "callables": [
+    "core.yandex.parse_sites"
+  ],
+  "context": {},
+  "extra_args": [],
+  "kwargs": {}
+}
