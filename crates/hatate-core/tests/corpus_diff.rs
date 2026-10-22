@@ -633,7 +633,9 @@ mod runner {
         assert_eq!(report.rows["t"], (0, 1));
         assert_eq!(report.failures[0].0, "t-001");
         assert!(
-            report.failure_text().contains("f.dir"),
+            report
+                .failure_text()
+                .contains("expected \"BODY\", got \"OTHER\""),
             "{}",
             report.failure_text()
         );
