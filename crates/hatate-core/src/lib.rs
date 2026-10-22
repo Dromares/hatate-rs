@@ -9,6 +9,7 @@ pub mod model;
 pub mod net;
 pub mod paths;
 mod pycompat;
+pub mod pyurl;
 pub mod quota_pause;
 pub mod rotating_log;
 pub mod session;

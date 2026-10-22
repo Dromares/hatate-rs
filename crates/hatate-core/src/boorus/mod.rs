@@ -19,11 +19,15 @@
 //! hand: [`page_info_from_body`].
 
 pub mod danbooru;
+pub mod e621;
 pub mod gelbooru;
 pub mod host;
+pub mod moebooru;
+pub mod paheal;
 pub mod parsed;
 pub mod rating;
 pub mod rule34;
+pub mod rule34us;
 pub mod safebooru;
 pub mod sizes;
 pub mod xbooru;
@@ -207,16 +211,16 @@ pub static PARSERS: &[&SiteParser] = &[
     &danbooru::PARSER,
     &gelbooru::PARSER,
     &safebooru::PARSER,
-    // moebooru
+    &moebooru::PARSER,
     // pixiv
-    // e621
+    &e621::PARSER,
     // zerochan
     // eshuushuu
     // animepictures
     &rule34::PARSER,
     &xbooru::PARSER,
-    // paheal
-    // rule34us
+    &paheal::PARSER,
+    &rule34us::PARSER,
     // redditpost
     // deviantart
     // pawchive
@@ -457,6 +461,19 @@ mod tests {
             find_parser("https://danbooru.donmai.us/posts/1").map(|p| p.name),
             Some("danbooru")
         );
+        for (url, site) in [
+            ("https://e621.net/posts/219935", "e621"),
+            ("https://e926.net/posts/1", "e621"),
+            ("https://yande.re/post/show/123", "moebooru"),
+            ("https://konachan.com/post/show/1", "moebooru"),
+            ("https://rule34.paheal.net/post/view/5674224", "paheal"),
+            (
+                "https://rule34.us/index.php?r=posts/view&id=6608448",
+                "rule34us",
+            ),
+        ] {
+            assert_eq!(find_parser(url).map(|p| p.name), Some(site), "{url}");
+        }
         assert!(find_parser("https://example.com/").is_none());
         assert!(find_parser("").is_none());
         // The probe URL, and a URL with no scheme.
