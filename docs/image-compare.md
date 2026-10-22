@@ -70,7 +70,7 @@ Each is counted over the runs above and is brought to Cloud on DAN-2062 before t
 | Class | What | Python | Rust | Count |
 |---|---|---|---|---|
 | **C1** a JPEG that is not Huffman coded | arithmetic coded (SOF9 to SOF11, SOF13 to SOF15), lossless (SOF3, SOF5 to SOF7) or hierarchical | Pillow decodes it, so the file hashes | `pyjpeg::Error::Unsupported`, which `pyraster::open` reports as an `OSError`, so the file reads as "could not hash" (`local_prints` and `dhash` give `None`, exactly as for a file that is not a picture) | valid files: 26 of 1429 checks (all arithmetic); damaged files whose marker byte became a non-Huffman SOF: 28 of 968 checks (7 files at 4 scales); one lossless file probed by hand (`cjpeg -lossless 1`) decodes in Pillow and is `Unsupported` here. Hierarchical is not measured (no encoder at hand) |
-| **C2** damaged entropy data that overflows a 16-bit lane | a damaged file whose coefficients dequantise past 16 bits: libjpeg-turbo's SIMD IDCT works in 16-bit lanes, and the port reproduces its saturation and wrap-around for ordinary overflow but not for every order of overflow | a particular garbage picture | a different garbage picture, equal in size and mode, 8 to 956 bytes of the decoded data differ | 14 of 968 checks (9 files) |
+| **C2** damaged entropy data that overflows a 16-bit lane | a damaged file whose coefficients dequantise past 16 bits: libjpeg-turbo's SIMD IDCT works in 16-bit lanes, and the port reproduces its saturation and wrap-around for ordinary overflow but not for every order of overflow | a particular garbage picture | a different garbage picture, equal in size and mode, 4 to 956 bytes of the decoded data differ | 14 of 968 checks (9 files) |
 | **C3** a JPEG with no EOI after a single scan where the lookahead hits the end | one file of the damaged set | `OSError('image file is truncated (1 bytes not processed)')` | decodes | 1 of 968 checks |
 | **C4** a progressive file that stops short of full precision in a band | libjpeg's block smoothing would run | smoothed output | `Unsupported` | 0 in either set (no file reached it); listed because the code path refuses rather than guesses |
 | **C5** a page number past 38 digits | `page_index_from_thumbnail` | Python's `int` has no limit | stops at `i128::MAX`, which every caller treats as "past the page count", as the huge number is | 0 differing in the 19 677 pure cases (they reach 20 digits, which is exact); the 40-digit saturation is pinned by `multipage_tests::test_a_page_number_past_the_integer_width_saturates` |
@@ -82,11 +82,14 @@ stays on the page the site named. C2 and C3 only occur in damaged files and a da
 already hashes as noise. None of the three changes a hash for a well-formed Huffman JPEG, PNG,
 GIF, BMP, WebP, TIFF, PPM or ICO: 0 differing of 12 247.
 
-Found, not changed (outside this ticket's rule "do not change earlier behaviour"): `image_prep`'s
-`resample_axis` is horizontal-first always, whereas Pillow goes vertical-first when
-`in_h > 100 * in_w`. `pyraster` has the rule; `image_prep` (the upload-size downscale, not a hash
-path) does not, so for a picture more than 100 times taller than wide its output can differ from
-Pillow's by one grey level. Listed for the ticket that owns `image_prep`.
+Found in this ticket, fixed in DAN-2088: `image_prep`'s thumbnail passes were horizontal-first
+always, whereas Pillow goes vertical-first when `in_h > 100 * in_w` (`pyraster` already had the
+rule; `image_prep` is the upload-size downscale, not a hash path). For a picture more than 100
+times taller than wide the output differed from Pillow's by a grey level or so (a 5 x 520 grey
+picture thumbnailed to 3 x 312 differed in the sum of its bytes, 119,385 against Pillow's 119,374).
+`image_prep` now takes the same rule; the tests
+`a_picture_over_a_hundred_times_taller_than_wide_is_resampled_down_first` (three sizes, expected
+values from Pillow 12.3) and `the_across_pass_stays_first_at_exactly_a_hundred_to_one` pin it.
 
 ## 5. Mutation check
 

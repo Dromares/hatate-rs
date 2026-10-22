@@ -127,6 +127,16 @@ impl World {
         self.server.recorded().len()
     }
 
+    /// The `Referer` each request to `host` carried, in order (`None`: it sent none).
+    fn referers_to(&self, host: &str) -> Vec<Option<String>> {
+        self.server
+            .recorded()
+            .iter()
+            .filter(|r| r.header("host") == Some(host))
+            .map(|r| r.header("referer").map(str::to_owned))
+            .collect()
+    }
+
     fn write(&self, name: &str, bytes: Vec<u8>) -> String {
         let path = self.dir.path().join(name);
         std::fs::write(&path, bytes).unwrap();
@@ -191,6 +201,37 @@ async fn test_an_ordinal_score_is_replaced_by_a_measurement() {
     .await;
     assert!(cs[0].similarity >= 90.0, "{}", cs[0].similarity);
     assert!(cs[0].similarity_measured);
+}
+
+#[tokio::test]
+async fn test_the_candidates_own_image_is_downloaded_with_its_post_as_referer() {
+    let w = world().await;
+    let l = local_art();
+    let thumb = "https://t.test/1.jpg";
+    let mut cs = candidates(&[("Google Lens", 80.0, Some(thumb))]);
+    // The referer rule covers only a candidate's own preview or file, not any thumbnail.
+    cs[0].preview_url = Some(thumb.to_owned());
+    run(&w, &l, &[(thumb, Reply::ok(thumb_of(&l)))], &mut cs).await;
+    assert_eq!(
+        w.referers_to("t.test"),
+        vec![Some("https://e.test/0".to_owned())]
+    );
+    assert!(cs[0].similarity_measured);
+}
+
+#[tokio::test]
+async fn test_a_thumbnail_that_is_not_the_candidates_own_image_goes_without_a_referer() {
+    let w = world().await;
+    let l = local_art();
+    let mut cs = candidates(&[("Google Lens", 80.0, Some("https://t.test/1.jpg"))]);
+    run(
+        &w,
+        &l,
+        &[("https://t.test/1.jpg", Reply::ok(thumb_of(&l)))],
+        &mut cs,
+    )
+    .await;
+    assert_eq!(w.referers_to("t.test"), vec![None]);
 }
 
 #[tokio::test]
@@ -608,6 +649,73 @@ async fn test_a_wrong_shape_is_remeasured_against_the_posts_own_image() {
     assert!(c.similarity < 50.0, "{}", c.similarity);
     assert!(c.similarity_measured);
     assert_eq!(w.requests(), 1);
+}
+
+/// A Google Lens candidate for a zerochan post whose own preview is `preview` (the one image of
+/// it the referer rule applies to), already measured from a borrowed thumbnail.
+fn zerochan_candidate(preview: &str) -> Candidate {
+    let mut c = Candidate::new("https://www.zerochan.net/3700079");
+    c.similarity = 100.0;
+    c.similarity_measured = true;
+    c.engine = "Google Lens".into();
+    c.preview_url = Some(preview.to_owned());
+    c
+}
+
+#[tokio::test]
+async fn test_the_posts_own_image_is_remeasured_with_the_post_as_referer() {
+    let w = world().await;
+    let preview = "https://s1.zerochan.net/x.600.3700079.jpg";
+    let mut c = zerochan_candidate(preview);
+    let local = w.write("local.png", flat_png((1105, 1565), [90, 120, 200]));
+    w.serve(preview, Reply::ok(thumb_of(&page_art(1))));
+    recheck_borrowed_measurement(
+        &w.net,
+        &mut c,
+        &page(Some(4093), Some(2894), Some(preview)),
+        &w.settings,
+        &local,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        w.referers_to("s1.zerochan.net"),
+        vec![Some("https://www.zerochan.net/3700079".to_owned())]
+    );
+}
+
+#[tokio::test]
+async fn test_the_posts_preview_is_preferred_to_its_full_file() {
+    let w = world().await;
+    let preview = "https://s1.zerochan.net/x.600.3700079.jpg";
+    let full = "https://img.example.test/x.3700079.jpg";
+    let mut c = zerochan_candidate(preview);
+    let local = w.write("local.png", flat_png((1105, 1565), [90, 120, 200]));
+    w.serve(preview, Reply::ok(thumb_of(&page_art(1))));
+    w.serve(full, Reply::ok(thumb_of(&page_art(2))));
+    let mut info = page(Some(4093), Some(2894), Some(preview));
+    info.file_url = Some(full.to_owned());
+    recheck_borrowed_measurement(&w.net, &mut c, &info, &w.settings, &local)
+        .await
+        .unwrap();
+    assert_eq!(w.requests(), 1);
+    assert_eq!(w.referers_to("s1.zerochan.net").len(), 1, "the preview");
+    assert!(w.referers_to("img.example.test").is_empty(), "not the file");
+}
+
+#[tokio::test]
+async fn test_the_full_file_is_used_when_the_post_has_no_preview() {
+    let w = world().await;
+    let full = "https://img.example.test/x.3700079.jpg";
+    let mut c = zerochan_candidate("https://s1.zerochan.net/unused.jpg");
+    let local = w.write("local.png", flat_png((1105, 1565), [90, 120, 200]));
+    w.serve(full, Reply::ok(thumb_of(&page_art(2))));
+    let mut info = page(Some(4093), Some(2894), None);
+    info.file_url = Some(full.to_owned());
+    recheck_borrowed_measurement(&w.net, &mut c, &info, &w.settings, &local)
+        .await
+        .unwrap();
+    assert_eq!(w.referers_to("img.example.test").len(), 1);
 }
 
 #[tokio::test]
