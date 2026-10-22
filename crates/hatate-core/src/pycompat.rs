@@ -51,6 +51,22 @@ pub fn number(v: &Value) -> Option<f64> {
     }
 }
 
+/// Python's `str.isspace()`: Unicode White_Space plus the four ASCII separators U+001C..U+001F,
+/// which Python counts and Rust does not.
+pub fn is_space(c: char) -> bool {
+    c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
+}
+
+/// `s.strip()`.
+pub fn strip(s: &str) -> &str {
+    s.trim_matches(is_space)
+}
+
+/// `s.split()`: runs of whitespace separate, empty pieces are dropped.
+pub fn split(s: &str) -> impl Iterator<Item = &str> {
+    s.split(is_space).filter(|piece| !piece.is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +89,15 @@ mod tests {
         assert_eq!(number(&json!(false)), Some(0.0));
         assert!(!truthy(&json!(0)) && !truthy(&json!("")) && !truthy(&json!([])));
         assert!(truthy(&json!(1)) && truthy(&json!("0")) && truthy(&json!({"a": 1})));
+    }
+
+    #[test]
+    fn string_helpers_follow_python_whitespace() {
+        // U+001F is whitespace to Python and not to Rust's `trim`; U+200B is neither.
+        assert_eq!(strip("\u{1f} a b \u{a0}\u{3000}"), "a b");
+        assert_eq!(strip("\u{200b}a"), "\u{200b}a");
+        let pieces: Vec<&str> = split(" a\u{1c}b\t\u{85}c  ").collect();
+        assert_eq!(pieces, ["a", "b", "c"]);
+        assert_eq!(split("   ").count(), 0);
     }
 }
