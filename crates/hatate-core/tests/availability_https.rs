@@ -73,7 +73,10 @@ fn always(reply: Reply) -> impl Fn(&Recorded) -> Reply + Send + Sync {
 }
 
 /// A redirect to `to`, then the page at `to`.
-fn bounced_to(to: &'static str, final_body: &'static [u8]) -> impl Fn(&Recorded) -> Reply + Send + Sync {
+fn bounced_to(
+    to: &'static str,
+    final_body: &'static [u8],
+) -> impl Fn(&Recorded) -> Reply + Send + Sync {
     move |req| {
         let landed = to.split_once("://").map_or(to, |(_, rest)| rest);
         let here = format!("{}{}", req.header("host").unwrap_or(""), req.target);
@@ -162,11 +165,23 @@ async fn availability_check_runs_over_tls_through_the_binaries_constructor() {
 
 #[tokio::test]
 async fn a_head_that_never_arrives_is_unknown_at_the_deadline() {
-    let w = world(&["x.test"], always(Reply::ok("late").delayed(Duration::from_secs(5)))).await;
+    let w = world(
+        &["x.test"],
+        always(Reply::ok("late").delayed(Duration::from_secs(5))),
+    )
+    .await;
     let t0 = Instant::now();
-    let got = availability::check_url_available(&w.client, Some("https://x.test/1"), 0.4, None, None, None, None)
-        .await
-        .unwrap();
+    let got = availability::check_url_available(
+        &w.client,
+        Some("https://x.test/1"),
+        0.4,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let took = t0.elapsed();
     assert_eq!(got, None);
     assert!(took >= Duration::from_millis(350), "{took:?}");
@@ -195,7 +210,10 @@ async fn the_deadline_covers_the_body_not_each_read() {
     .await
     .unwrap();
     let took = t0.elapsed();
-    assert_eq!(got, None, "a body that outlasts the deadline settles nothing");
+    assert_eq!(
+        got, None,
+        "a body that outlasts the deadline settles nothing"
+    );
     assert!(took < Duration::from_secs(2), "{took:?}");
 }
 
@@ -319,15 +337,28 @@ async fn other_sites_are_left_to_the_ordinary_check() {
     ] {
         assert_eq!(post_exists(&w, url).await, None, "{url:?}");
     }
-    assert!(w.server.recorded().is_empty(), "not a Sankaku URL: no request at all");
+    assert!(
+        w.server.recorded().is_empty(),
+        "not a Sankaku URL: no request at all"
+    );
 }
 
 #[tokio::test]
 async fn both_sankaku_url_shapes_are_recognised() {
-    let w = api_world(200, r#"{"status": "active", "file_url": "https://v/x.jpg"}"#).await;
+    let w = api_world(
+        200,
+        r#"{"status": "active", "file_url": "https://v/x.jpg"}"#,
+    )
+    .await;
     for (url, id) in [
-        ("https://www.sankakucomplex.com/posts/y0abg167r2o", "y0abg167r2o"),
-        ("https://chan.sankakucomplex.com/en/posts/3934951", "3934951"),
+        (
+            "https://www.sankakucomplex.com/posts/y0abg167r2o",
+            "y0abg167r2o",
+        ),
+        (
+            "https://chan.sankakucomplex.com/en/posts/3934951",
+            "3934951",
+        ),
         ("https://chan.sankakucomplex.com/post/show/1234", "1234"),
     ] {
         w.server.requests.lock().unwrap().clear();
@@ -338,11 +369,20 @@ async fn both_sankaku_url_shapes_are_recognised() {
 
 #[tokio::test]
 async fn the_sankaku_login_goes_to_the_sankaku_api_host_and_no_other() {
-    let w = api_world(200, r#"{"status": "active", "file_url": "https://v/x.jpg"}"#).await;
+    let w = api_world(
+        200,
+        r#"{"status": "active", "file_url": "https://v/x.jpg"}"#,
+    )
+    .await;
     let mut cookies = Cookies::new();
     cookies.set("sid", "v1");
-    availability::sankaku_post_exists(&w.client, "https://www.sankakucomplex.com/posts/abc", 5.0, Some(cookies))
-        .await;
+    availability::sankaku_post_exists(
+        &w.client,
+        "https://www.sankakucomplex.com/posts/abc",
+        5.0,
+        Some(cookies),
+    )
+    .await;
     assert_eq!(w.server.recorded()[0].header("cookie"), Some("sid=v1"));
 }
 
@@ -355,7 +395,11 @@ async fn a_sankaku_empty_page_redirect_is_gone() {
         bounced_to("https://chan.sankakucomplex.com/en/posts/show_empty", b""),
     )
     .await;
-    assert_eq!(w.check("https://chan.sankakucomplex.com/en/posts/abc123").await, Some(false));
+    assert_eq!(
+        w.check("https://chan.sankakucomplex.com/en/posts/abc123")
+            .await,
+        Some(false)
+    );
 }
 
 #[tokio::test]
@@ -365,7 +409,11 @@ async fn a_sankaku_not_found_redirect_on_another_subdomain_is_gone() {
         bounced_to("https://www.sankakucomplex.com/errors/not_found", b""),
     )
     .await;
-    assert_eq!(w.check("https://chan.sankakucomplex.com/post/show/4762937").await, Some(false));
+    assert_eq!(
+        w.check("https://chan.sankakucomplex.com/post/show/4762937")
+            .await,
+        Some(false)
+    );
 }
 
 #[tokio::test]
@@ -387,7 +435,12 @@ async fn the_landing_matches_whatever_the_locale_prefix_or_trailing_slash() {
         "https://chan.sankakucomplex.com/ja/posts/show_empty",
     ] {
         let w = world(&[SANKAKU], bounced_to(landing, b"")).await;
-        assert_eq!(w.check("https://chan.sankakucomplex.com/posts/abc123").await, Some(false), "{landing}");
+        assert_eq!(
+            w.check("https://chan.sankakucomplex.com/posts/abc123")
+                .await,
+            Some(false),
+            "{landing}"
+        );
     }
 }
 
@@ -398,19 +451,29 @@ async fn the_rule_does_not_leak_to_other_sites() {
         bounced_to("https://danbooru.donmai.us/posts/show_empty", b""),
     )
     .await;
-    assert_eq!(w.check("https://danbooru.donmai.us/posts/1").await, Some(true));
+    assert_eq!(
+        w.check("https://danbooru.donmai.us/posts/1").await,
+        Some(true)
+    );
 }
 
 #[tokio::test]
 async fn a_network_failure_is_still_unknown_for_sankaku() {
     let w = world(&[SANKAKU, "sankakuapi.com"], always(Reply::aborted())).await;
-    assert_eq!(w.check("https://chan.sankakucomplex.com/en/posts/x").await, None);
+    assert_eq!(
+        w.check("https://chan.sankakucomplex.com/en/posts/x").await,
+        None
+    );
 }
 
 #[test]
 fn sankaku_and_the_moebooru_hosts_are_enrolled_for_checking() {
-    assert!(availability::should_availability_check("https://chan.sankakucomplex.com/en/posts/x"));
-    assert!(availability::should_availability_check("https://sankakucomplex.com/post/show/1"));
+    assert!(availability::should_availability_check(
+        "https://chan.sankakucomplex.com/en/posts/x"
+    ));
+    assert!(availability::should_availability_check(
+        "https://sankakucomplex.com/post/show/1"
+    ));
     for url in [
         "https://yande.re/post/show/1",
         "https://konachan.com/post/show/1",
@@ -425,9 +488,18 @@ fn sankaku_and_the_moebooru_hosts_are_enrolled_for_checking() {
 #[tokio::test]
 async fn a_deleted_post_redirecting_to_the_list_is_gone() {
     for (host, post) in [
-        ("gelbooru.com", "https://gelbooru.com/index.php?page=post&s=view&id=4154084"),
-        ("safebooru.org", "https://safebooru.org/index.php?page=post&s=view&id=1"),
-        ("rule34.xxx", "https://rule34.xxx/index.php?page=post&s=view&id=4585855"),
+        (
+            "gelbooru.com",
+            "https://gelbooru.com/index.php?page=post&s=view&id=4154084",
+        ),
+        (
+            "safebooru.org",
+            "https://safebooru.org/index.php?page=post&s=view&id=1",
+        ),
+        (
+            "rule34.xxx",
+            "https://rule34.xxx/index.php?page=post&s=view&id=4585855",
+        ),
     ] {
         let list: &'static str = Box::leak(
             format!("https://{host}/index.php?page=post&s=list&tags=all").into_boxed_str(),
@@ -441,7 +513,8 @@ async fn a_deleted_post_redirecting_to_the_list_is_gone() {
 async fn a_live_gelbooru_post_is_available() {
     let w = world(&["gelbooru.com"], always(Reply::ok(""))).await;
     assert_eq!(
-        w.check("https://gelbooru.com/index.php?page=post&s=view&id=14748461").await,
+        w.check("https://gelbooru.com/index.php?page=post&s=view&id=14748461")
+            .await,
         Some(true)
     );
 }
@@ -452,7 +525,10 @@ async fn a_list_url_does_not_report_itself_gone() {
     let listing = "https://gelbooru.com/index.php?page=post&s=list&tags=all";
     let w = world(&["gelbooru.com"], always(Reply::ok(""))).await;
     assert_eq!(w.check(listing).await, Some(true));
-    assert_eq!(availability::redirect_means_gone(listing, Some(listing)), None);
+    assert_eq!(
+        availability::redirect_means_gone(listing, Some(listing)),
+        None
+    );
     let post = "https://gelbooru.com/index.php?page=post&s=view&id=4154084";
     assert!(availability::redirect_means_gone(post, Some(listing)).is_some());
 }
@@ -467,7 +543,8 @@ fn gelbooru_has_no_wording_to_match_on() {
 async fn a_gelbooru_network_failure_is_still_unknown() {
     let w = world(&["gelbooru.com"], always(Reply::aborted())).await;
     assert_eq!(
-        w.check("https://gelbooru.com/index.php?page=post&s=view&id=1").await,
+        w.check("https://gelbooru.com/index.php?page=post&s=view&id=1")
+            .await,
         None
     );
 }
@@ -498,7 +575,11 @@ const EMPTY_URL: &str = "https://chan.sankakucomplex.com/post/show/5960112";
 
 #[tokio::test]
 async fn a_real_empty_sankaku_page_is_detected() {
-    let w = world(&[SANKAKU, "sankakuapi.com"], always(Reply::ok(SANKAKU_EMPTY_PAGE))).await;
+    let w = world(
+        &[SANKAKU, "sankakuapi.com"],
+        always(Reply::ok(SANKAKU_EMPTY_PAGE)),
+    )
+    .await;
     assert_eq!(w.check(EMPTY_URL).await, Some(false));
 }
 
@@ -510,7 +591,10 @@ async fn a_real_post_page_is_not_flagged() {
 
 #[tokio::test]
 async fn the_head_alone_is_enough() {
-    let cut = SANKAKU_EMPTY_PAGE.windows(7).position(|w| w == b"</head>").unwrap();
+    let cut = SANKAKU_EMPTY_PAGE
+        .windows(7)
+        .position(|w| w == b"</head>")
+        .unwrap();
     let head_only = &SANKAKU_EMPTY_PAGE[..cut];
     assert!(!head_only.windows(18).any(|w| w == b"Nothing is visible"));
     let w = world(&[SANKAKU, "sankakuapi.com"], always(Reply::ok(head_only))).await;
@@ -519,7 +603,9 @@ async fn the_head_alone_is_enough() {
 
 #[test]
 fn the_first_sankaku_markers_appear_early_in_the_document() {
-    let lowered = String::from_utf8(SANKAKU_EMPTY_PAGE.to_vec()).unwrap().to_lowercase();
+    let lowered = String::from_utf8(SANKAKU_EMPTY_PAGE.to_vec())
+        .unwrap()
+        .to_lowercase();
     let markers = availability::soft_404_markers_for(EMPTY_URL);
     for marker in &markers[..2] {
         let at = lowered.find(marker).unwrap_or_else(|| panic!("{marker}"));
@@ -562,7 +648,10 @@ fn capture_logs() -> (Capture, tracing::subscriber::DefaultGuard) {
         .with_max_level(tracing::Level::DEBUG)
         .with_ansi(false)
         .finish();
-    (capture.clone(), tracing::subscriber::set_default(subscriber))
+    (
+        capture.clone(),
+        tracing::subscriber::set_default(subscriber),
+    )
 }
 
 fn logged(capture: &Capture) -> String {
@@ -572,8 +661,16 @@ fn logged(capture: &Capture) -> String {
 #[tokio::test]
 async fn success_says_the_body_was_scanned() {
     let (capture, _guard) = capture_logs();
-    let w = world(&[SANKAKU], always(Reply::ok("<title>art | Sankaku</title>"))).await;
-    assert_eq!(w.page("https://chan.sankakucomplex.com/post/show/4762937").await, Some(true));
+    let w = world(
+        &[SANKAKU],
+        always(Reply::ok("<title>art | Sankaku</title>")),
+    )
+    .await;
+    assert_eq!(
+        w.page("https://chan.sankakucomplex.com/post/show/4762937")
+            .await,
+        Some(true)
+    );
     let text = logged(&capture);
     assert!(text.contains("scanned"), "{text}");
     assert!(text.contains("marker"), "{text}");
@@ -582,8 +679,16 @@ async fn success_says_the_body_was_scanned() {
 #[tokio::test]
 async fn a_marker_miss_reports_the_page_title() {
     let (capture, _guard) = capture_logs();
-    let w = world(&[SANKAKU], always(Reply::ok("<html><head><title>Just a moment...</title>"))).await;
-    assert_eq!(w.page("https://chan.sankakucomplex.com/post/show/4762937").await, Some(true));
+    let w = world(
+        &[SANKAKU],
+        always(Reply::ok("<html><head><title>Just a moment...</title>")),
+    )
+    .await;
+    assert_eq!(
+        w.page("https://chan.sankakucomplex.com/post/show/4762937")
+            .await,
+        Some(true)
+    );
     assert!(logged(&capture).contains("Just a moment"));
 }
 
@@ -596,7 +701,10 @@ fn a_body_that_is_not_html_reports_no_title() {
 async fn success_says_when_a_host_has_no_markers() {
     let (capture, _guard) = capture_logs();
     let w = world(&["danbooru.donmai.us"], always(Reply::ok(""))).await;
-    assert_eq!(w.check("https://danbooru.donmai.us/posts/1").await, Some(true));
+    assert_eq!(
+        w.check("https://danbooru.donmai.us/posts/1").await,
+        Some(true)
+    );
     assert!(logged(&capture).contains("no body markers"));
 }
 
@@ -618,14 +726,28 @@ This user name doesn't exist. If you want to create a new account, just verify..
 
 #[tokio::test]
 async fn a_deleted_moebooru_post_is_detected() {
-    let w = world(&["yande.re"], always(Reply::ok(YANDERE_DELETED).header("Content-Type", "text/html"))).await;
-    assert_eq!(w.check("https://yande.re/post/show/516284").await, Some(false));
+    let w = world(
+        &["yande.re"],
+        always(Reply::ok(YANDERE_DELETED).header("Content-Type", "text/html")),
+    )
+    .await;
+    assert_eq!(
+        w.check("https://yande.re/post/show/516284").await,
+        Some(false)
+    );
 }
 
 #[tokio::test]
 async fn a_live_moebooru_post_is_not_condemned_by_the_hidden_login_template() {
-    let w = world(&["yande.re"], always(Reply::ok(YANDERE_LIVE).header("Content-Type", "text/html"))).await;
-    assert_eq!(w.check("https://yande.re/post/show/516285").await, Some(true));
+    let w = world(
+        &["yande.re"],
+        always(Reply::ok(YANDERE_LIVE).header("Content-Type", "text/html")),
+    )
+    .await;
+    assert_eq!(
+        w.check("https://yande.re/post/show/516285").await,
+        Some(true)
+    );
 }
 
 #[tokio::test]
@@ -634,8 +756,15 @@ async fn the_placeholder_image_is_a_second_signal() {
         .unwrap()
         .replace("This post was deleted.", "");
     assert!(!text.contains("This post was deleted"));
-    let w = world(&["yande.re"], always(Reply::ok(text).header("Content-Type", "text/html"))).await;
-    assert_eq!(w.check("https://yande.re/post/show/516284").await, Some(false));
+    let w = world(
+        &["yande.re"],
+        always(Reply::ok(text).header("Content-Type", "text/html")),
+    )
+    .await;
+    assert_eq!(
+        w.check("https://yande.re/post/show/516284").await,
+        Some(false)
+    );
 }
 
 #[test]
@@ -666,16 +795,25 @@ const PLAIN: &str = "https://img10.reactor.cc/pics/post/egoswans-8192103.jpeg";
 fn a_confirmed_dead_full_url_falls_back_to_plain() {
     let mut candidate = Candidate::new(FULL);
     let result = availability::reactor_full_fallback(&mut candidate, Some(false));
-    assert_eq!(result, None, "unknown: the fallback URL itself has not been checked");
+    assert_eq!(
+        result, None,
+        "unknown: the fallback URL itself has not been checked"
+    );
     assert_eq!(candidate.url, PLAIN);
 }
 
 #[test]
 fn available_and_unknown_are_left_alone() {
     let mut candidate = Candidate::new(FULL);
-    assert_eq!(availability::reactor_full_fallback(&mut candidate, Some(true)), Some(true));
+    assert_eq!(
+        availability::reactor_full_fallback(&mut candidate, Some(true)),
+        Some(true)
+    );
     assert_eq!(candidate.url, FULL);
-    assert_eq!(availability::reactor_full_fallback(&mut candidate, None), None);
+    assert_eq!(
+        availability::reactor_full_fallback(&mut candidate, None),
+        None
+    );
     assert_eq!(candidate.url, FULL);
 }
 
@@ -683,7 +821,10 @@ fn available_and_unknown_are_left_alone() {
 fn a_dead_non_reactor_or_plain_reactor_candidate_is_reported_dead_as_normal() {
     for url in ["https://danbooru.donmai.us/posts/1", PLAIN] {
         let mut candidate = Candidate::new(url);
-        assert_eq!(availability::reactor_full_fallback(&mut candidate, Some(false)), Some(false));
+        assert_eq!(
+            availability::reactor_full_fallback(&mut candidate, Some(false)),
+            Some(false)
+        );
         assert_eq!(candidate.url, url);
     }
 }
@@ -700,14 +841,20 @@ fn a_bounce_to_the_index_is_detected() {
         "https://chan.sankakucomplex.com/posts",
         "https://chan.sankakucomplex.com/",
     ] {
-        assert!(availability::redirect_to_index(LEGACY, Some(landing)).is_some(), "{landing}");
+        assert!(
+            availability::redirect_to_index(LEGACY, Some(landing)).is_some(),
+            "{landing}"
+        );
     }
 }
 
 #[test]
 fn a_real_post_is_never_flagged_as_an_index_bounce() {
     assert_eq!(
-        availability::redirect_to_index(LEGACY, Some("https://chan.sankakucomplex.com/en/posts/4100422")),
+        availability::redirect_to_index(
+            LEGACY,
+            Some("https://chan.sankakucomplex.com/en/posts/4100422")
+        ),
         None
     );
 }
@@ -735,9 +882,15 @@ async fn an_index_bounce_is_unverifiable_rather_than_gone() {
 
 #[test]
 fn sankaku_and_pixiv_are_checked_on_their_post_page() {
-    assert!(availability::has_soft_404_detection("https://chan.sankakucomplex.com/en/posts/x"));
-    assert!(availability::has_soft_404_detection("https://www.pixiv.net/artworks/1"));
-    assert!(!availability::has_soft_404_detection("https://danbooru.donmai.us/posts/1"));
+    assert!(availability::has_soft_404_detection(
+        "https://chan.sankakucomplex.com/en/posts/x"
+    ));
+    assert!(availability::has_soft_404_detection(
+        "https://www.pixiv.net/artworks/1"
+    ));
+    assert!(!availability::has_soft_404_detection(
+        "https://danbooru.donmai.us/posts/1"
+    ));
 }
 
 // ---- site headers (TestAvailabilityChecksUseSiteHeaders) ----------------------------------
@@ -745,15 +898,24 @@ fn sankaku_and_pixiv_are_checked_on_their_post_page() {
 #[tokio::test]
 async fn sankaku_is_checked_with_a_browser_user_agent() {
     let w = world(&[SANKAKU], always(Reply::ok(""))).await;
-    w.page("https://chan.sankakucomplex.com/en/posts/3797441").await;
-    assert!(w.server.recorded()[0].header("user-agent").unwrap().contains(BROWSER_UA));
+    w.page("https://chan.sankakucomplex.com/en/posts/3797441")
+        .await;
+    assert!(
+        w.server.recorded()[0]
+            .header("user-agent")
+            .unwrap()
+            .contains(BROWSER_UA)
+    );
 }
 
 #[tokio::test]
 async fn other_sites_keep_the_honest_descriptive_agent() {
     let w = world(&["danbooru.donmai.us"], always(Reply::ok(""))).await;
     w.check("https://danbooru.donmai.us/posts/1").await;
-    assert_eq!(w.server.recorded()[0].header("user-agent"), Some(USER_AGENT));
+    assert_eq!(
+        w.server.recorded()[0].header("user-agent"),
+        Some(USER_AGENT)
+    );
 }
 
 #[tokio::test]
@@ -770,7 +932,10 @@ async fn an_explicit_referer_still_wins() {
     )
     .await
     .unwrap();
-    assert_eq!(w.server.recorded()[0].header("referer"), Some("https://example.test/from"));
+    assert_eq!(
+        w.server.recorded()[0].header("referer"),
+        Some("https://example.test/from")
+    );
 }
 
 #[test]
@@ -782,7 +947,15 @@ fn headers_for_url_covers_the_right_sites() {
         "https://www.fav.me/d123456",
     ] {
         let headers = site::headers_for_url(url, None).unwrap_or_else(|| panic!("{url}"));
-        assert!(headers.get("user-agent").unwrap().to_str().unwrap().contains(BROWSER_UA), "{url}");
+        assert!(
+            headers
+                .get("user-agent")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains(BROWSER_UA),
+            "{url}"
+        );
     }
     assert!(site::headers_for_url("https://danbooru.donmai.us/posts/1", None).is_none());
     assert!(site::headers_for_url("", None).is_none());
@@ -791,7 +964,8 @@ fn headers_for_url_covers_the_right_sites() {
 #[tokio::test]
 async fn deviantart_is_fetched_with_a_browser_user_agent_and_its_own_referer() {
     let w = world(&["www.deviantart.com"], always(Reply::ok(""))).await;
-    w.check("https://www.deviantart.com/artist/art/title-1").await;
+    w.check("https://www.deviantart.com/artist/art/title-1")
+        .await;
     let seen = &w.server.recorded()[0];
     assert!(seen.header("user-agent").unwrap().contains(BROWSER_UA));
     assert_eq!(seen.header("referer"), Some("https://www.deviantart.com/"));
@@ -801,25 +975,44 @@ async fn deviantart_is_fetched_with_a_browser_user_agent_and_its_own_referer() {
 async fn a_renewed_session_cookie_is_captured_during_an_availability_check() {
     let w = world(
         &["www.deviantart.com"],
-        always(Reply::ok("").header("Set-Cookie", "auth=new-token; Domain=deviantart.com; Path=/")),
+        always(Reply::ok("").header(
+            "Set-Cookie",
+            "auth=new-token; Domain=deviantart.com; Path=/",
+        )),
     )
     .await;
     let sandbox = Sandbox::new();
     let mut settings = Settings::with_defaults(&sandbox.paths);
     settings.deviantart_cookies = "auth=old-token; auth_secure=old-secure".into();
     let settings = Mutex::new(settings);
-    let access = SettingsAccess { settings: &settings, paths: &sandbox.paths };
+    let access = SettingsAccess {
+        settings: &settings,
+        paths: &sandbox.paths,
+    };
     let url = "https://www.deviantart.com/artist/art/title-1";
     let cookies = site::cookies_for_url(url, &remote::credentials(&settings.lock().unwrap()));
-    availability::check_url_available(&w.client, Some(url), 5.0, None, None, cookies, Some(&access))
-        .await
-        .unwrap();
+    availability::check_url_available(
+        &w.client,
+        Some(url),
+        5.0,
+        None,
+        None,
+        cookies,
+        Some(&access),
+    )
+    .await
+    .unwrap();
     assert_eq!(
         settings.lock().unwrap().deviantart_cookies.expose(),
         "auth=new-token; auth_secure=old-secure"
     );
     // The check sent the pasted cookies, and the renewal was saved.
-    assert!(w.server.recorded()[0].header("cookie").unwrap().contains("auth=old-token"));
+    assert!(
+        w.server.recorded()[0]
+            .header("cookie")
+            .unwrap()
+            .contains("auth=old-token")
+    );
     assert!(sandbox.paths.config_file().exists());
 }
 
@@ -830,7 +1023,11 @@ async fn the_no_content_page_is_still_read_as_gone() {
         bounced_to("https://chan.sankakucomplex.com/en/posts/show_empty", b""),
     )
     .await;
-    assert_eq!(w.check("https://chan.sankakucomplex.com/en/posts/3797441").await, Some(false));
+    assert_eq!(
+        w.check("https://chan.sankakucomplex.com/en/posts/3797441")
+            .await,
+        Some(false)
+    );
 }
 
 // ---- the sweep and the cached re-check (search_quality's TestCachedResultsAreRechecked) ---
@@ -853,12 +1050,16 @@ async fn a_cached_match_that_has_since_gone_is_dropped() {
     .await;
     let sandbox = Sandbox::new();
     let settings = sweep_settings(&sandbox);
-    let access = SettingsAccess { settings: &settings, paths: &sandbox.paths };
+    let access = SettingsAccess {
+        settings: &settings,
+        paths: &sandbox.paths,
+    };
     let cached = vec![
         Candidate::new("https://gelbooru.com/index.php?page=post&s=view&id=1"),
         Candidate::new("https://danbooru.donmai.us/posts/2"),
     ];
-    let kept = availability::recheck_cached_candidates(&w.client, cached, &access, "x.png", None).await;
+    let kept =
+        availability::recheck_cached_candidates(&w.client, cached, &access, "x.png", None).await;
     let urls: Vec<&str> = kept.iter().map(|c| c.url.as_str()).collect();
     assert_eq!(urls, ["https://danbooru.donmai.us/posts/2"]);
 }
@@ -868,36 +1069,51 @@ async fn an_unknown_answer_keeps_the_cached_match() {
     let w = world(&["danbooru.donmai.us"], always(Reply::new(503, ""))).await;
     let sandbox = Sandbox::new();
     let settings = sweep_settings(&sandbox);
-    let access = SettingsAccess { settings: &settings, paths: &sandbox.paths };
+    let access = SettingsAccess {
+        settings: &settings,
+        paths: &sandbox.paths,
+    };
     let cached = vec![Candidate::new("https://danbooru.donmai.us/posts/2")];
-    let kept = availability::recheck_cached_candidates(&w.client, cached, &access, "x.png", None).await;
+    let kept =
+        availability::recheck_cached_candidates(&w.client, cached, &access, "x.png", None).await;
     assert_eq!(kept.len(), 1);
     assert_eq!(kept[0].remote_available, None);
 }
 
 #[tokio::test]
 async fn the_sweep_marks_every_verdict_and_falls_back_for_a_dead_reactor_full_file() {
-    let w = world(&["danbooru.donmai.us", "gelbooru.com", "img10.reactor.cc"], |req| {
-        match req.header("host").unwrap() {
+    let w = world(
+        &["danbooru.donmai.us", "gelbooru.com", "img10.reactor.cc"],
+        |req| match req.header("host").unwrap() {
             "gelbooru.com" | "img10.reactor.cc" => Reply::new(410, ""),
             _ => Reply::ok(""),
-        }
-    })
+        },
+    )
     .await;
     let sandbox = Sandbox::new();
     let settings = sweep_settings(&sandbox);
-    let access = SettingsAccess { settings: &settings, paths: &sandbox.paths };
+    let access = SettingsAccess {
+        settings: &settings,
+        paths: &sandbox.paths,
+    };
     let mut candidates = vec![
         Candidate::new("https://danbooru.donmai.us/posts/1"),
         Candidate::new("https://gelbooru.com/index.php?page=post&s=view&id=1"),
         Candidate::new(FULL),
     ];
-    availability::sweep_candidate_availability(&w.client, &mut candidates, &access, "x.png", None).await;
+    availability::sweep_candidate_availability(&w.client, &mut candidates, &access, "x.png", None)
+        .await;
     assert_eq!(candidates[0].remote_available, Some(true));
     assert_eq!(candidates[1].remote_available, Some(false));
-    assert_eq!(candidates[2].url, PLAIN, "the full/ file is gone: the plain file is offered");
+    assert_eq!(
+        candidates[2].url, PLAIN,
+        "the full/ file is gone: the plain file is offered"
+    );
     assert_eq!(candidates[2].remote_available, None);
-    assert!(candidates.iter().all(|c| c.availability_checked_at.is_some()));
+    // A verdict is dated; an inconclusive one is not (`record_availability` clears the date).
+    assert!(candidates[0].availability_checked_at.is_some());
+    assert!(candidates[1].availability_checked_at.is_some());
+    assert!(candidates[2].availability_checked_at.is_none());
 }
 
 #[tokio::test]
@@ -905,13 +1121,23 @@ async fn the_sweep_skips_candidates_that_already_have_a_verdict_and_ticks_around
     let w = world(&["danbooru.donmai.us"], always(Reply::ok(""))).await;
     let sandbox = Sandbox::new();
     let settings = sweep_settings(&sandbox);
-    let access = SettingsAccess { settings: &settings, paths: &sandbox.paths };
+    let access = SettingsAccess {
+        settings: &settings,
+        paths: &sandbox.paths,
+    };
     let mut known = Candidate::new("https://danbooru.donmai.us/posts/1");
     known.remote_available = Some(true);
     let mut candidates = vec![known, Candidate::new("https://danbooru.donmai.us/posts/2")];
     let ticks: Mutex<Vec<String>> = Mutex::new(Vec::new());
     let cb = |label: &str, _r: f64, _t: f64| ticks.lock().unwrap().push(label.to_string());
-    availability::sweep_candidate_availability(&w.client, &mut candidates, &access, "x.png", Some(&cb)).await;
+    availability::sweep_candidate_availability(
+        &w.client,
+        &mut candidates,
+        &access,
+        "x.png",
+        Some(&cb),
+    )
+    .await;
     assert_eq!(w.seen(), ["danbooru.donmai.us /posts/2"]);
     assert_eq!(*ticks.lock().unwrap(), ["Checking 1 match(es)", ""]);
 }
@@ -932,13 +1158,19 @@ async fn a_sweep_never_runs_more_than_five_checks_at_once() {
     .await;
     let sandbox = Sandbox::new();
     let settings = sweep_settings(&sandbox);
-    let access = SettingsAccess { settings: &settings, paths: &sandbox.paths };
+    let access = SettingsAccess {
+        settings: &settings,
+        paths: &sandbox.paths,
+    };
     let mut candidates: Vec<Candidate> = (1..=12)
         .map(|n| Candidate::new(format!("https://danbooru.donmai.us/posts/{n}")))
         .collect();
-    availability::sweep_candidate_availability(&w.client, &mut candidates, &access, "x.png", None).await;
+    availability::sweep_candidate_availability(&w.client, &mut candidates, &access, "x.png", None)
+        .await;
     assert_eq!(w.server.recorded().len(), 12);
-    assert!(peak.load(std::sync::atomic::Ordering::SeqCst) <= availability::AVAILABILITY_SWEEP_WORKERS);
+    assert!(
+        peak.load(std::sync::atomic::Ordering::SeqCst) <= availability::AVAILABILITY_SWEEP_WORKERS
+    );
 }
 
 // ---- errors Python lets escape --------------------------------------------------------------
@@ -946,7 +1178,16 @@ async fn a_sweep_never_runs_more_than_five_checks_at_once() {
 #[tokio::test]
 async fn a_url_urlparse_refuses_raises_a_value_error_not_an_unknown() {
     let w = world(&["x.test"], always(Reply::ok(""))).await;
-    let got = availability::page_says_available(&w.client, Some("http://[x.test/"), 5.0, None, None, None, None).await;
+    let got = availability::page_says_available(
+        &w.client,
+        Some("http://[x.test/"),
+        5.0,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await;
     match got {
         Err(Raised::ValueError(message)) => assert_eq!(message, "Invalid IPv6 URL"),
         other => panic!("{other:?}"),

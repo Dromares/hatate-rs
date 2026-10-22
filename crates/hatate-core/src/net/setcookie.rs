@@ -32,7 +32,7 @@ pub fn response_cookies(request_url: &str, set_cookie: &[String], now: i64) -> V
         // An exception inside `make_cookies` is caught, and every Netscape cookie is dropped.
         return Vec::new();
     };
-    let mut jar: Vec<(String, Vec<(String, Vec<JarCookie>)>)> = Vec::new();
+    let mut jar: Vec<(String, PathJar)> = Vec::new();
     for cookie in cookies {
         if !set_ok(&cookie, request_url) {
             continue;
@@ -81,6 +81,8 @@ fn strip_quotes(text: &str) -> &str {
 }
 
 type Attrs = Vec<(String, Option<String>)>;
+/// One domain's cookies, grouped by path, then listed in the order set.
+type PathJar = Vec<(String, Vec<JarCookie>)>;
 
 /// `parse_ns_headers`: one list of (key, value) pairs per header. `Err` is an exception inside the
 /// parser (a date `http2time` cannot take in).
@@ -555,6 +557,37 @@ fn str2time(
     Ok(offset.map(|o| t - o))
 }
 
+/// The `name=value` pairs of the DeviantArt cookies a response renewed, as `Response.cookies`
+/// holds them: only the names in `rotatable`, only with a value, a later cookie of the same name
+/// (another domain or path) over an earlier one.
+pub fn renewed_pairs(
+    request_url: &str,
+    headers: &http::HeaderMap,
+    rotatable: &[&str],
+    now: i64,
+) -> Vec<(String, String)> {
+    let lines: Vec<String> = headers
+        .get_all(http::header::SET_COOKIE)
+        .iter()
+        // `http.client` reads header bytes as Latin-1.
+        .map(|v| v.as_bytes().iter().map(|b| char::from(*b)).collect())
+        .collect();
+    let mut out: Vec<(String, String)> = Vec::new();
+    for cookie in response_cookies(request_url, &lines, now) {
+        let Some(value) = cookie.value.filter(|v| !v.is_empty()) else {
+            continue;
+        };
+        if !rotatable.contains(&cookie.name.as_str()) {
+            continue;
+        }
+        match out.iter_mut().find(|(n, _)| *n == cookie.name) {
+            Some(slot) => slot.1 = value,
+            None => out.push((cookie.name, value)),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -680,35 +713,4 @@ mod tests {
         assert_eq!(http2time("Thu, 01 Jxx 2100 00:00:00 GMT"), Err(()));
         assert_eq!(http2time("Thu, 01 Xyz 2100 00:00:00 GMT"), Ok(None));
     }
-}
-
-/// The `name=value` pairs of the DeviantArt cookies a response renewed, as `Response.cookies`
-/// holds them: only the names in `rotatable`, only with a value, a later cookie of the same name
-/// (another domain or path) over an earlier one.
-pub fn renewed_pairs(
-    request_url: &str,
-    headers: &http::HeaderMap,
-    rotatable: &[&str],
-    now: i64,
-) -> Vec<(String, String)> {
-    let lines: Vec<String> = headers
-        .get_all(http::header::SET_COOKIE)
-        .iter()
-        // `http.client` reads header bytes as Latin-1.
-        .map(|v| v.as_bytes().iter().map(|b| char::from(*b)).collect())
-        .collect();
-    let mut out: Vec<(String, String)> = Vec::new();
-    for cookie in response_cookies(request_url, &lines, now) {
-        let Some(value) = cookie.value.filter(|v| !v.is_empty()) else {
-            continue;
-        };
-        if !rotatable.contains(&cookie.name.as_str()) {
-            continue;
-        }
-        match out.iter_mut().find(|(n, _)| *n == cookie.name) {
-            Some(slot) => slot.1 = value,
-            None => out.push((cookie.name, value)),
-        }
-    }
-    out
 }
