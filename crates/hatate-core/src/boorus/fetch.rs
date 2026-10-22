@@ -384,20 +384,34 @@ pub async fn network_context(
         "pawchive" => {
             artist_step(net, session, body, url, &mut ctx).await;
             if let Some(file_url) = pawchive::dimensions_request(body) {
-                let size = session
+                // A bomb is what `parse_dimensions` raises in Python, which `fetch_page_info`
+                // logs and carries on without: nothing is remembered, so the hook reads none.
+                match session
                     .remote_sizes
                     .image_size(net, &file_url, Some(USER_AGENT))
-                    .await;
-                ctx.remember_image_size(&file_url, size);
+                    .await
+                {
+                    Ok(size) => ctx.remember_image_size(&file_url, size),
+                    Err(bomb) => {
+                        warn!("parse_dimensions raised for {url}: {bomb} (continuing without it)")
+                    }
+                }
             }
         }
         "redditpost" => {
             if let Some(file_url) = redditpost::dimensions_request(body, url) {
-                let size = session
+                // A bomb is what `parse_dimensions` raises in Python, which `fetch_page_info`
+                // logs and carries on without: nothing is remembered, so the hook reads none.
+                match session
                     .remote_sizes
                     .image_size(net, &file_url, Some(reddit::USER_AGENT))
-                    .await;
-                ctx.remember_image_size(&file_url, size);
+                    .await
+                {
+                    Ok(size) => ctx.remember_image_size(&file_url, size),
+                    Err(bomb) => {
+                        warn!("parse_dimensions raised for {url}: {bomb} (continuing without it)")
+                    }
+                }
             }
         }
         _ => {}

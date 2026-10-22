@@ -888,7 +888,7 @@ async fn the_ranged_read_stops_at_the_header_and_a_failure_is_not_cached_but_a_m
         let url = format!("https://img.example.test/{path}");
         let sizes = &sizes;
         let client = &w.client;
-        async move { sizes.image_size(client, &url, Some("UA/1")).await }
+        async move { sizes.image_size(client, &url, Some("UA/1")).await.unwrap() }
     };
     assert_eq!(size("ok.png").await, (Some(10), Some(20)));
     assert_eq!(size("ok.png").await, (Some(10), Some(20)));

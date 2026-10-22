@@ -17,8 +17,9 @@ use tracing::debug;
 
 use crate::lru::LruCache;
 use crate::net::{BodyProbe, NetClient, NetRequest};
+use crate::pyimage::{self, DecompressionBomb};
+use crate::pyurl;
 use crate::remote::{set_header, ua_headers};
-use crate::{pyimage, pyurl};
 
 pub const MAX_BYTES: usize = 512 * 1024;
 pub const TIMEOUT: f64 = 10.0;
@@ -53,16 +54,24 @@ impl RemoteSizes {
     }
 
     /// `image_size(url, user_agent)`: the original's `(width, height)`, or `(None, None)`.
-    pub async fn image_size(&self, net: &NetClient, url: &str, user_agent: Option<&str>) -> Size {
+    ///
+    /// `Err` is the `DecompressionBombError` Pillow raises from `ImageFile.Parser.feed`, which
+    /// `image_size` does not catch: nothing is cached and the caller sees it.
+    pub async fn image_size(
+        &self,
+        net: &NetClient,
+        url: &str,
+        user_agent: Option<&str>,
+    ) -> Result<Size, DecompressionBomb> {
         if let Some(cached) = self.cache.lock().unwrap().get(&url.to_string()) {
-            return cached;
+            return Ok(cached);
         }
         let mut headers = http::HeaderMap::new();
         set_header(&mut headers, "Range", &format!("bytes=0-{}", MAX_BYTES - 1));
         if let Some(agent) = user_agent.filter(|a| !a.is_empty())
             && !set_header(&mut headers, "User-Agent", agent)
         {
-            return (None, None);
+            return Ok((None, None));
         }
         if !headers.contains_key(http::header::USER_AGENT) {
             headers.extend(ua_headers().into_iter().filter_map(|(n, v)| Some((n?, v))));
@@ -71,24 +80,24 @@ impl RemoteSizes {
             NetRequest::get(&pyurl::requote_uri(url), Duration::from_secs_f64(TIMEOUT))
         else {
             // Python's `requests` refuses the URL the same way, as a `RequestException`.
-            return (None, None);
+            return Ok((None, None));
         };
         req.headers = headers;
         req = req.with_probe(BodyProbe {
             chunk: CHUNK,
             cap: MAX_BYTES,
-            done: Arc::new(|taken| pyimage::image_size(taken).is_some()),
+            done: Arc::new(|taken| !matches!(pyimage::image_size_checked(taken), Ok(None))),
         });
         let resp = match net.send(req).await {
             Ok(resp) => resp,
             Err(e) => {
                 debug!("Could not read dimensions of {url}: {e}");
-                return (None, None);
+                return Ok((None, None));
             }
         };
         let mut size = None;
         if matches!(resp.status.as_u16(), 200 | 206) {
-            size = pyimage::image_size(&resp.body);
+            size = pyimage::image_size_checked(&resp.body)?;
         } else {
             debug!(
                 "{url} answered {} when asked for its first bytes",
@@ -100,6 +109,6 @@ impl RemoteSizes {
             _ => (None, None),
         };
         self.cache.lock().unwrap().set(url.to_string(), result);
-        result
+        Ok(result)
     }
 }
