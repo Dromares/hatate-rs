@@ -2,3 +2,7 @@
 //! Add the file here and its `PORT` to `PORTS` in `corpus_diff.rs`.
 
 pub mod danbooru;
+pub mod gelbooru;
+pub mod rule34;
+pub mod safebooru;
+pub mod xbooru;

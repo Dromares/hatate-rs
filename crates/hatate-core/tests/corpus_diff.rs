@@ -48,7 +48,13 @@ pub struct Port {
 }
 
 /// Every parser that has a Rust port.
-static PORTS: &[&Port] = &[&corpus_ports::danbooru::PORT];
+static PORTS: &[&Port] = &[
+    &corpus_ports::danbooru::PORT,
+    &corpus_ports::gelbooru::PORT,
+    &corpus_ports::safebooru::PORT,
+    &corpus_ports::rule34::PORT,
+    &corpus_ports::xbooru::PORT,
+];
 
 /// The Python exception class a `raises` item names, and the Rust error variant that stands for
 /// it. `BooruError` and `BooruContentGoneError` are `hatate_core::boorus::BooruError::{Fetch,
@@ -84,6 +90,13 @@ impl Call<'_> {
             .and_then(Value::as_str)
             .expect("extra_args[0] is not a string")
     }
+}
+
+/// The `api_post` of a Gelbooru-family item's `context`: the Data-API post for the URL, or `null`
+/// for "the API gave nothing".
+pub fn api_post(call: &Call) -> hatate_core::boorus::Context {
+    let post = call.context.get("api_post").and_then(Value::as_object);
+    hatate_core::boorus::Context::with_api_post(post.cloned())
 }
 
 /// A result as the runner compares it.
