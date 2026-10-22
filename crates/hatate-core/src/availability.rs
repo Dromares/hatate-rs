@@ -288,8 +288,8 @@ impl SettingsAccess<'_> {
     }
 }
 
-/// The message `urlparse(url).netloc` raises with, for the URLs `pyurl` refuses.
-fn urlparse_message(url: &str) -> String {
+/// The message `urlparse(url).netloc` raises with (`ValueError`), for the URLs `pyurl` refuses.
+pub fn urlparse_message(url: &str) -> String {
     let netloc = pyurl::urlparse(url, "").netloc;
     if netloc.contains('[') != netloc.contains(']') {
         return "Invalid IPv6 URL".to_string();

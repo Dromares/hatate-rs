@@ -503,17 +503,14 @@ pub(crate) fn capture_rotated_deviantart_cookies(
     resp: &PyResponse,
     sink: &mut SettingsSink<'_>,
 ) {
-    let set_cookies: Vec<(String, String)> = resp
-        .headers
-        .get_all(http::header::SET_COOKIE)
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .filter_map(|line| {
-            let (name, value) = line.split(';').next()?.split_once('=')?;
-            let name = name.trim();
-            (!name.is_empty()).then(|| (name.to_owned(), value.trim().to_owned()))
-        })
-        .collect();
+    // `response.cookies`: what the jar of the response to the LAST request of the redirect chain
+    // kept, under `http.cookiejar`'s default policy.
+    let set_cookies = crate::net::setcookie::renewed_pairs(
+        &resp.url,
+        &resp.headers,
+        &crate::net::site::ROTATABLE_DEVIANTART_COOKIES,
+        crate::timeutil::now_epoch() as i64,
+    );
     let Some(rotated) = merge_rotated_deviantart_cookies(
         url,
         resp.status,
