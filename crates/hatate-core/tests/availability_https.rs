@@ -621,12 +621,22 @@ async fn an_unrecognised_body_leaves_the_match_alone() {
 
 // ---- logging (TestAvailabilityLoggingIsDiagnosable) ---------------------------------------
 
+// One process-global subscriber, installed once, writing into a per-thread buffer. A scoped
+// `set_default` per test is racy under the parallel test runner: tracing caches each callsite's
+// interest process-wide, so a callsite first hit by a thread with no subscriber stays disabled
+// for the test that does capture (the hosted run lost `a_marker_miss_reports_the_page_title`
+// that way). The tests are `current_thread` runtimes, so the code under test logs on the
+// test's own thread.
+thread_local! {
+    static LOG_BUFFER: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 #[derive(Clone, Default)]
-struct Capture(Arc<Mutex<Vec<u8>>>);
+struct Capture;
 
 impl std::io::Write for Capture {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        LOG_BUFFER.with(|b| b.borrow_mut().extend_from_slice(buf));
         Ok(buf.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
@@ -637,25 +647,27 @@ impl std::io::Write for Capture {
 impl<'a> MakeWriter<'a> for Capture {
     type Writer = Capture;
     fn make_writer(&'a self) -> Capture {
-        self.clone()
+        Capture
     }
 }
 
-fn capture_logs() -> (Capture, tracing::subscriber::DefaultGuard) {
-    let capture = Capture::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(capture.clone())
-        .with_max_level(tracing::Level::DEBUG)
-        .with_ansi(false)
-        .finish();
-    (
-        capture.clone(),
-        tracing::subscriber::set_default(subscriber),
-    )
+fn capture_logs() -> (Capture, ()) {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(Capture)
+            .with_max_level(tracing::Level::DEBUG)
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("no other subscriber in this test binary");
+    });
+    LOG_BUFFER.with(|b| b.borrow_mut().clear());
+    (Capture, ())
 }
 
-fn logged(capture: &Capture) -> String {
-    String::from_utf8(capture.0.lock().unwrap().clone()).unwrap()
+fn logged(_capture: &Capture) -> String {
+    LOG_BUFFER.with(|b| String::from_utf8(b.borrow().clone()).unwrap())
 }
 
 #[tokio::test]
