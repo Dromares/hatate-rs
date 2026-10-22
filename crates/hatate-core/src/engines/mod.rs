@@ -17,8 +17,11 @@
 //! points at) takes them all as arguments. A response is `(status, final URL, text)`.
 //!
 //! **Yandex and Google Images.** `core/yandex.py` and `core/google_images.py` are cut the same
-//! way; the request half of each (`search`, the module state `yandex._blocked` and
-//! `google_images._blocked`) is Phase 3.
+//! way: what `search` does with each answer is here (`yandex::upload_from_response` and
+//! `results_from_response`, `google_images::public_from_response` and `vision_from_response`, the
+//! module state `yandex._blocked` and friends as `yandex::YandexState`), and the request half of
+//! each (reading the picture, the requests, the pacing, setting `google_images._blocked` from an
+//! error that `latches()`) is Phase 3.
 //!
 //! No function here opens a socket or reads a file.
 

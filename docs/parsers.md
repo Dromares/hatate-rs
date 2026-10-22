@@ -225,11 +225,10 @@ callable (`core.iqdb._parse_results`, `core.saucenao.search`, ...).
 ## Engine result parsers: Yandex and Google Images (DAN-2009)
 
 `crates/hatate-core/src/engines/` holds what an engine's answer says once it is in hand
-(`yandex.rs`, `google_images.rs`). The request half is Phase 3 and nothing here opens a socket:
-the upload, the `cbirId`, the Vision call, the consent cookie, the error mapping for a rejected
-key or an exhausted quota, the captcha rest, the stand-down latches and the pacing. The corpus
-items for `core.yandex.search` and `core.google_images.search` are `mocked_transport` items and
-stay with that client.
+(`yandex.rs`, `google_images.rs`). The request half is Phase 3 and nothing here opens a socket.
+What `search` does with each answer is here too (DAN-2054, below); the corpus items for
+`core.yandex.search` and `core.google_images.search` are `mocked_transport` items and replay
+through those halves.
 
 - **Where Python raises on an input the service never sends.** The engine code reads JSON it did
   not check: `site["thumb"]` that is a list, a `url` that is a number, Vision's `responses` that
@@ -322,6 +321,46 @@ module (`search()`, the upload script, `prepare_for_lens`, the rest latch, `rule
   in ids, GIF/PNG/JPEG/WebP/BMP thumbnails of 1 to 40 pixels with truncations and bit flips,
   mutated base64) were run through Python 3.14.8 with Pillow 12.3 and through the port: no
   difference outside the documented classes above.
+
+## Yandex and Google Images: what `search` does with the answers (DAN-2054)
+
+`yandex::upload_from_response` and `yandex::results_from_response` are the two answers
+`yandex.search` reads (the upload's, then the "sites" page), and `google_images::public_from_response`
+and `google_images::vision_from_response` are the two routes of `google_images.search`, picked by
+`google_images::vision_key`. Each takes the answer as `engines::Response` (or a status and the
+decoded JSON for Vision) and opens nothing.
+
+- **Where the cut is.** In Phase 2 (here): the captcha and consent-wall tests, the HTTP status
+  mapping (413, the other non-200, Vision's 400/401/403/429 and reasons), the per-image error in a
+  Vision 200, the Lens-or-classic choice, the JavaScript-shell test, the rest-until text, and the
+  hand-off to the parse functions. In Phase 3 (not here): reading and downscaling the picture,
+  the two Yandex requests (`SEARCH_URL`, `UPLOAD_REQUEST`, the `cbir_id`/`cbir_page`/`url`
+  parameters) and the Google upload and Vision body, headers and consent cookie, the deadline and
+  network errors, `reset_blocked_flag` at the start of a search, the pacing between Yandex
+  searches, and the local clock.
+- **Module globals are an argument or a return.** Yandex's `_blocked`, `_consecutive_failures`
+  and `_resting_until` are `yandex::YandexState`, passed `&mut`; the rest ends at
+  `now + CHALLENGE_REST_SECONDS` on the caller's monotonic clock, and the `HH:MM` the message
+  prints is passed in (`RestClock`), because the port reads no clock. Google's `_blocked` is
+  `GoogleImagesError::latches()` on the error (`Blocked` and `JavaScript`), as ascii2d's is
+  `Blocked`.
+- **Python's exception classes** are `YandexError::{Failed, Blocked}` and
+  `GoogleImagesError::{Failed, Blocked, JavaScript}`. `Unexpected` is where Python raises
+  something else out of `search` (`AttributeError`, `KeyError`, `TypeError`): a Vision payload that
+  is not an object, an `error` or `message` or `status` that is truthy and not the type read, a
+  `responses` that is not a list of objects, a Yandex `blocks` that is a non-empty object. The state
+  is as Python left it at that point. One case Python does not raise on and `Unexpected` stands in
+  for: a Yandex `cbirId` that is truthy and not a string (a number, a list, an object), which
+  Python formats into the next request.
+- **Checks read a prefix.** Yandex's and Google's challenge tests read the first 6000 characters,
+  the JavaScript shell test the first 20000 (characters, not bytes), lower-cased.
+- **Differential (not in the repo).** 4,000 generated answers (Yandex upload/page pairs with every
+  shape of `blocks` and `cbirId`, markers at and past the prefix, three starting failure counts;
+  Google public answers over status, final URL, marker and padding; Vision payloads over status
+  and the shapes of `error`, `message`, `status` and `responses`) were run through the real
+  `search` at `76c85c4` with the transport scripted, and through the port: no difference in
+  result, error class, message or state, outside the non-string `cbirId` class above (155 cases,
+  skipped).
 
 ## Registering a port in the corpus runner
 

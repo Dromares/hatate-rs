@@ -794,11 +794,12 @@ fn vision_error(
 #[cfg(test)]
 mod tests {
     //! `tests/test_search_quality.py::TestGoogleImagesParser` and
-    //! `TestGoogleVisionWebDetection` at `76c85c4`, test for test. The tests that go through
-    //! `google_images.search` (a Vision key used instead of the public page, a rejected key, an
-    //! exhausted quota, a per-image error, a consent wall, the JavaScript shell, a Lens landing)
-    //! are the request half, and `test_ascii2d_and_google_images_are_ordinal_too` is the engine
-    //! runner's: Phase 3.
+    //! `TestGoogleVisionWebDetection` at `76c85c4`, test for test, and `TestGoogleImagesBlocked`'s
+    //! tests of `google_images.search` itself, through the two halves of `search` that read an
+    //! answer (see the end of the module). `test_once_blocked_later_images_do_not_ask_again`,
+    //! `test_a_new_search_tries_again`, `test_a_skipped_engine_is_never_cached_as_a_confident_not_found`
+    //! and `test_ascii2d_and_google_images_are_ordinal_too` are the engine runner's and the
+    //! client's latch: Phase 3.
 
     use super::*;
     use serde_json::json;
