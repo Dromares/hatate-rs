@@ -136,13 +136,30 @@ impl CookieJar {
     fn extract(&mut self, url: &Url, headers: &HeaderMap) {
         let target = Target::of(url);
         let now = now_epoch();
+        let mut sets = Vec::new();
+        // `_normalized_cookie_tuples` reads every line first: one that raises drops the lot, and
+        // nothing is deleted or stored.
+        let mut parsed = Vec::new();
         for line in headers.get_all(SET_COOKIE) {
             let Ok(line) = line.to_str() else { continue };
-            match change_from_header(line, &target, now) {
-                Some(Change::Set(cookie)) => self.store(cookie),
+            match parse_set_cookie(line) {
+                Parse::Cookie(cookie) => parsed.push(cookie),
+                Parse::Bad => {}
+                Parse::DropResponse => return,
+            }
+        }
+        // `make_cookies` builds every cookie of the answer before `extract_cookies` stores any, and
+        // a cookie whose expiry is already past deletes as it is built: so a deletion in an answer
+        // applies to what the jar held before that answer, never to a cookie the same answer sets.
+        for cookie in parsed {
+            match change_from_header(cookie, &target, now) {
+                Some(Change::Set(cookie)) => sets.push(cookie),
                 Some(Change::Delete(domain, path, name)) => self.clear(&domain, &path, &name),
                 None => {}
             }
+        }
+        for cookie in sets {
+            self.store(cookie);
         }
     }
 
@@ -192,7 +209,7 @@ impl CookieJar {
                 continue;
             }
             for (path, names) in paths {
-                if !target.path.starts_with(path.as_str()) {
+                if !path_return_ok(path, &target.path) {
                     continue;
                 }
                 for cookie in names {
@@ -222,6 +239,18 @@ impl CookieJar {
     }
 }
 
+/// `DefaultCookiePolicy.path_return_ok`: the request path is the cookie's path, or sits below it
+/// (the cookie's path ends in `/`, or the next character of the request path is one).
+fn path_return_ok(cookie_path: &str, request_path: &str) -> bool {
+    if request_path == cookie_path {
+        return true;
+    }
+    match request_path.strip_prefix(cookie_path) {
+        Some(rest) => cookie_path.ends_with('/') || rest.starts_with('/'),
+        None => false,
+    }
+}
+
 /// `DefaultCookiePolicy.return_ok_domain` for a version 0 cookie: the request host, or its
 /// effective host, ends with the cookie's domain once both are dotted.
 fn domain_return_ok(domain: &str, target: &Target) -> bool {
@@ -237,11 +266,13 @@ struct Parsed {
     path: Option<String>,
     secure: bool,
     max_age: Option<i64>,
+    /// `Version`: 0 when the line has none.
+    version: i64,
     /// `Expires`, when it parsed. One that did not is ignored, a session cookie.
     expires: Option<i64>,
 }
 
-fn parse_set_cookie(line: &str) -> Option<Parsed> {
+fn parse_set_cookie(line: &str) -> Parse {
     let mut parsed = Parsed {
         name: String::new(),
         value: None,
@@ -249,6 +280,7 @@ fn parse_set_cookie(line: &str) -> Option<Parsed> {
         path: None,
         secure: false,
         max_age: None,
+        version: 0,
         expires: None,
     };
     let mut seen: Vec<&'static str> = Vec::new();
@@ -275,14 +307,24 @@ fn parse_set_cookie(line: &str) -> Option<Parsed> {
             "path" => "path",
             "secure" => "secure",
             "max-age" => "max-age",
-            "version" | "port" | "comment" | "commenturl" | "discard" => continue,
+            "version" => "version",
             _ => continue,
         };
-        if seen.contains(&known) {
-            continue; // only the first value is significant
+        // Only the first value of an attribute is significant, except that `Max-Age` becomes an
+        // `expires` after this test, so a second `Max-Age` replaces the first.
+        if known != "max-age" && seen.contains(&known) {
+            continue;
+        }
+        if known == "max-age" && value.is_none() {
+            // `int(None)` raises something `http.cookiejar` does not expect, and it drops every
+            // cookie of the answer, not only this one.
+            return Parse::DropResponse;
+        }
+        if known == "expires" && value.is_none() {
+            continue; // no date: a session cookie
         }
         if known != "secure" && value.is_none() {
-            return None; // a value attribute with no value: the whole cookie is bad
+            return Parse::Bad; // a value attribute with no value: the whole cookie is bad
         }
         match known {
             "secure" => {
@@ -291,30 +333,53 @@ fn parse_set_cookie(line: &str) -> Option<Parsed> {
             }
             "domain" => {
                 seen.push(known);
-                parsed.domain = value.map(str::to_owned);
+                parsed.domain = value.map(str::to_lowercase);
             }
             "path" => {
                 seen.push(known);
                 parsed.path = value.map(str::to_owned);
             }
-            "max-age" => {
+            "version" => {
                 seen.push(known);
+                // An unreadable version drops the cookie.
+                match parse_int(strip_quotes(value.unwrap_or(""))) {
+                    Some(version) => parsed.version = version,
+                    None => return Parse::Bad,
+                }
+            }
+            "max-age" => {
                 max_age_set = true;
-                parsed.max_age = Some(parse_int(value.unwrap_or(""))?);
+                match parse_int(value.unwrap_or("")) {
+                    Some(age) => parsed.max_age = Some(age),
+                    None => return Parse::Bad,
+                }
             }
             _ => {
+                // A date `http2time` cannot read leaves the cookie a session cookie.
                 if max_age_set {
                     continue;
                 }
-                seen.push(known);
-                parsed.expires = http2time(strip_quotes(value.unwrap_or("")));
+                if let Some(at) = http2time(strip_quotes(value.unwrap_or(""))) {
+                    seen.push(known);
+                    parsed.expires = Some(at);
+                }
             }
         }
     }
     if parsed.name.is_empty() && parsed.value.is_none() {
-        return None;
+        return Parse::Bad;
     }
-    Some(parsed)
+    Parse::Cookie(parsed)
+}
+
+/// What one `Set-Cookie` line parses to.
+enum Parse {
+    Cookie(Parsed),
+    /// This cookie is dropped (a value attribute with no value, a `Max-Age` or a `Version` that is
+    /// not a number).
+    Bad,
+    /// Every cookie of the answer is dropped.
+    DropResponse,
 }
 
 /// `re.split(r";\s*", header)`
@@ -406,8 +471,7 @@ enum Change {
 
 /// `_cookie_from_cookie_tuple` + `DefaultCookiePolicy.set_ok`. `None` when the line is bad or the
 /// policy refuses the cookie.
-fn change_from_header(line: &str, target: &Target, now: i64) -> Option<Change> {
-    let parsed = parse_set_cookie(line)?;
+fn change_from_header(parsed: Parsed, target: &Target, now: i64) -> Option<Change> {
     let domain = match &parsed.domain {
         None => target.effective.clone(),
         Some(d) if d.starts_with('.') => d.clone(),
@@ -416,9 +480,11 @@ fn change_from_header(line: &str, target: &Target, now: i64) -> Option<Change> {
     let path = match parsed.path.as_deref() {
         Some(p) if !p.is_empty() => escape_path(p),
         _ => {
+            // Netscape's default path drops the last segment and its slash; a cookie that names
+            // a version keeps the slash.
             let mut path = target.path.clone();
             if let Some(i) = path.rfind('/') {
-                path.truncate(i);
+                path.truncate(if parsed.version == 0 { i } else { i + 1 });
             }
             if path.is_empty() {
                 path = "/".to_owned();
@@ -433,6 +499,11 @@ fn change_from_header(line: &str, target: &Target, now: i64) -> Option<Change> {
     };
     if expires.is_some_and(|e| e <= now) {
         return Some(Change::Delete(domain, path, parsed.name));
+    }
+    // Version 1 is read as a Netscape cookie (`rfc2109_as_netscape`); RFC 2965 is off, so
+    // anything above it is refused.
+    if parsed.version > 1 {
+        return None;
     }
     if parsed.domain.is_some() && !set_ok_domain(&domain, target) {
         return None;

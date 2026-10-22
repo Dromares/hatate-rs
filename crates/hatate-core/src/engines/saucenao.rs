@@ -31,7 +31,7 @@ use tracing::{debug, error, info, warn};
 
 use super::client::{
     Failure, OnTick, ProgressTicker, failure_of, multipart_upload, read_upload, response_text,
-    seconds, ticking,
+    seconds, ticking, urlencode,
 };
 use super::looks_like_url;
 use crate::boorus::parsed::{classes_of, soup_of, text_of};
@@ -98,6 +98,10 @@ pub struct JsonAnswer {
     /// This answer set `_daily_limit_reported`: `long_remaining` was 0, or the error message says
     /// the daily limit is exhausted. The client latches it until the user resumes.
     pub daily_limit_reported: bool,
+    /// `_last_quota_at` was set although the quota could not be read: the answer's `header` is a
+    /// truthy value that is not an object, and Python stamps the time before it calls `.get` on
+    /// it (and raises). The client takes the time, and keeps the old quota.
+    pub stamps_quota_time: bool,
     pub result: Result<Vec<SauceNaoMatch>, SauceNaoError>,
 }
 
@@ -145,6 +149,7 @@ pub fn parse_json_response(settings: &SauceNaoSettings, status: u16, body: &str)
     let early = |message: &str| JsonAnswer {
         quota: None,
         daily_limit_reported: false,
+        stamps_quota_time: false,
         result: Err(failure(message)),
     };
     match status {
@@ -169,7 +174,14 @@ pub fn parse_json_response(settings: &SauceNaoSettings, status: u16, body: &str)
         warn!(
             "SauceNAO JSON response had no header object - treating it as a failure, not a confirmed result"
         );
-        return early("SauceNAO's response didn't include the expected header data");
+        let mut answer = early("SauceNAO's response didn't include the expected header data");
+        // `if not header` passes a non-empty string, list or number, and then `header.get`
+        // raises, one statement after the time was taken.
+        answer.stamps_quota_time = data
+            .as_object()
+            .and_then(|object| object.get("header"))
+            .is_some_and(|value| !value.is_object() && pycompat::truthy(value));
+        return answer;
     };
 
     let quota = SauceNaoQuota {
@@ -186,6 +198,7 @@ pub fn parse_json_response(settings: &SauceNaoSettings, status: u16, body: &str)
     let answer = |daily_limit_reported, result| JsonAnswer {
         quota: Some(quota),
         daily_limit_reported,
+        stamps_quota_time: false,
         result,
     };
 
@@ -570,6 +583,17 @@ impl SauceNaoClient {
         self.state.lock().unwrap().last_quota
     }
 
+    /// `_last_quota_at`: when the last reading was taken (`time.time()`), 0 before the first.
+    pub fn last_quota_at(&self) -> f64 {
+        self.state.lock().unwrap().last_quota_at
+    }
+
+    /// `_daily_limit_reported`: the latch alone, without the `long_remaining == 0` reading
+    /// [`SauceNaoClient::is_daily_quota_exhausted`] also counts.
+    pub fn daily_limit_reported(&self) -> bool {
+        self.state.lock().unwrap().daily_limit_reported
+    }
+
     /// `is_daily_quota_exhausted`: whether the daily allowance is spent as of the last answer.
     /// Only the daily window counts; a bare 429 does not.
     pub fn is_daily_quota_exhausted(&self) -> bool {
@@ -712,13 +736,16 @@ impl SauceNaoClient {
         body: bytes::Bytes,
         limit: std::time::Duration,
     ) -> Result<NetRequest, NetError> {
-        let mut request = NetRequest::post(&self.api_url, limit)?;
-        for (name, value) in query {
-            request = match value {
-                QueryValue::Plain(text) => request.query(name, text),
-                QueryValue::Secret(secret) => request.secret_query(name, secret),
-            };
-        }
+        // `params=` as `requests` encodes it, not the `url` crate's form encoding.
+        let pairs: Vec<(&str, &str)> = query
+            .iter()
+            .map(|(name, value)| match value {
+                QueryValue::Plain(text) => (*name, *text),
+                QueryValue::Secret(secret) => (*name, secret.expose()),
+            })
+            .collect();
+        let url = format!("{}?{}", self.api_url, urlencode(&pairs));
+        let request = NetRequest::post(&url, limit)?;
         Ok(request
             .header("Content-Type", content_type)?
             .with_body(body)
@@ -770,10 +797,12 @@ impl SauceNaoClient {
         }
 
         let answer = parse_json_response(settings, status, &body);
-        if let Some(quota) = answer.quota {
+        if answer.quota.is_some() || answer.stamps_quota_time {
             let mut state = self.state.lock().unwrap();
             state.last_quota_at = self.clock.wall();
-            state.last_quota = Some(quota);
+            if let Some(quota) = answer.quota {
+                state.last_quota = Some(quota);
+            }
             if answer.daily_limit_reported {
                 state.daily_limit_reported = true;
             }
