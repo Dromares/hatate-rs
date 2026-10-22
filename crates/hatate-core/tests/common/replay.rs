@@ -102,6 +102,8 @@ pub trait RecordedExt {
 pub struct FormPart {
     pub name: String,
     pub filename: Option<String>,
+    /// The `Content-Disposition` value as sent.
+    pub disposition: String,
     pub content_type: Option<String>,
     pub data: Vec<u8>,
 }
@@ -148,6 +150,7 @@ impl RecordedExt for Recorded {
             let mut part = FormPart {
                 name: String::new(),
                 filename: None,
+                disposition: String::new(),
                 content_type: None,
                 data: data.to_vec(),
             };
@@ -157,12 +160,12 @@ impl RecordedExt for Recorded {
                 };
                 match name.trim().to_ascii_lowercase().as_str() {
                     "content-disposition" => {
-                        for attr in value.split(';') {
-                            let attr = attr.trim();
-                            if let Some(v) = attr.strip_prefix("name=") {
-                                part.name = v.trim_matches('"').to_owned();
-                            } else if let Some(v) = attr.strip_prefix("filename=") {
-                                part.filename = Some(v.trim_matches('"').to_owned());
+                        part.disposition = value.trim().to_owned();
+                        for (key, v) in attributes(value) {
+                            match key.as_str() {
+                                "name" => part.name = v,
+                                "filename" => part.filename = Some(v),
+                                _ => {}
                             }
                         }
                     }
@@ -174,6 +177,50 @@ impl RecordedExt for Recorded {
         }
         parts
     }
+}
+
+/// `key=value` attributes of a header value, `;`-separated. A value in double quotes may hold
+/// `;` and `\"`.
+fn attributes(value: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut chars = value.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == ';' || c.is_whitespace() {
+            continue;
+        }
+        let mut key = String::from(c);
+        while let Some(&n) = chars.peek() {
+            if n == '=' || n == ';' {
+                break;
+            }
+            key.push(n);
+            chars.next();
+        }
+        if chars.next() != Some('=') {
+            continue;
+        }
+        let mut val = String::new();
+        if chars.peek() == Some(&'"') {
+            chars.next();
+            while let Some(n) = chars.next() {
+                match n {
+                    '\\' => val.extend(chars.next()),
+                    '"' => break,
+                    _ => val.push(n),
+                }
+            }
+        } else {
+            while let Some(&n) = chars.peek() {
+                if n == ';' {
+                    break;
+                }
+                val.push(n);
+                chars.next();
+            }
+        }
+        out.push((key.trim().to_ascii_lowercase(), val));
+    }
+    out
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {

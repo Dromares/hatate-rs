@@ -620,3 +620,75 @@ fn names() {
         assert_eq!(splitext_stem(name), stem, "{name:?}");
     }
 }
+
+// --- Pillow's mode, read from the header ---------------------------------------------------
+
+fn gif_head(flags: u8, table: &[u8]) -> Vec<u8> {
+    let mut head = b"GIF89a".to_vec();
+    head.extend_from_slice(&[4, 0, 4, 0, flags, 0, 0]);
+    head.extend_from_slice(table);
+    head
+}
+
+fn bmp_head(bits: u16, colors_used: u32, palette: &[[u8; 3]]) -> Vec<u8> {
+    let mut head = b"BM".to_vec();
+    head.resize(14, 0);
+    head.extend_from_slice(&40u32.to_le_bytes()); // BITMAPINFOHEADER
+    head.resize(28, 0);
+    head.extend_from_slice(&bits.to_le_bytes());
+    head.resize(46, 0);
+    head.extend_from_slice(&colors_used.to_le_bytes());
+    head.resize(54, 0);
+    for rgb in palette {
+        head.extend_from_slice(&[rgb[2], rgb[1], rgb[0], 0]);
+    }
+    head
+}
+
+#[test]
+fn a_grey_ramp_palette_is_pillows_mode_l_and_a_bilevel_png_is_rgb() {
+    let ramp: Vec<u8> = (0..=255u8).flat_map(|i| [i, i, i]).collect();
+    let mut off_by_one = ramp.clone();
+    off_by_one[3 * 7] = 8;
+    assert_eq!(mode_from_header(&gif_head(0xF7, &ramp)), PillowMode::Grey);
+    assert_eq!(
+        mode_from_header(&gif_head(0xF7, &off_by_one)),
+        PillowMode::AsDecoded
+    );
+    assert_eq!(
+        mode_from_header(&gif_head(0x00, &[])),
+        PillowMode::AsDecoded,
+        "no global table"
+    );
+
+    let greys: Vec<[u8; 3]> = (0..=255u8).map(|i| [i, i, i]).collect();
+    assert_eq!(mode_from_header(&bmp_head(8, 0, &greys)), PillowMode::Grey);
+    assert_eq!(
+        mode_from_header(&bmp_head(8, 16, &greys[..16])),
+        PillowMode::Grey
+    );
+    let mut tinted = greys.clone();
+    tinted[3] = [3, 3, 4];
+    assert_eq!(
+        mode_from_header(&bmp_head(8, 0, &tinted)),
+        PillowMode::AsDecoded
+    );
+    // Two entries, black and white: mode `1`, converted to RGB. A 24-bit BMP has no palette.
+    assert_eq!(
+        mode_from_header(&bmp_head(1, 2, &[[0, 0, 0], [255, 255, 255]])),
+        PillowMode::Rgb
+    );
+    assert_eq!(
+        mode_from_header(&bmp_head(24, 0, &[])),
+        PillowMode::AsDecoded
+    );
+
+    let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+    png.resize(24, 0);
+    png.extend_from_slice(&[1, 0]); // 1-bit grey
+    assert_eq!(mode_from_header(&png), PillowMode::Rgb);
+    png[24..26].copy_from_slice(&[8, 0]); // 8-bit grey stays L
+    assert_eq!(mode_from_header(&png), PillowMode::AsDecoded);
+    assert_eq!(mode_from_header(b"not an image"), PillowMode::AsDecoded);
+    assert_eq!(mode_from_header(b""), PillowMode::AsDecoded);
+}

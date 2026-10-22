@@ -270,16 +270,37 @@ struct Pixels {
     data: Vec<u8>,
 }
 
+/// How Pillow's mode for a file differs from the pixels the `image` crate hands back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PillowMode {
+    /// The decoder's own: 8-bit grey stays grey, everything else is RGB.
+    AsDecoded,
+    /// Pillow reads it as mode `1` (a bilevel picture), which it converts to RGB.
+    Rgb,
+    /// Pillow reads it as mode `L`: a palette that is the identity grey ramp.
+    Grey,
+}
+
 impl Pixels {
-    fn from_image(img: DynamicImage) -> Pixels {
-        match img {
-            DynamicImage::ImageLuma8(g) => Pixels {
+    fn from_image(img: DynamicImage, mode: PillowMode) -> Pixels {
+        match (img, mode) {
+            (DynamicImage::ImageLuma8(g), PillowMode::AsDecoded | PillowMode::Grey) => Pixels {
                 width: g.width(),
                 height: g.height(),
                 grey: true,
                 data: g.into_raw(),
             },
-            other => {
+            (other, PillowMode::Grey) => {
+                // A grey-ramp palette decodes to RGB with every channel equal to the index.
+                let rgb = other.to_rgb8();
+                Pixels {
+                    width: rgb.width(),
+                    height: rgb.height(),
+                    grey: true,
+                    data: rgb.pixels().map(|p| p.0[0]).collect(),
+                }
+            }
+            (other, _) => {
                 let rgb = other.to_rgb8();
                 Pixels {
                     width: rgb.width(),
@@ -355,6 +376,86 @@ impl Pixels {
     }
 }
 
+/// What Pillow's mode would be for `path`, where it differs from what the decoder returns, read
+/// from the file's own header: a bilevel PNG is mode `1` (converted to RGB, where the decoder
+/// returns grey), and a GIF or BMP whose palette is the identity grey ramp is mode `L` (kept
+/// grey, where the decoder returns RGB). Only the number of channels in the JPEG depends on it;
+/// that decides whether the picture fits under the cap, so it is matched.
+fn pillow_mode(path: &Path) -> PillowMode {
+    use std::io::Read as _;
+    let mut head = Vec::with_capacity(1100);
+    if std::fs::File::open(path)
+        .and_then(|f| f.take(1100).read_to_end(&mut head))
+        .is_err()
+    {
+        return PillowMode::AsDecoded;
+    }
+    mode_from_header(&head)
+}
+
+fn mode_from_header(head: &[u8]) -> PillowMode {
+    let le16 = |at: usize| {
+        head.get(at..at + 2)
+            .map(|b| usize::from(u16::from_le_bytes([b[0], b[1]])))
+    };
+    let le32 = |at: usize| {
+        head.get(at..at + 4)
+            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
+    };
+    if head.starts_with(b"\x89PNG\r\n\x1a\n") {
+        // IHDR: width, height, bit depth (offset 24), colour type (offset 25).
+        return match (head.get(24), head.get(25)) {
+            (Some(1), Some(0)) => PillowMode::Rgb,
+            _ => PillowMode::AsDecoded,
+        };
+    }
+    if head.starts_with(b"GIF87a") || head.starts_with(b"GIF89a") {
+        // The global colour table follows the 13-byte header.
+        let flags = head.get(10).copied().unwrap_or(0);
+        if flags & 0x80 == 0 {
+            return PillowMode::AsDecoded;
+        }
+        let entries = 1usize << ((flags & 7) + 1);
+        let Some(table) = head.get(13..13 + 3 * entries) else {
+            return PillowMode::AsDecoded;
+        };
+        let ramp = table
+            .chunks_exact(3)
+            .enumerate()
+            .all(|(i, rgb)| rgb.iter().all(|&c| usize::from(c) == i));
+        return if ramp {
+            PillowMode::Grey
+        } else {
+            PillowMode::AsDecoded
+        };
+    }
+    if head.starts_with(b"BM") {
+        // BITMAPINFOHEADER and later: bits per pixel at 28, colours used at 46, the palette
+        // (four bytes an entry, B G R and padding) right after the header. Pillow reads a
+        // palette of the greys 0..n as `L`, and two entries (0, 255) as `1`.
+        let (Some(dib), Some(bits)) = (le32(14), le16(28)) else {
+            return PillowMode::AsDecoded;
+        };
+        if dib < 40 || bits > 8 || bits == 0 {
+            return PillowMode::AsDecoded;
+        }
+        let used = le32(46).unwrap_or(0);
+        let colors = if used == 0 { 1usize << bits } else { used };
+        let Some(palette) = head.get(14 + dib..14 + dib + 4 * colors) else {
+            return PillowMode::AsDecoded;
+        };
+        let wanted = |i: usize| if colors == 2 { [0u8, 255][i] } else { i as u8 };
+        let grey = colors <= 256
+            && (0..colors).all(|i| palette[4 * i..4 * i + 3].iter().all(|&c| c == wanted(i)));
+        return match (grey, colors) {
+            (false, _) => PillowMode::AsDecoded,
+            (true, 2) => PillowMode::Rgb,
+            (true, _) => PillowMode::Grey,
+        };
+    }
+    PillowMode::AsDecoded
+}
+
 /// `Image.thumbnail`'s size arithmetic (Pillow 12): the size the image is resized to, or `None`
 /// when the requested box is at least as large as the image in both directions.
 ///
@@ -402,13 +503,14 @@ fn downscale_to_fit(
     max_bytes: u64,
     max_dimension: u32,
 ) -> Result<Downscaled, String> {
+    let mode = pillow_mode(path);
     let img = image::ImageReader::open(path)
         .map_err(|e| e.to_string())?
         .with_guessed_format()
         .map_err(|e| e.to_string())?
         .decode()
         .map_err(|e| e.to_string())?;
-    let mut im = Pixels::from_image(img);
+    let mut im = Pixels::from_image(img, mode);
 
     let max_dimension = i64::from(max_dimension);
     if im.width.max(im.height) > max_dimension as u32 {
