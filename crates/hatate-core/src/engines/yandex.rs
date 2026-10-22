@@ -61,10 +61,10 @@ static POST_URL_RE: LazyLock<Regex> = LazyLock::new(|| {
     .expect("post url regex")
 });
 
-/// Danbooru's mirrors (`^(?:[a-z0-9-]+\.)?donmai\.(?:us|moe)$`, `re.IGNORECASE`): Yandex indexed
+/// Danbooru's mirrors (`^(?:[a-z0-9-]+\.)?donma[i\u{131}\u{130}]\.(?:us|moe)$`, `re.IGNORECASE`): Yandex indexed
 /// some posts under them, and only the main host has a parser.
 static DANBOORU_MIRROR_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)^(?:[a-z0-9\-\u{131}\u{130}]+\.)?donmai\.(?:us|moe)\z")
+    Regex::new(r"(?i)^(?:[a-z0-9\-\u{131}\u{130}]+\.)?donma[i\u{131}\u{130}]\.(?:us|moe)\z")
         .expect("danbooru mirror regex")
 });
 
@@ -130,7 +130,7 @@ pub fn keep_post_pages(sites: &[Value]) -> Result<Vec<YandexMatch>, UnexpectedIn
             Some(v) if pycompat::truthy(v) => v.as_str().ok_or(UnexpectedInput)?,
             _ => "",
         };
-        let Some(url) = post_url(raw_url) else {
+        let Some(url) = post_url(raw_url)? else {
             continue;
         };
         if !seen.insert(url.clone()) {
@@ -185,22 +185,30 @@ pub fn keep_post_pages(sites: &[Value]) -> Result<Vec<YandexMatch>, UnexpectedIn
 
 /// The canonical post URL, or `None` if this is not a post page on a site the booru parsers can
 /// read.
-pub fn post_url(url: &str) -> Option<String> {
+///
+/// `Err` where Python's `boorus.find_parser` raises `ValueError` out of `urlparse` (see
+/// [`boorus::host::raises_value_error`]), which `post_url` does not catch.
+pub fn post_url(url: &str) -> Result<Option<String>, UnexpectedInput> {
     // Yandex tags every outbound link with its own utm_ parameters.
     let mut url = UTM_RE.replace_all(pycompat::strip(url), "").into_owned();
     if !url.contains('?') && url.contains('&') {
         url = url.replacen('&', "?", 1);
     }
-    let mut parts = pyurl::try_urlparse(&url, "").ok()?;
+    let Ok(mut parts) = pyurl::try_urlparse(&url, "") else {
+        return Ok(None);
+    };
     if DANBOORU_MIRROR_RE.is_match(&parts.netloc) && parts.netloc != "danbooru.donmai.us" {
         parts.netloc = "danbooru.donmai.us".to_string();
         url = pyurl::urlunparse(&parts);
     }
     if !POST_URL_RE.is_match(&url) {
-        return None;
+        return Ok(None);
     }
     let url = canonicalize_url(&url);
-    boorus::find_parser(&url).map(|_| url)
+    if boorus::host::raises_value_error(&url) {
+        return Err(UnexpectedInput);
+    }
+    Ok(boorus::find_parser(&url).map(|_| url))
 }
 
 /// The host of `url`, lower-cased and without a leading `www.`, or `None` when it has none. `Err`

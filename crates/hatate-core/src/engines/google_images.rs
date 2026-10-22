@@ -339,7 +339,7 @@ pub fn parse_results(
         }
         let title = text_stripped(heading_in(*a).unwrap_or(*a), " ");
         found.push(GoogleImagesMatch {
-            thumb_url: thumb_near(*a, page_url),
+            thumb_url: thumb_near(*a, page_url)?,
             similarity: score(found.len(), SIMILARITY_START),
             title: (!title.is_empty()).then_some(title),
             source_name: host_label(&url),
@@ -373,7 +373,7 @@ fn resolve_href(href: &str, page_url: &str) -> Result<Option<String>, Unexpected
     } else {
         page_url
     };
-    let absolute = pyurl::urljoin(base, href);
+    let absolute = pyurl::try_urljoin(base, href).map_err(|_| UnexpectedInput)?;
     let parsed = pyurl::try_urlparse(&absolute, "").map_err(|_| UnexpectedInput)?;
     if REDIRECT_PATHS.contains(&parsed.path.as_str()) {
         for key in ["q", "url", "imgrefurl"] {
@@ -397,7 +397,7 @@ fn resolve_href(href: &str, page_url: &str) -> Result<Option<String>, Unexpected
 /// The preview image belonging to a result, if the page carries one: inside the anchor first,
 /// then its containing block, then that block's. Google puts the thumbnail in either place
 /// depending on the layout.
-fn thumb_near(anchor: ElementRef<'_>, page_url: &str) -> Option<String> {
+fn thumb_near(anchor: ElementRef<'_>, page_url: &str) -> Result<Option<String>, UnexpectedInput> {
     let parent = anchor.parent();
     let scopes = [Some(*anchor), parent, parent.and_then(|p| p.parent())];
     for scope in scopes.into_iter().flatten() {
@@ -421,10 +421,11 @@ fn thumb_near(anchor: ElementRef<'_>, page_url: &str) -> Option<String> {
             } else {
                 page_url
             };
-            return Some(pyurl::urljoin(base, &src));
+            let joined = pyurl::try_urljoin(base, &src).map_err(|_| UnexpectedInput)?;
+            return Ok(Some(joined));
         }
     }
-    None
+    Ok(None)
 }
 
 // ----------------------------------------------------------------------

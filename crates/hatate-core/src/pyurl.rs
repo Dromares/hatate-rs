@@ -501,6 +501,19 @@ pub fn urljoin(base: &str, url: &str) -> String {
     )
 }
 
+/// `urljoin(base, url)` with the `ValueError`s the two `urlsplit` calls inside it raise. Nothing
+/// is split when either side is empty, as in Python.
+pub fn try_urljoin(base: &str, url: &str) -> Result<String, UrlValueError> {
+    if !base.is_empty() && !url.is_empty() {
+        for part in [base, url] {
+            if let Some(netloc) = split(part, None).netloc {
+                check_netloc(&netloc)?;
+            }
+        }
+    }
+    Ok(urljoin(base, url))
+}
+
 /// `quote(s)` with the default `safe="/"`: the UTF-8 bytes of every character other than an ASCII
 /// letter, digit, `_.-~/` become `%XX` (upper-case hex).
 pub fn quote(s: &str) -> String {
