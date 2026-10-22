@@ -4,6 +4,7 @@ pub mod boorus;
 pub mod cache;
 pub mod config;
 pub mod crash_marker;
+pub mod engines;
 mod fsutil;
 pub mod model;
 pub mod net;
@@ -17,6 +18,7 @@ pub mod quota_pause;
 pub mod reddit;
 pub mod rotating_log;
 pub mod session;
+pub mod sites;
 pub mod timeutil;
 
 /// Crate name, used by the placeholder test below.

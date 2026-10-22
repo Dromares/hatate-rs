@@ -70,6 +70,11 @@ static PORTS: &[&Port] = &[
     &corpus_ports::twitter::PORT,
     &corpus_ports::redditpost::PORT,
     &corpus_ports::reddit::PORT,
+    &corpus_ports::yandex::PARSE_SITES,
+    &corpus_ports::yandex::KEEP_POST_PAGES,
+    &corpus_ports::google_images::PARSE_RESULTS,
+    &corpus_ports::google_images::PARSE_LENS_RESULTS,
+    &corpus_ports::google_images::PARSE_VISION_RESULTS,
 ];
 
 /// The Python exception class a `raises` item names, and the Rust error variant that stands for
@@ -111,6 +116,12 @@ impl Call<'_> {
             .and_then(|response| response["status"].as_u64())
             .and_then(|status| u16::try_from(status).ok())
             .expect("responses[-1].status is not an HTTP status")
+    }
+
+    /// The input as JSON: an engine that takes a decoded payload (trace.moe, Pawchive, a SauceNAO
+    /// result) has `input.json` in the canonical form of `corpus/README.md`.
+    pub fn json(&self) -> Value {
+        serde_json::from_slice(&self.input.bytes).expect("input.json is not JSON")
     }
 
     /// The post-page URL, `extra_args[0]` for a booru item.
