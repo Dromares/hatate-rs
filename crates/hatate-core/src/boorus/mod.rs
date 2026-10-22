@@ -33,12 +33,15 @@ pub mod moebooru;
 pub mod paheal;
 pub mod parsed;
 pub mod pawchive;
+pub mod pixiv;
 pub mod rating;
+pub mod redditpost;
 pub mod rule34;
 pub mod rule34us;
 pub mod safebooru;
 pub mod sankaku;
 pub mod sizes;
+pub mod twitter;
 pub mod xbooru;
 pub mod zerochan;
 
@@ -259,7 +262,7 @@ pub static PARSERS: &[&SiteParser] = &[
     &gelbooru::PARSER,
     &safebooru::PARSER,
     &moebooru::PARSER,
-    // pixiv
+    &pixiv::PARSER,
     &e621::PARSER,
     &zerochan::PARSER,
     &eshuushuu::PARSER,
@@ -268,11 +271,11 @@ pub static PARSERS: &[&SiteParser] = &[
     &xbooru::PARSER,
     &paheal::PARSER,
     &rule34us::PARSER,
-    // redditpost
+    &redditpost::PARSER,
     &deviantart::PARSER,
     &pawchive::PARSER,
     &sankaku::PARSER,
-    // twitter
+    &twitter::PARSER,
     &mangadex::PARSER,
     &joyreactor::PARSER,
 ];
@@ -558,6 +561,38 @@ mod tests {
         }
         // A reactor page that is not a post is nobody's.
         assert!(find_parser("https://reactor.cc/tag/art").is_none());
+    }
+
+    #[test]
+    fn pixiv_twitter_and_reddit_posts_are_found_and_their_neighbours_are_nobodys() {
+        for (url, site) in [
+            ("https://www.pixiv.net/artworks/75494369", "pixiv"),
+            ("https://www.pixiv.net/en/artworks/75494369", "pixiv"),
+            (
+                "https://www.pixiv.net/member_illust.php?mode=medium&illust_id=75494369",
+                "pixiv",
+            ),
+            ("https://twitter.com/user/status/1", "twitter"),
+            ("https://x.com/user/status/1", "twitter"),
+            ("https://fxtwitter.com/user/status/1", "twitter"),
+            ("https://redd.it/1hhrx0v", "redditpost"),
+            ("https://www.reddit.com/comments/1hhrx0v", "redditpost"),
+            ("https://old.reddit.com/r/x/comments/1hhrx0v/", "redditpost"),
+        ] {
+            assert_eq!(find_parser(url).map(|p| p.name), Some(site), "{url}");
+        }
+        // Media and shortener URLs carry no tweet id, a listing or user page no post, and a
+        // picture's own file belongs to no post: classification only.
+        for url in [
+            "https://pbs.twimg.com/media/abc.jpg",
+            "https://t.co/abc",
+            "https://anilist.co/anime/21",
+            "https://www.reddit.com/r/5ToubunNoHanayome/",
+            "https://www.reddit.com/user/someone",
+            "https://i.redd.it/m42sxjdyus7e1.jpeg",
+        ] {
+            assert!(find_parser(url).is_none(), "{url}");
+        }
     }
 
     #[test]
