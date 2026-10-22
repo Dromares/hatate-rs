@@ -253,6 +253,7 @@ mod tests {
             "SauceNAO",
             "IQDB 3D",
             "trace.moe",
+            "Pawchive",
             "Pawchive index",
         ] {
             assert!(reports_real_similarity(Some(label)), "{label}");
