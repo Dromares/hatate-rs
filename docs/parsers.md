@@ -46,6 +46,12 @@ runs once the body is in hand.
   `get("class")`. Use them rather than `scraper`'s own text and class iterators, which differ (see below).
 - `pycompat::strip`, `pycompat::split` give Python's whitespace rules for `str.strip` and
   `str.split()`.
+- `pycompat::html_unescape` is `html.unescape`, for a site that reads its text with regular
+  expressions and not through a tree (JoyReactor). It decodes legacy no-semicolon references
+  such as `&amp` and remaps numeric ones as CPython does, which a browser-style decoder does
+  not; the named table comes from `markup5ever`, the crate `scraper` already builds on.
+- `boorus::json_fields` holds the `int(...)`, size, dimension and absolute-URL guards the
+  JSON-API sites (Sankaku, Anime-Pictures) share.
 
 ### Where html5ever and bs4/lxml differ
 
@@ -57,6 +63,9 @@ has needed yet:
 - **Class lists** split on Python whitespace (which includes `\x1f`), not on ASCII whitespace.
 - **`json.loads` accepts what `serde_json` rejects:** `NaN`, `Infinity`, `-Infinity` and lone
   surrogate escapes. A body using them is "not JSON" here. No corpus item reaches this.
+- **`int(x)` in Python reads what `pycompat::int` does not:** digit separators (`"1_000"`),
+  non-ASCII digits, and integers past `i64`. A record using them gives "unknown" here. No corpus
+  item reaches this.
 
 A new difference found by a later port is written down here, with the corpus item that exposed
 it, and then matched. No item is allowed to fail instead.
