@@ -1194,7 +1194,7 @@ fn finish(
                 }
             } else {
                 let ids: Vec<u8> = frame.comps.iter().map(|c| c.id).collect();
-                if ids == [b'R', b'G', b'B'] {
+                if ids == *b"RGB" {
                     Space::Rgb
                 } else {
                     Space::YCbCr

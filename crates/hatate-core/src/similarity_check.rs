@@ -109,8 +109,7 @@ pub async fn recheck_borrowed_measurement(
     settings: &Settings,
     local_path: &str,
 ) -> Result<(), SimilarityError> {
-    let reason: String;
-    if candidate.similarity_measured {
+    let reason: String = if candidate.similarity_measured {
         let (Some(pw), Some(ph)) = (
             page_info.width.filter(|&v| v != 0),
             page_info.height.filter(|&v| v != 0),
@@ -131,14 +130,14 @@ pub async fn recheck_borrowed_measurement(
         if (post_ratio - local_ratio).abs() / local_ratio.max(post_ratio) <= ASPECT_TOLERANCE {
             return Ok(());
         }
-        reason = format!(
+        format!(
             "a thumbnail that isn't its own (it is {pw}x{ph}, the local file {local_w}x{local_h})"
-        );
+        )
     } else if reports_real_similarity(Some(&candidate.engine)) {
         return Ok(());
     } else {
-        reason = "a made-up ordinal position, never actually measured".to_owned();
-    }
+        "a made-up ordinal position, never actually measured".to_owned()
+    };
 
     let before = candidate.similarity;
     let source = page_info
