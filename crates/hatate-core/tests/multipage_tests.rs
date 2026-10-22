@@ -452,7 +452,7 @@ fn test_a_different_page_is_refused() {
 fn test_plausible_is_not_good_enough() {
     // Python patches `hamming_distance` to NEAR_EXACT_DISTANCE + 1. Here a real picture and a
     // real edit of it (a third papered over) read 7 apart: plausible, and not confirmed.
-    assert!(MAX_PLAUSIBLE_DISTANCE > NEAR_EXACT_DISTANCE);
+    const { assert!(MAX_PLAUSIBLE_DISTANCE > NEAR_EXACT_DISTANCE) };
     let mut base = Canvas::new(240, 240, [0, 0, 0]);
     for x in 0..240u32 {
         for y in 0..240u32 {
