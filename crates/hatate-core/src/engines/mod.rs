@@ -23,9 +23,14 @@
 //! each (reading the picture, the requests, the pacing, setting `google_images._blocked` from an
 //! error that `latches()`) is Phase 3.
 //!
-//! No function here opens a socket or reads a file.
+//! **Phase 3.a (DAN-2057): the request halves of IQDB, trace.moe and the Pawchive lookup.**
+//! [`client`] holds what they share (the upload, the countdown ticker, how an answer becomes
+//! text); `iqdb::IqdbClient`, `tracemoe::TraceMoeClient` and `pawchive_lookup::PawchiveLookupClient`
+//! each own a `NetClient` and the host they talk to, and put a deadline over the whole exchange.
+//! The pure halves still open no socket and read no file.
 
 pub mod ascii2d;
+pub mod client;
 pub mod google_images;
 pub mod google_lens;
 pub mod iqdb;
