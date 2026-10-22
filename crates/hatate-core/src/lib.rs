@@ -1,6 +1,7 @@
 //! Shared library for the Hatate Rust rewrite. Work in progress.
 
 pub mod config;
+pub mod net;
 pub mod paths;
 
 /// Crate name, used by the placeholder test below.
