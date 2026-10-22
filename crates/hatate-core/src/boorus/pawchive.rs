@@ -414,3 +414,591 @@ fn tag_names(raw: Option<&Value>) -> Vec<String> {
         _ => Vec::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    const URL: &str = "https://pawchive.pw/patreon/user/50093102/post/83421639";
+
+    /// `TestPawchiveParser._body`: the record Python's tests build, with overrides.
+    fn body(overrides: Value) -> String {
+        let mut record = json!({
+            "id": "83421639", "user": "50093102", "service": "patreon",
+            "title": "A Post",
+            // A POSTGRES ARRAY LITERAL in a string, not a JSON list, and a quoted element
+            // containing the separator.
+            "tags": "{Bondage,Damsel,\"Total Versext\",gefesselt}",
+            "file": {"name": "a.jpg", "path": "/93/0e/930e7282.jpg"},
+            "attachments": [{"name": "a.jpg", "path": "/93/0e/930e7282.jpg"}],
+        });
+        for (key, value) in overrides.as_object().expect("overrides are an object") {
+            record[key] = value.clone();
+        }
+        record.to_string()
+    }
+
+    /// The creator cache `setUp` pre-seeds so no test reaches the network.
+    fn ctx() -> Context {
+        Context::with_artist_cache(HashMap::from([(
+            "patreon/50093102".to_string(),
+            "Sandra Spick".to_string(),
+        )]))
+    }
+
+    fn named(tags: &[Tag], namespace: &str) -> Vec<String> {
+        tags.iter()
+            .filter(|t| t.namespace.as_deref() == Some(namespace))
+            .map(|t| t.name.clone())
+            .collect()
+    }
+
+    // tests/test_search_quality.py::TestPawchiveParser::test_post_urls_resolve_to_the_api
+    #[test]
+    fn post_urls_resolve_to_the_api() {
+        assert_eq!(
+            resolve_fetch_url(URL),
+            "https://pawchive.pw/api/v1/patreon/user/50093102/post/83421639"
+        );
+        // The host is the URL's own netloc, as written.
+        assert_eq!(
+            resolve_fetch_url("https://PAWCHIVE.pw:8080/p/user/1/post/2?x#y"),
+            "https://PAWCHIVE.pw:8080/api/v1/p/user/1/post/2"
+        );
+        assert_eq!(
+            resolve_fetch_url("/p/user/1/post/2"),
+            "https://pawchive.pw/api/v1/p/user/1/post/2"
+        );
+    }
+
+    // ...::test_a_url_with_no_post_is_left_alone
+    #[test]
+    fn a_url_with_no_post_is_left_alone() {
+        for url in [
+            "https://pawchive.pw/",
+            "https://pawchive.pw/posts/popular",
+            "",
+            "https://pawchive.pw/a/user//post/p",
+            "https://pawchive.pw/a/user/b/post/",
+        ] {
+            assert_eq!(resolve_fetch_url(url), url);
+            assert_eq!(pages_api_url(url), None);
+        }
+        assert_eq!(
+            pages_api_url(URL).as_deref(),
+            Some("https://pawchive.pw/api/v1/patreon/user/50093102/post/83421639")
+        );
+    }
+
+    // ...::test_postgres_array_tags_are_split_on_the_right_commas: a quoted element contains the
+    // separator, so a plain split would turn one tag into two.
+    #[test]
+    fn postgres_array_tags_are_split_on_the_right_commas() {
+        let tags = parse(&body(json!({})), URL, &ctx());
+        assert_eq!(
+            named(&tags, "general"),
+            ["Bondage", "Damsel", "Total_Versext", "gefesselt"]
+        );
+    }
+
+    // ...::test_the_creator_becomes_an_artist_tag: most posts carry no tags of their own.
+    #[test]
+    fn the_creator_becomes_an_artist_tag() {
+        let tags = parse(&body(json!({"tags": null})), URL, &ctx());
+        assert_eq!(
+            tags,
+            [Tag {
+                name: "Sandra_Spick".to_string(),
+                namespace: Some("artist".to_string()),
+                source: TagSource::Booru,
+            }]
+        );
+        // The artist comes after the post's own tags.
+        let all = parse(&body(json!({})), URL, &ctx());
+        assert_eq!(all.last().map(|t| t.name.as_str()), Some("Sandra_Spick"));
+    }
+
+    // ...::test_a_json_list_of_tags_is_also_accepted
+    #[test]
+    fn a_json_list_of_tags_is_also_accepted() {
+        let tags = parse(&body(json!({"tags": ["a", "b b"]})), URL, &ctx());
+        assert_eq!(named(&tags, "general"), ["a", "b_b"]);
+    }
+
+    // ...::test_the_preview_comes_from_the_image_host
+    #[test]
+    fn the_preview_comes_from_the_image_host() {
+        assert_eq!(
+            parse_preview_url(&body(json!({})), URL).as_deref(),
+            Some("https://img.pawchive.pw/thumbnail/data/93/0e/930e7282.jpg")
+        );
+    }
+
+    // ...::test_the_original_comes_from_the_file_host: every /data path on img.pawchive.pw 404s.
+    #[test]
+    fn the_original_comes_from_the_file_host() {
+        assert_eq!(
+            parse_file_url(&body(json!({"has_full": true})), URL).as_deref(),
+            Some("https://file.pawchive.pw/data/93/0e/930e7282.jpg?f=a.jpg")
+        );
+    }
+
+    // ...::test_no_file_url_when_the_archive_lacks_the_full_file: has_full is about what has been
+    // imported, not permissions.
+    #[test]
+    fn no_file_url_when_the_archive_lacks_the_full_file() {
+        for body in [body(json!({"has_full": false})), body(json!({}))] {
+            assert_eq!(parse_file_url(&body, URL), None);
+        }
+        // Any truthy value counts; any falsy one does not.
+        for (value, has) in [
+            (json!(1), true),
+            (json!("yes"), true),
+            (json!([0]), true),
+            (json!(0), false),
+            (json!(""), false),
+            (json!(null), false),
+            (json!([]), false),
+        ] {
+            let body = body(json!({"has_full": value.clone()}));
+            assert_eq!(parse_file_url(&body, URL).is_some(), has, "{value}");
+        }
+    }
+
+    // ...::test_a_filename_with_awkward_characters_is_url_encoded
+    #[test]
+    fn a_filename_with_awkward_characters_is_url_encoded() {
+        let file = json!({"name": "a b&c.jpg", "path": "/93/0e/930e7282.jpg"});
+        let url = parse_file_url(&body(json!({"has_full": true, "file": file})), URL);
+        assert!(url.unwrap().contains("?f=a%20b%26c.jpg"));
+        // No name, an empty one or a non-string one: no suffix.
+        for name in [json!(""), json!(5), json!(null)] {
+            let file = json!({"name": name, "path": "/x"});
+            let url = parse_file_url(&body(json!({"has_full": true, "file": file})), URL);
+            assert_eq!(url.as_deref(), Some("https://file.pawchive.pw/data/x"));
+        }
+    }
+
+    // ...::test_an_empty_file_field_falls_back_to_the_attachments (seen live: "file" is {} and
+    // every image is under attachments)
+    #[test]
+    fn an_empty_file_field_falls_back_to_the_attachments() {
+        let post = body(json!({
+            "has_full": true, "file": {},
+            "attachments": [
+                {"name": "b.jpg", "path": "/a6/bc/a6bc.jpg"},
+                {"name": "c.jpg", "path": "/ec/8b/ec8b.jpg"},
+            ],
+        }));
+        assert_eq!(
+            parse_file_url(&post, URL),
+            Some(format!("{FILE_BASE}/a6/bc/a6bc.jpg?f=b.jpg"))
+        );
+        // A path that does not start with "/" is not an entry, whichever field it is in.
+        let relative = body(
+            json!({"has_full": true, "file": {"path": "a/b.jpg"}, "attachments": [{"path": "/q.jpg"}]}),
+        );
+        assert_eq!(
+            parse_file_url(&relative, URL),
+            Some(format!("{FILE_BASE}/q.jpg"))
+        );
+    }
+
+    // ...::test_multi_image_posts_report_their_page_count
+    #[test]
+    fn multi_image_posts_report_their_page_count() {
+        let attachments: Vec<Value> = (0..12)
+            .map(|i| json!({"name": format!("{i}.jpg"), "path": format!("/a/b/{i}.jpg")}))
+            .collect();
+        assert_eq!(
+            parse_page_count(&body(json!({"attachments": attachments})), URL),
+            12
+        );
+        assert_eq!(parse_page_count(&body(json!({})), URL), 1);
+        for odd in [
+            json!([]),
+            json!(null),
+            json!("abc"),
+            json!({"a": 1}),
+            json!(5),
+        ] {
+            assert_eq!(parse_page_count(&body(json!({"attachments": odd})), URL), 1);
+        }
+        assert_eq!(parse_page_count("<html></html>", URL), 1);
+    }
+
+    // ...::test_file_info_is_not_claimed: the API does not report it, and the normal HEAD on the
+    // file URL does, so this hook is deliberately absent.
+    #[test]
+    fn file_info_is_not_claimed_and_the_hooks_are_the_ones_python_defines() {
+        assert!(PARSER.parse_file_info.is_none());
+        assert_eq!(
+            PARSER.defined_hooks(),
+            [
+                "resolve_fetch_url",
+                "parse_file_url",
+                "parse_preview_url",
+                "parse_dimensions",
+                "parse_page_count",
+                "parse_pages",
+                "pages_api_url",
+            ]
+        );
+        assert!(!PARSER.empty_result_is_normal);
+    }
+
+    // ...::test_dimensions_are_read_from_the_head_of_the_original: the read itself (PIL over a
+    // Range request) is the engine client's; what the parser decides is which URL to read and
+    // what to say with the answer.
+    #[test]
+    fn dimensions_come_from_a_read_of_the_original_never_the_preview() {
+        let path = "/aa/bb/0123.png";
+        let post = body(json!({"has_full": true, "file": {"name": "a.png", "path": path}}));
+        let file_url = format!("{FILE_BASE}{path}");
+        assert_eq!(
+            dimensions_request(&post).as_deref(),
+            Some(file_url.as_str())
+        );
+        // Nothing read yet: Python's read failed, and answers (None, None).
+        assert_eq!(
+            parse_dimensions(&post, URL, &Context::default()),
+            (None, None)
+        );
+        let mut ctx = Context::default();
+        ctx.remember_image_size(&file_url, (Some(321), Some(123)));
+        assert_eq!(parse_dimensions(&post, URL, &ctx), (Some(321), Some(123)));
+        // A read of the preview's URL is not the original's.
+        let mut preview = Context::default();
+        preview.remember_image_size(&format!("{THUMBNAIL_BASE}{path}"), (Some(1), Some(1)));
+        assert_eq!(parse_dimensions(&post, URL, &preview), (None, None));
+        // A file whose size cannot be read from its start is remembered as `(None, None)`.
+        let mut unreadable = Context::default();
+        unreadable.remember_image_size(&file_url, (None, None));
+        assert_eq!(parse_dimensions(&post, URL, &unreadable), (None, None));
+    }
+
+    // ...::test_no_dimensions_without_the_original: has_full false means the original 404s for
+    // everyone, so no request is made at all.
+    #[test]
+    fn no_dimensions_and_no_request_without_the_original() {
+        for post in [
+            body(json!({"has_full": false})),
+            body(json!({})),
+            body(json!({"has_full": true, "file": {}, "attachments": []})),
+            "<html></html>".to_string(),
+            String::new(),
+        ] {
+            assert_eq!(dimensions_request(&post), None, "{post}");
+            assert_eq!(
+                parse_dimensions(&post, URL, &Context::default()),
+                (None, None)
+            );
+        }
+    }
+
+    // ...::test_a_network_failure_is_not_remembered
+    #[test]
+    fn a_failed_read_or_lookup_is_not_something_the_context_remembers_unless_told_to() {
+        let post = body(json!({"has_full": true, "file": {"path": "/aa/bb/0123.png"}}));
+        // The caller leaves the context alone on a network failure: the request is still due.
+        let ctx = Context::default();
+        assert!(dimensions_request(&post).is_some());
+        assert_eq!(parse_dimensions(&post, URL, &ctx), (None, None));
+        assert!(ctx.remote_image_sizes.is_empty());
+        assert_eq!(
+            artist_profile_request(&post, URL, &ctx)
+                .map(|r| r.key)
+                .as_deref(),
+            Some("patreon/50093102")
+        );
+    }
+
+    // ...::test_the_account_gated_html_page_yields_nothing
+    #[test]
+    fn the_account_gated_html_page_yields_nothing() {
+        let html = "<!DOCTYPE html><html><body>only available to registered users</body></html>";
+        assert!(parse(html, URL, &ctx()).is_empty());
+        assert_eq!(parse_preview_url(html, URL), None);
+        assert_eq!(parse_page_count(html, URL), 1);
+        assert!(parse_pages(html, URL).is_empty());
+        assert_eq!(parse_file_url(html, URL), None);
+    }
+
+    // ...::test_a_failed_creator_lookup_just_means_no_artist_tag
+    #[test]
+    fn a_failed_creator_lookup_just_means_no_artist_tag() {
+        let post = body(json!({"user": "99999999", "tags": null}));
+        // A creator the context does not know: Python's request failed.
+        assert!(parse(&post, URL, &ctx()).is_empty());
+        // A remembered miss is "" and is no tag either, and is not asked about again.
+        let mut ctx = ctx();
+        ctx.remember_artist("patreon/99999999", None);
+        assert!(parse(&post, URL, &ctx).is_empty());
+        assert_eq!(artist_profile_request(&post, URL, &ctx), None);
+    }
+
+    // ...::test_only_the_pw_domain_is_parsed
+    #[test]
+    fn only_the_pw_domain_is_parsed() {
+        assert!(matches(URL));
+        assert_eq!(
+            super::super::find_parser(URL).map(|p| p.name),
+            Some("pawchive")
+        );
+        assert!(super::super::find_parser("https://pawchive.org/some/post").is_none());
+        // `core/parser_probe.py` PROBES.
+        let probe = "https://pawchive.pw/patreon/user/50093102/post/83421639";
+        assert_eq!(
+            super::super::find_parser(probe).map(|p| p.name),
+            Some("pawchive")
+        );
+        assert!(!matches("https://notpawchive.pw/a/user/b/post/c"));
+        assert!(matches("https://img.pawchive.pw/x"));
+    }
+
+    // tests/test_search_quality.py::TestPawchivePagesByHash::test_pages_carry_their_hash_and_file_links
+    #[test]
+    fn pages_carry_their_hash_and_file_links() {
+        let shas = ["a".repeat(64), "b".repeat(64)];
+        let files: Vec<Value> = shas
+            .iter()
+            .enumerate()
+            .map(|(i, h)| json!({"name": format!("{i}.png"), "path": format!("/{}/{}/{h}.png", &h[..2], &h[2..4])}))
+            .collect();
+        let record = |has_full| {
+            json!({"post": {"id": "9", "user": "1", "service": "fanbox", "has_full": has_full,
+                            "file": files[0], "attachments": files}})
+            .to_string()
+        };
+        let pages = parse_pages(&record(true), "https://pawchive.pw/fanbox/user/1/post/9");
+        let hashes: Vec<_> = pages
+            .iter()
+            .map(|p| p["sha256"].as_str().unwrap())
+            .collect();
+        assert_eq!(hashes, shas);
+        assert_eq!(
+            pages[1]["urls"]["original"],
+            json!(format!(
+                "https://file.pawchive.pw/data/bb/bb/{}.png",
+                "b".repeat(64)
+            ))
+        );
+        assert_eq!(pages[1]["urls"]["regular"], pages[1]["urls"]["small"]);
+        assert_eq!(pages[1]["width"], Value::Null);
+        assert_eq!(pages[1]["height"], Value::Null);
+        // "file" is attachments[0]: listed once.
+        assert_eq!(pages.len(), 2);
+        let no_full = parse_pages(&record(false), "https://x/");
+        assert_eq!(no_full[1]["urls"]["original"], Value::Null);
+    }
+
+    #[test]
+    fn a_page_without_a_hash_in_its_path_has_no_sha() {
+        let hash = "c".repeat(64);
+        let record = json!({"id": 1, "attachments": [
+            {"path": "/x/y/plain.jpg"},
+            {"path": format!("/x/{hash}.png\n")},
+            {"path": format!("/x/{hash}.tar.gz")},
+            {"path": format!("/x/{}.png", "A".repeat(64))},
+            {"path": format!("/x/{}.png", "c".repeat(63))},
+            {"path": format!("/x/{hash}.")},
+            {"path": "no-slash.jpg"},
+            "text", null, 5,
+            {"path": "/x/y/plain.jpg"},
+        ]})
+        .to_string();
+        let pages = parse_pages(&record, URL);
+        let shas: Vec<_> = pages.iter().map(|p| p["sha256"].clone()).collect();
+        assert_eq!(
+            shas,
+            [
+                json!(null),
+                json!(hash),
+                json!(null),
+                json!(null),
+                json!(null),
+                json!(null)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_post_is_the_record_or_the_record_inside_post_and_must_look_like_one() {
+        let record = json!({"id": 5, "file": {"path": "/a.png"}});
+        let wrapped = json!({"post": record.clone()});
+        for text in [record.to_string(), wrapped.to_string()] {
+            assert_eq!(
+                parse_preview_url(&text, URL).as_deref(),
+                Some("https://img.pawchive.pw/thumbnail/data/a.png")
+            );
+        }
+        for text in [
+            "",
+            "[]",
+            "5",
+            "null",
+            "{}",
+            "{\"post\": 5}",
+            "{\"post\": {}}",
+            "<html>x</html>",
+            "{\"title\": \"no id, file or attachments\"}",
+        ] {
+            assert_eq!(parse_preview_url(text, URL), None, "{text}");
+        }
+        // Any one of the three keys is enough, even if null.
+        assert_eq!(parse_page_count("{\"attachments\": null}", URL), 1);
+        let outer = json!({"id": 1, "file": {"path": "/outer.png"}, "post": {"id": 2, "file": {"path": "/inner.png"}}});
+        assert_eq!(
+            parse_preview_url(&outer.to_string(), URL).as_deref(),
+            Some("https://img.pawchive.pw/thumbnail/data/inner.png")
+        );
+    }
+
+    #[test]
+    fn tag_lists_are_read_as_python_s_csv_reads_them() {
+        let names = |tags: &str| {
+            let post = body(json!({"tags": tags, "user": ""}));
+            named(&parse(&post, URL, &ctx()), "general")
+        };
+        assert_eq!(names("{a, b ,\"c, d\",e}"), ["a", "b", "c,_d", "e"]);
+        assert_eq!(names("a,b"), ["a", "b"]);
+        assert_eq!(names("{}"), Vec::<String>::new());
+        assert_eq!(names(""), Vec::<String>::new());
+        assert_eq!(names("{a,,b}"), ["a", "b"]);
+        assert_eq!(names("{\"a\"\"b\",c}"), ["a\"b", "c"]);
+        assert_eq!(names("{a\\,b,c}"), ["a,b", "c"]);
+        // Only the first line is a record; a quoted field may span lines; a bare CR inside an
+        // unquoted field is `csv.Error` and so no tags at all.
+        assert_eq!(names("{a,b\nc,d}"), ["a", "b"]);
+        assert_eq!(names("{\"a\nb\",c}"), ["a\nb", "c"]);
+        assert_eq!(names("{a\rb}"), Vec::<String>::new());
+        // An unclosed quote still gives its field.
+        assert_eq!(names("\"a"), ["a"]);
+        assert_eq!(names("{\"a"), ["{\"a"]);
+        // Only a matching pair of braces is removed.
+        assert_eq!(names("{a"), ["{a"]);
+        assert_eq!(names("a}"), ["a}"]);
+        assert_eq!(names("{{a}}"), ["{a}"]);
+        // A field over csv's size limit is `csv.Error` too.
+        assert_eq!(
+            names(&format!("{{{}}}", "x".repeat(131_073))),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn a_json_list_of_tags_is_str_of_each_item_stripped() {
+        let names = |tags: Value| {
+            let post = body(json!({"tags": tags, "user": ""}));
+            named(&parse(&post, URL, &ctx()), "general")
+        };
+        assert_eq!(
+            names(json!(["  ", "", " a ", 1, 2.5, true, null])),
+            ["a", "1", "2.5", "True", "None"]
+        );
+        assert_eq!(names(json!([["a"], {"k": "v"}])), ["['a']", "{'k':_'v'}"]);
+        for other in [json!(5), json!({"a": 1}), json!(true), json!(null)] {
+            assert_eq!(names(other), Vec::<String>::new());
+        }
+    }
+
+    #[test]
+    fn the_creator_key_is_service_slash_user_as_python_prints_them() {
+        let artist = |service: Value, user: Value| {
+            let post = body(json!({"service": service, "user": user, "tags": null}));
+            let ctx = Context::with_artist_cache(HashMap::from([
+                ("5/7".to_string(), "Num".to_string()),
+                ("True/x".to_string(), "Bool".to_string()),
+                ("1.5/2".to_string(), "Float".to_string()),
+                ("patreon/50093102".to_string(), "Sandra Spick".to_string()),
+                ("fanbox/1".to_string(), String::new()),
+                ("a/b".to_string(), " padded ".to_string()),
+            ]));
+            named(&parse(&post, URL, &ctx), "artist")
+        };
+        assert_eq!(
+            artist(json!("patreon"), json!("50093102")),
+            ["Sandra_Spick"]
+        );
+        assert_eq!(artist(json!(5), json!(7)), ["Num"]);
+        assert_eq!(artist(json!(true), json!("x")), ["Bool"]);
+        assert_eq!(artist(json!(1.5), json!(2)), ["Float"]);
+        // A remembered miss, a falsy service or user, and an unknown creator: no artist.
+        assert!(artist(json!("fanbox"), json!(1)).is_empty());
+        assert!(artist(json!(""), json!("x")).is_empty());
+        assert!(artist(json!("patreon"), json!(0)).is_empty());
+        assert!(artist(json!(null), json!("x")).is_empty());
+        assert!(artist(json!("patreon"), json!("1")).is_empty());
+        // The cache is trusted as it stands (`remember_artist` is what strips): a name inserted
+        // padded keeps its padding, which the tag turns into underscores.
+        assert_eq!(artist(json!("a"), json!("b")), ["_padded_"]);
+    }
+
+    #[test]
+    fn the_profile_request_names_what_the_engine_client_has_to_fetch() {
+        let post = body(json!({}));
+        let empty = Context::default();
+        let request = artist_profile_request(&post, URL, &empty).expect("a request");
+        assert_eq!(request.key, "patreon/50093102");
+        assert_eq!(
+            request.profile_url,
+            "https://pawchive.pw/api/v1/patreon/user/50093102/profile"
+        );
+        // The host the post link came from, and `pawchive.pw` for a link with none.
+        let other =
+            artist_profile_request(&post, "https://PAWCHIVE.pw:8080/x/user/1/post/2", &empty);
+        assert!(
+            other
+                .unwrap()
+                .profile_url
+                .starts_with("https://PAWCHIVE.pw:8080/api/v1/")
+        );
+        let bare = artist_profile_request(&post, "x", &empty).unwrap();
+        assert!(bare.profile_url.starts_with("https://pawchive.pw/api/v1/"));
+        // Known creators, remembered misses, and posts that name nobody need no request.
+        assert_eq!(artist_profile_request(&post, URL, &ctx()), None);
+        let mut missed = Context::default();
+        missed.remember_artist("patreon/50093102", None);
+        assert_eq!(artist_profile_request(&post, URL, &missed), None);
+        assert_eq!(
+            artist_profile_request(&body(json!({"user": ""})), URL, &empty),
+            None
+        );
+        assert_eq!(artist_profile_request("<html></html>", URL, &empty), None);
+    }
+
+    #[test]
+    fn remembering_a_creator_stores_the_stripped_name_or_the_empty_miss() {
+        let mut ctx = Context::default();
+        ctx.remember_artist("a/1", Some("  Name Here \n"));
+        ctx.remember_artist("a/2", Some("   "));
+        ctx.remember_artist("a/3", None);
+        assert_eq!(ctx.artist_cache["a/1"], "Name Here");
+        assert_eq!(ctx.artist_cache["a/2"], "");
+        assert_eq!(ctx.artist_cache["a/3"], "");
+    }
+
+    #[test]
+    fn an_attachments_value_python_cannot_iterate_gives_nothing_where_python_raises() {
+        for attachments in [json!(5), json!(true), json!(1.5)] {
+            let post = body(json!({"attachments": attachments.clone(), "has_full": true}));
+            assert_eq!(parse_preview_url(&post, URL), None, "{attachments}");
+            assert_eq!(parse_file_url(&post, URL), None);
+            assert!(parse_pages(&post, URL).is_empty());
+            assert_eq!(dimensions_request(&post), None);
+        }
+        // A string or an object iterates to strings, which are not entries; falsy ones to nothing.
+        for attachments in [
+            json!("abc"),
+            json!({"a": 1}),
+            json!(0),
+            json!(false),
+            json!(null),
+            json!([]),
+        ] {
+            let post = body(json!({"attachments": attachments.clone()}));
+            assert!(parse_preview_url(&post, URL).is_some(), "{attachments}");
+        }
+    }
+}

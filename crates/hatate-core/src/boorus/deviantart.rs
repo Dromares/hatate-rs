@@ -930,4 +930,24 @@ mod tests {
             (None, None)
         );
     }
+    #[test]
+    fn the_hooks_are_the_ones_python_defines_and_the_probe_url_is_claimed() {
+        assert_eq!(
+            PARSER.defined_hooks(),
+            [
+                "parse_file_url",
+                "parse_preview_url",
+                "parse_dimensions",
+                "parse_file_info",
+                "parse_restriction",
+            ]
+        );
+        assert!(!PARSER.empty_result_is_normal);
+        // `core/parser_probe.py` PROBES.
+        let probe = "https://www.deviantart.com/billjersey/art/Mad-Moxxi-160109252";
+        assert_eq!(
+            super::super::find_parser(probe).map(|p| p.name),
+            Some("deviantart")
+        );
+    }
 }
