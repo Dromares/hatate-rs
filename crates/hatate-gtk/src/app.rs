@@ -58,13 +58,14 @@ fn build(app: &adw::Application, opts: &Options, start: Instant) {
     let store = queue::build_store(opts.rows);
     let queue = Queue::new(&store);
     let load_ms = t_load.elapsed().as_secs_f64() * 1e3;
-    if let Some((a, b)) = opts.select {
-        queue.select_range(a, b);
-    }
+    // Sort first: a selection is a set of positions in the sorted model.
     if let Some((col, desc)) = &opts.sort {
         if !queue.sort_by(col, *desc) {
             eprintln!("unknown sort column {col}");
         }
+    }
+    if let Some((a, b)) = opts.select {
+        queue.select_range(a, b);
     }
 
     // Queue page: stat line + the view, or an empty state when there are no rows.

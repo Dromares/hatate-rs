@@ -88,7 +88,7 @@ pub fn sample_pair() -> (RgbaImage, RgbaImage) {
         for x in 0..960 {
             let p = matched.get_pixel_mut(x, y);
             for c in 0..3 {
-                p[c] = p[c].saturating_add(18);
+                p[c] = p[c].saturating_add(40);
             }
         }
     }

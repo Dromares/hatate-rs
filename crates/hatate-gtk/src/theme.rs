@@ -54,6 +54,7 @@ columnview.queue > header { background: transparent; border-bottom: 1px solid @i
 columnview.queue > header > button { background: transparent; color: @ink_65; border: none;
   border-radius: 0; box-shadow: none; padding: 8px 12px; font-size: 11px; letter-spacing: 0.16em; }
 columnview.queue > header > button:hover { background: @ink_10; }
+columnview.queue > header > button label { color: @ink_65; opacity: 1; }
 columnview.queue > listview > row { background: transparent; border-radius: 0; min-height: 48px; }
 columnview.queue > listview > row:nth-child(even) { background: @zebra; }
 columnview.queue > listview > row:hover { background: @ink_10; }
