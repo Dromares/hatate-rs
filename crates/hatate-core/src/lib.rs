@@ -8,6 +8,7 @@ mod fsutil;
 pub mod model;
 pub mod net;
 pub mod paths;
+mod pycase;
 mod pycompat;
 pub mod pyurl;
 pub mod quota_pause;
