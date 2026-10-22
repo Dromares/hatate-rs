@@ -29,27 +29,37 @@ pub fn json_of(body: &str) -> Result<Value, serde_json::Error> {
     serde_json::from_str(body)
 }
 
+/// Every string a page shows under `el`, in document order. A string that bs4 files under
+/// `<script>`, `<style>` or `<template>` is not page text and is left out, however deep inside it
+/// sits and wherever the tag being read is (bs4 decides when it parses, from the innermost such
+/// tag still open). A comment is not text either.
+fn shown_strings(el: ElementRef<'_>) -> impl Iterator<Item = &str> {
+    el.descendants().filter_map(|node| match node.value() {
+        Node::Text(text) => {
+            let hidden = node.ancestors().any(|a| {
+                a.value()
+                    .as_element()
+                    .is_some_and(|e| matches!(e.name(), "script" | "style" | "template"))
+            });
+            (!hidden).then_some(&**text)
+        }
+        _ => None,
+    })
+}
+
 /// bs4's `tag.get_text(strip=True)`: every string under the tag, each stripped, empty ones
-/// dropped, joined with nothing. A string that bs4 files under `<script>`, `<style>` or
-/// `<template>` is not page text and is left out, however deep inside it sits and wherever the
-/// tag being read is (bs4 decides when it parses, from the innermost such tag still open). A
-/// comment is not text either.
+/// dropped, joined with nothing.
 pub fn text_of(el: ElementRef<'_>) -> String {
-    el.descendants()
-        .filter_map(|node| match node.value() {
-            Node::Text(text) => {
-                let hidden = node.ancestors().any(|a| {
-                    a.value()
-                        .as_element()
-                        .is_some_and(|e| matches!(e.name(), "script" | "style" | "template"))
-                });
-                (!hidden)
-                    .then(|| pycompat::strip(text))
-                    .filter(|s| !s.is_empty())
-            }
-            _ => None,
-        })
+    shown_strings(el)
+        .map(pycompat::strip)
+        .filter(|s| !s.is_empty())
         .collect()
+}
+
+/// bs4's `tag.get_text(separator)`: every string under the tag, unstripped, joined with
+/// `separator`. The Danbooru 1.x sidebar scrapes read the whole page this way.
+pub fn text_joined(el: ElementRef<'_>, separator: &str) -> String {
+    shown_strings(el).collect::<Vec<_>>().join(separator)
 }
 
 /// bs4's `tag.get("class")`: the class names, split as Python splits a string.
@@ -73,6 +83,13 @@ mod tests {
     fn text_is_stripped_per_string_and_joined_with_nothing() {
         let html = soup_of("<a id=a> some <b> artist </b>\n <i>x</i> </a>");
         assert_eq!(text_of(first(&html, "#a")), "someartistx");
+    }
+
+    #[test]
+    fn joined_text_keeps_every_string_unstripped() {
+        let html = soup_of("<div id=d> a <b>b</b><script>x</script> c</div>");
+        assert_eq!(text_joined(first(&html, "#d"), " "), " a   b   c");
+        assert_eq!(text_joined(first(&html, "#d"), ""), " a b c");
     }
 
     #[test]
