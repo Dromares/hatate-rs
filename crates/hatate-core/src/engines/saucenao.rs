@@ -614,7 +614,7 @@ impl SauceNaoClient {
     }
 
     /// `_sleep_interruptibly`: waits, but lets Stop be Stop (checked every quarter second).
-    async fn sleep_interruptibly(
+    pub(crate) async fn sleep_interruptibly(
         &self,
         wait: f64,
         label: &str,
