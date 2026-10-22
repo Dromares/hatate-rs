@@ -940,3 +940,26 @@ async fn the_daily_latch_follows_the_answers_and_the_reset_clears_it() {
     // spent. A message naming the daily limit latches.
     assert_eq!(flags, [false, true, false, true]);
 }
+
+/// The redirect's `Location` is read as UTF-8, as `requests` does, so a non-ASCII query on the
+/// colour page's address is followed rather than ending the search at the 302.
+#[tokio::test]
+async fn a_redirect_whose_location_is_not_ascii_is_followed() {
+    let pki = TestPki::generate();
+    let server = ReplayServer::https(
+        &pki,
+        vec![
+            Reply::new(302, "").header("Location", "/search/color/ff00?q=caf\u{e9}"),
+            Reply::ok(COLOR_PAGE),
+            Reply::new(500, "down"),
+        ],
+    )
+    .await;
+    let client = Ascii2dClient::with_base(net(&pki), &server.url("/"));
+    let file = image("x.png");
+
+    let matches = client.search(&file.path, 5.0, None).await.unwrap();
+
+    assert_eq!(matches.len(), 1);
+    assert_eq!(server.recorded()[1].path(), "/search/color/ff00");
+}

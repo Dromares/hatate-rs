@@ -1303,3 +1303,38 @@ async fn google_images_counts_down_under_the_label_of_its_route_and_clears() {
         assert_eq!(seen.last().unwrap(), &(String::new(), 0.0, 0.0));
     }
 }
+
+/// `requests` decodes a redirect's `Location` as UTF-8 (`Session` reads the raw bytes), so a
+/// non-ASCII path is followed; reading it as ASCII-only text ended the search at the 303.
+#[tokio::test]
+async fn google_images_follows_a_redirect_whose_location_is_not_ascii() {
+    let pki = TestPki::generate();
+    let server = ReplayServer::https(
+        &pki,
+        vec![
+            Reply::new(303, "").header("Location", "/search/caf\u{e9}?q=1"),
+            html_page(
+                "<html><body><a href=\"https://www.deviantart.com/someone/art/A-Picture-123\">\
+                 <h3>A Picture</h3></a></body></html>",
+            ),
+        ],
+    )
+    .await;
+    let client = GoogleImagesClient::with_urls(
+        net(&pki),
+        &server.url("/searchbyimage/upload"),
+        &server.url("/v1/images:annotate"),
+    );
+    let file = image("x.png");
+
+    let matches = client
+        .search(&file.path, 30.0, None, &key_of(""))
+        .await
+        .unwrap();
+
+    assert_eq!(matches.len(), 1);
+    let seen = server.recorded();
+    assert_eq!(seen[1].method, "GET");
+    assert_eq!(seen[1].path(), "/search/caf%C3%A9");
+    server.assert_script_consumed();
+}
