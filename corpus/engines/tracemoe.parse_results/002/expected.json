@@ -1,0 +1,22 @@
+{
+  "results": {
+    "core.tracemoe.parse_results": {
+      "returns": [
+        {
+          "episode": null,
+          "similarity": 92.0,
+          "tags": [
+            {
+              "name": "A",
+              "namespace": "series",
+              "source": "Search engine"
+            }
+          ],
+          "thumb_url": null,
+          "title": "A",
+          "url": "https://anilist.co/anime/1"
+        }
+      ]
+    }
+  }
+}

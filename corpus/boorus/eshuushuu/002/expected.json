@@ -1,0 +1,60 @@
+{
+  "results": {
+    "core.boorus.eshuushuu.parse": {
+      "returns": [
+        {
+          "name": "Sumomo_KPA",
+          "namespace": "creator",
+          "source": "Booru"
+        },
+        {
+          "name": "Cabal_Online",
+          "namespace": "character",
+          "source": "Booru"
+        },
+        {
+          "name": "black_hair",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "gloves",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "long_hair",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "smile",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "tree",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "yellow_eyes",
+          "namespace": null,
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.eshuushuu.parse_dimensions": {
+      "returns": [
+        800,
+        600
+      ]
+    },
+    "core.boorus.eshuushuu.parse_file_url": {
+      "returns": "https://cdn.e-shuushuu.net/fullsize/2010-10-07-331875.jpeg"
+    },
+    "core.boorus.eshuushuu.parse_preview_url": {
+      "returns": "https://cdn.e-shuushuu.net/thumbs/2010-10-07-331875.webp"
+    }
+  }
+}

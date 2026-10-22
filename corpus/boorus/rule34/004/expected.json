@@ -1,0 +1,22 @@
+{
+  "results": {
+    "core.boorus.rule34.parse": {
+      "returns": []
+    },
+    "core.boorus.rule34.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.rule34.parse_file_url": {
+      "returns": "x.jpg"
+    },
+    "core.boorus.rule34.parse_preview_url": {
+      "returns": "x.jpg"
+    },
+    "core.boorus.rule34.parse_rating": {
+      "returns": "safe"
+    }
+  }
+}

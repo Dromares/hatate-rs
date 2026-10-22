@@ -1,0 +1,25 @@
+{
+  "results": {
+    "core.boorus.animepictures.parse": {
+      "returns": []
+    },
+    "core.boorus.animepictures.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.animepictures.parse_file_info": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.animepictures.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.animepictures.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

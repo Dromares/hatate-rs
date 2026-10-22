@@ -1,0 +1,44 @@
+{
+  "results": {
+    "core.boorus.danbooru.parse": {
+      "returns": [
+        {
+          "name": "someone",
+          "namespace": "artist",
+          "source": "Booru"
+        },
+        {
+          "name": "1girl",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "solo",
+          "namespace": "general",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.danbooru.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.danbooru.parse_file_size": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_preview_url": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_rating": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_restriction": {
+      "returns": "banned on Danbooru (artist takedown) - only Gold+ accounts can view it"
+    }
+  }
+}

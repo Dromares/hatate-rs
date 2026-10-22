@@ -1,0 +1,31 @@
+{
+  "results": {
+    "core.boorus.animepictures.parse": {
+      "returns": [
+        {
+          "name": "smile",
+          "namespace": "general",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.animepictures.parse_dimensions": {
+      "returns": [
+        5728,
+        4000
+      ]
+    },
+    "core.boorus.animepictures.parse_file_info": {
+      "returns": [
+        "JPEG",
+        null
+      ]
+    },
+    "core.boorus.animepictures.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.animepictures.parse_preview_url": {
+      "returns": "https://opreviews.anime-pictures.net/aa2/aa2be7199bfa9bd93dc51d3efd4334df_bp.avif"
+    }
+  }
+}

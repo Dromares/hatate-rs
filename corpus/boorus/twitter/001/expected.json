@@ -1,0 +1,41 @@
+{
+  "results": {
+    "core.boorus.twitter.parse": {
+      "returns": [
+        {
+          "name": "someArtist",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.twitter.parse_dimensions": {
+      "returns": [
+        1200,
+        1600
+      ]
+    },
+    "core.boorus.twitter.parse_file_url": {
+      "returns": "https://pbs.twimg.com/media/abc.jpg?name=orig"
+    },
+    "core.boorus.twitter.parse_page_count": {
+      "returns": 1
+    },
+    "core.boorus.twitter.parse_pages": {
+      "returns": [
+        {
+          "height": 1600,
+          "urls": {
+            "original": "https://pbs.twimg.com/media/abc.jpg?name=orig",
+            "regular": "https://pbs.twimg.com/media/abc.jpg?name=large",
+            "small": "https://pbs.twimg.com/media/abc.jpg?name=small"
+          },
+          "width": 1200
+        }
+      ]
+    },
+    "core.boorus.twitter.parse_preview_url": {
+      "returns": "https://pbs.twimg.com/media/abc.jpg?name=large"
+    }
+  }
+}

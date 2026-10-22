@@ -1,0 +1,47 @@
+{
+  "results": {
+    "core.boorus.pawchive.parse_file_url": {
+      "returns": "https://file.pawchive.pw/data/00/00/0000000000000000000000000000000000000000000000000000000000000015.png"
+    },
+    "core.boorus.pawchive.parse_page_count": {
+      "returns": 3
+    },
+    "core.boorus.pawchive.parse_pages": {
+      "returns": [
+        {
+          "height": null,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000015",
+          "urls": {
+            "original": "https://file.pawchive.pw/data/00/00/0000000000000000000000000000000000000000000000000000000000000015.png",
+            "regular": "https://img.pawchive.pw/thumbnail/data/00/00/0000000000000000000000000000000000000000000000000000000000000015.png",
+            "small": "https://img.pawchive.pw/thumbnail/data/00/00/0000000000000000000000000000000000000000000000000000000000000015.png"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000016",
+          "urls": {
+            "original": "https://file.pawchive.pw/data/00/00/0000000000000000000000000000000000000000000000000000000000000016.png",
+            "regular": "https://img.pawchive.pw/thumbnail/data/00/00/0000000000000000000000000000000000000000000000000000000000000016.png",
+            "small": "https://img.pawchive.pw/thumbnail/data/00/00/0000000000000000000000000000000000000000000000000000000000000016.png"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000017",
+          "urls": {
+            "original": "https://file.pawchive.pw/data/00/00/0000000000000000000000000000000000000000000000000000000000000017.png",
+            "regular": "https://img.pawchive.pw/thumbnail/data/00/00/0000000000000000000000000000000000000000000000000000000000000017.png",
+            "small": "https://img.pawchive.pw/thumbnail/data/00/00/0000000000000000000000000000000000000000000000000000000000000017.png"
+          },
+          "width": null
+        }
+      ]
+    },
+    "core.boorus.pawchive.parse_preview_url": {
+      "returns": "https://img.pawchive.pw/thumbnail/data/00/00/0000000000000000000000000000000000000000000000000000000000000015.png"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "results": {
+    "core.boorus.deviantart.parse": {
+      "returns": [
+        {
+          "name": "Rad'Profile",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.deviantart.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.deviantart.parse_file_info": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.deviantart.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.deviantart.parse_preview_url": {
+      "returns": "https://images-wixmp.example/f/uuid/name.jpg/v1/fill/w_800,h_1083,q_75,strp/a_deviation_by_radprofile-fullview.jpg?token=signing-token"
+    },
+    "core.boorus.deviantart.parse_restriction": {
+      "returns": null
+    }
+  }
+}

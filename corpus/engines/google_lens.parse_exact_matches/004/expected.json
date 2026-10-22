@@ -1,0 +1,17 @@
+{
+  "results": {
+    "core.google_lens.parse_exact_matches": {
+      "returns": [
+        {
+          "height": null,
+          "similarity": 0.0,
+          "source_name": "rule34.paheal.net",
+          "thumb_url": null,
+          "title": "Post 222222: a real one",
+          "url": "https://rule34.paheal.net/post/view/222222",
+          "width": null
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "results": {
+    "core.iqdb._parse_results": {
+      "returns": [
+        {
+          "height": 1600,
+          "is_best_match": true,
+          "similarity": 97.0,
+          "source_name": "Danbooru",
+          "thumb_url": "https://iqdb.org/danbooru/3/5/7/abc.jpg",
+          "unnamespaced_tags": [],
+          "url": "https://danbooru.donmai.us/posts/1",
+          "width": 1200
+        }
+      ]
+    }
+  }
+}

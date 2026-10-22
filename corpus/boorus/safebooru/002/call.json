@@ -1,0 +1,16 @@
+{
+  "callables": [
+    "core.boorus.safebooru.parse",
+    "core.boorus.safebooru.parse_dimensions",
+    "core.boorus.safebooru.parse_file_url",
+    "core.boorus.safebooru.parse_preview_url",
+    "core.boorus.safebooru.parse_rating"
+  ],
+  "context": {
+    "api_post": null
+  },
+  "extra_args": [
+    "https://gelbooru.com/index.php?page=post&s=view&id=123"
+  ],
+  "kwargs": {}
+}

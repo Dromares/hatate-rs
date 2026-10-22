@@ -1,0 +1,40 @@
+{
+  "results": {
+    "core.boorus.pawchive.parse": {
+      "returns": []
+    },
+    "core.boorus.pawchive.parse_file_url": {
+      "returns": "https://file.pawchive.pw/data/aa/bb/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg?f=a.jpg"
+    },
+    "core.boorus.pawchive.parse_page_count": {
+      "returns": 2
+    },
+    "core.boorus.pawchive.parse_pages": {
+      "returns": [
+        {
+          "height": null,
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "urls": {
+            "original": "https://file.pawchive.pw/data/aa/bb/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+            "regular": "https://img.pawchive.pw/thumbnail/data/aa/bb/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/aa/bb/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "urls": {
+            "original": "https://file.pawchive.pw/data/cc/dd/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg",
+            "regular": "https://img.pawchive.pw/thumbnail/data/cc/dd/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/cc/dd/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.jpg"
+          },
+          "width": null
+        }
+      ]
+    },
+    "core.boorus.pawchive.parse_preview_url": {
+      "returns": "https://img.pawchive.pw/thumbnail/data/aa/bb/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"
+    }
+  }
+}

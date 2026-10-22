@@ -1,0 +1,34 @@
+{
+  "results": {
+    "core.boorus.sankaku.incomplete_reason": {
+      "returns": "Sankaku has no byte-identical copy of this file, so its post cannot be identified - the local file is probably a re-encode or a resave. Sankaku's old numeric ids no longer resolve, so there is no other way to reach it."
+    },
+    "core.boorus.sankaku.parse": {
+      "returns": []
+    },
+    "core.boorus.sankaku.parse_canonical_url": {
+      "returns": null
+    },
+    "core.boorus.sankaku.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.sankaku.parse_file_info": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.sankaku.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.sankaku.parse_preview_url": {
+      "returns": null
+    },
+    "core.boorus.sankaku.parse_rating": {
+      "returns": null
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "results": {
+    "core.boorus.mangadex.parse": {
+      "returns": []
+    },
+    "core.boorus.mangadex.parse_file_url": {
+      "returns": "https://node1.mangadex.network/data/abc123hash/1-aaa.png"
+    },
+    "core.boorus.mangadex.parse_page_count": {
+      "returns": 3
+    },
+    "core.boorus.mangadex.parse_pages": {
+      "returns": [
+        {
+          "height": null,
+          "urls": {
+            "original": "https://node1.mangadex.network/data/abc123hash/1-aaa.png",
+            "regular": "https://node1.mangadex.network/data-saver/abc123hash/1-xxx.jpg",
+            "small": "https://node1.mangadex.network/data-saver/abc123hash/1-xxx.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "urls": {
+            "original": "https://node1.mangadex.network/data/abc123hash/2-bbb.png",
+            "regular": "https://node1.mangadex.network/data-saver/abc123hash/2-yyy.jpg",
+            "small": "https://node1.mangadex.network/data-saver/abc123hash/2-yyy.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "urls": {
+            "original": "https://node1.mangadex.network/data/abc123hash/3-ccc.png",
+            "regular": "https://node1.mangadex.network/data-saver/abc123hash/3-zzz.jpg",
+            "small": "https://node1.mangadex.network/data-saver/abc123hash/3-zzz.jpg"
+          },
+          "width": null
+        }
+      ]
+    },
+    "core.boorus.mangadex.parse_preview_url": {
+      "returns": "https://node1.mangadex.network/data-saver/abc123hash/1-xxx.jpg"
+    }
+  }
+}

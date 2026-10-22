@@ -1,0 +1,35 @@
+{
+  "results": {
+    "core.google_lens.parse_exact_matches": {
+      "returns": [
+        {
+          "height": null,
+          "similarity": 0.0,
+          "source_name": "rule34.xxx",
+          "thumb_url": null,
+          "title": "Rule 34 | 4585855 /",
+          "url": "https://rule34.xxx/index.php?page=post&s=view&id=4585855",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 0.0,
+          "source_name": "rule34.paheal.net",
+          "thumb_url": null,
+          "title": "Post 5674224: Ben_10 Flipherrrr Gwen_Tennyson - Rule 34 Paheal",
+          "url": "https://rule34.paheal.net/post/view/5674224",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 0.0,
+          "source_name": "rule34.paheal.net",
+          "thumb_url": null,
+          "title": "Post 5674250: Ben_10 Flipherrrr Gwen_Tennyson & friends - Rule 34 Paheal",
+          "url": "https://rule34.paheal.net/post/view/5674250",
+          "width": null
+        }
+      ]
+    }
+  }
+}

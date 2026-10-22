@@ -1,0 +1,15 @@
+{
+  "callables": [
+    "core.boorus.pixiv.parse",
+    "core.boorus.pixiv.parse_dimensions",
+    "core.boorus.pixiv.parse_file_url",
+    "core.boorus.pixiv.parse_page_count",
+    "core.boorus.pixiv.parse_pages",
+    "core.boorus.pixiv.parse_preview_url"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://www.pixiv.net/artworks/89861006"
+  ],
+  "kwargs": {}
+}

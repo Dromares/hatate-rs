@@ -1,0 +1,28 @@
+{
+  "results": {
+    "core.boorus.danbooru.parse": {
+      "returns": []
+    },
+    "core.boorus.danbooru.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.danbooru.parse_file_size": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_file_url": {
+      "returns": "https://cdn.donmai.us/original/o.jpg"
+    },
+    "core.boorus.danbooru.parse_preview_url": {
+      "returns": "https://cdn.donmai.us/sample/s.jpg"
+    },
+    "core.boorus.danbooru.parse_rating": {
+      "returns": null
+    },
+    "core.boorus.danbooru.parse_restriction": {
+      "returns": null
+    }
+  }
+}

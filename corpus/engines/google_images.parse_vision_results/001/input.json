@@ -1,0 +1,59 @@
+{
+  "responses": [
+    {
+      "webDetection": {
+        "fullMatchingImages": [
+          {
+            "url": "https://rule34storage.b-cdn.net/posts/1383/1383457/1383457.picsmall.jpg"
+          }
+        ],
+        "pagesWithMatchingImages": [
+          {
+            "pageTitle": "A crop of it",
+            "partialMatchingImages": [
+              {
+                "url": "https://example.test/crop.jpg"
+              }
+            ],
+            "url": "https://example.test/partial-only"
+          },
+          {
+            "fullMatchingImages": [
+              {
+                "url": "https://images.test/full.jpg"
+              }
+            ],
+            "pageTitle": "A Picture &amp; friends by <b>someone</b>",
+            "url": "https://www.deviantart.com/someone/art/A-Picture-123"
+          },
+          {
+            "fullMatchingImages": [
+              {
+                "url": "https://images.test/x.jpg"
+              }
+            ],
+            "pageTitle": "Google",
+            "url": "https://www.google.com/imgres?q=x"
+          },
+          {
+            "pageTitle": "Monkey Mischief",
+            "url": "https://www.youtube.com/shorts/qT_OeqrMtU8"
+          }
+        ],
+        "partialMatchingImages": [
+          {
+            "url": "https://images.test/partial-cdn.jpg"
+          }
+        ],
+        "visuallySimilarImages": [
+          {
+            "url": "https://images.test/similar-1.jpg"
+          },
+          {
+            "url": "https://images.test/similar-2.jpg"
+          }
+        ]
+      }
+    }
+  ]
+}

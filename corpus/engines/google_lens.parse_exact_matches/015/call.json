@@ -1,0 +1,8 @@
+{
+  "callables": [
+    "core.google_lens.parse_exact_matches"
+  ],
+  "context": {},
+  "extra_args": [],
+  "kwargs": {}
+}

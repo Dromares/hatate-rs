@@ -1,0 +1,41 @@
+{
+  "results": {
+    "core.boorus.animepictures.parse": {
+      "returns": [
+        {
+          "name": "someArtist",
+          "namespace": "artist",
+          "source": "Booru"
+        },
+        {
+          "name": "character_x",
+          "namespace": "character",
+          "source": "Booru"
+        },
+        {
+          "name": "long_hair",
+          "namespace": "general",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.animepictures.parse_dimensions": {
+      "returns": [
+        2048,
+        1152
+      ]
+    },
+    "core.boorus.animepictures.parse_file_info": {
+      "returns": [
+        "JPEG",
+        512000
+      ]
+    },
+    "core.boorus.animepictures.parse_file_url": {
+      "returns": "https://cdn.anime-pictures.net/images/a/b/real.jpg"
+    },
+    "core.boorus.animepictures.parse_preview_url": {
+      "returns": "https://cdn.anime-pictures.net/preview/a/b/big.jpg"
+    }
+  }
+}

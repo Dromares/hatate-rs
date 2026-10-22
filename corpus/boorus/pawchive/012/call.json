@@ -1,0 +1,19 @@
+{
+  "callables": [
+    "core.boorus.pawchive.parse",
+    "core.boorus.pawchive.parse_dimensions",
+    "core.boorus.pawchive.parse_file_url",
+    "core.boorus.pawchive.parse_page_count",
+    "core.boorus.pawchive.parse_pages",
+    "core.boorus.pawchive.parse_preview_url"
+  ],
+  "context": {
+    "artist_cache": {
+      "patreon/50093102": "Sandra Spick"
+    }
+  },
+  "extra_args": [
+    "https://pawchive.pw/patreon/user/50093102/post/83421639"
+  ],
+  "kwargs": {}
+}

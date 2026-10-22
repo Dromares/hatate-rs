@@ -1,0 +1,22 @@
+{
+  "callables": [
+    "core.saucenao._tags_from_result"
+  ],
+  "context": {},
+  "extra_args": [
+    {
+      "__dataclass__": "SauceNaoSettings",
+      "api_key": "",
+      "dbmask": 999,
+      "min_similarity": 60.0,
+      "namespace": "",
+      "pause_search_on_quota_exhausted": true,
+      "tag_types": [
+        "character",
+        "material"
+      ],
+      "use_json_api": true
+    }
+  ],
+  "kwargs": {}
+}

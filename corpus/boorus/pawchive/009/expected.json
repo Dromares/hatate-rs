@@ -1,0 +1,182 @@
+{
+  "results": {
+    "core.boorus.pawchive.parse": {
+      "returns": [
+        {
+          "name": "Bondage",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "Damsel",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "Total_Versext",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "gefesselt",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "Sandra_Spick",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.pawchive.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.pawchive.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.pawchive.parse_page_count": {
+      "returns": 12
+    },
+    "core.boorus.pawchive.parse_pages": {
+      "returns": [
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/93/0e/930e7282.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/93/0e/930e7282.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/0.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/0.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/1.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/1.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/2.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/2.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/3.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/3.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/4.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/4.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/5.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/5.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/6.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/6.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/7.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/7.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/8.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/8.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/9.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/9.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/10.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/10.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": null,
+            "regular": "https://img.pawchive.pw/thumbnail/data/a/b/11.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a/b/11.jpg"
+          },
+          "width": null
+        }
+      ]
+    },
+    "core.boorus.pawchive.parse_preview_url": {
+      "returns": "https://img.pawchive.pw/thumbnail/data/93/0e/930e7282.jpg"
+    }
+  }
+}

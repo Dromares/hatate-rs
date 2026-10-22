@@ -1,0 +1,26 @@
+{
+  "results": {
+    "core.google_lens.parse_lens_payload": {
+      "returns": [
+        {
+          "height": null,
+          "similarity": 80.0,
+          "source_name": "reddit.com",
+          "thumb_url": "https://preview.redd.it/doom-thumb.jpeg",
+          "title": "Doom Slayer only cares about Killing Demons",
+          "url": "https://www.reddit.com/r/Doom/comments/1gdo146/doom_slayer/",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 78.0,
+          "source_name": "sceneario.com",
+          "thumb_url": "https://sceneario.com/onmars.jpg",
+          "title": "ON MARS - T1 - S. Runberg/Grun",
+          "url": "https://sceneario.com/galerie/on-mars-t1/",
+          "width": null
+        }
+      ]
+    }
+  }
+}

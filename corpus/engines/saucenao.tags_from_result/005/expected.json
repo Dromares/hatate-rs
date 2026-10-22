@@ -1,0 +1,13 @@
+{
+  "results": {
+    "core.saucenao._tags_from_result": {
+      "returns": [
+        {
+          "name": "someone",
+          "namespace": "creator",
+          "source": "Search engine"
+        }
+      ]
+    }
+  }
+}

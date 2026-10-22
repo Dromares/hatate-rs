@@ -1,0 +1,16 @@
+{
+  "results": {
+    "core.boorus.joyreactor.parse": {
+      "returns": [
+        {
+          "name": "Ирландские Танцы",
+          "namespace": null,
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.joyreactor.parse_file_url": {
+      "returns": null
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "results": {
+    "core.boorus.safebooru.parse": {
+      "returns": []
+    },
+    "core.boorus.safebooru.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.safebooru.parse_file_url": {
+      "returns": "https://safebooru.org/samples/1/sample_abc.jpg"
+    },
+    "core.boorus.safebooru.parse_preview_url": {
+      "returns": "https://safebooru.org/samples/1/sample_abc.jpg"
+    },
+    "core.boorus.safebooru.parse_rating": {
+      "returns": null
+    }
+  }
+}

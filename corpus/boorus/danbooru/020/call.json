@@ -1,0 +1,16 @@
+{
+  "callables": [
+    "core.boorus.danbooru.parse",
+    "core.boorus.danbooru.parse_dimensions",
+    "core.boorus.danbooru.parse_file_size",
+    "core.boorus.danbooru.parse_file_url",
+    "core.boorus.danbooru.parse_preview_url",
+    "core.boorus.danbooru.parse_rating",
+    "core.boorus.danbooru.parse_restriction"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://danbooru.donmai.us/posts/5105386"
+  ],
+  "kwargs": {}
+}

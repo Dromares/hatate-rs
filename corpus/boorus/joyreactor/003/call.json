@@ -1,0 +1,11 @@
+{
+  "callables": [
+    "core.boorus.joyreactor.parse",
+    "core.boorus.joyreactor.parse_file_url"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://reactor.cc/post/5351071"
+  ],
+  "kwargs": {}
+}

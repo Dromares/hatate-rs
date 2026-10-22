@@ -1,0 +1,16 @@
+{
+  "callables": [
+    "core.boorus.xbooru.parse",
+    "core.boorus.xbooru.parse_dimensions",
+    "core.boorus.xbooru.parse_file_url",
+    "core.boorus.xbooru.parse_preview_url",
+    "core.boorus.xbooru.parse_rating"
+  ],
+  "context": {
+    "api_post": null
+  },
+  "extra_args": [
+    "https://xbooru.com/index.php?page=post&s=view&id=11111"
+  ],
+  "kwargs": {}
+}

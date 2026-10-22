@@ -1,0 +1,38 @@
+{
+  "results": {
+    "core.boorus.mangadex.parse": {
+      "returns": []
+    },
+    "core.boorus.mangadex.parse_file_url": {
+      "returns": "https://n.example/data/h/1-a.png"
+    },
+    "core.boorus.mangadex.parse_page_count": {
+      "returns": 2
+    },
+    "core.boorus.mangadex.parse_pages": {
+      "returns": [
+        {
+          "height": null,
+          "urls": {
+            "original": "https://n.example/data/h/1-a.png",
+            "regular": "https://n.example/data-saver/h/1-x.jpg",
+            "small": "https://n.example/data-saver/h/1-x.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "urls": {
+            "original": "https://n.example/data/h/2-b.png",
+            "regular": "https://n.example/data/h/2-b.png",
+            "small": "https://n.example/data/h/2-b.png"
+          },
+          "width": null
+        }
+      ]
+    },
+    "core.boorus.mangadex.parse_preview_url": {
+      "returns": "https://n.example/data-saver/h/1-x.jpg"
+    }
+  }
+}

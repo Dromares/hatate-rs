@@ -1,0 +1,107 @@
+[
+  {
+    "domain": "ru.pinterest.com",
+    "originalImage": {
+      "height": 1400,
+      "url": "https://img.example/1.jpg",
+      "width": 1000
+    },
+    "thumb": {
+      "height": 90,
+      "url": "//avatars.mds.yandex.net/i?id=abc&n=13",
+      "width": 148
+    },
+    "title": "t",
+    "url": "https://ru.pinterest.com/pin/267753140320940932/?utm_medium=organic&utm_source=yandexsmartcamera"
+  },
+  {
+    "domain": "rule34.us",
+    "originalImage": {
+      "height": 1400,
+      "url": "https://img.example/1.jpg",
+      "width": 1000
+    },
+    "thumb": {
+      "height": 90,
+      "url": "//avatars.mds.yandex.net/i?id=abc&n=13",
+      "width": 148
+    },
+    "title": "t",
+    "url": "https://rule34.us/index.php?r=posts%2Findex&q=dirtynicky&utm_medium=organic&utm_source=yandexsmartcamera"
+  },
+  {
+    "domain": "rule34.us",
+    "originalImage": {
+      "height": 1400,
+      "url": "https://img.example/1.jpg",
+      "width": 1000
+    },
+    "thumb": {
+      "height": 90,
+      "url": "//avatars.mds.yandex.net/i?id=abc&n=13",
+      "width": 148
+    },
+    "title": "t",
+    "url": "https://rule34.us/index.php?r=posts%2Fview&id=757670&utm_medium=organic&utm_source=yandexsmartcamera"
+  },
+  {
+    "domain": "safebooru.org",
+    "originalImage": {
+      "height": 1400,
+      "url": "https://img.example/1.jpg",
+      "width": 1000
+    },
+    "thumb": {
+      "height": 90,
+      "url": "//avatars.mds.yandex.net/i?id=abc&n=13",
+      "width": 148
+    },
+    "title": "t",
+    "url": "https://safebooru.org/index.php?page=post&s=list&tags=baku-p&utm_medium=organic&utm_source=yandexsmartcamera"
+  },
+  {
+    "domain": "kagamihara.donmai.us",
+    "originalImage": {
+      "height": 1400,
+      "url": "https://img.example/1.jpg",
+      "width": 1000
+    },
+    "thumb": {
+      "height": 90,
+      "url": "//avatars.mds.yandex.net/i?id=abc&n=13",
+      "width": 148
+    },
+    "title": "t",
+    "url": "https://kagamihara.donmai.us/posts/6307169?q=1girl&utm_medium=organic&utm_source=yandexsmartcamera"
+  },
+  {
+    "domain": "telegra.ph",
+    "originalImage": {
+      "height": 1400,
+      "url": "https://img.example/1.jpg",
+      "width": 1000
+    },
+    "thumb": {
+      "height": 90,
+      "url": "//avatars.mds.yandex.net/i?id=abc&n=13",
+      "width": 148
+    },
+    "title": "t",
+    "url": "https://telegra.ph/Some-post-01-01?utm_medium=organic&utm_source=yandexsmartcamera"
+  },
+  {
+    "domain": "xbooru.com",
+    "originalImage": {
+      "height": 1400,
+      "url": "https://img.example/1.jpg",
+      "width": 1000
+    },
+    "thumb": {
+      "height": 90,
+      "url": "//avatars.mds.yandex.net/i?id=abc&n=13",
+      "width": 148
+    },
+    "title": "t",
+    "url": "https://xbooru.com/index.php?page=post&s=view&id=855502&utm_medium=organic&utm_source=yandexsmartcamera"
+  }
+]

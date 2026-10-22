@@ -1,0 +1,18 @@
+{
+  "results": {
+    "core.iqdb._parse_results": {
+      "returns": [
+        {
+          "height": 1600,
+          "is_best_match": true,
+          "similarity": 97.0,
+          "source_name": null,
+          "thumb_url": "https://3d.iqdb.org/thumbs/a.jpg",
+          "unnamespaced_tags": [],
+          "url": "https://example.test/post/1",
+          "width": 1200
+        }
+      ]
+    }
+  }
+}

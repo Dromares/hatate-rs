@@ -1,0 +1,25 @@
+{
+  "results": {
+    "core.boorus.paheal.parse": {
+      "returns": []
+    },
+    "core.boorus.paheal.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.paheal.parse_file_info": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.paheal.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.paheal.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "results": {
+    "core.boorus.paheal.parse": {
+      "returns": [
+        {
+          "name": "Ben_10",
+          "namespace": "",
+          "source": "Booru"
+        },
+        {
+          "name": "Gwen_Tennyson",
+          "namespace": "",
+          "source": "Booru"
+        },
+        {
+          "name": "Flipherrrr",
+          "namespace": "",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.paheal.parse_dimensions": {
+      "returns": [
+        1350,
+        1688
+      ]
+    },
+    "core.boorus.paheal.parse_file_info": {
+      "returns": [
+        "JPEG",
+        null
+      ]
+    },
+    "core.boorus.paheal.parse_file_url": {
+      "returns": "https://r34i.paheal-cdn.net/90/46/9046769f0d21bb2c74141009d578b2cf"
+    },
+    "core.boorus.paheal.parse_preview_url": {
+      "returns": "https://r34i.paheal-cdn.net/90/46/9046769f0d21bb2c74141009d578b2cf"
+    }
+  }
+}

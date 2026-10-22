@@ -1,0 +1,22 @@
+{
+  "results": {
+    "core.boorus.moebooru.parse": {
+      "returns": []
+    },
+    "core.boorus.moebooru.parse_dimensions": {
+      "returns": [
+        3500,
+        5000
+      ]
+    },
+    "core.boorus.moebooru.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.moebooru.parse_preview_url": {
+      "returns": null
+    },
+    "core.boorus.moebooru.parse_rating": {
+      "returns": null
+    }
+  }
+}

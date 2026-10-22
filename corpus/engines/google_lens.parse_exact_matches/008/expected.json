@@ -1,0 +1,26 @@
+{
+  "results": {
+    "core.google_lens.parse_exact_matches": {
+      "returns": [
+        {
+          "height": null,
+          "similarity": 0.0,
+          "source_name": "rule34.xxx",
+          "thumb_url": null,
+          "title": "Rule 34 | 4585855 /",
+          "url": "https://rule34.xxx/index.php?page=post&s=view&id=4585855",
+          "width": null
+        },
+        {
+          "height": null,
+          "similarity": 0.0,
+          "source_name": "rule34.us",
+          "thumb_url": null,
+          "title": "/ 368224 - Rule34.us",
+          "url": "https://rule34.us/index.php?r=posts/view&id=368224",
+          "width": null
+        }
+      ]
+    }
+  }
+}

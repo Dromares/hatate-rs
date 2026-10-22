@@ -1,0 +1,22 @@
+{
+  "results": {
+    "core.google_images.parse_results": {
+      "returns": [
+        {
+          "similarity": 78.0,
+          "source_name": "danbooru.donmai.us",
+          "thumb_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:AAA",
+          "title": "Some post - Danbooru",
+          "url": "https://danbooru.donmai.us/posts/123"
+        },
+        {
+          "similarity": 76.0,
+          "source_name": "pixiv.net",
+          "thumb_url": "https://encrypted-tbn0.gstatic.com/images?q=tbn:AAA",
+          "title": "An artwork - pixiv",
+          "url": "https://www.pixiv.net/artworks/456"
+        }
+      ]
+    }
+  }
+}

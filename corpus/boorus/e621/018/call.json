@@ -1,0 +1,15 @@
+{
+  "callables": [
+    "core.boorus.e621.incomplete_reason",
+    "core.boorus.e621.parse",
+    "core.boorus.e621.parse_dimensions",
+    "core.boorus.e621.parse_file_url",
+    "core.boorus.e621.parse_preview_url",
+    "core.boorus.e621.parse_rating"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://e621.net/posts/1"
+  ],
+  "kwargs": {}
+}

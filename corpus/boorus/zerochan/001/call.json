@@ -1,0 +1,13 @@
+{
+  "callables": [
+    "core.boorus.zerochan.parse",
+    "core.boorus.zerochan.parse_dimensions",
+    "core.boorus.zerochan.parse_file_url",
+    "core.boorus.zerochan.parse_preview_url"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://www.zerochan.net/123456"
+  ],
+  "kwargs": {}
+}

@@ -1,0 +1,53 @@
+{
+  "results": {
+    "core.boorus.pixiv.parse": {
+      "returns": []
+    },
+    "core.boorus.pixiv.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.pixiv.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.pixiv.parse_page_count": {
+      "returns": 1
+    },
+    "core.boorus.pixiv.parse_pages": {
+      "returns": [
+        {
+          "height": 600,
+          "urls": {
+            "original": "https://i.pximg.net/img-original/89861006_p0.jpg",
+            "regular": "https://i.pximg.net/img-master/89861006_p0_master1200.jpg",
+            "small": "https://i.pximg.net/c/540x540_70/89861006_p0_master1200.jpg"
+          },
+          "width": 900
+        },
+        {
+          "height": 600,
+          "urls": {
+            "original": "https://i.pximg.net/img-original/89861006_p1.jpg",
+            "regular": "https://i.pximg.net/img-master/89861006_p1_master1200.jpg",
+            "small": "https://i.pximg.net/c/540x540_70/89861006_p1_master1200.jpg"
+          },
+          "width": 900
+        },
+        {
+          "height": 600,
+          "urls": {
+            "original": "https://i.pximg.net/img-original/89861006_p2.jpg",
+            "regular": "https://i.pximg.net/img-master/89861006_p2_master1200.jpg",
+            "small": "https://i.pximg.net/c/540x540_70/89861006_p2_master1200.jpg"
+          },
+          "width": 900
+        }
+      ]
+    },
+    "core.boorus.pixiv.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

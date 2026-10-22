@@ -1,0 +1,66 @@
+{
+  "results": {
+    "core.boorus.pawchive.parse": {
+      "returns": [
+        {
+          "name": "Bondage",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "Damsel",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "Total_Versext",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "gefesselt",
+          "namespace": "general",
+          "source": "Booru"
+        },
+        {
+          "name": "Sandra_Spick",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.pawchive.parse_file_url": {
+      "returns": "https://file.pawchive.pw/data/a6/bc/a6bc.jpg?f=b.jpg"
+    },
+    "core.boorus.pawchive.parse_page_count": {
+      "returns": 2
+    },
+    "core.boorus.pawchive.parse_pages": {
+      "returns": [
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": "https://file.pawchive.pw/data/a6/bc/a6bc.jpg",
+            "regular": "https://img.pawchive.pw/thumbnail/data/a6/bc/a6bc.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/a6/bc/a6bc.jpg"
+          },
+          "width": null
+        },
+        {
+          "height": null,
+          "sha256": null,
+          "urls": {
+            "original": "https://file.pawchive.pw/data/ec/8b/ec8b.jpg",
+            "regular": "https://img.pawchive.pw/thumbnail/data/ec/8b/ec8b.jpg",
+            "small": "https://img.pawchive.pw/thumbnail/data/ec/8b/ec8b.jpg"
+          },
+          "width": null
+        }
+      ]
+    },
+    "core.boorus.pawchive.parse_preview_url": {
+      "returns": "https://img.pawchive.pw/thumbnail/data/a6/bc/a6bc.jpg"
+    }
+  }
+}

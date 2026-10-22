@@ -1,0 +1,40 @@
+{
+  "results": {
+    "core.boorus.rule34us.parse": {
+      "returns": [
+        {
+          "name": "gattles",
+          "namespace": "artist",
+          "source": "Booru"
+        },
+        {
+          "name": "cyberpunk_2077",
+          "namespace": "copyright",
+          "source": "Booru"
+        },
+        {
+          "name": "hi_res",
+          "namespace": "meta",
+          "source": "Booru"
+        },
+        {
+          "name": "bunny_ears_(cosmetic)",
+          "namespace": "general",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.rule34us.parse_dimensions": {
+      "returns": [
+        2039,
+        2894
+      ]
+    },
+    "core.boorus.rule34us.parse_file_url": {
+      "returns": "https://img2.rule34.us/images/cb/6f/cb6ffdde43334831d14e3dc0bf51e132.png"
+    },
+    "core.boorus.rule34us.parse_preview_url": {
+      "returns": "https://img2.rule34.us/images/cb/6f/cb6ffdde43334831d14e3dc0bf51e132.png"
+    }
+  }
+}

@@ -1,3 +1,6 @@
 # The format samples are byte-exact output of the Python app: CSV is CRLF, JSON has no
 # trailing newline. Never let git normalise them.
 corpus/formats/** -text
+corpus/boorus/** -text
+corpus/engines/** -text
+corpus/MANIFEST.json -text

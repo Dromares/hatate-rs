@@ -1,0 +1,8 @@
+{
+  "callables": [
+    "core.google_images.parse_lens_results"
+  ],
+  "context": {},
+  "extra_args": [],
+  "kwargs": {}
+}

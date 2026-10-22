@@ -1,0 +1,10 @@
+{
+  "callables": [
+    "core.google_images.parse_results"
+  ],
+  "context": {},
+  "extra_args": [
+    "https://www.google.com/"
+  ],
+  "kwargs": {}
+}

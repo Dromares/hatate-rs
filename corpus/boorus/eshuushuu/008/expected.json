@@ -1,0 +1,19 @@
+{
+  "results": {
+    "core.boorus.eshuushuu.parse": {
+      "returns": []
+    },
+    "core.boorus.eshuushuu.parse_dimensions": {
+      "returns": [
+        null,
+        null
+      ]
+    },
+    "core.boorus.eshuushuu.parse_file_url": {
+      "returns": "https://cdn.e-shuushuu.net/fullsize/x.jpg"
+    },
+    "core.boorus.eshuushuu.parse_preview_url": {
+      "returns": null
+    }
+  }
+}

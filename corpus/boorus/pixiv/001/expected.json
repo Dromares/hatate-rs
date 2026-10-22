@@ -1,0 +1,36 @@
+{
+  "results": {
+    "core.boorus.pixiv.parse": {
+      "returns": [
+        {
+          "name": "original",
+          "namespace": null,
+          "source": "Booru"
+        },
+        {
+          "name": "Some_Artist",
+          "namespace": "creator",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.pixiv.parse_dimensions": {
+      "returns": [
+        2894,
+        4093
+      ]
+    },
+    "core.boorus.pixiv.parse_file_url": {
+      "returns": "https://i.pximg.net/img-original/o.png"
+    },
+    "core.boorus.pixiv.parse_page_count": {
+      "returns": 1
+    },
+    "core.boorus.pixiv.parse_pages": {
+      "returns": []
+    },
+    "core.boorus.pixiv.parse_preview_url": {
+      "returns": "https://i.pximg.net/img-master/r.jpg"
+    }
+  }
+}

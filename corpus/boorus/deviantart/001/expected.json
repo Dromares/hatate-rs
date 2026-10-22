@@ -1,0 +1,34 @@
+{
+  "results": {
+    "core.boorus.deviantart.parse": {
+      "returns": [
+        {
+          "name": "someArtist",
+          "namespace": "artist",
+          "source": "Booru"
+        }
+      ]
+    },
+    "core.boorus.deviantart.parse_dimensions": {
+      "returns": [
+        3000,
+        2000
+      ]
+    },
+    "core.boorus.deviantart.parse_file_info": {
+      "returns": [
+        "JPEG",
+        268096
+      ]
+    },
+    "core.boorus.deviantart.parse_file_url": {
+      "returns": null
+    },
+    "core.boorus.deviantart.parse_preview_url": {
+      "returns": "https://a.deviantart.com/Preview/v1/art~mp5/?key=9?token=tok123"
+    },
+    "core.boorus.deviantart.parse_restriction": {
+      "returns": null
+    }
+  }
+}
