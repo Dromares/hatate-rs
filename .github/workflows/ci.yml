@@ -16,9 +16,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install GTK4 and libadwaita development files and a virtual display
+        run: sudo apt-get update && sudo apt-get install -y libgtk-4-dev libadwaita-1-dev xvfb
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: xvfb-run -a cargo test --workspace
+        env:
+          HATATE_GTK_SMOKE: "1"
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+      - name: Toolkit versions the audits below run on
+        run: |
+          lsb_release -ds
+          pkg-config --modversion gtk4 libadwaita-1 pango fontconfig
+      # Flat popovers, dialog and focus ring, measured on the pixels this runner renders.
+      # The run exits 1 if any AUDIT line says FAIL (DAN-1983 spike; the branch never merges).
+      - name: Look audits (dark and light, every surface)
+        run: |
+          for scheme in dark light; do
+            for surface in dropdown menubar dialog; do
+              xvfb-run -a cargo run -q -p hatate-gtk -- --scheme "$scheme" --open "$surface" --audit --rows 200
+            done
+          done
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
