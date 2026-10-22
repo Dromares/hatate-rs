@@ -5,7 +5,7 @@
 //!
 //! The transport differential against the real Python (`worktrees/DAN-2060-differential.log`) is
 //! the broad check; these are the named, readable ones. The Python test each one maps to is in
-//! `docs/network-halves.md` section 7.
+//! `docs/availability.md` section 6.
 
 mod common;
 
@@ -1192,4 +1192,19 @@ async fn a_url_urlparse_refuses_raises_a_value_error_not_an_unknown() {
         Err(Raised::ValueError(message)) => assert_eq!(message, "Invalid IPv6 URL"),
         other => panic!("{other:?}"),
     }
+}
+
+#[test]
+fn a_definite_verdict_is_dated_and_an_inconclusive_one_clears_the_date() {
+    for verdict in [true, false] {
+        let mut candidate = Candidate::new("https://danbooru.donmai.us/posts/1");
+        candidate.record_availability(Some(verdict), 1_700_000_000.0);
+        assert_eq!(candidate.remote_available, Some(verdict));
+        assert_eq!(candidate.availability_checked_at, Some(1_700_000_000.0));
+    }
+    let mut candidate = Candidate::new("https://danbooru.donmai.us/posts/1");
+    candidate.record_availability(Some(true), 1_700_000_000.0);
+    candidate.record_availability(None, 1_700_000_100.0);
+    assert_eq!(candidate.remote_available, None);
+    assert_eq!(candidate.availability_checked_at, None);
 }
