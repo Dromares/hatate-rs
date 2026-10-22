@@ -72,6 +72,12 @@ impl NetError {
         self.kind
     }
 
+    /// What went wrong, without the kind's label or the URL: `core/hard_timeout.py`'s message
+    /// for a [`ErrorKind::DeadlineExceeded`], so a caller can show the text Python shows.
+    pub fn detail(&self) -> &str {
+        &self.detail
+    }
+
     /// The redacted URL (no query), when the error belongs to a request.
     pub fn url(&self) -> Option<&str> {
         self.url.as_deref()

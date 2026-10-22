@@ -111,15 +111,41 @@ fn slice(per_wait: Duration, deadline_at: Option<Instant>) -> Option<(Duration, 
     }
 }
 
-fn expired(url: &Url, by_deadline: bool) -> NetError {
-    if by_deadline {
-        NetError::new(
+/// Why a wait ended.
+#[derive(Clone, Copy)]
+enum Expiry {
+    /// The per-request `timeout` ran out (a plain `requests` timeout).
+    Timeout,
+    /// No time was left before a request could start (`core/net.py:127`).
+    NoTimeLeft(Option<Duration>),
+    /// The deadline passed with the body still arriving (`core/net.py:196-199`).
+    Trickling(Option<Duration>),
+}
+
+fn expired(url: &Url, why: Expiry) -> NetError {
+    let message = |secs: Option<Duration>, tail: &str| {
+        // `HardTimeoutError`'s text, as `f"{deadline:.0f}"` prints it.
+        format!(
+            "Timed out after {:.0}s{tail}",
+            secs.map_or(0.0, |d| d.as_secs_f64())
+        )
+    };
+    match why {
+        Expiry::Timeout => {
+            NetError::new(ErrorKind::Timeout, Some(url), "no data within the timeout")
+        }
+        Expiry::NoTimeLeft(d) => {
+            NetError::new(ErrorKind::DeadlineExceeded, Some(url), message(d, ""))
+        }
+        Expiry::Trickling(d) => NetError::new(
             ErrorKind::DeadlineExceeded,
             Some(url),
-            "the exchange passed its deadline",
-        )
-    } else {
-        NetError::new(ErrorKind::Timeout, Some(url), "no data within the timeout")
+            message(
+                d,
+                " (the server may be trickling data, keeping the connection alive without \
+                 actually finishing)",
+            ),
+        ),
     }
 }
 
@@ -143,8 +169,8 @@ async fn execute(
     let mut hops = 0usize;
 
     loop {
-        let Some((wait, by_deadline)) = slice(req.timeout, deadline_at) else {
-            return Err(expired(&url, true));
+        let Some((wait, _)) = slice(req.timeout, deadline_at) else {
+            return Err(expired(&url, Expiry::NoTimeLeft(req.deadline)));
         };
         let builder = build_request(
             &client,
@@ -159,7 +185,11 @@ async fn execute(
         let mut resp = match timeout(wait, builder.send()).await {
             Ok(Ok(resp)) => resp,
             Ok(Err(e)) => return Err(NetError::from_reqwest(e, &url)),
-            Err(_) => return Err(expired(&url, by_deadline)),
+            // Waiting for the response to begin is bounded by `min(timeout, left)` and fails as a
+            // plain timeout, as it does in `requests`; only a body still arriving past the
+            // deadline, or no time left before a request, is the hard deadline
+            // (`core/net.py:121-133`).
+            Err(_) => return Err(expired(&url, Expiry::Timeout)),
         };
 
         let status = resp.status();
@@ -204,7 +234,7 @@ async fn execute(
             let mut stopped = false;
             loop {
                 let Some((wait, by_deadline)) = slice(req.timeout, deadline_at) else {
-                    return Err(expired(&url, true));
+                    return Err(expired(&url, Expiry::Trickling(req.deadline)));
                 };
                 match timeout(wait, resp.chunk()).await {
                     Ok(Ok(Some(chunk))) => {
@@ -242,7 +272,16 @@ async fn execute(
                         break;
                     }
                     Ok(Err(e)) => return Err(NetError::from_reqwest(e, &url)),
-                    Err(_) => return Err(expired(&url, by_deadline)),
+                    Err(_) => {
+                        return Err(expired(
+                            &url,
+                            if by_deadline {
+                                Expiry::Trickling(req.deadline)
+                            } else {
+                                Expiry::Timeout
+                            },
+                        ));
+                    }
                 }
             }
         }
