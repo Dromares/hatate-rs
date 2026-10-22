@@ -283,6 +283,46 @@ stay with that client.
   heading, or characters deleted from tags (1,601 of 8,840 such cases); the 5,169 well-formed
   `parse_results` pages and every other function had none.
 
+## Google Lens parsers (`engines/google_lens.rs`, DAN-2010)
+
+`parse_lens_payload`, `parse_exact_matches` and `parse_exact_tiles` of `core/google_lens.py`:
+pure functions of the response body or of the tile list the page script returns. The rest of the
+module (`search()`, the upload script, `prepare_for_lens`, the rest latch, `rule34_searches`,
+`taggable_first`, `keep_taggable_first`) needs the browser or the booru registry and is Phase 5.
+
+- **A tile is a JSON value.** `parse_exact_tiles` takes `&serde_json::Value`: Python's
+  `tiles or []` and `isinstance(tile, dict)` become "an array, whose object entries are read".
+  `str(tile.get("text") or "")` is `pyrepr::py_str` of a truthy value, so a number in `text` is
+  its `repr`.
+- **Code points, not bytes.** The 2,500-character window of `_label_is_near` and the 3..200
+  length of a title are counted in `char`s. `str.isalpha` is `pyalpha::is_alpha` (the L
+  categories, not Rust's `Alphabetic`, which also takes `Ⅷ` and combining marks).
+- **`re.IGNORECASE`.** The image half of `_IMAGE_OWNERS` spells `s` and `i` as classes taking
+  U+017F, U+0130 and U+0131, as Python does (see `pycase`). `$` is `\n?\z` (Python's `$` also
+  matches before a final newline).
+- **Surrogate escapes.** `\uD800`..`\uDFFF` in a literal is a lone surrogate in Python and
+  U+FFFD (one code point) here. No corpus item reaches it.
+- **The thumbnail check decodes the image.** `_is_placeholder_thumb` base64-decodes the data URI
+  as `binascii.a2b_base64` does for a `str` (non-ASCII is an error; characters outside the
+  alphabet are skipped; padding never ends the data; a bad length is an error) and asks
+  `pyimage::image_size` for the size, as `Image.open(...).size`. **GIF** is Pillow's
+  header walk exactly; **PNG** (CRC of every chunk before the first `IDAT`, the colour
+  type/bit depth table), **JPEG** (marker walk to `SOS`, 8 bit, 1/3/4 components), **BMP** (the DIB
+  header, bit depth, compression, bitfield masks, palette size) and **WebP** (RIFF bounds, the
+  first chunk's size field) read the header and the checks that stand between it and the size.
+  Later damage (PNG filters, JPEG tables past `SOS`, a WebP's bitstream) is not looked for, and
+  other formats Pillow can open (TIFF, ICO, ...) read as "not an image". Where Python's
+  `Image.open` raises `DecompressionBombError` (over 178 million pixels) the whole search fails;
+  here the size reads as "not an image" and the thumbnail is kept.
+- **Google hosts.** `is_google_host` and `host_label` are `google_images`' (DAN-2009), which
+  Python imports from `core/google_images.py` too. A literal whose netloc `urlparse` refuses
+  (`http://[bad/`) is skipped, as `host_label(...) or ""` skips it.
+- **Differential (not in the repo).** About 80,000 generated bodies and tile lists (zerochan
+  image/page pairs, escape forms, every Google host shape, label windows at 2,500, unicode digits
+  in ids, GIF/PNG/JPEG/WebP/BMP thumbnails of 1 to 40 pixels with truncations and bit flips,
+  mutated base64) were run through Python 3.14.8 with Pillow 12.3 and through the port: no
+  difference outside the documented classes above.
+
 ## Registering a port in the corpus runner
 
 `crates/hatate-core/tests/corpus_diff.rs` runs every item of every ported parser.
