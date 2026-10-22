@@ -122,6 +122,10 @@ pub fn parse(body: &str, _url: &str, ctx: &Context) -> Vec<Tag> {
     let Some(post) = post(body) else {
         return Vec::new();
     };
+    if ctx.artist_lookup_raised {
+        // `_artist_name` raised on the profile answer; so did `parse`, and all its tags with it.
+        return Vec::new();
+    }
     let mut tags: Vec<Tag> = tag_names(post.get("tags"))
         .into_iter()
         .map(|name| Tag {
@@ -267,7 +271,8 @@ pub struct ArtistProfileRequest {
 ///
 /// Worth a second request: plenty of posts have no tags of their own, so without this they would
 /// contribute nothing at all. Python bounds it with a 10 second timeout and sends the app's
-/// user agent; any failure just means no artist tag, and is not remembered as a miss.
+/// user agent; any failure just means no artist tag, and is remembered as a miss, `""`, like an
+/// answer with no name (`_artist_cache[key] = name or ""` runs after the `except`).
 pub fn artist_profile_request(
     body: &str,
     url: &str,

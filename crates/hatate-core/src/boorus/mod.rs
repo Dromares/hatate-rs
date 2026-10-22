@@ -14,16 +14,19 @@
 //! `static PARSER: SiteParser` naming the hooks it defines, and is added to [`PARSERS`] in
 //! Python's order.
 //!
-//! What stays out: `fetch_page_info`'s HTTP, retry and cookie handling, the
-//! file-hash LRU (`local_md5`) and `_remote_size.py`, which opens a socket. They belong with the
-//! engine clients. This module has the part of `fetch_page_info` that runs after the body is in
-//! hand: [`page_info_from_body`].
+//! What stays out of this file: `fetch_page_info`'s HTTP, retry and cookie handling, the file-hash
+//! LRU (`local_md5`), `_remote_size.py` and the Data-API and profile fetches that fill a
+//! [`Context`], which open sockets. They are in [`fetch`], [`remote_size`] and [`dapi`]. This
+//! module has the part of `fetch_page_info` that runs after the body is in hand:
+//! [`page_info_from_body`].
 
 pub mod animepictures;
 pub mod danbooru;
+pub mod dapi;
 pub mod deviantart;
 pub mod e621;
 pub mod eshuushuu;
+pub mod fetch;
 pub mod gelbooru;
 pub mod host;
 pub mod joyreactor;
@@ -36,6 +39,7 @@ pub mod pawchive;
 pub mod pixiv;
 pub mod rating;
 pub mod redditpost;
+pub mod remote_size;
 pub mod rule34;
 pub mod rule34us;
 pub mod safebooru;
@@ -80,6 +84,10 @@ pub struct Context {
     /// `_remote_size._cache`), keyed by the file's URL. `(None, None)` is a remembered "this
     /// file's size cannot be read from its start".
     pub remote_image_sizes: HashMap<String, (Option<i64>, Option<i64>)>,
+    /// Pawchive's creator lookup answered with JSON of a shape Python's `_artist_name` cannot read
+    /// (a non-empty list, a string, a number: `.get` on it is an `AttributeError`, which only
+    /// `parse` sees). `parse` then raised, and a hook that raises has nothing to say: no tags.
+    pub artist_lookup_raised: bool,
 }
 
 impl Context {
@@ -362,15 +370,16 @@ impl Default for BooruPageInfo {
     }
 }
 
-/// The first of `markers` that appears in the first [`SOFT_404_SCAN_BYTES`] of the body,
+/// The first of `markers` that appears in the first [`SOFT_404_SCAN_BYTES`] characters of the body,
 /// compared case-insensitively. Some sites keep a deleted post's URL alive and answer HTTP 200
 /// with a notice where the image should be; the body is already in hand, so checking is free,
 /// and it is the ONLY check a single-candidate match gets. `markers` are lower-case.
 pub fn gone_marker(body: &str, markers: &[&str]) -> Option<String> {
-    let mut end = body.len().min(SOFT_404_SCAN_BYTES);
-    while !body.is_char_boundary(end) {
-        end -= 1;
-    }
+    // `body[:SOFT_404_SCAN_BYTES]` slices a `str`: the first 60,000 characters, not bytes.
+    let end = body
+        .char_indices()
+        .nth(SOFT_404_SCAN_BYTES)
+        .map_or(body.len(), |(at, _)| at);
     let lowered = body[..end].to_lowercase();
     markers.iter().find(|m| lowered.contains(*m)).map(|m| {
         info!("post says it has been deleted (matched {m:?})");
@@ -818,8 +827,14 @@ mod tests {
         assert_eq!(gone_marker("fine", &["was deleted"]), None);
         let late = format!("{}was deleted", "a".repeat(SOFT_404_SCAN_BYTES));
         assert_eq!(gone_marker(&late, &["was deleted"]), None);
-        // The cut falls inside a multi-byte character: it is moved back, not split.
-        let wide = "\u{e9}".repeat(SOFT_404_SCAN_BYTES);
+        // The scan is 60,000 CHARACTERS, as Python slices a `str`: a marker ending at character 60,000 is
+        // found even though it sits past byte 60,000, and one at 60,000 is not.
+        let wide = format!("{}was deleted", "\u{e9}".repeat(SOFT_404_SCAN_BYTES - 11));
+        assert_eq!(
+            gone_marker(&wide, &["was deleted"]).as_deref(),
+            Some("was deleted")
+        );
+        let wide = format!("{}was deleted", "\u{e9}".repeat(SOFT_404_SCAN_BYTES));
         assert_eq!(gone_marker(&wide, &["was deleted"]), None);
     }
 

@@ -49,6 +49,11 @@ pub struct Reply {
     pub delay: Duration,
     /// Send the body in pieces of this size with this pause between them.
     pub trickle: Option<(usize, Duration)>,
+    /// Close the connection without answering (a network error).
+    pub abort: bool,
+    /// The text of the `Content-Length` header, when it is not the body's length (a HEAD answer
+    /// that states a size, or a value no real file has).
+    pub content_length: Option<String>,
 }
 
 impl Reply {
@@ -59,6 +64,8 @@ impl Reply {
             body: body.into(),
             delay: Duration::ZERO,
             trickle: None,
+            abort: false,
+            content_length: None,
         }
     }
 
@@ -73,6 +80,17 @@ impl Reply {
 
     pub fn delayed(mut self, delay: Duration) -> Self {
         self.delay = delay;
+        self
+    }
+
+    pub fn aborted() -> Self {
+        let mut reply = Self::new(0, "");
+        reply.abort = true;
+        reply
+    }
+
+    pub fn content_length(mut self, text: &str) -> Self {
+        self.content_length = Some(text.to_owned());
         self
     }
 
@@ -260,6 +278,9 @@ where
         requests.lock().unwrap().push(rec.clone());
         let reply = handler(&rec);
 
+        if reply.abort {
+            return;
+        }
         if !reply.delay.is_zero() {
             tokio::time::sleep(reply.delay).await;
         }
@@ -267,7 +288,11 @@ where
         for (n, v) in &reply.headers {
             head.push_str(&format!("{n}: {v}\r\n"));
         }
-        head.push_str(&format!("Content-Length: {}\r\n\r\n", reply.body.len()));
+        let length = reply
+            .content_length
+            .clone()
+            .unwrap_or_else(|| reply.body.len().to_string());
+        head.push_str(&format!("Content-Length: {length}\r\n\r\n"));
         if stream.write_all(head.as_bytes()).await.is_err() {
             return;
         }
@@ -307,6 +332,12 @@ pub struct TestPki {
 
 impl TestPki {
     pub fn generate() -> Self {
+        Self::generate_for(&[])
+    }
+
+    /// As [`TestPki::generate`], with the leaf also valid for each name in `names` (the site
+    /// hosts a test reaches through `NetConfig::with_host_override`).
+    pub fn generate_for(names: &[&str]) -> Self {
         let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
         ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
@@ -315,7 +346,9 @@ impl TestPki {
             .push(rcgen::DnType::CommonName, "hatate-rs test CA (throw-away)");
         let ca = CertifiedIssuer::self_signed(ca_params, KeyPair::generate().unwrap()).unwrap();
 
-        let mut leaf_params = CertificateParams::new(vec!["localhost".to_owned()]).unwrap();
+        let mut sans = vec!["localhost".to_owned()];
+        sans.extend(names.iter().map(|n| (*n).to_owned()));
+        let mut leaf_params = CertificateParams::new(sans).unwrap();
         leaf_params
             .subject_alt_names
             .push(SanType::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST)));

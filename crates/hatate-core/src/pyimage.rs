@@ -40,10 +40,47 @@ fn u32be(d: &[u8], at: usize) -> Option<u32> {
 
 /// `(width, height)` of the picture in `data`, or `None` when Pillow would not open it.
 pub fn image_size(data: &[u8]) -> Option<(u32, u32)> {
-    let (w, h) = header_size(data)?;
+    image_size_checked(data).ok().flatten()
+}
+
+/// What `Image.open` raises past 178 million pixels (`DecompressionBombError`): the one failure a
+/// caller of `Image.open` does not see as "not an image".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecompressionBomb {
+    pub pixels: u64,
+}
+
+impl DecompressionBomb {
+    /// Pillow's `MAX_IMAGE_PIXELS` is 89 478 485; twice that raises.
+    pub const LIMIT: u64 = 2 * 89_478_485;
+}
+
+impl std::fmt::Display for DecompressionBomb {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Image size ({} pixels) exceeds limit of {} pixels, could be decompression bomb DOS attack.",
+            self.pixels,
+            Self::LIMIT
+        )
+    }
+}
+
+/// [`image_size`], with the decompression-bomb check as an error instead of "not an image".
+pub fn image_size_checked(data: &[u8]) -> Result<Option<(u32, u32)>, DecompressionBomb> {
+    let Some((w, h)) = header_size(data) else {
+        return Ok(None);
+    };
     // `ImageFile.__init__`: "not identified by this driver" for a side of 0; and
     // `Image._decompression_bomb_check`.
-    (w > 0 && h > 0 && u64::from(w) * u64::from(h) <= 2 * 89_478_485).then_some((w, h))
+    if w == 0 || h == 0 {
+        return Ok(None);
+    }
+    let pixels = u64::from(w) * u64::from(h);
+    if pixels > DecompressionBomb::LIMIT {
+        return Err(DecompressionBomb { pixels });
+    }
+    Ok(Some((w, h)))
 }
 
 fn header_size(data: &[u8]) -> Option<(u32, u32)> {
@@ -381,6 +418,25 @@ fn bmp(d: &[u8]) -> Option<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_picture_past_the_pixel_limit_is_a_bomb_not_a_non_image() {
+        // A GIF whose logical screen is 65535 x 65535 (4.29e9 pixels).
+        let mut gif = gif();
+        gif[6..10].copy_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        let bomb = image_size_checked(&gif).unwrap_err();
+        assert_eq!(bomb.pixels, 65535 * 65535);
+        assert_eq!(
+            bomb.to_string(),
+            "Image size (4294836225 pixels) exceeds limit of 178956970 pixels, could be decompression bomb DOS attack."
+        );
+        assert_eq!(
+            image_size(&gif),
+            None,
+            "the older caller still reads it as not an image"
+        );
+        assert_eq!(image_size_checked(b"<html>"), Ok(None));
+    }
 
     fn unhex(hex: &[&str]) -> Vec<u8> {
         let hex: String = hex.concat();

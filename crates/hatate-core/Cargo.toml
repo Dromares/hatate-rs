@@ -19,6 +19,9 @@ jpeg-encoder = "0.6.1"
 # The WHATWG named-character-reference table, for `pycompat::html_unescape`. Already in the
 # lockfile through scraper's html5ever, so no new crate.
 markup5ever = "0.40"
+# MD5 for `local_md5` (Sankaku finds a post by the local file's hash). Same RustCrypto family and
+# `digest` as the dev-only `sha2`.
+md-5 = "0.10"
 regex = "1.13.1"
 # rustls with NO built-in provider: reqwest then reads the process-wide default
 # provider, which `net::install_crypto_provider` installs explicitly (DAN-1909).
@@ -29,7 +32,7 @@ scraper = "0.29.0"
 sha2 = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
-tokio = { version = "1", features = ["rt", "time", "sync"] }
+tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
 tower = { version = "0.5", default-features = false, features = ["retry", "util"] }
 tracing = "0.1"
 url = "2"
