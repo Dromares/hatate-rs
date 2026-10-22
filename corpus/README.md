@@ -157,7 +157,7 @@ Nine of the 10 engines in `core/engines.py` have items (IQDB and IQDB 3D share o
 the Pawchive index, is not a Phase 2 gap (below). DAN-2001
 closed the engines whose parsing is inline with the HTTP call, as `mocked_transport` items (above),
 43 in all: `saucenao.search` 14, `google_images.search` 10, `yandex.search` 5, `pawchive_lookup.lookup` 5,
-`reddit.feed_entries` 4, `ascii2d.search` 3, `iqdb.search` 2, `iqdb.search_3d` 1.
+`reddit.feed_entries` 4, `ascii2d.search` 3, `iqdb.search` 1, `iqdb.search_3d` 1.
 
 What is left, and why:
 
