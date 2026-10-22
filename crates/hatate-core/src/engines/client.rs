@@ -104,6 +104,34 @@ pub(crate) async fn read_upload(image_path: &Path) -> Result<(Bytes, String), Re
     }
 }
 
+/// `urllib.parse.urlencode(pairs)`: `quote_plus` on each name and value (letters, digits and
+/// `_.-~` as they are, a space as `+`, every other byte as `%XX`), joined with `&`. The `url`
+/// crate's form encoder keeps `*` and writes `~` as `%7E`, so `params=` as `requests` sends it is
+/// built here.
+pub(crate) fn urlencode(pairs: &[(&str, &str)]) -> String {
+    fn quote_plus(text: &str, out: &mut String) {
+        for b in text.bytes() {
+            match b {
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_' | b'.' | b'-' | b'~' => {
+                    out.push(char::from(b));
+                }
+                b' ' => out.push('+'),
+                other => out.push_str(&format!("%{other:02X}")),
+            }
+        }
+    }
+    let mut out = String::new();
+    for (i, (name, value)) in pairs.iter().enumerate() {
+        if i > 0 {
+            out.push('&');
+        }
+        quote_plus(name, &mut out);
+        out.push('=');
+        quote_plus(value, &mut out);
+    }
+    out
+}
+
 /// A `multipart/form-data` upload as `requests` writes it.
 pub(crate) struct Upload {
     /// `multipart/form-data; boundary=...`
@@ -376,6 +404,19 @@ mod tests {
             multipart_upload("f", "x", b"").content_type,
             multipart_upload("f", "x", b"").content_type
         );
+    }
+
+    #[test]
+    fn query_strings_are_written_as_urlencode_writes_them() {
+        assert_eq!(
+            urlencode(&[
+                ("output_type", "2"),
+                ("api_key", "k~k*k k&k=k/\u{e9}"),
+                ("db", "999")
+            ]),
+            "output_type=2&api_key=k~k%2Ak+k%26k%3Dk%2F%C3%A9&db=999"
+        );
+        assert_eq!(urlencode(&[]), "");
     }
 
     #[test]

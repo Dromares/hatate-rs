@@ -57,6 +57,14 @@ impl ReplayServer {
         }
     }
 
+    /// Replaces what is left of the script with `script` and forgets the overflow count: a test
+    /// that drives one client through several searches serves each its own exchange.
+    pub fn set_script(&self, script: Vec<Reply>) {
+        let mut state = self.script.lock().unwrap();
+        state.replies = script.into();
+        state.overflow = 0;
+    }
+
     /// `https://127.0.0.1:<port><path>`
     pub fn url(&self, path: &str) -> String {
         self.server.url(path)
