@@ -9,9 +9,10 @@
 //! **Pattern for a site** (the long form is in `docs/parsers.md`): one module per site, named
 //! after the Python module; plain `pub fn`s that take the body and the post-page URL and return
 //! owned values; no I/O and no globals. State that Python keeps in module globals (the Data-API
-//! post that the Gelbooru family memoises, Pawchive's creator-name cache) is an explicit
-//! parameter, carried in [`Context`]. The module exports a `static PARSER: SiteParser` naming
-//! the hooks it defines, and is added to [`PARSERS`] in Python's order.
+//! post that the Gelbooru family memoises, Pawchive's creator-name cache and remote image sizes)
+//! is an explicit parameter, carried in [`Context`]. The module exports a
+//! `static PARSER: SiteParser` naming the hooks it defines, and is added to [`PARSERS`] in
+//! Python's order.
 //!
 //! What stays out: `fetch_page_info`'s HTTP, retry and cookie handling, the
 //! file-hash LRU (`local_md5`) and `_remote_size.py`, which opens a socket. They belong with the
@@ -20,6 +21,7 @@
 
 pub mod animepictures;
 pub mod danbooru;
+pub mod deviantart;
 pub mod e621;
 pub mod eshuushuu;
 pub mod gelbooru;
@@ -30,6 +32,7 @@ pub mod mangadex;
 pub mod moebooru;
 pub mod paheal;
 pub mod parsed;
+pub mod pawchive;
 pub mod rating;
 pub mod rule34;
 pub mod rule34us;
@@ -39,6 +42,7 @@ pub mod sizes;
 pub mod xbooru;
 pub mod zerochan;
 
+use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use serde_json::{Map, Value};
@@ -52,8 +56,11 @@ pub const SOFT_404_SCAN_BYTES: usize = 60_000;
 
 /// The state a parser reads that is not in its arguments. Python keeps this in module globals;
 /// the corpus records it as `context` in `call.json`. A field is added by the ticket of the first
-/// site that needs it (`artist_cache` for Pawchive is still to come), together with its key in
-/// the runner's mapping.
+/// site that needs it, together with its key in the runner's mapping.
+///
+/// The fetch that fills a field is not here (it opens a socket, so it belongs with the engine
+/// clients): whoever builds the context has already done it, and a parser that finds its entry
+/// missing answers as Python does when the same request fails.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct Context {
@@ -62,13 +69,46 @@ pub struct Context {
     /// which sends every hook down its HTML path. Whoever builds the context has already
     /// matched the post to the URL; the parsers do not check.
     pub api_post: Option<Map<String, Value>>,
+    /// Pawchive's creator names already looked up (Python's `pawchive._artist_cache`), keyed
+    /// `"{service}/{user}"`. `""` is a remembered miss: the profile was asked for and gave no
+    /// name, so there is no artist tag and no second request.
+    pub artist_cache: HashMap<String, String>,
+    /// Image sizes already read from the head of a remote file (Python's
+    /// `_remote_size._cache`), keyed by the file's URL. `(None, None)` is a remembered "this
+    /// file's size cannot be read from its start".
+    pub remote_image_sizes: HashMap<String, (Option<i64>, Option<i64>)>,
 }
 
 impl Context {
     /// A context carrying the Gelbooru family's Data-API post, or `None` for "the API gave
     /// nothing".
     pub fn with_api_post(api_post: Option<Map<String, Value>>) -> Context {
-        Context { api_post }
+        Context {
+            api_post,
+            ..Context::default()
+        }
+    }
+
+    /// A context carrying Pawchive's creator-name cache.
+    pub fn with_artist_cache(artist_cache: HashMap<String, String>) -> Context {
+        Context {
+            artist_cache,
+            ..Context::default()
+        }
+    }
+
+    /// Remembers a creator lookup as Python's `_artist_name` does: the stripped name, or `""`
+    /// for "no name", which stops the same creator being asked about again.
+    pub fn remember_artist(&mut self, key: &str, name: Option<&str>) {
+        let name = name.map(crate::pycompat::strip).unwrap_or_default();
+        self.artist_cache.insert(key.to_string(), name.to_string());
+    }
+
+    /// Remembers an image size read from a remote file. A network failure is not remembered
+    /// (a timeout says nothing about the file); a file whose size cannot be read from its start
+    /// is, as `(None, None)`.
+    pub fn remember_image_size(&mut self, url: &str, size: (Option<i64>, Option<i64>)) {
+        self.remote_image_sizes.insert(url.to_string(), size);
     }
 }
 
@@ -229,8 +269,8 @@ pub static PARSERS: &[&SiteParser] = &[
     &paheal::PARSER,
     &rule34us::PARSER,
     // redditpost
-    // deviantart
-    // pawchive
+    &deviantart::PARSER,
+    &pawchive::PARSER,
     &sankaku::PARSER,
     // twitter
     &mangadex::PARSER,

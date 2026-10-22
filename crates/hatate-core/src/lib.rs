@@ -10,6 +10,8 @@ pub mod net;
 pub mod paths;
 mod pycase;
 mod pycompat;
+mod pycsv;
+mod pyrepr;
 pub mod pyurl;
 pub mod quota_pause;
 pub mod rotating_log;
