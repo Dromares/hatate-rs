@@ -529,6 +529,11 @@ impl YandexClient {
         self.lock().state.is_blocked(self.clock.monotonic())
     }
 
+    /// The state Python keeps in `_blocked`, `_consecutive_failures` and `_resting_until`.
+    pub fn state(&self) -> YandexState {
+        self.lock().state
+    }
+
     /// `is_resting`.
     pub fn is_resting(&self) -> bool {
         self.lock().state.is_resting(self.clock.monotonic())
