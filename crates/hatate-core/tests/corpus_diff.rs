@@ -61,6 +61,9 @@ static PORTS: &[&Port] = &[
     &corpus_ports::sankaku::PORT,
     &corpus_ports::animepictures::PORT,
     &corpus_ports::joyreactor::PORT,
+    &corpus_ports::eshuushuu::PORT,
+    &corpus_ports::zerochan::PORT,
+    &corpus_ports::mangadex::PORT,
 ];
 
 /// The Python exception class a `raises` item names, and the Rust error variant that stands for

@@ -81,6 +81,25 @@ has needed yet:
 - **Where Python raises** on a shape the site never sends (e621's `post` that is a string, a
   `file` that is a list) the Rust hook returns what `fetch_page_info` would make of it: nothing.
 
+- **`str.casefold()`, `re.IGNORECASE` and `\b`** (e-shuushuu's description matching, DAN-2005).
+  `regex`'s `(?i)` and `\b`, and `str::to_lowercase`, are not Python's: `(?i)` does not let `i`
+  match `ı` or `İ`, `\w` counts combining marks, `to_lowercase` leaves `ß` and `ς`, and the crate
+  has no lookahead. `crate::pycase` holds Python's rules (`casefold`, the first-character
+  `lower`/`upper` that `_sre` uses, `re._casefix._EXTRA_CASES`, `\w` as letters, numbers and `_`),
+  and a parser that needs them matches by hand over characters. The two tables in it were read
+  off CPython 3.14.8 (Unicode 16.0); `std` is newer, so a character added to Unicode after 16.0
+  is the one place they can differ (54 unassigned-in-16.0 code points and two capitals added
+  for existing small letters, found by comparing every code point). The one `(?i)` regex that
+  stays (`eshuushuu::DIMENSIONS_RE`) spells out the letters whose Python cases `(?i)` lacks.
+- **A field read unchecked.** Python hands a JSON field through as it is: Zerochan's `full` and
+  `width`, MangaDex's `baseUrl` and `hash` (an f-string prints any value). The ports read the
+  type the API sends. A `full` that is not a string, a `width` that is not a JSON integer, and a
+  `baseUrl` or `hash` that is not a non-empty string give nothing, where Python returns the value
+  or prints it into the URL. Zerochan's `tags` is walked as Python walks it (a string by
+  character, an object by key; a number raises, which is no tags). MangaDex's `dataSaver` is
+  indexed as Python indexes it (a string by character; an object that is reached, or a number,
+  raises, which is no pages). None of these is a shape the API sends.
+
 A new difference found by a later port is written down here, with the corpus item that exposed
 it, and then matched. No item is allowed to fail instead.
 
