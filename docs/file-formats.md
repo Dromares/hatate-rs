@@ -351,7 +351,7 @@ review (method in 2.7). Keys that hold credentials are marked **[secret]**.
 fixtures or sent anywhere except the service they belong to: `saucenao.api_key`,
 `hydrus.access_key`, `mcp.token`, `google_images_api_key`, `e621_api_key`,
 `e621_username`, `pixiv_session_cookie`, `sankaku_cookies`, `animepictures_cookies`,
-`deviantart_cookies` (`core/config.py:40-47`, `core/mcp_audit.py:36` for the redaction list).
+`deviantart_cookies` (`core/config.py:42-47`, `core/mcp_audit.py:36` for the redaction list).
 
 ### 2.6 Keys with no reader, no writer, or only a legacy role
 
@@ -390,7 +390,7 @@ Nothing validates these on load (2.2). The code falls back as shown.
 | `sidecar_filename_style` | `"append"`, `"replace"` | `"append"` | `core/sidecar.py:62-71` |
 | `sidecar_overwrite` | `"ask"`, `"skip"`, `"overwrite"` | `"ask"` | `core/sidecar.py:74-77` |
 | `enabled_tag_sources` | `User`, `Search engine`, `Booru`, `Hatate-linux`, `Hydrus` (the `TagSource` values) | names that match no source are dropped | `core/models.py:12-18,431-439` |
-| `engine_delays` keys | engine ids `iqdb saucenao ascii2d tracemoe iqdb3d googleimages googlelens yandex pawchive pawchiveindex`; value `[min_s, max_s]` | an absent engine uses the global delay | `core/engines.py:9-18`, `gui/settings_dialog.py:2675-2683` |
+| `engine_delays` keys | engine ids `iqdb saucenao ascii2d tracemoe iqdb3d googleimages googlelens yandex pawchive pawchiveindex`; value `[min_s, max_s]` | an absent engine uses the global delay | `core/engines.py:16-25`, `gui/settings_dialog.py:2675-2683` |
 | `review_shortcuts` | `{action_id: key sequence}`; **only ids whose binding differs from the default** are stored; `""` means "deliberately cleared" | unknown ids are pruned on the next dialog save | `core/shortcuts.py:166-178`, `gui/settings_dialog.py:2668` |
 | `tag_namespace_colors` | `{namespace: "#rrggbb"}`; key `""` is the unnamespaced colour | built-in defaults in `DEFAULT_NAMESPACE_COLORS` | `core/tag_colors.py:28-37,47-56` |
 | `enabled_sites` | the site names of `ALL_SITE_OPTIONS` | unknown names are simply never matched | `core/sites.py:126-128` |
@@ -746,13 +746,13 @@ paths of the run that produced it).
 
 ### 5.4 `mcp_audit.jsonl` (+ `.1`)
 
-JSON Lines, one object per MCP tool call (`core/mcp_audit.py:393-419`):
+JSON Lines, one object per MCP tool call (`core/mcp_audit.py:70-96`):
 `timestamp` (UTC, `%Y-%m-%dT%H:%M:%SZ`), `tool`, `tier`, `allowed`, `reason`, `dry_run`,
 `row`, `candidate_index`, `arguments`, `outcome`; `json.dumps(entry, default=str)` + `\n`,
 opened in append mode. Keys named `token`, `bearer`, `access_key`, `accesskey`, `api_key`,
 `apikey`, `authorization` (case-insensitive, any depth) have their value replaced by the string
-`"<redacted>"` (`:358-373`). At `>= mcp.audit_log_max_bytes` (default 5,000,000) the file is
-renamed to `.1` replacing any earlier `.1` (`:422-431`; the limit is passed from
+`"<redacted>"` (`:35-50`). At `>= mcp.audit_log_max_bytes` (default 5,000,000) the file is
+renamed to `.1` replacing any earlier `.1` (`:99-108`; the limit is passed from
 `gui/mcp_bridge.py:173,192`).
 
 ### 5.5 `saucenao_quota_pause.json`
@@ -876,7 +876,7 @@ on the send method (`upload`, `url_importer`, `download_send`):
 | the file | `/add_files/add_file` | file path/bytes | upload and download-and-send | `core/hydrus_client.py:658-683`, `core/hydrus_import.py:123-137` |
 | the match URL | `/add_urls/associate_url` | `{"url_to_add": url, "hashes": [hash]}` | after an upload | `core/hydrus_client.py:687-696`, `core/hydrus_import.py:149-154` |
 | URL import | `/add_urls/add_url` | `{"url", "show_destination_page", "service_keys_to_additional_tags"}` | `url_importer` | `core/hydrus_client.py:698-726` |
-| tags | `/add_tags/add_tags` | `{"hash", "service_keys_to_tags"` or `"service_names_to_tags": {service: [tag…]}}`; service = `hydrus.tag_service_key`, else `"my tags"`; tries key then name | every send with tags | `core/hydrus_client.py:758-786`, `core/hydrus_import.py:156-162` |
+| tags | `/add_tags/add_tags` | `{"hash", "service_keys_to_tags"` or `"service_names_to_tags": {service: [tag…]}}`; service = `hydrus.tag_service_key`, else `"my tags"`; tries key then name | every send with tags | `core/hydrus_client.py:758-786`, `core/hydrus_import.py:155-162` |
 | duplicate relationship | `/manage_file_relationships/set_file_relationships` (and `set_kings`) | relationship `4` (better) or `3` (alternates) | only if `set_hydrus_duplicate_relationships` | `core/hydrus_client.py:93-100,407,433` |
 | provenance note | `/add_notes/set_notes` | `{"hash", "notes": {name: text}}` | only if `write_hydrus_provenance_note`, after Hydrus confirms holding the file | `core/hydrus_client.py:479`, `core/hydrus_import.py:533-590` |
 | delete / undelete | `/add_files/delete_files`, `/add_files/undelete_files` | hashes (+ reason) | user actions | `core/hydrus_client.py:533,541` |
@@ -937,7 +937,7 @@ work"; "should" = strongly preferred, the Python app tolerates a deviation.
 9. **Must not** invent a new `log_file_path` for an existing config: it is an absolute path
    frozen at first save (2.1).
 10. **Secrets** (2.5) must never reach a log line, an error message or a fixture; the Python
-    app redacts the same names in its audit log (`core/mcp_audit.py:358-373`).
+    app redacts the same names in its audit log (`core/mcp_audit.py:35-50`).
 11. The Python app **rewrites the whole file at every exit** (2.4). If both apps are used in
     turn, Rust-written values for known keys survive, anything else does not.
 
