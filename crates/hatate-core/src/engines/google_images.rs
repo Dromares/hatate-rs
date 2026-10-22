@@ -6,9 +6,15 @@
 //! get an ordinal score that starts below ascii2d's (a Google hit can surface a source nothing
 //! else found without overturning a real IQDB or SauceNAO match).
 //!
-//! The request half (the Vision call, the public upload, the consent cookie, the error mapping
-//! for a rejected key or an exhausted quota, the latch that stands the engine down for the
-//! session, the JavaScript-shell and challenge checks) is Phase 3.
+//! `search` has two routes, picked by [`vision_key`], and each is cut where it reads the answer:
+//! [`vision_from_response`] for the Cloud Vision call (the status mapping, the per-image error
+//! inside a 200, the hand-off to [`parse_vision_results`]) and [`public_from_response`] for the
+//! public upload (the 413, the consent-wall and bot-check test, the other statuses, Lens page or
+//! classic page, the JavaScript shell). The latch that stands the engine down for the session
+//! (`_blocked`) is not kept here: an error that [`GoogleImagesError::latches`] is the signal for
+//! the client to set it. The request half (reading and downscaling the picture, the Vision body
+//! and the multipart upload, the consent cookie and headers, the deadline, the network errors,
+//! `reset_blocked_flag` at the start of a search) is Phase 3.
 
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -18,12 +24,39 @@ use scraper::{ElementRef, Selector};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use super::{UnexpectedInput, objects_in};
+use super::{Response, UnexpectedInput, objects_in};
 use crate::boorus::parsed::{soup_of, text_stripped};
 use crate::pycompat;
+use crate::pyrepr::py_str;
 use crate::pyurl;
 
 pub const GOOGLE_URL: &str = "https://www.google.com/";
+/// The public upload (a multipart `encoded_image`, `hl=en`, redirects followed).
+pub const SEARCH_BY_IMAGE_URL: &str = "https://www.google.com/searchbyimage/upload";
+/// The Cloud Vision call (a JSON body, `key=<api key>`).
+pub const VISION_URL: &str = "https://vision.googleapis.com/v1/images:annotate";
+
+/// What a consent wall or a bot check says in its first 6000 characters.
+const CHALLENGE_MARKERS: [&str; 5] = [
+    "our systems have detected unusual traffic",
+    "/sorry/index",
+    "recaptcha",
+    "id=\"captcha",
+    "unusual traffic from your computer network",
+];
+
+/// The shell Google serves in place of results: its no-JavaScript notice links to
+/// `/httpservice/retry/enablejs` and hides the page body until its scripts have run.
+const JS_SHELL_MARKERS: [&str; 2] = ["/httpservice/retry/enablejs", "if you are not redirected"];
+
+const CHALLENGE_MESSAGE: &str = "Google is answering with a consent page or an \"unusual \
+traffic\" check instead of results, so it won't accept uploads from this app right now. No \
+setting fixes it - it clears on Google's schedule. Turn Google Images off under Settings > \
+Engine, or try again later.";
+const JAVASCRIPT_MESSAGE: &str = "Google accepted the image but answers with a page that only \
+fills in its results once its own JavaScript has run, which this app does not do. Add a Google \
+Cloud Vision API key under Settings > Engine to use Google's web detection API instead, or turn \
+Google Images off.";
 
 /// Below ascii2d's feature-search start (80): Google ranks by page relevance, not by visual
 /// similarity.
@@ -543,14 +576,230 @@ pub fn host_label(url: &str) -> Option<String> {
     (!host.is_empty()).then(|| host.to_string())
 }
 
+// ----------------------------------------------------------------------
+// `search`: what is done with the answers
+// ----------------------------------------------------------------------
+
+/// `GoogleImagesError`, its subclass `GoogleImagesBlockedError` and that one's subclass
+/// `GoogleImagesJavaScriptError`, plus the case where Python raises something else.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GoogleImagesError {
+    /// `GoogleImagesError`: a failure about this image, with its user-facing message. Not
+    /// latched: the next image is still asked.
+    Failed(String),
+    /// `GoogleImagesBlockedError`: Google will not answer this app for the rest of the session (a
+    /// consent wall, an "unusual traffic" check, a Vision key that is rejected or out of quota),
+    /// so the client latches the engine (`_blocked`).
+    Blocked(String),
+    /// `GoogleImagesJavaScriptError`: the upload worked and the page holds no results until
+    /// Google's JavaScript has run. A property of Google's front end, so latched like
+    /// [`Blocked`](Self::Blocked); kept distinct because its message names the fix (a Vision key).
+    JavaScript,
+    /// Python raised out of `search` on an answer the service never gives; see
+    /// [`UnexpectedInput`].
+    Unexpected(UnexpectedInput),
+}
+
+impl GoogleImagesError {
+    /// Whether Python's `_latch` made this error, which is when the client sets `_blocked`.
+    pub fn latches(&self) -> bool {
+        matches!(self, Self::Blocked(_) | Self::JavaScript)
+    }
+}
+
+impl std::fmt::Display for GoogleImagesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Failed(message) | Self::Blocked(message) => f.write_str(message),
+            Self::JavaScript => f.write_str(JAVASCRIPT_MESSAGE),
+            Self::Unexpected(raised) => raised.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for GoogleImagesError {}
+
+impl From<UnexpectedInput> for GoogleImagesError {
+    fn from(raised: UnexpectedInput) -> Self {
+        GoogleImagesError::Unexpected(raised)
+    }
+}
+
+/// The Vision API key `search` uses, stripped, or `None` when it is blank and the public upload
+/// is used instead (`(api_key or "").strip()`).
+pub fn vision_key(api_key: &str) -> Option<&str> {
+    let key = pycompat::strip(api_key);
+    (!key.is_empty()).then_some(key)
+}
+
+/// `_looks_like_a_challenge`: a consent wall or a bot check, served as an ordinary 200 as often
+/// as not, so the status cannot tell it from results.
+fn looks_like_a_challenge(response: &Response<'_>) -> bool {
+    let url = response.url.to_lowercase();
+    if url.contains("consent.google.") || url.contains("/sorry/") {
+        return true;
+    }
+    let body: String = response
+        .text
+        .chars()
+        .take(6000)
+        .collect::<String>()
+        .to_lowercase();
+    CHALLENGE_MARKERS.iter().any(|marker| body.contains(marker))
+}
+
+/// `looks_like_a_javascript_shell`: whether the page holds no results until Google's scripts run.
+/// Told apart from a genuinely empty page so that "Google found nothing" is never recorded for an
+/// image Google was never asked about.
+pub fn looks_like_a_javascript_shell(html: &str) -> bool {
+    let head: String = html.chars().take(20000).collect::<String>().to_lowercase();
+    JS_SHELL_MARKERS.iter().any(|marker| head.contains(marker))
+}
+
+/// What `_search_public` does with the upload's final answer (redirects followed): the 413, the
+/// consent wall or bot check (checked before the status), any other status, then the Lens reader
+/// for a `lens.google.` landing and the classic reader for the rest. An empty parse of a
+/// JavaScript shell is an error, not "no matches".
+pub fn public_from_response(
+    response: &Response<'_>,
+) -> Result<Vec<GoogleImagesMatch>, GoogleImagesError> {
+    if response.status == 413 {
+        return Err(GoogleImagesError::Failed(
+            "Google rejected the image as too large, even after downscaling".to_owned(),
+        ));
+    }
+    if looks_like_a_challenge(response) {
+        return Err(GoogleImagesError::Blocked(CHALLENGE_MESSAGE.to_owned()));
+    }
+    if response.status != 200 {
+        return Err(GoogleImagesError::Failed(format!(
+            "Google returned HTTP {}",
+            response.status
+        )));
+    }
+
+    let final_url = if response.url.is_empty() {
+        GOOGLE_URL
+    } else {
+        response.url
+    };
+    let matches = if final_url.to_lowercase().contains("lens.google.") {
+        parse_lens_results(response.text)
+    } else {
+        parse_results(response.text, final_url)?
+    };
+    if matches.is_empty() && looks_like_a_javascript_shell(response.text) {
+        return Err(GoogleImagesError::JavaScript);
+    }
+    Ok(matches)
+}
+
+/// What `_search_vision` does with the call's answer. `payload` is `resp.json()`, `None` when it
+/// would not decode (Python reads that as `{}`). Any status but 200 is an error: a rejected key,
+/// a disabled API and an exhausted quota fail every image in the batch identically, so they come
+/// back [`Blocked`](GoogleImagesError::Blocked); a malformed request is about this image and
+/// does not. A per-image error is reported inside a 200 and read out of the body.
+///
+/// `Err(Unexpected)` where Python raises on a payload the service never sends: one that is not an
+/// object, an `error` or `message` or `status` that is truthy and of the wrong type, or a
+/// `responses` that is not a list of objects.
+pub fn vision_from_response(
+    status: u16,
+    payload: Option<&Value>,
+) -> Result<Vec<GoogleImagesMatch>, GoogleImagesError> {
+    let empty = Value::Object(Map::new());
+    let payload = payload.unwrap_or(&empty);
+    let Value::Object(body) = payload else {
+        return Err(UnexpectedInput.into());
+    };
+    if status != 200 {
+        return Err(vision_error(status, body)?);
+    }
+
+    // `inner = (payload.get("responses") or [{}])[0].get("error")`
+    let inner = match body.get("responses") {
+        Some(Value::Array(responses)) => match responses.first() {
+            Some(Value::Object(first)) => first.get("error"),
+            Some(_) => return Err(UnexpectedInput.into()),
+            None => None,
+        },
+        Some(other) if pycompat::truthy(other) => return Err(UnexpectedInput.into()),
+        _ => None,
+    };
+    if let Some(inner) = inner.filter(|inner| pycompat::truthy(inner)) {
+        let Value::Object(fields) = inner else {
+            return Err(UnexpectedInput.into());
+        };
+        // `inner.get('message') or inner`
+        let message = match fields.get("message") {
+            Some(message) if pycompat::truthy(message) => py_str(message),
+            _ => py_str(inner),
+        };
+        return Err(GoogleImagesError::Failed(format!(
+            "Google Vision: {message}"
+        )));
+    }
+
+    Ok(parse_vision_results(payload)?)
+}
+
+/// `_vision_error`: a Vision failure as the right kind of error. The text fields are read as
+/// Python reads them, `(x or "").strip()` and `(x or "").upper()`, so a truthy value that is not
+/// a string is `Err`.
+fn vision_error(
+    status: u16,
+    payload: &Map<String, Value>,
+) -> Result<GoogleImagesError, UnexpectedInput> {
+    let error = match payload.get("error") {
+        Some(Value::Object(error)) => Some(error),
+        Some(other) if pycompat::truthy(other) => return Err(UnexpectedInput),
+        _ => None,
+    };
+    let text = |key: &str| -> Result<&str, UnexpectedInput> {
+        match error.and_then(|error| error.get(key)) {
+            Some(Value::String(text)) => Ok(text),
+            Some(other) if pycompat::truthy(other) => Err(UnexpectedInput),
+            _ => Ok(""),
+        }
+    };
+    let message = pycompat::strip(text("message")?);
+    let message = if message.is_empty() {
+        format!("HTTP {status}")
+    } else {
+        message.to_owned()
+    };
+    let reason = text("status")?.to_uppercase();
+
+    Ok(if status == 429 || reason == "RESOURCE_EXHAUSTED" {
+        GoogleImagesError::Blocked(format!(
+            "Google Vision quota is exhausted, so it can't answer any more images this \
+                 month: {message}. Turn Google Images off under Settings > Engine, or raise \
+                 the quota in the Google Cloud console."
+        ))
+    } else if matches!(status, 401 | 403)
+        || reason == "PERMISSION_DENIED"
+        || reason == "UNAUTHENTICATED"
+    {
+        GoogleImagesError::Blocked(format!(
+            "Google Vision refused the API key: {message}. Check the key under Settings > \
+                 Engine, and that the Cloud Vision API is enabled for its project."
+        ))
+    } else if status == 400 && message.to_lowercase().contains("api key") {
+        GoogleImagesError::Blocked(format!("Google Vision rejected the API key: {message}"))
+    } else {
+        GoogleImagesError::Failed(format!("Google Vision: {message}"))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     //! `tests/test_search_quality.py::TestGoogleImagesParser` and
-    //! `TestGoogleVisionWebDetection` at `76c85c4`, test for test. The tests that go through
-    //! `google_images.search` (a Vision key used instead of the public page, a rejected key, an
-    //! exhausted quota, a per-image error, a consent wall, the JavaScript shell, a Lens landing)
-    //! are the request half, and `test_ascii2d_and_google_images_are_ordinal_too` is the engine
-    //! runner's: Phase 3.
+    //! `TestGoogleVisionWebDetection` at `76c85c4`, test for test, and `TestGoogleImagesBlocked`'s
+    //! tests of `google_images.search` itself, through the two halves of `search` that read an
+    //! answer (see the end of the module). `test_once_blocked_later_images_do_not_ask_again`,
+    //! `test_a_new_search_tries_again`, `test_a_skipped_engine_is_never_cached_as_a_confident_not_found`
+    //! and `test_ascii2d_and_google_images_are_ordinal_too` are the engine runner's and the
+    //! client's latch: Phase 3.
 
     use super::*;
     use serde_json::json;
@@ -1069,5 +1318,264 @@ mod tests {
             matches[0].thumb_url.as_deref(),
             Some("https://rule34storage.b-cdn.net/posts/1/2/3.jpg")
         );
+    }
+
+    // ---- `search`, through the two halves that read an answer ---------------------------------
+    // `TestGoogleVisionWebDetection` (a key, a rejected key, an exhausted quota, a per-image
+    // error) and `TestGoogleImagesBlocked` (a consent wall, a traffic check, a server error, the
+    // JavaScript shell, a Lens landing).
+
+    const SEARCH_URL: &str = "https://www.google.com/search?tbs=sbi:x";
+    const CONSENT_URL: &str = "https://consent.google.com/m?continue=https://www.google.com/";
+    const SORRY: &str = "<html><body>Our systems have detected unusual traffic from your computer \
+                         network.</body></html>";
+    const SHELL: &str = r#"<html><body><noscript><meta http-equiv="refresh" content="0;url=/httpservice/retry/enablejs?sei=x"><div>Please click <a href="/httpservice/retry/enablejs?sei=x">here</a> if you are not redirected within a few seconds.</div></noscript></body></html>"#;
+
+    fn public(
+        status: u16,
+        url: &str,
+        text: &str,
+    ) -> Result<Vec<GoogleImagesMatch>, GoogleImagesError> {
+        public_from_response(&Response { status, url, text })
+    }
+
+    #[test]
+    fn a_key_picks_the_vision_route_and_a_blank_one_the_public_page() {
+        assert_eq!(vision_key("k"), Some("k"));
+        assert_eq!(vision_key("  k\u{a0}\n"), Some("k"));
+        assert_eq!(vision_key(""), None);
+        assert_eq!(vision_key(" \t\u{3000}"), None);
+        let matches = vision_from_response(200, Some(&payload())).unwrap();
+        assert_eq!(
+            matches[0].url,
+            "https://www.deviantart.com/someone/art/A-Picture-123"
+        );
+    }
+
+    #[test]
+    fn a_rejected_key_stands_down_for_the_batch() {
+        let body = json!({"error": {"code": 403, "status": "PERMISSION_DENIED",
+            "message": "Cloud Vision API has not been used in project 1"}});
+        let error = vision_from_response(403, Some(&body)).unwrap_err();
+        assert!(error.latches());
+        assert!(matches!(error, GoogleImagesError::Blocked(_)));
+        assert!(error.to_string().contains("Settings > Engine"));
+    }
+
+    #[test]
+    fn an_exhausted_quota_stands_down_too() {
+        let body = json!({"error": {"code": 429, "status": "RESOURCE_EXHAUSTED", "message": "Quota exceeded"}});
+        assert!(
+            vision_from_response(429, Some(&body))
+                .unwrap_err()
+                .latches()
+        );
+        // The reason alone is enough, whatever the status.
+        let error = vision_from_response(500, Some(&body)).unwrap_err();
+        assert!(error.latches());
+        assert!(
+            error
+                .to_string()
+                .starts_with("Google Vision quota is exhausted")
+        );
+    }
+
+    #[test]
+    fn the_other_vision_failures_are_read_by_status_reason_and_message() {
+        for (status, body, latches, message) in [
+            (
+                401,
+                json!({}),
+                true,
+                "Google Vision refused the API key: HTTP 401. ",
+            ),
+            (
+                500,
+                json!({"error": {"status": "unauthenticated", "message": " nope "}}),
+                true,
+                "Google Vision refused the API key: nope. ",
+            ),
+            (
+                400,
+                json!({"error": {"message": "API key not valid. Please pass a valid API key."}}),
+                true,
+                "Google Vision rejected the API key: API key not valid.",
+            ),
+            (
+                400,
+                json!({"error": {"message": "Bad image data"}}),
+                false,
+                "Google Vision: Bad image data",
+            ),
+            (503, json!({"error": ""}), false, "Google Vision: HTTP 503"),
+            (
+                500,
+                json!({"error": {"message": "   "}}),
+                false,
+                "Google Vision: HTTP 500",
+            ),
+        ] {
+            let error = vision_from_response(status, Some(&body)).unwrap_err();
+            assert_eq!(error.latches(), latches, "{status} {body}");
+            assert!(
+                error.to_string().starts_with(message),
+                "{status} {body}: {error}"
+            );
+        }
+        // A body that is not JSON reads as `{}`.
+        assert_eq!(
+            vision_from_response(502, None).unwrap_err(),
+            GoogleImagesError::Failed("Google Vision: HTTP 502".to_owned())
+        );
+        assert_eq!(vision_from_response(200, None).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn a_per_image_error_is_not_latched() {
+        let body = json!({"responses": [{"error": {"code": 3, "message": "Bad image data"}}]});
+        let error = vision_from_response(200, Some(&body)).unwrap_err();
+        assert_eq!(
+            error,
+            GoogleImagesError::Failed("Google Vision: Bad image data".to_owned())
+        );
+        assert!(!error.latches());
+        // With no message the error itself is shown, as Python formats it.
+        let body = json!({"responses": [{"error": {"code": 3}}]});
+        assert_eq!(
+            vision_from_response(200, Some(&body))
+                .unwrap_err()
+                .to_string(),
+            "Google Vision: {'code': 3}"
+        );
+    }
+
+    #[test]
+    fn an_empty_or_malformed_vision_body_is_no_matches_not_an_error() {
+        for body in [
+            json!({}),
+            json!({"responses": []}),
+            json!({"responses": [{}]}),
+            json!({"responses": [{"error": null}]}),
+            json!({"responses": [{"error": {}}]}),
+            json!({"responses": [{"webDetection": {}}]}),
+        ] {
+            assert_eq!(
+                vision_from_response(200, Some(&body)).unwrap(),
+                vec![],
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_vision_body_python_raises_on_is_an_error() {
+        for (status, body) in [
+            (200, json!([])),
+            (200, json!(null)),
+            (403, json!([])),
+            (200, json!({"responses": ["x"]})),
+            (200, json!({"responses": "x"})),
+            (200, json!({"responses": {"a": 1}})),
+            (200, json!({"responses": 5})),
+            (200, json!({"responses": [{"error": "boom"}]})),
+            (200, json!({"responses": [{"error": [1]}]})),
+            (400, json!({"error": "boom"})),
+            (400, json!({"error": {"message": 5}})),
+            (400, json!({"error": {"status": ["x"]}})),
+        ] {
+            assert_eq!(
+                vision_from_response(status, Some(&body)),
+                Err(GoogleImagesError::Unexpected(UnexpectedInput)),
+                "{status} {body}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_consent_wall_is_recognised_and_latched() {
+        // Served as an ordinary 200, which is why the status alone cannot tell results from a wall.
+        let error = public(200, CONSENT_URL, "<html>consent</html>").unwrap_err();
+        assert!(matches!(error, GoogleImagesError::Blocked(_)));
+        assert!(error.latches());
+        assert!(
+            public(200, "https://www.google.de/sorry/index?continue=x", "")
+                .unwrap_err()
+                .latches()
+        );
+    }
+
+    #[test]
+    fn an_unusual_traffic_check_is_recognised() {
+        let error = public(429, SEARCH_URL, SORRY).unwrap_err();
+        assert!(error.latches());
+        assert!(error.to_string().contains("Settings > Engine"));
+        for marker in [
+            "/sorry/index",
+            "reCAPTCHA",
+            "<div id=\"captcha\">",
+            "UNUSUAL TRAFFIC FROM YOUR COMPUTER NETWORK",
+        ] {
+            assert!(
+                public(200, SEARCH_URL, marker).unwrap_err().latches(),
+                "{marker}"
+            );
+        }
+        // Only the first 6000 characters are read.
+        let late = format!("{}recaptcha", "x".repeat(6000));
+        assert_eq!(public(200, SEARCH_URL, &late), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_plain_server_error_is_not_called_a_block() {
+        let error = public(500, SEARCH_URL, "nope").unwrap_err();
+        assert_eq!(
+            error,
+            GoogleImagesError::Failed("Google returned HTTP 500".to_owned())
+        );
+        assert!(!error.latches());
+    }
+
+    #[test]
+    fn too_large_is_checked_before_the_challenge() {
+        let error = public(413, CONSENT_URL, SORRY).unwrap_err();
+        assert_eq!(
+            error,
+            GoogleImagesError::Failed(
+                "Google rejected the image as too large, even after downscaling".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn a_javascript_only_page_is_reported_not_recorded_as_empty() {
+        let error = public(200, SEARCH_URL, SHELL).unwrap_err();
+        assert_eq!(error, GoogleImagesError::JavaScript);
+        assert!(error.latches());
+        assert!(error.to_string().contains("Vision")); // names the fix
+        // Only an empty parse is an error; a shell that holds results is read.
+        let with_results = format!("{SERP}{SHELL}");
+        assert_eq!(public(200, SERP_URL, &with_results).unwrap().len(), 2);
+        // The marker is looked for in the first 20000 characters only.
+        let late = format!("{}{SHELL}", " ".repeat(20000));
+        assert_eq!(public(200, SEARCH_URL, &late), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_lens_landing_is_parsed_through_the_lens_reader() {
+        let matches = public(200, "https://lens.google.com/search?p=abc", LENS).unwrap();
+        let urls: Vec<_> = matches.iter().map(|m| m.url.as_str()).collect();
+        assert_eq!(
+            urls,
+            ["https://www.deviantart.com/someone/art/A-Picture-123"]
+        );
+        // The classic reader finds nothing on it.
+        assert_eq!(public(200, SEARCH_URL, LENS), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_page_with_no_url_of_its_own_is_read_against_googles() {
+        let page = r#"<a href="/url?q=https://www.pixiv.net/artworks/456&amp;sa=U"><h3>t</h3></a>"#;
+        let matches = public(200, "", page).unwrap();
+        assert_eq!(matches[0].url, "https://www.pixiv.net/artworks/456");
     }
 }
