@@ -270,6 +270,10 @@ impl Queue {
             gtk4::SortType::Ascending
         };
         self.view.sort_by_column(Some(col), order);
+        // GTK keeps the focused item in view through a re-sort, which can leave the
+        // viewport a thousand rows down. A sort click should show the top of the result.
+        self.view
+            .scroll_to(0, None, gtk4::ListScrollFlags::NONE, None);
         true
     }
 
