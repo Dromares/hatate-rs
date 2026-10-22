@@ -1,7 +1,9 @@
 //! Shared library for the Hatate Rust rewrite. Work in progress.
 
 pub mod config;
+pub mod model;
 pub mod paths;
+pub mod session;
 
 /// Crate name, used by the placeholder test below.
 pub const NAME: &str = "hatate-core";

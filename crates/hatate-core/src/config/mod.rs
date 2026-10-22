@@ -8,7 +8,7 @@
 mod field;
 mod migrate;
 mod model;
-mod pyjson;
+pub(crate) mod pyjson;
 mod report;
 mod store;
 
