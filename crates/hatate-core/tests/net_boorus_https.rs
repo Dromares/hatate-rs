@@ -6,7 +6,7 @@
 //! The transport differential against the real Python (`worktrees/DAN-2058-differential.log`) is
 //! the broad check; these are the named, readable ones: each request a function makes, in order,
 //! and what it does with the answer. The Python test each one maps to is in
-//! `docs/python-test-map-3b.md`.
+//! `docs/network-halves.md` section 5.
 
 mod common;
 
@@ -434,6 +434,24 @@ async fn a_deviantart_session_cookie_that_rotated_is_saved_and_a_challenge_pages
         assert_eq!(settings.deviantart_cookies.expose(), want, "{status}");
         assert_eq!(sandbox.paths.config_file().exists(), saved, "{status}");
     }
+    // The Settings dialog's "Test DeviantArt" fetch passes no settings, so a rotation it sees is
+    // never merged into (or saved over) what the user has stored.
+    let w = world(&["www.deviantart.com"], move |_| rotated(200)).await;
+    let sandbox = Sandbox::new();
+    let mut typed = hatate_core::net::Cookies::new();
+    typed.set("auth", "typed-but-unsaved");
+    let opts = FetchOptions {
+        cookies: Some(typed),
+        ..FetchOptions::default()
+    };
+    let _ = fetch::fetch_page_info(
+        &w.client,
+        &BooruSession::new(),
+        "https://www.deviantart.com/someone/art/title-1234",
+        opts,
+    )
+    .await;
+    assert!(!sandbox.paths.config_file().exists());
 }
 
 // -- the Gelbooru family's Data API --------------------------------------------------------------
