@@ -22,6 +22,7 @@ mod pycase;
 mod pycompat;
 mod pycsv;
 mod pyimage;
+pub mod pyjpeg;
 mod pyrepr;
 pub mod pyresponse;
 pub mod pyurl;
