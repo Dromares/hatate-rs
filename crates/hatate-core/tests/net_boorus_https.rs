@@ -1213,7 +1213,7 @@ fn local_md5_of_nothing_a_missing_file_or_a_directory_is_none_and_not_fatal() {
     // failure, so it is not opened again.
     let locked = dir.path().join("locked.bin");
     std::fs::write(&locked, b"x").unwrap();
-    std::fs::set_permissions(&locked, std::os::unix::fs::PermissionsExt::from_mode(0)).unwrap();
+    std::fs::set_permissions(&locked, std::os::unix::fs::PermissionsExt::from_mode(0o0)).unwrap();
     if std::fs::File::open(&locked).is_err() {
         assert_eq!(session.local_md5(Some(&locked)), None);
         assert_eq!(session.md5_cache_len(), 2);

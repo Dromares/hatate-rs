@@ -26,7 +26,7 @@ pub const TIMEOUT: f64 = 10.0;
 pub const CACHE_ENTRIES: usize = 1024;
 pub const CHUNK: usize = 16 * 1024;
 
-type Size = (Option<i64>, Option<i64>);
+pub type Size = (Option<i64>, Option<i64>);
 
 /// The cache (`_remote_size._cache`) and the reads that fill it.
 #[derive(Debug)]
@@ -48,7 +48,7 @@ impl RemoteSizes {
     }
 
     /// The URLs read so far and what was learned of each, least recently used first.
-    pub fn entries(&self) -> Vec<(String, (Option<i64>, Option<i64>))> {
+    pub fn entries(&self) -> Vec<(String, Size)> {
         let cache = self.cache.lock().unwrap();
         cache.iter().map(|(k, v)| (k.clone(), *v)).collect()
     }
