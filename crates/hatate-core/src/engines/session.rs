@@ -43,7 +43,7 @@ struct Cookie {
 
 /// `http.cookiejar.CookieJar`'s nested `domain -> path -> name` dictionary, iteration order
 /// included: a replaced cookie keeps its place, a cleared one leaves its (empty) containers.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct CookieJar {
     domains: Vec<(String, Paths)>,
 }
@@ -186,6 +186,18 @@ impl CookieJar {
         }
     }
 
+    /// `merge_cookies(self, other)`: every cookie of `other`, in its order, stored here (a cookie
+    /// already here is replaced where it stands).
+    fn merge_from(&mut self, other: &CookieJar) {
+        for (_, paths) in &other.domains {
+            for (_, names) in paths {
+                for cookie in names {
+                    self.store(cookie.clone());
+                }
+            }
+        }
+    }
+
     fn clear(&mut self, domain: &str, path: &str, name: &str) {
         for (d, paths) in &mut self.domains {
             if d != domain {
@@ -285,6 +297,7 @@ fn parse_set_cookie(line: &str) -> Parse {
     };
     let mut seen: Vec<&'static str> = Vec::new();
     let mut max_age_set = false;
+    let mut unreadable_version = false;
     let params: Vec<&str> = split_params(line);
     for (i, raw) in params.iter().enumerate() {
         let param = raw.trim_end();
@@ -342,9 +355,11 @@ fn parse_set_cookie(line: &str) -> Parse {
             "version" => {
                 seen.push(known);
                 // An unreadable version drops the cookie.
+                // Read after the other attributes: a number it is not drops this cookie, but a
+                // `Max-Age` further along can still drop the whole answer first.
                 match parse_int(strip_quotes(value.unwrap_or(""))) {
                     Some(version) => parsed.version = version,
-                    None => return Parse::Bad,
+                    None => unreadable_version = true,
                 }
             }
             "max-age" => {
@@ -366,7 +381,7 @@ fn parse_set_cookie(line: &str) -> Parse {
             }
         }
     }
-    if parsed.name.is_empty() && parsed.value.is_none() {
+    if unreadable_version || (parsed.name.is_empty() && parsed.value.is_none()) {
         return Parse::Bad;
     }
     Parse::Cookie(parsed)
@@ -567,6 +582,12 @@ impl Session {
             .upload
             .map(|u| (u.content_type.as_str(), u.body.clone()));
         let mut redirects = 0usize;
+        // The jar `prepare_request` copied from the session's (`merge_cookies`): the Cookie
+        // header of each request is read from it, not from the session's own. A redirect hop
+        // copies the previous one, takes the answer's cookies, and merges the session's in.
+        let mut hop_jar = self.jar.clone();
+        let mut previous: Option<Url> = None;
+        let mut previous_headers = http::HeaderMap::new();
         loop {
             let left = total.saturating_sub(started.elapsed());
             if left.is_zero() {
@@ -584,7 +605,13 @@ impl Session {
                     .header(name, value)
                     .map_err(|e| failure_of(&e, total))?;
             }
-            if let Some(cookie) = self.jar.header_for(&parsed) {
+            if let Some(prior) = &previous {
+                let mut next = hop_jar.clone();
+                next.extract(prior, &previous_headers);
+                next.merge_from(&self.jar);
+                hop_jar = next;
+            }
+            if let Some(cookie) = hop_jar.header_for(&parsed) {
                 net_request = net_request
                     .header("Cookie", &cookie)
                     .map_err(|e| failure_of(&e, total))?;
@@ -599,7 +626,15 @@ impl Session {
                 Ok(response) => response,
                 Err(err) => return Err(failure_of(&err, total)),
             };
-            self.jar.extract(&response.url, &response.headers);
+            // `Session.send` stores an answer's cookies; so does `resolve_redirects`, again, for
+            // each answer a hop got. Storing twice matters: a cookie the answer both deletes and
+            // sets is put back at the end of its list the second time.
+            self.jar.extract(&parsed, &response.headers);
+            if redirects > 0 {
+                self.jar.extract(&parsed, &response.headers);
+            }
+            previous = Some(parsed);
+            previous_headers = response.headers.clone();
 
             let status = response.status.as_u16();
             let location = response
