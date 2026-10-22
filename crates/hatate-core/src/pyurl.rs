@@ -675,4 +675,79 @@ mod tests {
         let p = urlparse("a b:c?q=1", "");
         assert_eq!((p.scheme.as_str(), p.query.as_str()), ("", "q=1"));
     }
+
+    #[test]
+    fn urlsplit_s_value_errors_are_kept_by_try_urlparse() {
+        // Answers read off CPython 3.14.8's `urlparse`.
+        for (url, raises) in [
+            ("http://[::1]/x", false),
+            ("http://[::1]:80/x", false),
+            ("http://u@[::1]:80/", false),
+            ("http://[::ffff:1.2.3.4]/x", false),
+            ("http://[fe80::1%eth0]/x", false),
+            ("http://[v1.x]/x", false),
+            ("http://[1:2:3:4:5:6:7:8]/", false),
+            ("http://[1:2:3:4:5:6:7::]/", false),
+            ("http://[::]/", false),
+            ("http://[1:2:3:4:5:6:1.2.3.4]/", false),
+            ("http://\u{e9}.example/", false),
+            ("pixiv.net\u{ff0f}/comments/1", false),
+            ("http://[::1/x", true),
+            ("http://::1]/x", true),
+            ("http://[1.2.3.4]/x", true),
+            ("http://[fe80::1%]/x", true),
+            ("http://[v1]/x", true),
+            ("http://[x]@e621.net/", true),
+            ("http://[::1]x/", true),
+            ("http://x[::1]/", true),
+            ("http://[1:2:3:4:5:6:7:8:9]/", true),
+            ("http://[1::2::3]/", true),
+            ("http://[:1:2:3:4:5:6:7]/", true),
+            ("http://[1:2:3:4:5:6:7:1.2.3.4]/", true),
+            ("http://[::01.2.3.4]/", true),
+            // A netloc that NFKC turns into one with `/ ? # @ :` in it.
+            ("http://a\u{2100}/x", true),
+            ("http://\u{ff0f}.example/", true),
+            ("http://a\u{ff1a}80/", true),
+            ("//host\u{fe56}x/", true),
+        ] {
+            assert_eq!(try_urlparse(url, "").is_err(), raises, "{url}");
+            // `urlparse` itself still reads all of them.
+            let _ = urlparse(url, "");
+        }
+    }
+
+    #[test]
+    fn urljoin_raises_only_when_both_sides_are_split() {
+        assert!(try_urljoin("https://www.google.com/", "https://x]/y").is_err());
+        assert!(try_urljoin("https://[bad/", "rel").is_err());
+        assert_eq!(
+            try_urljoin("", "https://x]/y").as_deref(),
+            Ok("https://x]/y")
+        );
+        assert_eq!(
+            try_urljoin("https://www.google.com/", "").as_deref(),
+            Ok("https://www.google.com/")
+        );
+    }
+
+    #[test]
+    fn urlunparse_drops_empty_parts_as_python_does() {
+        let swap = |url: &str| {
+            let mut parts = urlparse(url, "");
+            parts.netloc = "x.y".to_string();
+            urlunparse(&parts)
+        };
+        assert_eq!(
+            swap("http://Danbooru.Donmai.US/posts/1;p?q#f"),
+            "http://x.y/posts/1;p?q#f"
+        );
+        assert_eq!(swap("/posts/1?q"), "//x.y/posts/1?q");
+        assert_eq!(swap("https://h?"), "https://x.y");
+        let bare = Parsed {
+            scheme: "https".to_string(),
+            ..Parsed::default()
+        };
+        assert_eq!(urlunparse(&bare), "https://");
+    }
 }

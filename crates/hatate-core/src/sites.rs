@@ -75,53 +75,107 @@ pub fn canonicalize_url(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! `tests/test_urls_and_availability.py::TestSankakuLegacyUrlRewrite` and
+    //! `TestReactorFullResUrlRewrite` at `76c85c4`, test for test, then what those tests do not
+    //! say.
+
     use super::*;
 
     #[test]
-    fn sankakus_legacy_route_becomes_the_posts_route() {
+    fn legacy_route_is_rewritten() {
         assert_eq!(
-            canonicalize_url("https://chan.sankakucomplex.com/post/show/123?x=1"),
-            "https://chan.sankakucomplex.com/en/posts/123"
+            canonicalize_url("https://chan.sankakucomplex.com/post/show/4100422"),
+            "https://chan.sankakucomplex.com/en/posts/4100422"
         );
+    }
+
+    #[test]
+    fn query_string_is_dropped_with_the_old_route() {
+        assert_eq!(
+            canonicalize_url("https://chan.sankakucomplex.com/post/show/4100422?tags=x"),
+            "https://chan.sankakucomplex.com/en/posts/4100422"
+        );
+    }
+
+    #[test]
+    fn modern_route_is_untouched() {
+        let url = "https://chan.sankakucomplex.com/en/posts/4100422";
+        assert_eq!(canonicalize_url(url), url);
+    }
+
+    #[test]
+    fn other_sites_are_untouched() {
+        // Danbooru also serves /post/show/{id} and handles it fine.
+        for url in [
+            "https://danbooru.donmai.us/post/show/2577264",
+            "https://gelbooru.com/index.php?page=post&s=view&id=1",
+            "https://yande.re/post/show/123",
+        ] {
+            assert_eq!(canonicalize_url(url), url);
+        }
+    }
+
+    #[test]
+    fn empty_and_junk_are_safe() {
+        assert_eq!(canonicalize_url(""), "");
+        assert_eq!(canonicalize_url("not a url"), "not a url");
+    }
+
+    const LOW: &str = "https://img10.reactor.cc/pics/post/egoswans-Rebecca-(Edgerunners)-Cyberpunk-Edgerunners-Cyberpunk-2077-8192103.jpeg";
+    const HIGH: &str = "https://img10.reactor.cc/pics/post/full/egoswans-Rebecca-(Edgerunners)-Cyberpunk-Edgerunners-Cyberpunk-2077-8192103.jpeg";
+
+    #[test]
+    fn reactor_cc_is_rewritten_to_full() {
+        assert_eq!(canonicalize_url(LOW), HIGH);
+    }
+
+    #[test]
+    fn joyreactor_com_host_is_also_rewritten() {
+        assert_eq!(
+            canonicalize_url("https://joyreactor.com/pics/post/a-1234.jpg"),
+            "https://joyreactor.com/pics/post/full/a-1234.jpg"
+        );
+    }
+
+    #[test]
+    fn joyreactor_cc_host_is_also_rewritten() {
+        assert_eq!(
+            canonicalize_url("https://joyreactor.cc/pics/post/a-1234.jpg"),
+            "https://joyreactor.cc/pics/post/full/a-1234.jpg"
+        );
+    }
+
+    #[test]
+    fn already_full_is_left_alone() {
+        assert_eq!(canonicalize_url(HIGH), HIGH);
+    }
+
+    #[test]
+    fn non_pics_post_path_is_left_alone() {
+        let url = "https://reactor.cc/post/1234567";
+        assert_eq!(canonicalize_url(url), url);
+    }
+
+    #[test]
+    fn unrelated_host_with_a_similar_path_is_left_alone() {
+        let url = "https://example.com/pics/post/a-1234.jpg";
+        assert_eq!(canonicalize_url(url), url);
+    }
+
+    #[test]
+    fn case_does_not_matter_to_the_pattern_or_the_host() {
         assert_eq!(
             canonicalize_url("HTTPS://X.SankakuComplex.com/Post/Show/9"),
             "HTTPS://X.SankakuComplex.com/en/posts/9"
         );
         assert_eq!(
-            canonicalize_url("https://sankakucomplex.com/en/posts/123"),
-            "https://sankakucomplex.com/en/posts/123"
+            canonicalize_url("https://IMG.Reactor.CC/PICS/POST/a-1.jpeg"),
+            "https://IMG.Reactor.CC/PICS/POST/full/a-1.jpeg"
         );
-    }
-
-    #[test]
-    fn a_reactor_picture_gets_its_unwatermarked_twin() {
-        for host in [
-            "img10.reactor.cc",
-            "joyreactor.com",
-            "www.joyreactor.cc",
-            "IMG.Reactor.CC",
-        ] {
-            assert_eq!(
-                canonicalize_url(&format!("https://{host}/pics/post/a-1.jpeg")),
-                format!("https://{host}/pics/post/full/a-1.jpeg"),
-                "{host}"
-            );
-        }
-        // Already the full copy, in any case: left alone.
         assert_eq!(
             canonicalize_url("https://img10.reactor.cc/pics/post/FULL/a-1.jpeg"),
             "https://img10.reactor.cc/pics/post/FULL/a-1.jpeg"
         );
-        // Not a reactor host, or not under /pics/post/: left alone.
-        assert_eq!(
-            canonicalize_url("https://example.org/pics/post/a-1.jpeg"),
-            "https://example.org/pics/post/a-1.jpeg"
-        );
-        assert_eq!(
-            canonicalize_url("https://notreactor.cc/pics/post/a-1.jpeg"),
-            "https://notreactor.cc/pics/post/a-1.jpeg"
-        );
-        assert_eq!(canonicalize_url(""), "");
     }
 
     #[test]

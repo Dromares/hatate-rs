@@ -221,3 +221,234 @@ fn host_label(url: &str) -> Result<Option<String>, UnexpectedInput> {
     let host = netloc.strip_prefix("www.").unwrap_or(&netloc);
     Ok((!host.is_empty()).then(|| host.to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    //! `tests/test_yandex.py::TestReadingTheResultsPage` at `76c85c4`, test for test. The
+    //! `TestStandingDown` tests are the request half (the captcha rest, the stand-down after three
+    //! empty pages, the pacing) and `TestTakingPart` is engine settings: Phase 3.
+
+    use super::*;
+    use serde_json::json;
+
+    /// `_site(url, domain, w, h)`: Yandex tags every outbound link with its own utm_ parameters.
+    fn site(url: &str, domain: &str) -> Value {
+        let tagged = if url.contains('?') {
+            format!("{url}&utm_medium=organic&utm_source=yandexsmartcamera")
+        } else {
+            format!("{url}?utm_medium=organic&utm_source=yandexsmartcamera")
+        };
+        json!({
+            "title": "t",
+            "url": tagged,
+            "domain": domain,
+            "thumb": {"url": "//avatars.mds.yandex.net/i?id=abc&n=13", "width": 148, "height": 90},
+            "originalImage": {"url": "https://img.example/1.jpg", "width": 1000, "height": 1400},
+        })
+    }
+
+    /// `html.escape(text, quote=True)`.
+    fn escape(text: &str) -> String {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#x27;")
+    }
+
+    /// `_page(sites)`: other data-state blobs first, then the one carrying cbirSites,
+    /// HTML-escaped as served.
+    fn page(sites: &[Value]) -> String {
+        let other = escape(&json!({"form": {"action": "/images/search"}}).to_string());
+        let state = escape(&json!({"initialState": {"cbirSites": {"sites": sites}}}).to_string());
+        format!(
+            "<html><div data-state=\"{other}\"></div><div class=\"CbirSites\" data-state=\"{state}\"></div></html>"
+        )
+    }
+
+    fn sites() -> Vec<Value> {
+        vec![
+            site(
+                "https://ru.pinterest.com/pin/267753140320940932/",
+                "ru.pinterest.com",
+            ),
+            site(
+                "https://rule34.us/index.php?r=posts%2Findex&q=dirtynicky",
+                "rule34.us",
+            ),
+            site(
+                "https://rule34.us/index.php?r=posts%2Fview&id=757670",
+                "rule34.us",
+            ),
+            site(
+                "https://safebooru.org/index.php?page=post&s=list&tags=baku-p",
+                "safebooru.org",
+            ),
+            site(
+                "https://kagamihara.donmai.us/posts/6307169?q=1girl",
+                "kagamihara.donmai.us",
+            ),
+            site("https://telegra.ph/Some-post-01-01", "telegra.ph"),
+            site(
+                "https://xbooru.com/index.php?page=post&s=view&id=855502",
+                "xbooru.com",
+            ),
+        ]
+    }
+
+    #[test]
+    fn finds_the_sites_block_among_the_others() {
+        let sites = sites();
+        assert_eq!(
+            parse_sites(&page(&sites)).unwrap().unwrap().len(),
+            sites.len()
+        );
+    }
+
+    #[test]
+    fn a_page_with_no_block_is_not_an_empty_answer() {
+        assert_eq!(
+            parse_sites("<html><div data-state=\"{}\"></div></html>"),
+            Ok(None)
+        );
+        assert_eq!(parse_sites(&page(&[])), Ok(Some(vec![])));
+    }
+
+    #[test]
+    fn keeps_only_post_pages_the_app_can_read() {
+        // Pinterest and Telegraph carry no tags; a tag search or a post list is not the post,
+        // even on a site with a parser.
+        let found = parse_sites(&page(&sites())).unwrap().unwrap();
+        let urls: Vec<String> = keep_post_pages(&found)
+            .unwrap()
+            .into_iter()
+            .map(|m| m.url)
+            .collect();
+        assert_eq!(urls.len(), 3);
+        assert!(urls[0].contains("rule34.us") && urls[0].contains("757670"));
+        assert!(urls[1].starts_with("https://danbooru.donmai.us/posts/6307169"));
+        assert!(urls[2].contains("855502"));
+        assert!(!urls.iter().any(|u| u.contains("utm_")));
+    }
+
+    #[test]
+    fn scored_by_position_among_the_kept() {
+        let found = parse_sites(&page(&sites())).unwrap().unwrap();
+        let matches = keep_post_pages(&found).unwrap();
+        let scores: Vec<f64> = matches.iter().map(|m| m.similarity).collect();
+        assert_eq!(scores, [80.0, 78.0, 76.0]);
+        assert!(
+            matches[0]
+                .thumb_url
+                .as_deref()
+                .unwrap()
+                .starts_with("https://avatars.mds.yandex.net/")
+        );
+        assert_eq!(
+            (matches[0].width, matches[0].height),
+            (Some(1000), Some(1400))
+        );
+    }
+
+    #[test]
+    fn the_same_post_twice_is_one_row() {
+        let sites = sites();
+        let twice = [sites[2].clone(), sites[2].clone()];
+        assert_eq!(keep_post_pages(&twice).unwrap().len(), 1);
+    }
+
+    // ---- what Python's code does that its tests do not say ----
+
+    #[test]
+    fn a_dozen_posts_are_cut_at_eight_and_the_score_floors_at_fifty() {
+        let many: Vec<Value> = (1..=12)
+            .map(|id| site(&format!("https://danbooru.donmai.us/posts/{id}"), "d"))
+            .collect();
+        let matches = keep_post_pages(&many).unwrap();
+        assert_eq!(matches.len(), MAX_RESULTS);
+        assert_eq!(matches[7].similarity, 66.0);
+        assert!(matches.iter().all(|m| m.similarity >= SIMILARITY_FLOOR));
+    }
+
+    #[test]
+    fn a_danbooru_mirror_is_the_main_host_and_a_protocol_relative_thumb_gets_https() {
+        let mirror = json!({
+            "url": "https://kagamihara.donmai.us/posts/6307169?q=1girl&utm_source=y",
+            "thumb": {"url": "//t.example/a.jpg"},
+            "originalImage": {"url": "https://o.example/b.jpg", "width": "1000", "height": 1400.9},
+        });
+        let m = keep_post_pages(&[mirror]).unwrap().remove(0);
+        assert_eq!(m.url, "https://danbooru.donmai.us/posts/6307169?q=1girl");
+        assert_eq!(m.thumb_url.as_deref(), Some("https://t.example/a.jpg"));
+        // `int("1000")` and `int(1400.9)`.
+        assert_eq!((m.width, m.height), (Some(1000), Some(1400)));
+        assert_eq!(m.source_name.as_deref(), Some("danbooru.donmai.us"));
+    }
+
+    #[test]
+    fn with_no_thumb_the_original_image_is_the_thumbnail() {
+        let no_thumb = json!({
+            "url": "https://danbooru.donmai.us/posts/1",
+            "originalImage": {"url": "https://o.example/b.jpg"},
+        });
+        let m = keep_post_pages(&[no_thumb]).unwrap().remove(0);
+        assert_eq!(m.thumb_url.as_deref(), Some("https://o.example/b.jpg"));
+        assert_eq!((m.width, m.height), (None, None));
+    }
+
+    #[test]
+    fn a_value_python_would_raise_on_is_an_error_and_not_an_empty_answer() {
+        // `(site.get("thumb") or {}).get("url")` on a list is an AttributeError.
+        let bad_thumb = json!({"url": "https://danbooru.donmai.us/posts/1", "thumb": [1]});
+        assert_eq!(keep_post_pages(&[bad_thumb]), Err(UnexpectedInput));
+        // `"x".strip()` is fine, `5 .strip()` is not.
+        assert_eq!(keep_post_pages(&[json!({"url": 5})]), Err(UnexpectedInput));
+        // A site that is not an object is skipped, as `isinstance(site, dict)` skips it.
+        assert_eq!(keep_post_pages(&[json!("x"), json!(null)]), Ok(vec![]));
+        // A block that parses to a list: `state.get` is an AttributeError.
+        assert_eq!(
+            parse_sites("<div data-state=\"[&quot;cbirSites&quot;]\"></div>"),
+            Err(UnexpectedInput)
+        );
+        // One that is not JSON at all is skipped and the search goes on.
+        assert_eq!(
+            parse_sites(
+                "<div data-state=\"cbirSites {\"></div><div data-state=\"{&quot;initialState&quot;: {&quot;cbirSites&quot;: {}}}\"></div>"
+            ),
+            Ok(Some(vec![]))
+        );
+    }
+
+    #[test]
+    fn a_post_url_python_cannot_parse_is_dropped_or_an_error_as_python_does() {
+        // `urlparse` raises on the unbalanced bracket and `post_url` catches it.
+        assert_eq!(post_url("https://[danbooru.donmai.us/posts/1"), Ok(None));
+        // With no scheme, `find_parser` puts one on and `urlparse` then raises, which
+        // `post_url` does not catch.
+        assert_eq!(
+            post_url("pixiv.net\u{ff0f}/comments/1"),
+            Err(UnexpectedInput)
+        );
+    }
+
+    #[test]
+    fn dotted_and_dotless_capital_i_count_as_i_under_ignorecase() {
+        // Python's `re.IGNORECASE` lets `i` match `ı` and `İ`; `(?i)` alone does not.
+        assert!(
+            post_url("https://danbooru.donmai.us/posts/v\u{131}ew/12")
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            post_url("https://danbooru.donmai.us/pOSts/vIEw/12")
+                .unwrap()
+                .is_some()
+        );
+        assert_eq!(
+            post_url("https://DONMA\u{130}.us/posts/12")
+                .unwrap()
+                .as_deref(),
+            Some("https://danbooru.donmai.us/posts/12")
+        );
+    }
+}

@@ -546,3 +546,401 @@ pub fn host_label(url: &str) -> Option<String> {
     let host = netloc.strip_prefix("www.").unwrap_or(&netloc);
     (!host.is_empty()).then(|| host.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    //! `tests/test_search_quality.py::TestGoogleImagesParser` and
+    //! `TestGoogleVisionWebDetection` at `76c85c4`, test for test. The tests that go through
+    //! `google_images.search` (a Vision key used instead of the public page, a rejected key, an
+    //! exhausted quota, a per-image error, a consent wall, the JavaScript shell, a Lens landing)
+    //! are the request half, and `test_ascii2d_and_google_images_are_ordinal_too` is the engine
+    //! runner's: Phase 3.
+
+    use super::*;
+    use serde_json::json;
+
+    const SERP: &str = r#"
+    <html><body><div id="search">
+      <div class="g">
+        <a href="https://danbooru.donmai.us/posts/123"><h3>Some post - Danbooru</h3></a>
+        <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:AAA">
+      </div>
+      <div class="g">
+        <a href="/url?q=https://www.pixiv.net/artworks/456&amp;sa=U"><h3>An artwork - pixiv</h3></a>
+      </div>
+      <div class="g">
+        <a href="https://www.google.com/preferences"><h3>Settings</h3></a>
+      </div>
+    </div></body></html>
+    "#;
+    const SERP_URL: &str = "https://www.google.com/search?tbs=sbi:x";
+
+    const LENS: &str = concat!(
+        "<html><body><script>AF_initDataCallback({key:'ds:1', data:[",
+        r#"["https:\/\/encrypted-tbn0.gstatic.com\/images?q=tbn:XYZ","#,
+        r#""https:\/\/www.deviantart.com\/someone\/art\/A-Picture-123","#,
+        r#""A Picture by someone","#,
+        r#""deviantart.com"]"#,
+        "]});</script></body></html>",
+    );
+
+    fn urls(matches: &[GoogleImagesMatch]) -> Vec<&str> {
+        matches.iter().map(|m| m.url.as_str()).collect()
+    }
+
+    #[test]
+    fn a_results_page_yields_its_result_links() {
+        let matches = parse_results(SERP, SERP_URL).unwrap();
+        assert_eq!(
+            urls(&matches),
+            [
+                "https://danbooru.donmai.us/posts/123",
+                "https://www.pixiv.net/artworks/456"
+            ]
+        );
+    }
+
+    #[test]
+    fn googles_own_pages_are_not_offered_as_sources() {
+        // /preferences is navigation, not a page the picture came from.
+        let matches = parse_results(SERP, SERP_URL).unwrap();
+        assert!(!matches.iter().any(|m| m.url.contains("google.com")));
+    }
+
+    #[test]
+    fn a_redirector_link_is_unwrapped() {
+        // Stored as the URL a user could open, not as Google's /url?q= wrapper.
+        let matches = parse_results(SERP, SERP_URL).unwrap();
+        assert!(urls(&matches).contains(&"https://www.pixiv.net/artworks/456"));
+        assert!(!matches.iter().any(|m| m.url.contains("/url?q=")));
+    }
+
+    #[test]
+    fn results_are_scored_in_order_below_ascii2d() {
+        // ascii2d's BOVW (feature search) start is 80 (`core.ascii2d.BOVW_SIMILARITY_START`).
+        let matches = parse_results(SERP, SERP_URL).unwrap();
+        assert!(matches[0].similarity < 80.0);
+        assert!(matches[0].similarity > matches[1].similarity);
+    }
+
+    #[test]
+    fn a_thumbnail_beside_a_result_is_kept() {
+        let matches = parse_results(SERP, SERP_URL).unwrap();
+        assert_eq!(
+            matches[0].thumb_url.as_deref(),
+            Some("https://encrypted-tbn0.gstatic.com/images?q=tbn:AAA")
+        );
+    }
+
+    #[test]
+    fn a_lens_page_yields_its_matches() {
+        let matches = parse_lens_results(LENS);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0].url,
+            "https://www.deviantart.com/someone/art/A-Picture-123"
+        );
+        assert_eq!(matches[0].title.as_deref(), Some("A Picture by someone"));
+        assert_eq!(matches[0].source_name.as_deref(), Some("deviantart.com"));
+    }
+
+    #[test]
+    fn a_lens_thumbnail_is_kept_not_mistaken_for_a_source() {
+        // The gstatic URL just before a result is its preview. Dropping every Google host would
+        // lose it; treating it as a source would list Google as where the image came from.
+        let matches = parse_lens_results(LENS);
+        assert_eq!(
+            matches[0].thumb_url.as_deref(),
+            Some("https://encrypted-tbn0.gstatic.com/images?q=tbn:XYZ")
+        );
+    }
+
+    #[test]
+    fn junk_parses_to_nothing_rather_than_raising() {
+        assert_eq!(
+            parse_results("<html></html>", "https://www.google.com/"),
+            Ok(vec![])
+        );
+        assert_eq!(parse_lens_results("<html></html>"), vec![]);
+    }
+
+    fn payload() -> Value {
+        json!({"responses": [{"webDetection": {
+            "pagesWithMatchingImages": [
+                {
+                    "url": "https://example.test/partial-only",
+                    "pageTitle": "A crop of it",
+                    "partialMatchingImages": [{"url": "https://example.test/crop.jpg"}],
+                },
+                {
+                    "url": "https://www.deviantart.com/someone/art/A-Picture-123",
+                    "pageTitle": "A Picture &amp; friends by <b>someone</b>",
+                    "fullMatchingImages": [{"url": "https://images.test/full.jpg"}],
+                },
+                {
+                    "url": "https://www.google.com/imgres?q=x",
+                    "pageTitle": "Google",
+                    "fullMatchingImages": [{"url": "https://images.test/x.jpg"}],
+                },
+                // Listed as a page with matching images, but carrying none.
+                {"url": "https://www.youtube.com/shorts/qT_OeqrMtU8", "pageTitle": "Monkey Mischief"},
+            ],
+            "fullMatchingImages": [
+                {"url": "https://rule34storage.b-cdn.net/posts/1383/1383457/1383457.picsmall.jpg"},
+            ],
+            "partialMatchingImages": [{"url": "https://images.test/partial-cdn.jpg"}],
+            "visuallySimilarImages": [
+                {"url": "https://images.test/similar-1.jpg"},
+                {"url": "https://images.test/similar-2.jpg"},
+            ],
+        }}]})
+    }
+
+    #[test]
+    fn the_exact_matches_are_read_not_just_the_pages() {
+        // REGRESSION in Python: reading only pagesWithMatchingImages returned the noise and
+        // dropped the answer.
+        let matches = parse_vision_results(&payload()).unwrap();
+        let urls = urls(&matches);
+        assert!(urls.contains(&"https://rule34.us/index.php?r=posts/view&id=1383457"));
+        assert!(urls.contains(&"https://images.test/partial-cdn.jpg"));
+    }
+
+    #[test]
+    fn results_are_banded_by_how_well_evidenced_they_are() {
+        let matches = parse_vision_results(&payload()).unwrap();
+        assert_eq!(
+            urls(&matches),
+            [
+                // exact: a page carrying a full match, then the full match itself
+                "https://www.deviantart.com/someone/art/A-Picture-123",
+                "https://rule34.us/index.php?r=posts/view&id=1383457",
+                // partial: a page carrying only a partial, then the partial itself
+                "https://example.test/partial-only",
+                "https://images.test/partial-cdn.jpg",
+                // a page Vision attached no matching image to, last
+                "https://www.youtube.com/shorts/qT_OeqrMtU8",
+            ]
+        );
+        let scores: Vec<f64> = matches.iter().map(|m| m.similarity).collect();
+        assert_eq!(scores, [78.0, 76.0, 70.0, 68.0, 60.0]);
+    }
+
+    #[test]
+    fn a_bare_page_never_outranks_an_evidenced_match() {
+        let matches = parse_vision_results(&payload()).unwrap();
+        let youtube = matches.iter().find(|m| m.url.contains("youtube")).unwrap();
+        assert_eq!(youtube, matches.last().unwrap());
+        assert!(
+            matches[..matches.len() - 1]
+                .iter()
+                .all(|m| m.similarity > youtube.similarity)
+        );
+    }
+
+    #[test]
+    fn visually_similar_images_are_never_offered() {
+        let matches = parse_vision_results(&payload()).unwrap();
+        assert!(!matches.iter().any(|m| m.url.contains("similar-")));
+    }
+
+    #[test]
+    fn a_cdn_image_becomes_the_post_it_belongs_to() {
+        assert_eq!(
+            post_url_for_image(
+                "https://rule34storage.b-cdn.net/posts/1383/1383457/1383457.picsmall.jpg"
+            )
+            .as_deref(),
+            Some("https://rule34.us/index.php?r=posts/view&id=1383457")
+        );
+    }
+
+    #[test]
+    fn an_unrecognised_cdn_is_left_alone_not_guessed_at() {
+        for url in [
+            "https://img2.rule34.us/thumbnails/1f/f7/thumbnail_abc.jpg",
+            "https://img.kemono.cr/thumbnail/data/69/7f/697f.jpg",
+            "https://pbs.twimg.com/media/FDbkoMGWQAQaUyN.jpg:small",
+            "",
+        ] {
+            assert_eq!(post_url_for_image(url), None, "{url}");
+        }
+    }
+
+    #[test]
+    fn a_page_title_is_cleaned_up() {
+        // Vision hands back the page's own <title>, with the matched words wrapped in <b> and its
+        // entities unresolved.
+        let matches = parse_vision_results(&payload()).unwrap();
+        assert_eq!(
+            matches[0].title.as_deref(),
+            Some("A Picture & friends by someone")
+        );
+    }
+
+    #[test]
+    fn googles_own_pages_are_not_offered_as_vision_sources() {
+        let matches = parse_vision_results(&payload()).unwrap();
+        assert!(!matches.iter().any(|m| m.url.contains("google.com")));
+    }
+
+    #[test]
+    fn the_matching_image_becomes_the_thumbnail() {
+        let matches = parse_vision_results(&payload()).unwrap();
+        assert_eq!(
+            matches[0].thumb_url.as_deref(),
+            Some("https://images.test/full.jpg")
+        );
+        let recovered = matches
+            .iter()
+            .find(|m| m.url.starts_with("https://rule34.us/"))
+            .unwrap();
+        assert_eq!(
+            recovered.thumb_url.as_deref(),
+            Some("https://rule34storage.b-cdn.net/posts/1383/1383457/1383457.picsmall.jpg")
+        );
+    }
+
+    #[test]
+    fn an_empty_or_malformed_body_is_no_matches_not_a_crash() {
+        for payload in [
+            json!({}),
+            json!({"responses": []}),
+            json!({"responses": [{}]}),
+            json!({"responses": [{"webDetection": {}}]}),
+        ] {
+            assert_eq!(parse_vision_results(&payload), Ok(vec![]), "{payload}");
+        }
+    }
+
+    // ---- what Python's code does that its tests do not say ----
+
+    #[test]
+    fn the_host_rules_are_python_s() {
+        for host in [
+            "google.com",
+            "www.google.co.uk",
+            "GOOGLE.COM.AU",
+            "gstatic.com",
+            "encrypted-tbn0.gstatic.com",
+            "goo.gl",
+        ] {
+            assert!(is_google_host(host), "{host}");
+        }
+        for host in [
+            "",
+            "example.com",
+            "xgoogle.com",
+            "google.c",
+            "notgstatic.com",
+            "google.abcd",
+        ] {
+            assert!(!is_google_host(host), "{host}");
+        }
+        // Python's `[a-z]` under IGNORECASE also matches a dotless i.
+        assert!(is_google_host("google.\u{131}\u{131}"));
+        assert_eq!(
+            host_label("https://WWW.Example.COM/x").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(host_label("https://[bad/x"), None);
+        assert_eq!(host_label("/relative"), None);
+    }
+
+    #[test]
+    fn a_link_urlparse_refuses_leaves_parse_results_as_an_error() {
+        // `urlparse` raises `ValueError` on the unbalanced bracket; nothing in Python catches it.
+        let page = r#"<a href="https://x]/y"><h3>t</h3></a>"#;
+        assert_eq!(parse_results(page, ""), Err(UnexpectedInput));
+    }
+
+    #[test]
+    fn the_first_image_of_a_scope_is_the_only_one_looked_at() {
+        // `scope.find("img")` is the first image under the scope. A `data:` one is passed over
+        // for the wider scope, but that scope's first image is the same one, so a real image
+        // after it is never reached.
+        let hidden = concat!(
+            r#"<div><div><a href="https://a.example/p"><h3>t</h3><img src="data:image/gif;base64,AAAA"></a>"#,
+            r#"<img src="/thumb.png"></div></div>"#
+        );
+        let matches = parse_results(hidden, "https://www.google.com/search?q=1").unwrap();
+        assert_eq!(matches[0].thumb_url, None);
+        // An image with no source at all is passed over the same way (and is also first).
+        let empty = hidden.replace("data:image/gif;base64,AAAA", "");
+        let matches = parse_results(&empty, "https://www.google.com/search?q=1").unwrap();
+        assert_eq!(matches[0].thumb_url, None);
+        // With the real image first, it is joined onto the page's address.
+        let real = r#"<div><div><a href="https://a.example/p"><h3>t</h3></a><img data-src="/thumb.png"></div></div>"#;
+        let matches = parse_results(real, "https://www.google.com/search?q=1").unwrap();
+        assert_eq!(
+            matches[0].thumb_url.as_deref(),
+            Some("https://www.google.com/thumb.png")
+        );
+    }
+
+    #[test]
+    fn a_lens_title_is_the_nearest_literal_that_reads_like_one() {
+        let blob = r#"["https://a.example/p","/x","1234","ab","  A Title  ","later title"]"#;
+        let matches = parse_lens_results(blob);
+        // `/x` is a path, `1234` has no letter, `ab` is too short; the third position is out.
+        assert_eq!(matches[0].title, None);
+        let blob = r#"["https://a.example/p","/x","ab","  A Title  "]"#;
+        assert_eq!(
+            parse_lens_results(blob)[0].title.as_deref(),
+            Some("A Title")
+        );
+    }
+
+    #[test]
+    fn lens_escapes_are_resolved_by_hand() {
+        let blob = r#"["https:\/\/a.example\/café","a \"quoted\" A\ud83d"]"#;
+        let matches = parse_lens_results(blob);
+        assert_eq!(matches[0].url, "https://a.example/caf\u{e9}");
+        // A lone surrogate cannot be a Rust `char`; Python keeps it. See `unescape`.
+        assert_eq!(matches[0].title.as_deref(), Some("a \"quoted\" A\u{fffd}"));
+    }
+
+    #[test]
+    fn at_most_eight_results_and_the_score_floors_at_fifty() {
+        let blob: String = (0..12)
+            .map(|i| format!(r#""https://h{i}.example/p","Title {i}""#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let matches = parse_lens_results(&blob);
+        assert_eq!(matches.len(), MAX_RESULTS);
+        assert_eq!(matches[7].similarity, 64.0);
+        assert!(matches.iter().all(|m| m.similarity >= SIMILARITY_FLOOR));
+    }
+
+    #[test]
+    fn a_vision_value_python_would_raise_on_is_an_error() {
+        for payload in [
+            json!([]),
+            json!({"responses": "abc"}),
+            json!({"responses": {"0": {}}}),
+            json!({"responses": [null]}),
+            json!({"responses": [{"webDetection": [1]}]}),
+            json!({"responses": [{"webDetection": {"fullMatchingImages": 5}}]}),
+            json!({"responses": [{"webDetection": {"fullMatchingImages": [{"url": 5}]}}]}),
+        ] {
+            assert_eq!(
+                parse_vision_results(&payload),
+                Err(UnexpectedInput),
+                "{payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_thumbnail_is_the_image_url_as_given_and_the_page_url_is_stripped_of_its_fragment() {
+        let payload = json!({"responses": [{"webDetection": {"fullMatchingImages": [
+            {"url": "  https://a.example/i.jpg#f  "},
+        ]}}]});
+        let m = parse_vision_results(&payload).unwrap().remove(0);
+        assert_eq!(m.url, "https://a.example/i.jpg");
+        assert_eq!(
+            m.thumb_url.as_deref(),
+            Some("  https://a.example/i.jpg#f  ")
+        );
+    }
+}
