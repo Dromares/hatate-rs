@@ -31,7 +31,7 @@ fn is_scheme(s: &str) -> bool {
 }
 
 /// `urlparse(url).hostname`, lower-cased; `None` where Python gives `None`.
-fn hostname(url: &str) -> Option<String> {
+pub(crate) fn hostname(url: &str) -> Option<String> {
     let cleaned: String = url
         .trim_start_matches(is_c0_or_space)
         .chars()

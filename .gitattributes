@@ -4,3 +4,4 @@ corpus/formats/** -text
 corpus/boorus/** -text
 corpus/engines/** -text
 corpus/MANIFEST.json -text
+crates/hatate-core/tests/data/image_compare/** -text
