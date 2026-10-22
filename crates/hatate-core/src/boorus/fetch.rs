@@ -84,6 +84,15 @@ impl BooruSession {
         cache.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 
+    /// Puts a creator's name in the cache (`_artist_cache[key] = name`, which Python's tests do to
+    /// start a post from a creator already looked up); `""` is a remembered miss.
+    pub fn seed_artist(&self, key: &str, name: &str) {
+        self.artists
+            .lock()
+            .unwrap()
+            .set(key.to_string(), name.to_string());
+    }
+
     /// The local file's MD5, or `None` if it cannot be read.
     ///
     /// Only used by parsers that have no other way to identify a post: Sankaku, whose legacy URLs
