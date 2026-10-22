@@ -18,6 +18,7 @@ mod provider;
 mod request;
 mod retry;
 mod secret;
+pub mod setcookie;
 pub mod site;
 mod transport;
 

@@ -54,6 +54,9 @@ pub struct Reply {
     /// The text of the `Content-Length` header, when it is not the body's length (a HEAD answer
     /// that states a size, or a value no real file has).
     pub content_length: Option<String>,
+    /// Close the connection once the body is written, whatever `content_length` promised (a body
+    /// that breaks off mid-way).
+    pub close_after: bool,
 }
 
 impl Reply {
@@ -66,6 +69,7 @@ impl Reply {
             trickle: None,
             abort: false,
             content_length: None,
+            close_after: false,
         }
     }
 
@@ -87,6 +91,13 @@ impl Reply {
         let mut reply = Self::new(0, "");
         reply.abort = true;
         reply
+    }
+
+    /// Closes the connection after the body: with a `content_length` longer than the body, the
+    /// client sees the body break off.
+    pub fn closing(mut self) -> Self {
+        self.close_after = true;
+        self
     }
 
     pub fn content_length(mut self, text: &str) -> Self {
@@ -313,7 +324,7 @@ where
                 }
             }
         }
-        if stream.flush().await.is_err() {
+        if stream.flush().await.is_err() || reply.close_after {
             return;
         }
     }

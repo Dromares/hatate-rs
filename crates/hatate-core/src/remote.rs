@@ -34,14 +34,22 @@ pub enum Raised {
     /// `UnicodeEncodeError`: `http.client` sends a header value as Latin-1, and `requests` has
     /// let a value with a character past U+00FF through its own check. No request is made.
     UnicodeEncode(String),
+    /// An exception from urllib3 that `requests` did not wrap, because the caller read the raw
+    /// response itself (`resp.raw.read`): `ProtocolError` for a connection that broke mid-body,
+    /// `DecodeError` for a body its `Content-Encoding` could not decode.
+    BodyRead {
+        class: &'static str,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for Raised {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Raised::HardTimeout(m) | Raised::ValueError(m) | Raised::UnicodeEncode(m) => {
-                f.write_str(m)
-            }
+            Raised::HardTimeout(m)
+            | Raised::ValueError(m)
+            | Raised::UnicodeEncode(m)
+            | Raised::BodyRead { message: m, .. } => f.write_str(m),
         }
     }
 }
@@ -97,10 +105,26 @@ pub(crate) fn ua_headers() -> HeaderMap {
     h
 }
 
-/// Sets a header the way `http.client` sends one: the value goes out as Latin-1 bytes, so a
-/// character past U+00FF cannot be sent at all (`UnicodeEncodeError` in Python, escaping
-/// `requests`; here the request is not made), nor can a control character (`ValueError`).
+/// Whether `requests` takes a `str` header value at all: `check_header_validity` matches it
+/// against `^\S[^\r\n]*\Z|^\Z` (requests 2.34). It refuses a value that starts with whitespace and
+/// one that holds a carriage return or a line feed anywhere, a final one included.
+pub(crate) fn requests_accepts_header_value(value: &str) -> bool {
+    let mut chars = value.chars();
+    match chars.next() {
+        None => true,
+        Some(first) => !py_isspace(first) && !chars.as_str().contains(['\r', '\n']),
+    }
+}
+
+/// Sets a header the way `requests` and `http.client` send one, or refuses it. A value `requests`
+/// will not take (leading whitespace, a line break) fails the request in Python (a
+/// `RequestException`); the value goes out as Latin-1 bytes, so a character past U+00FF cannot be
+/// sent at all (`UnicodeEncodeError` in Python, escaping `requests`; here the request is not
+/// made), nor can a control character the HTTP stack here cannot carry.
 pub(crate) fn set_header(headers: &mut HeaderMap, name: &str, value: &str) -> bool {
+    if !requests_accepts_header_value(value) {
+        return false;
+    }
     let Ok(name) = http::HeaderName::from_bytes(name.as_bytes()) else {
         return false;
     };
@@ -128,17 +152,7 @@ pub(crate) fn set_header(headers: &mut HeaderMap, name: &str, value: &str) -> bo
 /// `except requests.RequestException` does not catch). `requests` checks the value first against
 /// `^\S[^\r\n]*$|^$`, and a value it refuses is a `RequestException`, the plain failure.
 pub(crate) fn encode_fault(value: &str) -> Option<Raised> {
-    let mut rest = value.chars();
-    let clean = match rest.next() {
-        None => true,
-        Some(first) => {
-            let rest = rest.as_str();
-            let rest = rest.strip_suffix('\n').unwrap_or(rest);
-            (first == '\n' && rest.is_empty())
-                || (!py_isspace(first) && !rest.contains(['\r', '\n']))
-        }
-    };
-    if !clean {
+    if !requests_accepts_header_value(value) {
         return None;
     }
     let chars: Vec<char> = value.chars().collect();

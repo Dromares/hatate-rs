@@ -151,6 +151,10 @@ pub struct NetRequest {
     /// `X-RateLimit-*` headers. Only a request that Python sends outside `core/net.py`
     /// (ascii2d's own `requests.Session`) turns this off.
     pub(crate) gated: bool,
+    /// Read the body only when the final status is this one; any other answer is returned with an
+    /// empty body and the connection dropped unread (`stream=True` and a `resp.raw.read` made only
+    /// for a 200, `core/availability.py`).
+    pub body_only_on: Option<u16>,
     /// When the exchange began, for the deadline. Set by the stack.
     pub(crate) started: Option<Instant>,
 }
@@ -181,6 +185,7 @@ impl NetRequest {
             min_gap: None,
             probe: None,
             gated: true,
+            body_only_on: None,
             started: None,
         })
     }
@@ -268,6 +273,12 @@ impl NetRequest {
 
     pub fn with_probe(mut self, probe: BodyProbe) -> Self {
         self.probe = Some(probe);
+        self
+    }
+
+    /// Reads the body only from an answer with this status (see [`NetRequest::body_only_on`]).
+    pub fn with_body_only_on(mut self, status: u16) -> Self {
+        self.body_only_on = Some(status);
         self
     }
 
