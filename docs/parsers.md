@@ -216,7 +216,7 @@ stay with that client.
   100,000 random inputs against the real modules at `76c85c4` (CPython 3.14.8, bs4 4.15, lxml),
   comparing values, and "raised" with "returned an error" (17,284 cases Python raised on). The only
   differences are `parse_results` on markup with a heading inside a `<p>`, a `</a>` across an open
-  heading, or characters deleted from tags (1,601 of 7,911 such cases); the 5,169 well-formed
+  heading, or characters deleted from tags (1,601 of 8,840 such cases); the 5,169 well-formed
   `parse_results` pages and every other function had none.
 
 ## Registering a port in the corpus runner
