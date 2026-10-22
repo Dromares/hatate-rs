@@ -175,7 +175,7 @@ stay with that client.
   `parse_vision_results` return `Result<_, engines::UnexpectedInput>`, and the Phase 3 client maps
   the `Err` to its own failure. `parse_lens_results` cannot raise and returns a plain `Vec`.
   The one case Python does *not* raise on and `Err` stands in for anyway: `keep_post_pages` with an
-  `originalImage.url` that is neither a string nor `null` and no usable `thumb.url` (Python keeps
+  `originalImage.url` that is neither a string nor `null` and no non-empty `thumb.url` (Python keeps
   the value in `thumb_url`; a `YandexMatch` cannot hold it).
 - **`urlparse` and `urljoin` raise `ValueError`.** CPython 3.14 refuses an unbalanced or invalid
   bracketed host and a non-ASCII netloc that NFKC normalisation turns into one with `/ ? # @ :`.
