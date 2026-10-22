@@ -21,10 +21,12 @@
 pub mod animepictures;
 pub mod danbooru;
 pub mod e621;
+pub mod eshuushuu;
 pub mod gelbooru;
 pub mod host;
 pub mod joyreactor;
 mod json_fields;
+pub mod mangadex;
 pub mod moebooru;
 pub mod paheal;
 pub mod parsed;
@@ -38,6 +40,7 @@ pub mod sankaku;
 pub mod sizes;
 pub mod twitter;
 pub mod xbooru;
+pub mod zerochan;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -221,8 +224,8 @@ pub static PARSERS: &[&SiteParser] = &[
     &moebooru::PARSER,
     &pixiv::PARSER,
     &e621::PARSER,
-    // zerochan
-    // eshuushuu
+    &zerochan::PARSER,
+    &eshuushuu::PARSER,
     &animepictures::PARSER,
     &rule34::PARSER,
     &xbooru::PARSER,
@@ -233,7 +236,7 @@ pub static PARSERS: &[&SiteParser] = &[
     // pawchive
     &sankaku::PARSER,
     &twitter::PARSER,
-    // mangadex
+    &mangadex::PARSER,
     &joyreactor::PARSER,
 ];
 

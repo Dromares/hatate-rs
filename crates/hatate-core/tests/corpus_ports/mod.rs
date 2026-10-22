@@ -4,8 +4,10 @@
 pub mod animepictures;
 pub mod danbooru;
 pub mod e621;
+pub mod eshuushuu;
 pub mod gelbooru;
 pub mod joyreactor;
+pub mod mangadex;
 pub mod moebooru;
 pub mod paheal;
 pub mod pixiv;
@@ -17,3 +19,4 @@ pub mod safebooru;
 pub mod sankaku;
 pub mod twitter;
 pub mod xbooru;
+pub mod zerochan;
