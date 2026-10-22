@@ -7,8 +7,9 @@
 //! no scheme, a query with a bare `&`, a stray `%`). The corpus is Python's output, so this is
 //! Python's algorithm, not the standard's.
 //!
-//! Left out: `ValueError` for a malformed bracketed host or a netloc that NFKC normalisation changes. Python
-//! raises there, the hook that called it is then skipped by `fetch_page_info`, and the port
+//! Left out: `ValueError` for a netloc that NFKC normalisation changes, and (in `urlparse` itself)
+//! for a malformed bracketed host; [`netloc_raises`] answers the latter for a caller that needs it.
+//! Python raises there, the hook that called it is then skipped by `fetch_page_info`, and the port
 //! reads such a URL as it would any other.
 
 /// Schemes that take a `;params` part on the last path segment (`uses_params`).
@@ -172,6 +173,49 @@ pub fn urlparse(url: &str, default_scheme: &str) -> Parsed {
         query: s.query.unwrap_or_default(),
         fragment: s.fragment.unwrap_or_default(),
     }
+}
+
+/// Whether `urlsplit` raises `ValueError` for this netloc because of its square brackets: one
+/// bracket without the other, data before the `[` or between the `]` and the port, an
+/// `IPvFuture` literal that is not `v<hex>.<text>`, or a bracketed host that is not an IPv6
+/// address (an IPv4 address in brackets is refused too). A `%scope` on the address is allowed, as
+/// `ipaddress` allows it. The NFKC check on a non-ASCII netloc is not made.
+pub fn netloc_raises(netloc: &str) -> bool {
+    let (open, close) = (netloc.contains('['), netloc.contains(']'));
+    if open != close {
+        return true;
+    }
+    if !open {
+        return false;
+    }
+    // `_check_bracketed_netloc` splits only the part after the last `@`, which may hold no bracket.
+    let host_and_port = netloc.rsplit_once('@').map_or(netloc, |(_, rest)| rest);
+    let host = match host_and_port.split_once('[') {
+        Some((before, _)) if !before.is_empty() => return true,
+        Some((_, bracketed)) => {
+            let (host, port) = bracketed.split_once(']').unwrap_or((bracketed, ""));
+            if !port.is_empty() && !port.starts_with(':') {
+                return true;
+            }
+            host
+        }
+        None => host_and_port.split(':').next().unwrap_or_default(),
+    };
+    if host.starts_with(['v', 'V']) {
+        // `\A[vV][a-fA-F0-9]+\..+\z`
+        let rest = &host[1..];
+        let hex = rest.chars().take_while(char::is_ascii_hexdigit).count();
+        return !(hex > 0
+            && rest[hex..]
+                .strip_prefix('.')
+                .is_some_and(|t| !t.is_empty() && !t.contains('\n')));
+    }
+    let address = match host.split_once('%') {
+        Some((_, scope)) if scope.is_empty() || scope.contains('%') => return true,
+        Some((address, _)) => address,
+        None => host,
+    };
+    address.parse::<std::net::Ipv6Addr>().is_err()
 }
 
 /// `_splitparams`: the `;params` belong to the last path segment.
@@ -445,5 +489,47 @@ mod tests {
         // No scheme: the colon is in the path.
         let p = urlparse("a b:c?q=1", "");
         assert_eq!((p.scheme.as_str(), p.query.as_str()), ("", "q=1"));
+    }
+
+    #[test]
+    fn a_bracketed_netloc_raises_as_urlsplit_does() {
+        // Each answer is whether `urllib.parse.urlsplit("//" + netloc)` raised `ValueError`
+        // (CPython 3.14.8).
+        let cases = [
+            ("[::1]", false),
+            ("[::1]:80", false),
+            ("u@[::1]", false),
+            ("[::1", true),
+            ("::1]", true),
+            ("a[::1]", true),
+            ("[::1]x", true),
+            ("[]", true),
+            ("[1.2.3.4]", true),
+            ("[v1.x]", false),
+            ("[vz.x]", true),
+            ("[v1.]", true),
+            ("[V1F.y.z]", false),
+            ("[fe80::1%eth0]", false),
+            ("[::1%]", true),
+            ("[::1%a%b]", true),
+            ("[::ffff:1.2.3.4]", false),
+            ("[1::2::3]", true),
+            ("[ ::1]", true),
+            ("[::1] ", true),
+            ("[::1]@x", true),
+            ("x@y@[::1]:1", false),
+            ("[0:0:0:0:0:0:0:1]:8080", false),
+            ("[::g]", true),
+            ("host", false),
+            ("[::1]:", false),
+            ("[::1]]", true),
+            ("[[::1]", true),
+            ("[::1]:80]", false),
+            ("example.com:80", false),
+            ("[2001:db8::1]:443", false),
+        ];
+        for (netloc, raises) in cases {
+            assert_eq!(netloc_raises(netloc), raises, "{netloc:?}");
+        }
     }
 }

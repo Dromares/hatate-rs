@@ -250,7 +250,7 @@ fn source_urls(box_: ElementRef<'_>) -> Vec<String> {
 }
 
 /// `_host_label`: the host of a URL, lower-cased, without a leading `www.`; `None` for none.
-pub(crate) fn host_label(url: &str) -> Option<String> {
+fn host_label(url: &str) -> Option<String> {
     let host = pyurl::urlparse(url, "").netloc.to_lowercase();
     let host = host.strip_prefix("www.").unwrap_or(&host);
     (!host.is_empty()).then(|| host.to_owned())

@@ -221,6 +221,50 @@ callable (`core.iqdb._parse_results`, `core.saucenao.search`, ...).
 - **`sites::guess_site_name`** (`core/sites.py`) is ported with its `HOST_MAP` because IQDB labels
   each match with it; `classify_site` and `canonicalize_url` come with the code that uses them.
 
+## Google Lens parsers (`engines/google_lens.rs`, DAN-2010)
+
+`parse_lens_payload`, `parse_exact_matches` and `parse_exact_tiles` of `core/google_lens.py`:
+pure functions of the response body or of the tile list the page script returns. The rest of the
+module (`search()`, the upload script, `prepare_for_lens`, the rest latch, `rule34_searches`,
+`taggable_first`, `keep_taggable_first`) needs the browser or the booru registry and is Phase 5.
+
+- **A tile is a JSON value.** `parse_exact_tiles` takes `&serde_json::Value`: Python's
+  `tiles or []` and `isinstance(tile, dict)` become "an array, whose object entries are read".
+  `str(tile.get("text") or "")` is `pyrepr::py_str` of a truthy value, so a number in `text` is
+  its `repr`.
+- **Code points, not bytes.** The 2,500-character window of `_label_is_near` and the 3..200
+  length of a title are counted in `char`s. `str.isalpha` is `pyalpha::is_alpha` (the L
+  categories, not Rust's `Alphabetic`, which also takes `Ⅷ` and combining marks).
+- **`re.IGNORECASE`.** The image half of `_IMAGE_OWNERS` spells `s` and `i` as classes taking
+  U+017F, U+0130 and U+0131, as Python does (see `pycase`); `[a-z]` in `GOOGLE_DOMAIN_RE` is
+  checked with `pycase::ignorecase_matches`, so `google.coſ` is a Google host here as it is there.
+  `$` is `\n?\z` (Python's `$` also matches before a final newline).
+- **Surrogate escapes.** `\uD800`..`\uDFFF` in a literal is a lone surrogate in Python and
+  U+FFFD (one code point) here. No corpus item reaches it.
+- **The thumbnail check decodes the image.** `_is_placeholder_thumb` base64-decodes the data URI
+  as `binascii.a2b_base64` does for a `str` (non-ASCII is an error; characters outside the
+  alphabet are skipped; padding never ends the data; a bad length is an error) and asks
+  `pyimage::image_size` for the size, as `Image.open(...).size`. **GIF** is Pillow's
+  header walk exactly; **PNG** (CRC of every chunk before the first `IDAT`, the colour
+  type/bit depth table), **JPEG** (marker walk to `SOS`, 8 bit, 1/3/4 components), **BMP** (the DIB
+  header, bit depth, compression, bitfield masks, palette size) and **WebP** (RIFF bounds, the
+  first chunk's size field) read the header and the checks that stand between it and the size.
+  Later damage (PNG filters, JPEG tables past `SOS`, a WebP's bitstream) is not looked for, and
+  other formats Pillow can open (TIFF, ICO, ...) read as "not an image". Where Python's
+  `Image.open` raises `DecompressionBombError` (over 178 million pixels) the whole search fails;
+  here the size reads as "not an image" and the thumbnail is kept.
+- **`host_label` and `urlparse`'s `ValueError`.** A literal whose netloc has a malformed bracket
+  (`http://[::1]x/`, `http://[1.2.3.4]/`, `http://[bad/`) is skipped, as Python's
+  `host_label(...) or ""` skips it: `pyurl::netloc_raises` is `_check_bracketed_netloc`, with
+  `ipaddress` read as `Ipv6Addr` plus an optional `%scope`. The NFKC check on a non-ASCII netloc
+  is still not made (`pyurl` module note), so a netloc that NFKC turns into one with a `/`, `?`,
+  `#`, `@` or `:` is read as an ordinary host here and skipped by Python.
+- **Differential (not in the repo).** About 100,000 generated bodies and tile lists (zerochan
+  image/page pairs, escape forms, every Google host shape, label windows at 2,500, unicode digits
+  in ids, GIF/PNG/JPEG/WebP/BMP thumbnails of 1 to 40 pixels with truncations and bit flips,
+  mutated base64) were run through Python 3.14.8 with Pillow 12.3 and through the port: no
+  difference outside the documented classes above.
+
 ## Registering a port in the corpus runner
 
 `crates/hatate-core/tests/corpus_diff.rs` runs every item of every ported parser.

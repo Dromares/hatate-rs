@@ -7,8 +7,7 @@
 //! `IDAT`/`IEND`, `IHDR` giving the size), **JPEG** (`SOF` after the `APPn`/`DQT`/... segments,
 //! 8-bit precision), **WebP** (`VP8 `, `VP8L`, `VP8X`) and **BMP** (the DIB header) read the
 //! dimension fields and the checks that stand between the signature and them; Pillow's later checks
-//! (PNG chunk CRCs, BMP bit depths and compression, WebP chunk bounds, a JPEG's component
-//! count) are not repeated, so a damaged file of one of those four whose header is intact reads
+//! (BMP bit depths and compression, a WebP's later chunks and bitstream) are not repeated, so a damaged file of one of those four whose header is intact reads
 //! here as the size it states. Every other format Pillow can open (TIFF, ICO, PPM, ...) reads as
 //! "not an image", which is what a tile of Google's page never carries.
 //!
@@ -63,15 +62,15 @@ fn header_size(data: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
-/// A GIF sub-block sequence: each block is a length byte and that many bytes, ended by a zero
-/// length. Returns the position after the terminator; a sequence cut short ends at the data's end
-/// (`fp.read` returns less, never fails).
-fn skip_sub_blocks(d: &[u8], mut at: usize) -> usize {
-    loop {
-        match d.get(at) {
-            None => return d.len(),
-            Some(0) => return at + 1,
-            Some(&n) => at = (at + 1 + usize::from(n)).min(d.len()),
+/// `GifImageFile.data()`: one sub-block, a length byte and that many bytes. A zero length (or the
+/// end of the data) is `None` and consumes only the length byte; a block cut short is what is left.
+fn data_block(d: &[u8], at: usize) -> (usize, Option<&[u8]>) {
+    match d.get(at) {
+        None => (at, None),
+        Some(0) => (at + 1, None),
+        Some(&n) => {
+            let end = (at + 1 + usize::from(n)).min(d.len());
+            (end, Some(&d[at + 1..end]))
         }
     }
 }
@@ -89,8 +88,38 @@ fn gif(d: &[u8]) -> Option<(u32, u32)> {
         match *d.get(at)? {
             b';' => return None, // "no more images in GIF file" (EOFError)
             b'!' => {
-                d.get(at + 1)?; // the label byte
-                at = skip_sub_blocks(d, at + 2);
+                let label = *d.get(at + 1)?;
+                let (mut next, first) = data_block(d, at + 2);
+                if label == 0xfe {
+                    // A comment: blocks up to the first empty one (which may be the first).
+                    let mut block = first;
+                    while block.is_some() {
+                        (next, block) = data_block(d, next);
+                    }
+                } else {
+                    // The graphic control extension reads `block[0]`, `block[3]` when the
+                    // transparency flag is set, and `i16(block, 1)`: a shorter block is an
+                    // `IndexError` or `struct.error`.
+                    if let Some(block) = first.filter(|_| label == 0xf9)
+                        && (block.len() < 3 || (block[0] & 1 != 0 && block.len() < 4))
+                    {
+                        return None;
+                    }
+                    // Application extension: NETSCAPE2.0 reads one more block.
+                    if label == 0xff && first.is_some_and(|b| b.starts_with(b"NETSCAPE2.0")) {
+                        (next, _) = data_block(d, next);
+                    }
+                    // Then `while self.data(): pass`, which also swallows the blocks that follow
+                    // an empty first one.
+                    loop {
+                        let (after, block) = data_block(d, next);
+                        next = after;
+                        if block.is_none() {
+                            break;
+                        }
+                    }
+                }
+                at = next;
             }
             b',' => {
                 let (x0, y0) = (u16le(d, at + 1)?, u16le(d, at + 3)?);
@@ -112,8 +141,24 @@ fn gif(d: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
+/// `zlib.crc32` (the PNG checksum), bitwise: chunks before the first `IDAT` are small.
+fn crc32(parts: &[&[u8]]) -> u32 {
+    let mut crc = !0u32;
+    for byte in parts.iter().flat_map(|p| p.iter()) {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xedb8_8320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
+
 fn png(d: &[u8]) -> Option<(u32, u32)> {
-    let (mut at, mut size) = (8usize, (0, 0));
+    let (mut at, mut size, mut mode_ok) = (8usize, (0, 0), false);
     loop {
         let length = usize::try_from(u32be(d, at)?).ok()?;
         let cid = d.get(at + 4..at + 8)?;
@@ -128,16 +173,27 @@ fn png(d: &[u8]) -> Option<(u32, u32)> {
                     return None;
                 }
                 size = (u32be(d, body)?, u32be(d, body + 4)?);
+                // `_MODES[(bit depth, colour type)]`: a pair Pillow has no mode for is a
+                // `KeyError`, and no mode is "not identified by this driver".
+                mode_ok = matches!(
+                    (*d.get(body + 8)?, *d.get(body + 9)?),
+                    (1 | 2 | 4 | 8 | 16, 0) | (8 | 16, 2) | (1 | 2 | 4 | 8, 3) | (8 | 16, 4 | 6)
+                );
                 // `s[11]`, the filter method, must be 0.
                 if *d.get(body + 11)? != 0 {
                     return None;
                 }
             }
-            b"IDAT" | b"IEND" => return Some(size),
+            b"IDAT" | b"IEND" => return mode_ok.then_some(size),
             _ => {}
         }
-        // The chunk, then its 4-byte CRC.
-        at = body.checked_add(length)?.checked_add(4)?;
+        // The chunk, then its 4-byte CRC over the type and the data.
+        let end = body.checked_add(length)?;
+        let crc = u32be(d, end)?;
+        if crc != crc32(&[cid, d.get(body..end)?]) {
+            return None;
+        }
+        at = end + 4;
     }
 }
 
@@ -166,7 +222,9 @@ fn jpeg(d: &[u8]) -> Option<(u32, u32)> {
             }
             // Start of scan: the header is over.
             0xFFDA => {
-                u16be(d, at)?; // the Skip handler reads the segment's length
+                // The Skip handler reads the whole segment.
+                let n = usize::try_from(u16be(d, at)?).ok()?.saturating_sub(2);
+                d.get(at + 2..at + 2 + n)?;
                 return size;
             }
             // DHT, DAC, DQT, DNL, DRI, EXP and APPn carry a length.
@@ -191,10 +249,23 @@ fn jpeg(d: &[u8]) -> Option<(u32, u32)> {
 }
 
 fn webp(d: &[u8]) -> Option<(u32, u32)> {
+    // libwebp's demuxer (Pillow's only way in) wants the whole RIFF container and the first chunk
+    // inside it.
+    let riff_end = usize::try_from(u32le(d, 4)?).ok()?.checked_add(8)?;
+    if riff_end > d.len() || usize::try_from(u32le(d, 16)?).ok()?.checked_add(20)? > riff_end {
+        return None;
+    }
     let chunk = d.get(12..16)?;
     match chunk {
         b"VP8 " => {
-            // frame tag (3 bytes), start code 9d 01 2a, then 14-bit width and height.
+            // `VP8GetInfo`: the frame tag (3 bytes) says key frame, profile 0 to 3, shown, with a
+            // first partition shorter than the chunk; then the start code 9d 01 2a, then the
+            // 14-bit width and height.
+            let tag =
+                u32::from(*d.get(20)?) | u32::from(*d.get(21)?) << 8 | u32::from(*d.get(22)?) << 16;
+            let chunk_size = u32le(d, 16)?;
+            (tag & 1 == 0 && (tag >> 1) & 7 <= 3 && (tag >> 4) & 1 == 1 && (tag >> 5) < chunk_size)
+                .then_some(())?;
             (d.get(23..26)? == [0x9d, 0x01, 0x2a]).then_some(())?;
             Some((u16le(d, 26)? & 0x3fff, u16le(d, 28)? & 0x3fff))
         }
@@ -214,21 +285,240 @@ fn webp(d: &[u8]) -> Option<(u32, u32)> {
     }
 }
 
+/// The `(r, g, b, a)` masks of a 32-bit BITFIELDS bitmap Pillow has a raw mode for, and the
+/// `(r, g, b)` masks for 24 and 16 bits (`SUPPORTED` in `BmpImagePlugin._bitmap`).
+const BMP_MASKS_32: [[u32; 4]; 8] = [
+    [0xff0000, 0xff00, 0xff, 0x0],
+    [0xff00_0000, 0xff0000, 0xff00, 0x0],
+    [0xff00_0000, 0xff00, 0xff, 0x0],
+    [0xff00_0000, 0xff0000, 0xff00, 0xff],
+    [0xff, 0xff00, 0xff0000, 0xff00_0000],
+    [0xff0000, 0xff00, 0xff, 0xff00_0000],
+    [0xff00_0000, 0xff00, 0xff, 0xff0000],
+    [0x0, 0x0, 0x0, 0x0],
+];
+
 fn bmp(d: &[u8]) -> Option<(u32, u32)> {
-    let header_size = u32le(d, 14)?;
-    match header_size {
-        12 => Some((u16le(d, 18)?, u16le(d, 20)?)),
+    let header_size = usize::try_from(u32le(d, 14)?).ok()?;
+    // The whole DIB header is read (`_safe_read` raises on a short file).
+    let header = d.get(18..14usize.checked_add(header_size)?)?;
+    let (width, height, bits, compression, colors) = match header_size {
+        12 => (
+            u16le(header, 0)?,
+            u16le(header, 2)?,
+            u16le(header, 6)?,
+            0,
+            0,
+        ),
         40 | 52 | 56 | 64 | 108 | 124 => {
-            let width = u32le(d, 18)?;
-            let raw = u32le(d, 22)?;
+            let raw = u32le(header, 4)?;
             // A top-down bitmap stores a negative height (`header_data[7] == 0xFF`).
-            let height = if *d.get(25)? == 0xff {
+            let height = if *header.get(7)? == 0xff {
                 0u32.wrapping_sub(raw)
             } else {
                 raw
             };
-            Some((width, height))
+            (
+                u32le(header, 0)?,
+                height,
+                u16le(header, 10)?,
+                u32le(header, 12)?,
+                u32le(header, 28)?,
+            )
         }
-        _ => None,
+        _ => return None, // "Unsupported BMP header type"
+    };
+    // `BIT2MODE`: "Unsupported BMP pixel depth".
+    if !matches!(bits, 1 | 4 | 8 | 16 | 24 | 32) {
+        return None;
+    }
+    match compression {
+        0..=2 => {}
+        3 => {
+            // BITFIELDS: three or four masks, in the header when it is long enough, else the
+            // twelve bytes after it.
+            let mask = |at: usize| u32le(header, at);
+            let masks = if header.len() >= 48 {
+                [
+                    mask(36)?,
+                    mask(40)?,
+                    mask(44)?,
+                    if header.len() >= 52 { mask(48)? } else { 0 },
+                ]
+            } else {
+                let after = 14 + header_size;
+                [
+                    u32le(d, after)?,
+                    u32le(d, after + 4)?,
+                    u32le(d, after + 8)?,
+                    0,
+                ]
+            };
+            let supported = match bits {
+                32 => BMP_MASKS_32.contains(&masks),
+                24 => masks[..3] == [0xff0000, 0xff00, 0xff],
+                16 => masks[..3] == [0xf800, 0x7e0, 0x1f] || masks[..3] == [0x7c00, 0x3e0, 0x1f],
+                _ => false,
+            };
+            if !supported {
+                return None; // "Unsupported BMP bitfields layout"
+            }
+        }
+        _ => return None, // "Unsupported BMP compression"
+    }
+    // A paletted bitmap: "Unsupported BMP Palette size".
+    let colors = if colors == 0 {
+        1u64 << bits
+    } else {
+        u64::from(colors)
+    };
+    if bits <= 8 && !(1..=65536).contains(&colors) {
+        return None;
+    }
+    Some((width, height))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unhex(hex: &[&str]) -> Vec<u8> {
+        let hex: String = hex.concat();
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).expect("hex"))
+            .collect()
+    }
+
+    // 3x2 red pictures, written by Pillow 12.3 (`Image.new("RGB", (3, 2), "red").save(...)`).
+    fn gif() -> Vec<u8> {
+        unhex(&[
+            "47494638376103000200810000ff00000000000000000000002c00000000030002000008060001081c1810003b",
+        ])
+    }
+    fn png() -> Vec<u8> {
+        unhex(&[
+            "89504e470d0a1a0a0000000d49484452000000030000000208020000001216f14d0000001049444154789c63fccf0005",
+            "4c3006030013290103f0d807840000000049454e44ae426082",
+        ])
+    }
+    fn jpeg() -> Vec<u8> {
+        unhex(&[
+            "ffd8ffe000104a46494600010100000100010000ffdb004300080606070605080707070909080a0c140d0c0b0b0c1912",
+            "130f141d1a1f1e1d1a1c1c20242e2720222c231c1c2837292c30313434341f27393d38323c2e333432ffdb0043010909",
+            "090c0b0c180d0d1832211c21323232323232323232323232323232323232323232323232323232323232323232323232",
+            "3232323232323232323232323232ffc00011080002000303012200021101031101ffc4001f0000010501010101010100",
+            "000000000000000102030405060708090a0bffc400b5100002010303020403050504040000017d010203000411051221",
+            "31410613516107227114328191a1082342b1c11552d1f02433627282090a161718191a25262728292a3435363738393a",
+            "434445464748494a535455565758595a636465666768696a737475767778797a838485868788898a9293949596979899",
+            "9aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4c5c6c7c8c9cad2d3d4d5d6d7d8d9dae1e2e3e4e5e6e7e8e9eaf1",
+            "f2f3f4f5f6f7f8f9faffc4001f0100030101010101010101010000000000000102030405060708090a0bffc400b51100",
+            "020102040403040705040400010277000102031104052131061241510761711322328108144291a1b1c109233352f015",
+            "6272d10a162434e125f11718191a262728292a35363738393a434445464748494a535455565758595a63646566676869",
+            "6a737475767778797a82838485868788898a92939495969798999aa2a3a4a5a6a7a8a9aab2b3b4b5b6b7b8b9bac2c3c4",
+            "c5c6c7c8c9cad2d3d4d5d6d7d8d9dae2e3e4e5e6e7e8e9eaf2f3f4f5f6f7f8f9faffda000c03010002110311003f00e2",
+            "e8a28af993f713ffd9",
+        ])
+    }
+    fn webp() -> Vec<u8> {
+        unhex(&["524946461c000000574542505650384c0f0000002f024000000710fd8ffe0722a2ff0100"])
+    }
+    fn webp_lossy() -> Vec<u8> {
+        unhex(&[
+            "524946463c000000574542505650382030000000d001009d012a0300020001402625a00274ba01f80003b000fef2eb7f",
+            "fcd815cd73eff7ffd2e0fd2e0fd2e0ffd2900000",
+        ])
+    }
+    fn bmp() -> Vec<u8> {
+        unhex(&[
+            "424d4e0000000000000036000000280000000300000002000000010018000000000018000000c40e0000c40e00000000",
+            "0000000000000000ff0000ff0000ff0000000000ff0000ff0000ff000000",
+        ])
+    }
+
+    #[test]
+    fn each_format_reports_its_header_size() {
+        for (name, data) in [
+            ("gif", gif()),
+            ("png", png()),
+            ("jpeg", jpeg()),
+            ("webp lossless", webp()),
+            ("webp lossy", webp_lossy()),
+            ("bmp", bmp()),
+        ] {
+            assert_eq!(image_size(&data), Some((3, 2)), "{name}");
+        }
+    }
+
+    #[test]
+    fn what_pillow_cannot_open_has_no_size() {
+        assert_eq!(image_size(b""), None);
+        assert_eq!(image_size(b"AAAA"), None);
+        assert_eq!(image_size(b"GIF89a"), None);
+        // Cut short at every length: nothing reads as a picture of another size.
+        for data in [gif(), png(), jpeg(), webp(), webp_lossy(), bmp()] {
+            for n in 0..data.len() {
+                assert!(
+                    matches!(image_size(&data[..n]), None | Some((3, 2))),
+                    "{} bytes",
+                    n
+                );
+            }
+        }
+        // The pieces a truncation takes that Pillow notices.
+        assert_eq!(image_size(&gif()[..13]), None, "a GIF with no frame");
+        assert_eq!(
+            image_size(&png()[..30]),
+            None,
+            "a PNG with no chunk after its header"
+        );
+        assert_eq!(
+            image_size(&jpeg()[..400]),
+            None,
+            "a JPEG cut inside a table"
+        );
+        assert_eq!(image_size(&webp()[..30]), None);
+        assert_eq!(image_size(&bmp()[..40]), None);
+    }
+
+    #[test]
+    fn a_zero_side_is_not_a_picture() {
+        let mut g = gif();
+        g[6..10].copy_from_slice(&[0, 0, 0, 0]);
+        // The frame descriptor then stretches the screen back to the frame's own extent.
+        assert_eq!(image_size(&g), Some((3, 2)));
+        let mut p = png();
+        p[16..20].copy_from_slice(&[0, 0, 0, 0]);
+        // A changed byte breaks the IHDR checksum first.
+        assert_eq!(image_size(&p), None);
+    }
+
+    #[test]
+    fn a_gif_frame_that_sticks_out_grows_the_screen() {
+        let mut g = gif();
+        // Screen 1x1: the frame descriptor (0x2c ...) says 3x2 at (0, 0).
+        g[6..10].copy_from_slice(&[1, 0, 1, 0]);
+        assert_eq!(image_size(&g), Some((3, 2)));
+    }
+
+    #[test]
+    fn a_corrupt_png_checksum_is_not_a_picture() {
+        let mut p = png();
+        let last_header_byte = 8 + 8 + 12; // the CRC of IHDR ends at 8 + 8 + 13 + 4
+        p[last_header_byte + 4] ^= 1;
+        assert_eq!(image_size(&p), None);
+    }
+
+    #[test]
+    fn an_enormous_picture_is_refused_as_pillow_refuses_it() {
+        let mut g = gif();
+        g[6..10].copy_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        assert_eq!(image_size(&g), None);
+    }
+
+    #[test]
+    fn the_checksum_is_zlibs() {
+        assert_eq!(crc32(&[b"123456789"]), 0xcbf4_3926);
+        assert_eq!(crc32(&[b"1234", b"56789"]), 0xcbf4_3926);
     }
 }

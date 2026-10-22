@@ -1,6 +1,6 @@
 //! Search-engine result parsers (`core/iqdb.py`, `core/ascii2d.py`, `core/tracemoe.py`,
-//! `core/pawchive_lookup.py`, `core/saucenao.py`): what an engine's answer says once it is in
-//! hand.
+//! `core/pawchive_lookup.py`, `core/saucenao.py`, `core/google_lens.py`): what an engine's answer
+//! says once it is in hand.
 //!
 //! **Where Python's engine functions are cut.** Each `search` in Python uploads the image, waits,
 //! reads the answer, and interprets it. The interpreting is here: the HTTP status to error

@@ -23,12 +23,12 @@ use regex::Regex;
 use serde::Serialize;
 use serde_json::Value;
 
-use super::ascii2d::host_label;
 use crate::pyalpha::is_alpha;
 use crate::pycase::ignorecase_matches;
 use crate::pycompat::{html_unescape, strip, truthy};
 use crate::pyimage::image_size;
 use crate::pyrepr::py_str;
+use crate::pyurl;
 
 /// `SIMILARITY_START`, `SIMILARITY_STEP`, `SIMILARITY_FLOOR`: the made-up score a visual match gets
 /// from its rank.
@@ -128,6 +128,18 @@ static ZEROCHAN_IMAGE_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// `[a-z]` in a pattern compiled with `re.IGNORECASE`: some letter of the range matches `c`.
 fn is_a_to_z_ignorecase(c: char) -> bool {
     ('a'..='z').any(|p| ignorecase_matches(p, c))
+}
+
+/// `host_label` (`core/google_images.py`): the host of a URL, lower-cased, without a leading `www.`;
+/// `None` for none, and for a URL `urlparse` raises `ValueError` on (a malformed bracketed host).
+fn host_label(url: &str) -> Option<String> {
+    let netloc = pyurl::urlparse(url, "").netloc;
+    if pyurl::netloc_raises(&netloc) {
+        return None;
+    }
+    let host = netloc.to_lowercase();
+    let host = host.strip_prefix("www.").unwrap_or(&host);
+    (!host.is_empty()).then(|| host.to_owned())
 }
 
 /// `GOOGLE_HOST_SUFFIXES`.
@@ -243,6 +255,9 @@ fn tile_dimensions(text: &str, after: usize) -> (Option<i64>, Option<i64>) {
     // side failing drops both. At most 10 characters, so `i64` always holds it.
     let side = |group: &str| -> Option<i64> {
         let digits = group.replace(',', "");
+        if digits.is_empty() {
+            return None;
+        }
         crate::boorus::sizes::to_int(&digits)
     };
     match (side(&found[1]), side(&found[2])) {
@@ -251,24 +266,25 @@ fn tile_dimensions(text: &str, after: usize) -> (Option<i64>, Option<i64>) {
     }
 }
 
-/// `base64.b64decode(data)` as `binascii.a2b_base64` reads a `str` outside strict mode: characters
-/// outside the alphabet are skipped, padding ends the data once a quad has two characters, and
-/// leftover characters in a quad are an error. `None` where Python raises (`ValueError` for
-/// non-ASCII text, `binascii.Error` for a bad length).
+/// `base64.b64decode(data)` as `binascii.a2b_base64` reads a `str` outside strict mode (CPython
+/// 3.14): characters outside the alphabet are skipped and padding never ends the data. A `=`
+/// counts only once a quad has two characters, and any data character after it resets the count;
+/// at the end a quad of one character is an error, and so is a quad of two or three that
+/// `=` has not filled to four. `None` where Python raises (`ValueError` for non-ASCII text,
+/// `binascii.Error` for a bad length).
 fn b64decode(text: &str) -> Option<Vec<u8>> {
     if !text.is_ascii() {
         return None;
     }
     let (mut out, mut quad, mut left, mut pads) = (Vec::new(), 0u8, 0u8, 0u8);
     for &c in text.as_bytes() {
-        if c == b'=' {
-            pads += 1;
-            if quad >= 2 && quad + pads >= 4 {
-                return Some(out);
-            }
-            continue;
-        }
         let v = match c {
+            b'=' => {
+                if quad >= 2 {
+                    pads = pads.saturating_add(1);
+                }
+                continue;
+            }
             b'A'..=b'Z' => c - b'A',
             b'a'..=b'z' => c - b'a' + 26,
             b'0'..=b'9' => c - b'0' + 52,
@@ -293,7 +309,7 @@ fn b64decode(text: &str) -> Option<Vec<u8>> {
             }
         }
     }
-    (quad == 0).then_some(out)
+    (quad == 0 || (quad >= 2 && quad + pads >= 4)).then_some(out)
 }
 
 /// `_is_placeholder_thumb`: a `data:` URI whose picture is a speck (a lazy-loaded tile that had not
@@ -453,4 +469,475 @@ pub fn parse_lens_payload(payload: &str) -> Vec<GoogleLensMatch> {
         });
     }
     matches
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    // Each test below is `tests/test_search_quality.py` at 76c85c4, `TestGoogleLensPayloadParser`
+    // or `TestGoogleLensExactMatches`, by the same name. The `search()` tests of those classes
+    // (`test_search_brings_a_deep_booru_post_to_the_top`, `test_exact_matches_outrank_visual_ones`,
+    // `test_scores_stay_ordered_after_the_two_tabs_are_merged`) drive the browser and are Phase 5.
+
+    const PAYLOAD: &str = concat!(
+        r#"["https:\/\/preview.redd.it\/doom-thumb.jpeg","XORNM3qJQeMrvM","#,
+        r#""https:\/\/www.reddit.com\/r\/Doom\/comments\/1gdo146\/doom_slayer\/","#,
+        r#""Doom Slayer only cares about Killing Demons","#,
+        r#""https:\/\/www.google.com\/search?q=x","ignored","#,
+        r#""https:\/\/sceneario.com\/onmars.jpg","PMmAJBJTUg_9sM","#,
+        r#""https:\/\/sceneario.com\/galerie\/on-mars-t1\/","#,
+        r#""ON MARS - T1 - S. Runberg\u002fGrun"]"#,
+    );
+
+    fn urls(matches: &[GoogleLensMatch]) -> Vec<&str> {
+        matches.iter().map(|m| m.url.as_str()).collect()
+    }
+
+    #[test]
+    fn results_past_the_first_eight_are_not_dropped() {
+        let mut parts = Vec::new();
+        for i in 0..12 {
+            parts.push(format!(r#""https:\/\/www.pinterest.com\/pin\/{i}\/""#));
+            parts.push(format!(r#""Pin number {i} of many""#));
+        }
+        parts.push(r#""https:\/\/danbooru.donmai.us\/posts\/42""#.to_string());
+        parts.push(r#""Danbooru post forty two""#.to_string());
+        let matches = parse_lens_payload(&format!("[{}]", parts.join(",")));
+        assert_eq!(matches.len(), 13);
+        assert_eq!(matches[12].url, "https://danbooru.donmai.us/posts/42");
+    }
+
+    #[test]
+    fn source_pages_are_extracted_with_their_titles() {
+        let matches = parse_lens_payload(PAYLOAD);
+        assert_eq!(
+            urls(&matches),
+            [
+                "https://www.reddit.com/r/Doom/comments/1gdo146/doom_slayer/",
+                "https://sceneario.com/galerie/on-mars-t1/"
+            ]
+        );
+        assert_eq!(
+            matches[0].title.as_deref(),
+            Some("Doom Slayer only cares about Killing Demons")
+        );
+    }
+
+    #[test]
+    fn the_picture_before_a_result_becomes_its_thumbnail() {
+        let matches = parse_lens_payload(PAYLOAD);
+        assert_eq!(
+            matches[0].thumb_url.as_deref(),
+            Some("https://preview.redd.it/doom-thumb.jpeg")
+        );
+        assert_eq!(
+            matches[1].thumb_url.as_deref(),
+            Some("https://sceneario.com/onmars.jpg")
+        );
+    }
+
+    #[test]
+    fn an_image_id_is_never_mistaken_for_a_title() {
+        assert!(!looks_like_a_title("XORNM3qJQeMrvM"));
+        assert!(looks_like_a_title("Doom Slayer only cares"));
+        // The rest of `_looks_like_a_title`: length 3..=200 in code points, no URL or data prefix,
+        // a letter (`str.isalpha`, so a roman numeral or a combining mark is not one), a space.
+        assert!(looks_like_a_title("a b"));
+        assert!(!looks_like_a_title("ab"));
+        assert!(looks_like_a_title(&format!("a{}", " ".repeat(199))));
+        assert!(!looks_like_a_title(&format!("a{}", " ".repeat(200))));
+        assert!(looks_like_a_title("\u{3042} \u{3044}"));
+        assert!(!looks_like_a_title("1 2 3"));
+        assert!(!looks_like_a_title("\u{2167} \u{2167}"));
+        assert!(!looks_like_a_title("/path x"));
+        assert!(!looks_like_a_title("data:abc x"));
+        assert!(!looks_like_a_title("https://x y"));
+    }
+
+    #[test]
+    fn googles_own_links_are_not_sources() {
+        assert!(
+            !parse_lens_payload(PAYLOAD)
+                .iter()
+                .any(|m| m.url.contains("google.com"))
+        );
+        for host in [
+            "google.com",
+            "www.google.co.uk",
+            "google.com.au",
+            "lh3.googleusercontent.com",
+            "gstatic.com",
+            "goo.gl",
+            "W3.ORG",
+        ] {
+            assert!(is_google_host(host), "{host}");
+        }
+        for host in [
+            "notgoo.gl",
+            "google.abcd",
+            "google.c",
+            "mygoogle.com",
+            "example.com",
+        ] {
+            assert!(!is_google_host(host), "{host}");
+        }
+        // `[a-z]` under `re.IGNORECASE` also takes U+017F and U+0131.
+        assert!(is_google_host("google.co\u{17f}"));
+        assert!(is_google_host("google.c\u{131}o"));
+    }
+
+    #[test]
+    fn escapes_are_resolved() {
+        let matches = parse_lens_payload(PAYLOAD);
+        assert_eq!(
+            matches[1].title.as_deref(),
+            Some("ON MARS - T1 - S. Runberg/Grun")
+        );
+        // The order of the replacements: `\\u0041` is a backslash and `A`'s tail, not an `A`.
+        assert_eq!(unescape(r"a\/b\u0041\\u0041"), r"a/bA\A");
+        assert_eq!(unescape(r#"say \"hi\""#), r#"say "hi""#);
+        // A surrogate escape has no `char`.
+        assert_eq!(unescape(r"\ud83d\ude00"), "\u{fffd}\u{fffd}");
+    }
+
+    #[test]
+    fn results_are_scored_in_order() {
+        let matches = parse_lens_payload(PAYLOAD);
+        assert!(matches[0].similarity > matches[1].similarity);
+        const { assert!(SIMILARITY_START < super::super::ascii2d::COLOR_SIMILARITY_START) };
+        // The floor holds past 16 results.
+        let parts: Vec<String> = (0..20)
+            .flat_map(|i| {
+                [
+                    format!(r#""https://a.example/{i}""#),
+                    format!(r#""Title {i} here""#),
+                ]
+            })
+            .collect();
+        let many = parse_lens_payload(&parts.join(","));
+        assert_eq!(many.len(), 20);
+        assert_eq!(many[15].similarity, 50.0);
+        assert_eq!(many[19].similarity, SIMILARITY_FLOOR);
+    }
+
+    #[test]
+    fn junk_is_no_matches_not_a_crash() {
+        for payload in ["", "<html></html>", r#""not a url""#, "null"] {
+            assert!(parse_lens_payload(payload).is_empty(), "{payload:?}");
+            assert!(parse_exact_matches(payload).is_empty(), "{payload:?}");
+        }
+        for payload in ["<div>nothing here</div>", "Post : - Rule 34 Paheal"] {
+            assert!(parse_exact_matches(payload).is_empty(), "{payload:?}");
+        }
+    }
+
+    #[test]
+    fn a_picture_of_one_zerochan_post_on_another_posts_page_is_paired_with_its_own() {
+        let payload = r#"["https://s1.zerochan.net/Sakamata.Chloe.600.3699483.jpg","https://www.zerochan.net/3700079","Sakamata Chloe - Zerochan"]"#;
+        let matches = parse_lens_payload(payload);
+        assert_eq!(urls(&matches), ["https://www.zerochan.net/3699483"]);
+        assert_eq!(
+            matches[0].thumb_url.as_deref(),
+            Some("https://s1.zerochan.net/Sakamata.Chloe.600.3699483.jpg")
+        );
+        // The same post, or a page of another site, is left alone.
+        assert_eq!(
+            owner_of_image(
+                "https://www.zerochan.net/3699483",
+                Some("https://s1.zerochan.net/a.3699483.jpg")
+            ),
+            "https://www.zerochan.net/3699483"
+        );
+        assert_eq!(
+            owner_of_image(
+                "https://example.com/1",
+                Some("https://s1.zerochan.net/a.2.jpg")
+            ),
+            "https://example.com/1"
+        );
+        // `re.IGNORECASE` folds `i` with U+0131 and `s` with U+017F in the image URL; the page
+        // pattern has no flag.
+        assert_eq!(
+            owner_of_image(
+                "https://www.zerochan.net/1",
+                Some("https://\u{17f}tat\u{131}c.zerochan.net/a.2.g\u{131}f")
+            ),
+            "https://www.zerochan.net/2"
+        );
+        assert_eq!(
+            owner_of_image(
+                "HTTPS://www.zerochan.net/1",
+                Some("https://s1.zerochan.net/a.2.jpg")
+            ),
+            "HTTPS://www.zerochan.net/1"
+        );
+        // `$` also matches before a final newline.
+        assert_eq!(
+            owner_of_image(
+                "https://www.zerochan.net/1\n",
+                Some("https://s1.zerochan.net/a.2.jpg\n")
+            ),
+            "https://www.zerochan.net/2"
+        );
+    }
+
+    const EXACT: &str = concat!(
+        r#"<div class="ZhosBf T7iOye" style="-webkit-line-clamp:2">"#,
+        "Post 5674224: Ben_10 Flipherrrr Gwen_Tennyson - Rule 34 Paheal</div>",
+        r#"<div class="xuPcX yUTMj">Rule 34 Paheal</div>"#,
+        r#"<div class="ZhosBf T7iOye">Post 5674250: Ben_10 Flipherrrr Gwen_Tennyson "#,
+        "&amp; friends - Rule 34 Paheal</div>",
+        r#"<div class="ZhosBf">Gwen Tennyson - Page 8 - HentaiRox</div>"#,
+    );
+    const RULE34XXX: &str = r#"<div class="ZhosBf">Rule 34 | 4585855 / - Rule 34</div>"#;
+    const RULE34US: &str = concat!(
+        r#"<div class="ZhosBf">If it exists, there is porn of it / tekuho / "#,
+        "368224 - Rule34.us</div>"
+    );
+
+    #[test]
+    fn a_post_id_in_the_title_becomes_the_post_url() {
+        let matches = parse_exact_matches(EXACT);
+        assert_eq!(
+            urls(&matches),
+            [
+                "https://rule34.paheal.net/post/view/5674224",
+                "https://rule34.paheal.net/post/view/5674250"
+            ]
+        );
+        // The title is unescaped and stripped; the second carries `&amp;` -> `&`.
+        assert_eq!(
+            matches[1].title.as_deref(),
+            Some("Post 5674250: Ben_10 Flipherrrr Gwen_Tennyson & friends - Rule 34 Paheal")
+        );
+        assert_eq!(matches[0].source_name.as_deref(), Some("rule34.paheal.net"));
+        assert_eq!(matches[0].similarity, 0.0);
+        assert_eq!(matches[0].thumb_url, None);
+    }
+
+    #[test]
+    fn the_site_name_is_found_when_it_is_not_in_the_title() {
+        let payload = format!(
+            "{}{}{}",
+            r#"<div class="ZhosBf T7iOye" style="-webkit-line-clamp:2">Post 5674080: Chel Tanluca The_Road_to_El_Dorado</div>"#,
+            format_args!(
+                r#"<div class="oYQBg">{}</div>"#,
+                "<span>filler</span>".repeat(60)
+            ),
+            r#"<div class="xuPcX yUTMj">Rule 34 Paheal</div>"#,
+        );
+        assert_eq!(
+            urls(&parse_exact_matches(&payload)),
+            ["https://rule34.paheal.net/post/view/5674080"]
+        );
+    }
+
+    #[test]
+    fn a_tile_cannot_borrow_the_next_tile_s_site_name() {
+        let payload = concat!(
+            "<div>Post 111111: something on a site we cannot rebuild</div>",
+            "<div>Post 222222: a real one</div>",
+            r#"<div class="xuPcX">Rule 34 Paheal</div>"#
+        );
+        assert_eq!(
+            urls(&parse_exact_matches(payload)),
+            ["https://rule34.paheal.net/post/view/222222"]
+        );
+    }
+
+    #[test]
+    fn the_site_name_is_not_searched_for_indefinitely() {
+        let payload = format!(
+            "<div>Post 333333: a post</div>{}<div>Rule 34 Paheal</div>",
+            "<span>x</span>".repeat(400)
+        );
+        assert!(payload.chars().count() > SITE_LABEL_WINDOW);
+        assert!(parse_exact_matches(&payload).is_empty());
+        // The window is counted in characters, not bytes: 2,500 two-byte characters still fit.
+        let near = format!(
+            "<div>Post 333333: a post</div>{}Rule 34 Paheal",
+            "\u{e9}".repeat(2480)
+        );
+        assert_eq!(parse_exact_matches(&near).len(), 1);
+    }
+
+    #[test]
+    fn a_rule34_xxx_post_is_rebuilt_from_its_title() {
+        assert_eq!(
+            urls(&parse_exact_matches(RULE34XXX)),
+            ["https://rule34.xxx/index.php?page=post&s=view&id=4585855"]
+        );
+    }
+
+    #[test]
+    fn a_rule34_us_post_is_rebuilt_from_its_title() {
+        assert_eq!(
+            urls(&parse_exact_matches(RULE34US)),
+            ["https://rule34.us/index.php?r=posts/view&id=368224"]
+        );
+    }
+
+    #[test]
+    fn the_two_rule34_sites_are_told_apart() {
+        let both = format!("{RULE34XXX}{RULE34US}");
+        let mut found: Vec<String> = parse_exact_matches(&both)
+            .into_iter()
+            .map(|m| m.url)
+            .collect();
+        found.sort();
+        assert_eq!(
+            found,
+            [
+                "https://rule34.us/index.php?r=posts/view&id=368224",
+                "https://rule34.xxx/index.php?page=post&s=view&id=4585855"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_rule34_mirrors_are_not_mistaken_for_it() {
+        let mirrors = concat!(
+            "<div>favela funk - Rule 34 XYZ</div>",
+            "<div>disney, pixar - Rule 34 World</div>",
+            "<div>the incredibles - Rule 34 Archive</div>",
+            "<div>Rule34 - If it exists, there is porn of it / phat smash</div>"
+        );
+        assert!(parse_exact_matches(mirrors).is_empty());
+    }
+
+    #[test]
+    fn both_sites_are_recovered_in_document_order() {
+        let found = parse_exact_matches(&format!("{RULE34XXX}{EXACT}"));
+        assert_eq!(
+            found[0].url,
+            "https://rule34.xxx/index.php?page=post&s=view&id=4585855"
+        );
+        assert!(found.iter().any(|m| m.url.contains("paheal")));
+    }
+
+    #[test]
+    fn titles_naming_no_rebuildable_site_are_left_alone() {
+        assert!(
+            !parse_exact_matches(EXACT)
+                .iter()
+                .any(|m| m.url.to_lowercase().contains("hentairox"))
+        );
+    }
+
+    #[test]
+    fn a_rendered_tile_yields_its_thumbnail_and_the_source_size() {
+        let tiles = json!([{
+            "text": "If it exists, there is porn of it / tekuho / 368224 - Rule34.us 1,072x1,108 Rule34.us",
+            "thumb": "data:image/jpeg;base64,AAAA"
+        }]);
+        let matches = parse_exact_tiles(&tiles);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0].url,
+            "https://rule34.us/index.php?r=posts/view&id=368224"
+        );
+        assert_eq!(
+            (matches[0].width, matches[0].height),
+            (Some(1072), Some(1108))
+        );
+        assert_eq!(
+            matches[0].thumb_url.as_deref(),
+            Some("data:image/jpeg;base64,AAAA")
+        );
+        assert_eq!(matches[0].title.as_deref(), Some("/ 368224 - Rule34.us"));
+    }
+
+    #[test]
+    fn a_lazy_load_placeholder_is_not_taken_for_a_thumbnail() {
+        let tiles = json!([{
+            "text": "If it exists, there is porn of it / gattles / 6608448 - Rule34.us",
+            "thumb": "data:image/gif;base64,R0lGODlhAQABAIAAAP///////yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="
+        }]);
+        let matches = parse_exact_tiles(&tiles);
+        assert_eq!(
+            urls(&matches),
+            ["https://rule34.us/index.php?r=posts/view&id=6608448"]
+        );
+        assert_eq!(matches[0].thumb_url, None);
+    }
+
+    #[test]
+    fn a_tile_that_names_no_rebuildable_site_is_ignored() {
+        assert!(parse_exact_tiles(&json!([{"text": "Sign in", "thumb": "data:x"}])).is_empty());
+        assert!(parse_exact_tiles(&Value::Null).is_empty());
+        // Entries that are not objects, and a tile that is missing both keys, are skipped.
+        assert!(parse_exact_tiles(&json!([null, 5, "x", [], {}])).is_empty());
+    }
+
+    #[test]
+    fn a_tile_is_read_the_way_python_reads_str_and_dimensions() {
+        let tile = |text: Value| parse_exact_tiles(&json!([{ "text": text }]));
+        // `str(x or "")`: a falsy value is empty; another type is its `repr`.
+        assert!(tile(json!(0)).is_empty() && tile(json!(null)).is_empty());
+        // Either side that is not a number drops both; a comma-only side is the failing case.
+        let sized = |suffix: &str| {
+            let m = &tile(json!(format!("/ 123 - Rule34.us {suffix}")))[0];
+            (m.width, m.height)
+        };
+        assert_eq!(sized("1,072x1,108"), (Some(1072), Some(1108)));
+        assert_eq!(sized("250 \u{d7} 177"), (Some(250), Some(177)));
+        assert_eq!(sized(",,x,,"), (None, None));
+        assert_eq!(sized("1,2x,,"), (None, None));
+        assert_eq!(sized("99x"), (None, None));
+        assert_eq!(sized("\u{661}\u{662}x\u{663}\u{664}"), (Some(12), Some(34)));
+        // The first pair is the one read, even when it is unusable.
+        assert_eq!(sized(",,x,, 5x6"), (None, None));
+    }
+
+    #[test]
+    fn the_same_post_in_two_tiles_is_listed_once_with_the_first() {
+        let tiles = json!([
+            {"text": "/ 123 - Rule34.us 55x66", "thumb": ""},
+            {"text": "/ 123 - Rule34.us 77x88", "thumb": ""},
+        ]);
+        let matches = parse_exact_tiles(&tiles);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].width, Some(55));
+    }
+
+    #[test]
+    fn base64_is_read_the_way_python_3_14_reads_a_str() {
+        assert_eq!(b64decode("QUJD"), Some(b"ABC".to_vec()));
+        assert_eq!(b64decode("QUJDRA=="), Some(b"ABCD".to_vec()));
+        // Characters outside the alphabet are skipped; padding does not end the data.
+        assert_eq!(b64decode("QU JD\n"), Some(b"ABC".to_vec()));
+        assert_eq!(b64decode("QUJDRA==AA"), Some(b"ABCD\0\0".to_vec()));
+        assert_eq!(b64decode("QQ==QQ=="), Some(vec![b'A', 4, 16]));
+        assert_eq!(b64decode("=QQ=="), Some(b"A".to_vec()));
+        // Short of padding, and one character over a quad.
+        for bad in [
+            "QQ", "QQ=", "QUJDRA=", "Q", "QUJDR", "QUI=AA", "QUJD=AA", "Q=U=J", "QQ=x",
+        ] {
+            assert_eq!(b64decode(bad), None, "{bad}");
+        }
+        // `str.encode("ascii")` fails first.
+        assert_eq!(b64decode("QUJD\u{e9}"), None);
+    }
+
+    #[test]
+    fn only_a_decodable_speck_is_a_placeholder() {
+        let gif =
+            "data:image/gif;base64,R0lGODlhAQABAIAAAP///////yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+        assert!(is_placeholder_thumb(gif));
+        // Unreadable, not an image, not a data URI, or no payload: left to the caller.
+        for src in [
+            "data:image/gif;base64,R0lGODlhAQABAIAAAP///////yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=",
+            "data:image/jpeg;base64,AAAA",
+            "data:image/gif;base64",
+            "data:",
+            "",
+            "http://x/y.gif",
+            "xxxxxxxx",
+        ] {
+            assert!(!is_placeholder_thumb(src), "{src}");
+        }
+    }
 }

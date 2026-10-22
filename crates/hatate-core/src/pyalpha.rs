@@ -723,6 +723,16 @@ mod tests {
     }
 
     #[test]
+    fn every_listed_letter_is_alphabetic_to_rust_too() {
+        // The L categories are a subset of `Alphabetic`; a range outside it means a bad table.
+        for &(lo, hi) in &ALPHA {
+            for c in (lo..=hi).filter_map(char::from_u32) {
+                assert!(c.is_alphabetic(), "{c:?}");
+            }
+        }
+    }
+
+    #[test]
     fn table_is_sorted_and_disjoint() {
         for w in ALPHA.windows(2) {
             assert!(w[0].1 + 1 < w[1].0, "{:x?}", w);
