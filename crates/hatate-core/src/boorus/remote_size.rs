@@ -17,8 +17,8 @@ use tracing::debug;
 
 use crate::lru::LruCache;
 use crate::net::{BodyProbe, NetClient, NetRequest};
-use crate::{pyimage, pyurl};
 use crate::remote::{set_header, ua_headers};
+use crate::{pyimage, pyurl};
 
 pub const MAX_BYTES: usize = 512 * 1024;
 pub const TIMEOUT: f64 = 10.0;
@@ -46,9 +46,10 @@ impl RemoteSizes {
         Self::default()
     }
 
-    /// The URLs read so far, least recently used first.
-    pub fn cached_urls(&self) -> Vec<String> {
-        self.cache.lock().unwrap().keys().to_vec()
+    /// The URLs read so far and what was learned of each, least recently used first.
+    pub fn entries(&self) -> Vec<(String, (Option<i64>, Option<i64>))> {
+        let cache = self.cache.lock().unwrap();
+        cache.iter().map(|(k, v)| (k.clone(), *v)).collect()
     }
 
     /// `image_size(url, user_agent)`: the original's `(width, height)`, or `(None, None)`.
@@ -66,7 +67,9 @@ impl RemoteSizes {
         if !headers.contains_key(http::header::USER_AGENT) {
             headers.extend(ua_headers().into_iter().filter_map(|(n, v)| Some((n?, v))));
         }
-        let Ok(mut req) = NetRequest::get(&pyurl::requote_uri(url), Duration::from_secs_f64(TIMEOUT)) else {
+        let Ok(mut req) =
+            NetRequest::get(&pyurl::requote_uri(url), Duration::from_secs_f64(TIMEOUT))
+        else {
             // Python's `requests` refuses the URL the same way, as a `RequestException`.
             return (None, None);
         };

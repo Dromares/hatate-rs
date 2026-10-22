@@ -20,8 +20,8 @@ use tracing::{debug, info};
 use super::gelbooru;
 use crate::net::NetClient;
 use crate::pyresponse::PyResponse;
-use crate::remote::{get_request, ua_headers};
 use crate::pyurl;
+use crate::remote::{get_request, ua_headers};
 
 /// `timeout=15` of every Data-API call. No deadline: Python sets none.
 pub const TIMEOUT: f64 = 15.0;

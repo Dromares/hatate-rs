@@ -74,6 +74,11 @@ impl<K: Eq + Hash + Clone, V: Clone> LruCache<K, V> {
         self.order.clear();
     }
 
+    /// The entries, least recently used first, without counting as a use.
+    pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.order.iter().filter_map(|k| self.data.get_key_value(k))
+    }
+
     /// The keys, least recently used first.
     pub fn keys(&self) -> &[K] {
         &self.order

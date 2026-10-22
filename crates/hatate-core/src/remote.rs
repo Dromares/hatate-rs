@@ -203,7 +203,9 @@ pub async fn fetch_text(
     {
         // The header is refused when the request is sent, after the deadline was checked.
         return if timeout <= 0.0 || timeout.is_nan() {
-            Err(Raised::HardTimeout(format!("Timed out after {timeout:.0}s")))
+            Err(Raised::HardTimeout(format!(
+                "Timed out after {timeout:.0}s"
+            )))
         } else {
             Ok(None)
         };

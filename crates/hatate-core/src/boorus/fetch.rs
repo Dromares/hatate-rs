@@ -80,14 +80,8 @@ impl BooruSession {
 
     /// Pawchive's creator names, least recently used first (`_artist_cache`).
     pub fn artist_cache(&self) -> Vec<(String, String)> {
-        let mut cache = self.artists.lock().unwrap();
-        let keys = cache.keys().to_vec();
-        keys.into_iter()
-            .map(|k| {
-                let v = cache.get(&k).unwrap_or_default();
-                (k, v)
-            })
-            .collect()
+        let cache = self.artists.lock().unwrap();
+        cache.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     }
 
     /// The local file's MD5, or `None` if it cannot be read.
@@ -373,8 +367,9 @@ pub async fn fetch_tags(
     Ok(fetch_page_info(net, session, url, opts).await?.tags)
 }
 
-/// Everything a parser's hooks would have fetched from inside themselves, in Python's order.
-async fn network_context(
+/// Everything a parser's hooks would have fetched from inside themselves, in Python's order: the
+/// [`Context`] to run `parser`'s hooks over `body` (the response for post `url`) with.
+pub async fn network_context(
     net: &NetClient,
     session: &BooruSession,
     parser: &SiteParser,
