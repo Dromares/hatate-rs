@@ -10,8 +10,10 @@
 //!
 //! Where Python would raise on a shape the API does not send (a `tags` that is a list, a `file`
 //! that is a string), the hook has nothing to say here, which is what `fetch_page_info` makes of
-//! a hook that raises. A tag name that is not a string, and a width that is not a JSON integer,
-//! are likewise left out where Python would pass them through unchecked.
+//! a hook that raises. A tag name that is not a string, a tag list that is a string (Python walks
+//! its characters), a width that is not a JSON integer and a file URL that is not a string are
+//! likewise left out where Python would pass them through unchecked. None of these is a shape the
+//! API sends.
 
 use std::sync::LazyLock;
 
@@ -274,6 +276,9 @@ mod tests {
         assert!(matches("https://e6ai.net/posts/1"));
         assert!(!matches("https://danbooru.donmai.us/posts/1"));
         assert!(!matches("https://example.com/e621.net/posts/1"));
+        assert!(!matches(
+            "https://gelbooru.com/index.php?page=post&s=view&id=1"
+        ));
     }
 
     #[test]
@@ -448,6 +453,10 @@ mod tests {
         assert_eq!(rating(r#""sensitive""#), None);
         assert_eq!(rating("null"), None);
         assert_eq!(parse_rating(r#"{"post": {}}"#, URL), None);
+        // A null, blank or unrecognised value is never guessed at.
+        for value in ["null", r#""""#, r#""   ""#, r#""z""#, "3"] {
+            assert_eq!(rating(value), None, "{value}");
+        }
     }
 
     #[test]

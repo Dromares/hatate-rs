@@ -197,6 +197,33 @@ mod tests {
     }
 
     #[test]
+    fn py_int_reads_what_pythons_int_reads() {
+        for (raw, want) in [
+            ("12", Some(12)),
+            (" +7\t", Some(7)),
+            ("-5", Some(-5)),
+            ("1_000", Some(1000)),
+            ("\u{661}\u{662}", Some(12)),
+            ("\u{2003}8\u{2003}", Some(8)),
+            ("-9223372036854775808", Some(i64::MIN)),
+            ("9223372036854775808", None),
+            ("", None),
+            ("+", None),
+            ("--1", None),
+            ("+ 1", None),
+            ("1__0", None),
+            ("_1", None),
+            ("1_", None),
+            ("1.5", None),
+            ("1e3", None),
+            ("0x10", None),
+            ("None", None),
+        ] {
+            assert_eq!(py_int(raw), want, "{raw:?}");
+        }
+    }
+
+    #[test]
     fn a_miss_is_described_by_what_the_page_says() {
         assert_eq!(
             describe_size_context("<li>Id: 1</li>\n<li>Size:   huge  </li>"),

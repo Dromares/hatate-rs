@@ -181,7 +181,9 @@ mod tests {
     fn claims_rule34_us_hosts_only() {
         assert!(matches("https://rule34.us/index.php?r=posts/view&id=1"));
         assert!(matches("https://img2.rule34.us/images/a.png"));
-        assert!(!matches("https://rule34.xxx/index.php?page=post"));
+        assert!(!matches(
+            "https://rule34.xxx/index.php?page=post&s=view&id=1"
+        ));
         assert!(!matches("https://example.com/rule34.us"));
     }
 
@@ -296,6 +298,21 @@ mod tests {
         // Script text is not page text.
         let hidden = "<script>Size: 1w x 2h</script>Size: 3w x 4h";
         assert_eq!(parse_dimensions(hidden, URL), (Some(3), Some(4)));
+    }
+
+    #[test]
+    fn the_site_states_no_rating_and_so_exposes_no_hook() {
+        // Measured, not assumed: the Statistics block has no Rating line, and the only "rating"
+        // on the page is a static `<meta name="rating" content="adult">` served on every page.
+        assert!(PARSER.parse_rating.is_none());
+        let page = r#"<html><head><meta name="rating" content="adult" /></head>
+            <body><div style="font-size:1.2em;">Statistics</div>
+            <li class="general-tag">Id: 6000000</li>
+            <li class="general-tag">Score: <span>8</span></li>
+            <li class="general-tag">Size: 411w x 573h</li></body></html>"#;
+        let text = page_text(&soup_of(page), " ");
+        assert_eq!(crate::boorus::rating::from_label(&text), None);
+        assert_eq!(parse_dimensions(page, URL), (Some(411), Some(573)));
     }
 
     #[test]

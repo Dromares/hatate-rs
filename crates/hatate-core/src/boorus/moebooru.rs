@@ -259,6 +259,7 @@ mod tests {
         assert!(matches("https://files.yande.re/image/x.png"));
         assert!(!matches("https://danbooru.donmai.us/posts/1"));
         assert!(!matches("https://example.com/yande.re/post/show/1"));
+        assert!(!matches("https://e621.net/posts/219935"));
     }
 
     #[test]

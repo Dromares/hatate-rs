@@ -53,6 +53,20 @@ has needed yet:
 - **`json.loads` accepts what `serde_json` rejects:** `NaN`, `Infinity`, `-Infinity` and lone
   surrogate escapes. A body using them is "not JSON" here. No corpus item reaches this.
 
+- **`get_text(separator)` without `strip`** is `parsed::text_joined`: the same strings as
+  `text_of`, unstripped and joined with the separator. `parsed::page_text` is the whole document
+  (`soup.get_text(" ")`). Moebooru's rating and size scrapes and rule34us's size line use them.
+- **`urllib.parse`.** Python's `urljoin`, `urlparse(...).query`, `parse_qs` and `unquote` are
+  `crate::pyurl`, not the `url` crate, because the two disagree on the inputs a broken page
+  produces (a `src` with no scheme, a bare `?`, a stray `%`). `tests/pyurl_oracle.rs` holds
+  CPython 3.14.8's answers for those inputs as data. CPython 3.14 changed `urljoin` (it keeps an
+  empty `?` or `#`, and no longer splits `;params`); the port follows 3.14.
+- **Numbers.** Python's `int` is unbounded and the ports use `i64`: a width past `i64::MAX`
+  reads as absent. Paheal's `int(str(attr))` is `sizes::py_int` (sign, surrounding whitespace,
+  single underscores, any script's decimal digits).
+- **Where Python raises** on a shape the site never sends (e621's `post` that is a string, a
+  `file` that is a list) the Rust hook returns what `fetch_page_info` would make of it: nothing.
+
 A new difference found by a later port is written down here, with the corpus item that exposed
 it, and then matched. No item is allowed to fail instead.
 
