@@ -36,6 +36,7 @@ pub mod google_lens;
 pub mod iqdb;
 pub mod pawchive_lookup;
 pub mod saucenao;
+pub(crate) mod session;
 pub mod tracemoe;
 pub mod yandex;
 

@@ -1,0 +1,558 @@
+//! A `requests.Session` for the one engine that uses one: ascii2d (`core/ascii2d.py`).
+//!
+//! Every other engine goes through `core.net`, whose per-host sessions refuse cookies
+//! (`DefaultCookiePolicy(allowed_domains=[])`). ascii2d builds its own `requests.Session()`, so
+//! the jar is live: a cookie set by the upload's answer, or by any of its redirect hops, is sent
+//! with the feature search that follows. The net layer follows redirects inside one call and
+//! keeps no cookies, so this follows them here (one hop per `send`, `Redirects::Stop`) and keeps
+//! the jar.
+//!
+//! The jar is `http.cookiejar` with its default policy (Netscape cookies, RFC 2965 off), for the
+//! attributes ascii2d's host can send: `Path`, `Domain`, `Secure`, `Max-Age` and `Expires`. A
+//! cookie with `Version`, a `Domain` that is a bare top-level name, a date `http2time` reads and
+//! this does not, or a value `http.cookiejar` would quote, is outside it (`docs/net.md` 13.3).
+
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
+
+use bytes::Bytes;
+use http::HeaderMap;
+use http::header::SET_COOKIE;
+use url::Url;
+
+use super::client::{Failure, Upload, failure_of, seconds};
+use crate::hard_timeout::HardTimeoutError;
+use crate::net::{Method, NetClient, NetRequest, NetResponse, Redirects, RetryMode};
+use crate::pyurl;
+
+/// `requests.Session.max_redirects`.
+const MAX_REDIRECTS: usize = 30;
+
+#[derive(Debug, Clone)]
+struct Cookie {
+    name: String,
+    /// `None` for a cookie sent as a bare name (`Set-Cookie: flag`).
+    value: Option<String>,
+    /// As `http.cookiejar` stores it: a host for a cookie without `Domain`, a dotted name for one
+    /// with it.
+    domain: String,
+    path: String,
+    secure: bool,
+    /// Seconds since the epoch; `None` is a session cookie.
+    expires: Option<i64>,
+}
+
+/// `http.cookiejar.CookieJar`'s nested `domain -> path -> name` dictionary, iteration order
+/// included: a replaced cookie keeps its place, a cleared one leaves its (empty) containers.
+#[derive(Debug, Default)]
+pub(crate) struct CookieJar {
+    domains: Vec<(String, Vec<(String, Vec<Cookie>)>)>,
+}
+
+/// Where `request_host` / `eff_request_host` read from: the URL being asked.
+struct Target {
+    /// Lower-cased host, no port.
+    host: String,
+    /// `eff_request_host`: the host, with `.local` added when it has no dot and is not an IPv4.
+    effective: String,
+    /// `request_path`, `escape_path` applied.
+    path: String,
+    https: bool,
+}
+
+impl Target {
+    fn of(url: &Url) -> Target {
+        let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+        let effective = if !host.contains('.') && !is_ipv4(&host) {
+            format!("{host}.local")
+        } else {
+            host.clone()
+        };
+        let mut path = escape_path(url.path());
+        if !path.starts_with('/') {
+            path.insert(0, '/');
+        }
+        Target {
+            host,
+            effective,
+            path,
+            https: matches!(url.scheme(), "https" | "wss"),
+        }
+    }
+}
+
+/// `^\d+\.\d+\.\d+\.\d+$`
+fn is_ipv4(host: &str) -> bool {
+    let parts: Vec<&str> = host.split('.').collect();
+    parts.len() == 4
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// `http.cookiejar.escape_path`: `quote(path, "%/;:@&=+$,!~*'()")`, then the hex of every escape
+/// in upper case.
+fn escape_path(path: &str) -> String {
+    const SAFE: &[u8] = b"%/;:@&=+$,!~*'()_.-";
+    let mut out = String::with_capacity(path.len());
+    for b in path.bytes() {
+        if b.is_ascii_alphanumeric() || SAFE.contains(&b) {
+            out.push(char::from(b));
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    let bytes = out.clone().into_bytes();
+    let mut fixed = String::with_capacity(out.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && bytes[i + 1].is_ascii_hexdigit()
+            && bytes[i + 2].is_ascii_hexdigit()
+        {
+            fixed.push('%');
+            fixed.push(char::from(bytes[i + 1]).to_ascii_uppercase());
+            fixed.push(char::from(bytes[i + 2]).to_ascii_uppercase());
+            i += 3;
+        } else {
+            fixed.push(char::from(bytes[i]));
+            i += 1;
+        }
+    }
+    fixed
+}
+
+fn now_epoch() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
+}
+
+impl CookieJar {
+    /// `extract_cookies`: stores the cookies the `Set-Cookie` lines of an answer to `url` set.
+    fn extract(&mut self, url: &Url, headers: &HeaderMap) {
+        let target = Target::of(url);
+        let now = now_epoch();
+        for line in headers.get_all(SET_COOKIE) {
+            let Ok(line) = line.to_str() else { continue };
+            match change_from_header(line, &target, now) {
+                Some(Change::Set(cookie)) => self.store(cookie),
+                Some(Change::Delete(domain, path, name)) => self.clear(&domain, &path, &name),
+                None => {}
+            }
+        }
+    }
+
+    fn store(&mut self, cookie: Cookie) {
+        let domain = match self.domains.iter().position(|(d, _)| *d == cookie.domain) {
+            Some(i) => i,
+            None => {
+                self.domains.push((cookie.domain.clone(), Vec::new()));
+                self.domains.len() - 1
+            }
+        };
+        let paths = &mut self.domains[domain].1;
+        let path = match paths.iter().position(|(p, _)| *p == cookie.path) {
+            Some(i) => i,
+            None => {
+                paths.push((cookie.path.clone(), Vec::new()));
+                paths.len() - 1
+            }
+        };
+        let names = &mut paths[path].1;
+        match names.iter().position(|c| c.name == cookie.name) {
+            Some(i) => names[i] = cookie,
+            None => names.push(cookie),
+        }
+    }
+
+    fn clear(&mut self, domain: &str, path: &str, name: &str) {
+        for (d, paths) in &mut self.domains {
+            if d != domain {
+                continue;
+            }
+            for (p, names) in paths {
+                if p == path {
+                    names.retain(|c| c.name != name);
+                }
+            }
+        }
+    }
+
+    /// `add_cookie_header`: the `Cookie` header value for a request to `url`, if any.
+    fn header_for(&self, url: &Url) -> Option<String> {
+        let target = Target::of(url);
+        let now = now_epoch();
+        let mut chosen: Vec<&Cookie> = Vec::new();
+        for (domain, paths) in &self.domains {
+            if !domain_return_ok(domain, &target) {
+                continue;
+            }
+            for (path, names) in paths {
+                if !target.path.starts_with(path.as_str()) {
+                    continue;
+                }
+                for cookie in names {
+                    if cookie.secure && !target.https {
+                        continue;
+                    }
+                    if cookie.expires.is_some_and(|e| e <= now) {
+                        continue;
+                    }
+                    chosen.push(cookie);
+                }
+            }
+        }
+        if chosen.is_empty() {
+            return None;
+        }
+        // `sort(key=len(path), reverse=True)` is stable: the most specific path first.
+        chosen.sort_by_key(|c| std::cmp::Reverse(c.path.len()));
+        let attrs: Vec<String> = chosen
+            .iter()
+            .map(|c| match &c.value {
+                Some(value) => format!("{}={}", c.name, value),
+                None => c.name.clone(),
+            })
+            .collect();
+        Some(attrs.join("; "))
+    }
+}
+
+/// `DefaultCookiePolicy.return_ok_domain` for a version 0 cookie: the request host, or its
+/// effective host, ends with the cookie's domain once both are dotted.
+fn domain_return_ok(domain: &str, target: &Target) -> bool {
+    format!(".{}", target.host).ends_with(domain)
+        || format!(".{}", target.effective).ends_with(domain)
+}
+
+/// The attribute list of a `Set-Cookie` line, `parse_ns_headers` + `_normalized_cookie_tuples`.
+struct Parsed {
+    name: String,
+    value: Option<String>,
+    domain: Option<String>,
+    path: Option<String>,
+    secure: bool,
+    max_age: Option<i64>,
+    /// `Expires`, when it parsed. One that did not is ignored, a session cookie.
+    expires: Option<i64>,
+}
+
+fn parse_set_cookie(line: &str) -> Option<Parsed> {
+    let mut parsed = Parsed {
+        name: String::new(),
+        value: None,
+        domain: None,
+        path: None,
+        secure: false,
+        max_age: None,
+        expires: None,
+    };
+    let mut seen: Vec<&'static str> = Vec::new();
+    let mut max_age_set = false;
+    let params: Vec<&str> = split_params(line);
+    for (i, raw) in params.iter().enumerate() {
+        let param = raw.trim_end();
+        if param.is_empty() {
+            continue;
+        }
+        let (key, value) = match param.split_once('=') {
+            Some((k, v)) => (k.trim_start().trim_end(), Some(v.trim_start())),
+            None => (param, None),
+        };
+        if i == 0 {
+            parsed.name = key.to_owned();
+            parsed.value = value.map(str::to_owned);
+            continue;
+        }
+        let lower = key.to_lowercase();
+        let known = match lower.as_str() {
+            "expires" => "expires",
+            "domain" => "domain",
+            "path" => "path",
+            "secure" => "secure",
+            "max-age" => "max-age",
+            "version" | "port" | "comment" | "commenturl" | "discard" => continue,
+            _ => continue,
+        };
+        if seen.contains(&known) {
+            continue; // only the first value is significant
+        }
+        if known != "secure" && value.is_none() {
+            return None; // a value attribute with no value: the whole cookie is bad
+        }
+        match known {
+            "secure" => {
+                seen.push(known);
+                parsed.secure = true;
+            }
+            "domain" => {
+                seen.push(known);
+                parsed.domain = value.map(str::to_owned);
+            }
+            "path" => {
+                seen.push(known);
+                parsed.path = value.map(str::to_owned);
+            }
+            "max-age" => {
+                seen.push(known);
+                max_age_set = true;
+                parsed.max_age = Some(parse_int(value.unwrap_or(""))?);
+            }
+            _ => {
+                if max_age_set {
+                    continue;
+                }
+                seen.push(known);
+                parsed.expires = http2time(strip_quotes(value.unwrap_or("")));
+            }
+        }
+    }
+    if parsed.name.is_empty() && parsed.value.is_none() {
+        return None;
+    }
+    Some(parsed)
+}
+
+/// `re.split(r";\s*", header)`
+fn split_params(line: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = line;
+    while let Some(i) = rest.find(';') {
+        out.push(&rest[..i]);
+        rest = rest[i + 1..].trim_start();
+    }
+    out.push(rest);
+    out
+}
+
+fn strip_quotes(text: &str) -> &str {
+    let text = text.strip_prefix('"').unwrap_or(text);
+    text.strip_suffix('"').unwrap_or(text)
+}
+
+/// `int(text)` for the sort of text `Max-Age` carries.
+fn parse_int(text: &str) -> Option<i64> {
+    let text = text.trim();
+    let digits = text.strip_prefix(['+', '-']).unwrap_or(text);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    text.parse::<i64>().ok()
+}
+
+/// `http2time` for the two forms servers send: `Wdy, DD Mon YYYY HH:MM:SS GMT` and the
+/// `Wdy, DD-Mon-YYYY HH:MM:SS GMT` form Netscape used. `None` for anything else, which
+/// `http.cookiejar` may still read (`docs/net.md` 13.3).
+fn http2time(text: &str) -> Option<i64> {
+    let (_, rest) = text.trim().split_once(',')?;
+    let mut tokens: Vec<&str> = rest.split_whitespace().collect();
+    if tokens.len() == 3 {
+        // `DD-Mon-YYYY HH:MM:SS GMT`
+        let date = tokens.remove(0);
+        let mut parts = date.split('-');
+        let (d, m, y) = (parts.next()?, parts.next()?, parts.next()?);
+        if parts.next().is_some() {
+            return None;
+        }
+        tokens.splice(0..0, [d, m, y]);
+    }
+    let [day, month, year, time, zone] = tokens[..] else {
+        return None;
+    };
+    if !zone.eq_ignore_ascii_case("GMT") {
+        return None;
+    }
+    let months = [
+        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+    ];
+    let month =
+        i64::try_from(months.iter().position(|m| m.eq_ignore_ascii_case(month))? + 1).ok()?;
+    let day: i64 = day.parse().ok()?;
+    let mut year: i64 = year.parse().ok()?;
+    if year < 100 {
+        year += if year > 68 { 1900 } else { 2000 };
+    }
+    let mut hms = time.split(':');
+    let h: i64 = hms.next()?.parse().ok()?;
+    let m: i64 = hms.next()?.parse().ok()?;
+    let s: i64 = hms.next()?.parse().ok()?;
+    if hms.next().is_some() || !(1..=31).contains(&day) || h > 23 || m > 59 || s > 59 {
+        return None;
+    }
+    Some(days_from_civil(year, month, day) * 86_400 + h * 3600 + m * 60 + s)
+}
+
+/// Days since 1970-01-01 (Howard Hinnant's `days_from_civil`).
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// What one `Set-Cookie` line asks for.
+enum Change {
+    Set(Cookie),
+    /// An expiry in the past: delete `(domain, path, name)`.
+    Delete(String, String, String),
+}
+
+/// `_cookie_from_cookie_tuple` + `DefaultCookiePolicy.set_ok`. `None` when the line is bad or the
+/// policy refuses the cookie.
+fn change_from_header(line: &str, target: &Target, now: i64) -> Option<Change> {
+    let parsed = parse_set_cookie(line)?;
+    let domain = match &parsed.domain {
+        None => target.effective.clone(),
+        Some(d) if d.starts_with('.') => d.clone(),
+        Some(d) => format!(".{d}"),
+    };
+    let path = match parsed.path.as_deref() {
+        Some(p) if !p.is_empty() => escape_path(p),
+        _ => {
+            let mut path = target.path.clone();
+            if let Some(i) = path.rfind('/') {
+                path.truncate(i);
+            }
+            if path.is_empty() {
+                path = "/".to_owned();
+            }
+            path
+        }
+    };
+    let expires = match (parsed.max_age, parsed.expires) {
+        (Some(age), _) => Some(now.saturating_add(age)),
+        (None, Some(at)) => Some(at),
+        (None, None) => None,
+    };
+    if expires.is_some_and(|e| e <= now) {
+        return Some(Change::Delete(domain, path, parsed.name));
+    }
+    if parsed.domain.is_some() && !set_ok_domain(&domain, target) {
+        return None;
+    }
+    Some(Change::Set(Cookie {
+        name: parsed.name,
+        value: parsed.value,
+        domain,
+        path,
+        secure: parsed.secure,
+        expires,
+    }))
+}
+
+/// `DefaultCookiePolicy.set_ok_domain` for a version 0 cookie that named a `Domain`: it needs an
+/// embedded dot (or be `.local`) and must domain-match the request host.
+fn set_ok_domain(domain: &str, target: &Target) -> bool {
+    let undotted = domain.strip_prefix('.').unwrap_or(domain);
+    if !undotted.contains('.') && domain != ".local" {
+        return false;
+    }
+    format!(".{}", target.effective).ends_with(domain)
+}
+
+/// What a session sends: a method, a URL, and for a POST the upload.
+pub(crate) struct SessionRequest<'a> {
+    pub(crate) method: Method,
+    pub(crate) url: &'a str,
+    pub(crate) upload: Option<&'a Upload>,
+}
+
+/// `requests.Session()` with `headers.update(...)`.
+pub(crate) struct Session {
+    net: NetClient,
+    headers: Vec<(&'static str, String)>,
+    jar: CookieJar,
+}
+
+impl Session {
+    pub(crate) fn new(net: NetClient, headers: Vec<(&'static str, String)>) -> Self {
+        Session {
+            net,
+            headers,
+            jar: CookieJar::default(),
+        }
+    }
+
+    /// `session.post/get(url, timeout=timeout, allow_redirects=True)` under a hard deadline of
+    /// `timeout` seconds from `started` over the whole chain of hops, as `run_with_hard_timeout`
+    /// puts one around the call.
+    pub(crate) async fn send(
+        &mut self,
+        request: SessionRequest<'_>,
+        timeout: f64,
+        started: Instant,
+    ) -> Result<NetResponse, Failure> {
+        let total = seconds(timeout);
+        let mut method = request.method;
+        let mut url = request.url.to_owned();
+        let mut body: Option<(&str, Bytes)> = request
+            .upload
+            .map(|u| (u.content_type.as_str(), u.body.clone()));
+        let mut redirects = 0usize;
+        loop {
+            let left = total.saturating_sub(started.elapsed());
+            if left.is_zero() {
+                return Err(Failure::Deadline(HardTimeoutError::trickling(total)));
+            }
+            let parsed =
+                Url::parse(&url).map_err(|e| Failure::Transport(format!("bad URL: {e}")))?;
+            let mut net_request = NetRequest::new(method, &url, seconds(timeout))
+                .map_err(|e| failure_of(&e, total))?
+                .with_redirects(Redirects::Stop)
+                .with_retry(RetryMode::Never)
+                .with_deadline(left);
+            for (name, value) in &self.headers {
+                net_request = net_request
+                    .header(name, value)
+                    .map_err(|e| failure_of(&e, total))?;
+            }
+            if let Some(cookie) = self.jar.header_for(&parsed) {
+                net_request = net_request
+                    .header("Cookie", &cookie)
+                    .map_err(|e| failure_of(&e, total))?;
+            }
+            if let Some((content_type, bytes)) = &body {
+                net_request = net_request
+                    .header("Content-Type", content_type)
+                    .map_err(|e| failure_of(&e, total))?
+                    .with_body(bytes.clone());
+            }
+            let response = match self.net.send(net_request).await {
+                Ok(response) => response,
+                Err(err) => return Err(failure_of(&err, total)),
+            };
+            self.jar.extract(&response.url, &response.headers);
+
+            let status = response.status.as_u16();
+            let location = response
+                .header("location")
+                .filter(|_| matches!(status, 301 | 302 | 303 | 307 | 308));
+            let Some(location) = location else {
+                return Ok(response);
+            };
+            redirects += 1;
+            if redirects > MAX_REDIRECTS {
+                return Err(Failure::Transport(format!(
+                    "Exceeded {MAX_REDIRECTS} redirects."
+                )));
+            }
+            url = pyurl::urljoin(&url, location);
+            // `Session.rebuild_method`: 303 and 302 turn anything but a HEAD into a GET, and a
+            // 301 turns a POST into one; a GET has no body and no content type.
+            let to_get = match status {
+                303 => method != Method::Head,
+                302 => method != Method::Head,
+                301 => method == Method::Post,
+                _ => false,
+            };
+            if to_get {
+                method = Method::Get;
+                body = None;
+            }
+        }
+    }
+}
