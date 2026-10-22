@@ -3,6 +3,7 @@
 
 #![allow(dead_code)]
 
+pub mod art;
 mod net_server;
 #[allow(unused_imports)]
 pub use net_server::*;

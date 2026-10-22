@@ -397,7 +397,13 @@ pub fn aligned_similarity(
     prints: Option<&LocalPrints>,
     thumbnail: Source<'_>,
 ) -> (Option<f64>, bool) {
-    let comparison = compare_to_local(prints, thumbnail);
+    aligned_score(&compare_to_local(prints, thumbnail))
+}
+
+/// The second half of [`aligned_similarity`]: a [`Comparison`] on the usual scale, a mirrored copy
+/// and a 90+ the fine hash does not confirm held below auto-import. Python's tests reach it by
+/// patching `compare_to_local`; here it is a function of its own.
+pub fn aligned_score(comparison: &Comparison) -> (Option<f64>, bool) {
     let Some(mut score) = perceptual_similarity(comparison.distance.map(i64::from)) else {
         return (None, false);
     };
