@@ -329,6 +329,7 @@ mod tests {
     fn claims_pixiv_only() {
         assert!(matches("https://www.pixiv.net/artworks/1"));
         assert!(!matches("https://i.pximg.net/x"));
+        assert!(!matches("https://e621.net/posts/219935"));
         assert!(!matches("https://example.com/pixiv.net/artworks/1"));
     }
 

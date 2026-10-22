@@ -303,6 +303,7 @@ mod tests {
             "https://t.co/abc",
             "https://anilist.co/anime/21",
             "https://hentaivox.com/x.com",
+            "https://reddit.com/comments/abc123",
         ] {
             assert!(!matches(url), "{url}");
         }
