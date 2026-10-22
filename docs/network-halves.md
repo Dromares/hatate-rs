@@ -84,7 +84,8 @@ Each is counted over the runs above, and listed on DAN-2058 for Cloud.
   and context through `network_context` and the registered hook, and checks the request on the wire
   and the value.
 
-The Phase 2 corpus runner (`corpus_diff.rs`) is unchanged and keeps skipping those callables.
+The Phase 2 corpus runner (`corpus_diff.rs`) is unchanged. It has no skip list: those callables are
+simply absent from the items' `callables`, so it never runs them.
 
 ## 4. Where the tests are
 

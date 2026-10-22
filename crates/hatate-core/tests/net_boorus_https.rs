@@ -563,6 +563,40 @@ async fn a_401_latches_gelbooru_and_safebooru_shares_it_but_rule34_and_xbooru_do
     assert_eq!(session.dapi.memo(Family::Xbooru).map(|m| m.1), Some(true));
 }
 
+/// Python latches on `401` and `403` alike (`gelbooru._get_api_post`); the test above only sends 401.
+#[tokio::test]
+async fn a_403_latches_gelbooru_too_and_safebooru_shares_it() {
+    let w = world(&["gelbooru.com", "safebooru.org"], |req: &Recorded| {
+        if req.target.contains("page=dapi") {
+            return Reply::new(403, "{}");
+        }
+        Reply::ok(LISTING_PAGE).header("Content-Type", "text/html; charset=utf-8")
+    })
+    .await;
+    let session = BooruSession::new();
+    let get = |url: &'static str| {
+        fetch::fetch_page_info(&w.client, &session, url, FetchOptions::default())
+    };
+    assert!(!session.dapi.gelbooru_latched());
+    get("https://gelbooru.com/index.php?page=post&s=view&id=1")
+        .await
+        .unwrap();
+    assert!(session.dapi.gelbooru_latched());
+    let api_calls = |seen: &[String]| seen.iter().filter(|s| s.contains("dapi")).count();
+    assert_eq!(api_calls(&w.seen()), 1);
+    let before = w.seen().len();
+    // Another Gelbooru post and a Safebooru one (it shares Gelbooru's latch): page only.
+    get("https://gelbooru.com/index.php?page=post&s=view&id=2")
+        .await
+        .unwrap();
+    get("https://safebooru.org/index.php?page=post&s=view&id=3")
+        .await
+        .unwrap();
+    let seen = w.seen();
+    assert_eq!(seen.len(), before + 2, "{seen:?}");
+    assert_eq!(api_calls(&seen), 1, "no second Data-API call: {seen:?}");
+}
+
 // -- Pawchive -------------------------------------------------------------------------------------
 
 fn pawchive_post(has_full: bool) -> String {
