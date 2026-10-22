@@ -18,6 +18,7 @@ use regex::{NoExpand, Regex};
 use serde_json::{Map, Value, json};
 
 use super::host::on_host;
+use super::json_fields::int_of;
 use super::parsed::json_of;
 use super::sizes::py_int;
 use super::{Context, Page, SiteParser};
@@ -258,11 +259,7 @@ fn sized(raw: Option<&Value>, size: &str) -> Option<String> {
 /// for a value it rejects.
 fn as_int(value: Option<&Value>) -> Option<i64> {
     let value = value.filter(|v| pycompat::truthy(v))?;
-    match value {
-        Value::String(text) => py_int(text),
-        other => pycompat::int(other),
-    }
-    .filter(|n| *n != 0)
+    int_of(value).filter(|n| *n != 0)
 }
 
 #[cfg(test)]

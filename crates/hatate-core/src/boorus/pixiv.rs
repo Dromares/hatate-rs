@@ -26,6 +26,7 @@ use serde_json::{Map, Value};
 use tracing::{debug, warn};
 
 use super::host::on_host;
+use super::json_fields::int_of;
 use super::parsed::{json_of, soup_of};
 use super::{Context, Page, SiteParser};
 use crate::model::{Tag, TagSource};
@@ -256,7 +257,7 @@ pub fn parse_page_count(body: &str, url: &str) -> i64 {
     illust
         .get("pageCount")
         .filter(|v| pycompat::truthy(v))
-        .and_then(pycompat::int)
+        .and_then(int_of)
         .map_or(1, |count| count.max(1))
 }
 

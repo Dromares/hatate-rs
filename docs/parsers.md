@@ -81,6 +81,29 @@ has needed yet:
 - **Where Python raises** on a shape the site never sends (e621's `post` that is a string, a
   `file` that is a list) the Rust hook returns what `fetch_page_info` would make of it: nothing.
 
+- **Raw JSON values.** Pixiv's `parse_file_url`, `parse_preview_url` and `parse_dimensions` return
+  whatever JSON held at `urls.original`, `urls.regular`, `width` and `height` in Python. Here a
+  URL is a string and a dimension is a whole number (`100.0` counts); any other type reads as
+  absent, and a non-string `regular` falls through to `small`. Pixiv sends neither. Twitter's
+  `_as_int` is `int(v)`, so it is ported as that (`json_fields::int_of`, which also reads
+  `"1_0"` and non-ASCII digits in a string).
+- **Where Python raises on a shape the site never sends** (a Pixiv `tags` that is a list, a tag
+  that is not an object, a `userName` that is a number, a Twitter `author` that is a list) the
+  hook gives what `fetch_page_info` makes of a raised hook: no tags, no URL, `(None, None)`, one
+  page.
+- **`re.IGNORECASE`.** Python's `[a-z]` under IGNORECASE also matches U+0130 and U+0131; `(?i)`
+  in the `regex` crate does not. Reddit's URL patterns are the ones affected. No corpus item
+  reaches it. `$` is written `\n?\z`, because Python's `$` also matches before a final newline.
+- **A hook that needs a socket takes the read as an argument.** `redditpost::parse_dimensions`
+  calls Python's `_remote_size.image_size` for a file on `i.redd.it`; here the caller passes that
+  read (`remote_size(file_url, user_agent)`) and the hook is not in the module's `PARSER` until
+  the Phase 3 client exists. The corpus runner passes a read that fails the item if it is called.
+- **Engine code that is half parse, half request** (`core/reddit.py`) is split the same way:
+  `reddit::feed_entries(status, text)` is what `_feed_entries` does once the response is in hand,
+  `reddit::resolve_listing` takes the feed lookup as an argument, and the GET, the session
+  cache and the loop over the feeds are Phase 3. The runner's `Call::response_status` and
+  `Call::call` carry the `mocked_transport` items' recorded response.
+
 A new difference found by a later port is written down here, with the corpus item that exposed
 it, and then matched. No item is allowed to fail instead.
 
