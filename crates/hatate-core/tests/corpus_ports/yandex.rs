@@ -55,7 +55,12 @@ const CLOCK: yandex::RestClock<'static> = yandex::RestClock {
 };
 
 /// What a replay of the item leaves behind: the result and the state after it.
-fn search(c: &Call) -> (Result<Vec<yandex::YandexMatch>, yandex::YandexError>, yandex::YandexState) {
+fn search(
+    c: &Call,
+) -> (
+    Result<Vec<yandex::YandexMatch>, yandex::YandexError>,
+    yandex::YandexState,
+) {
     let responses = c.call["responses"].as_array().expect("responses");
     let mut state = yandex::YandexState::default();
     let at = |i: usize| &responses[i];
@@ -72,15 +77,16 @@ fn search(c: &Call) -> (Result<Vec<yandex::YandexMatch>, yandex::YandexError>, y
     };
     // `json_unset`: the mock gave `.json()` nothing usable, so the replay must make it fail.
     let upload_json = at(0).get("json");
-    let result = yandex::upload_from_response(&mut state, CLOCK, &upload, upload_json).and_then(|_| {
-        let last = responses.last().expect("responses");
-        let page = Response {
-            status: c.response_status(),
-            url: last["url"].as_str().unwrap_or(""),
-            text: c.body(),
-        };
-        yandex::results_from_response(&mut state, CLOCK, &page)
-    });
+    let result =
+        yandex::upload_from_response(&mut state, CLOCK, &upload, upload_json).and_then(|_| {
+            let last = responses.last().expect("responses");
+            let page = Response {
+                status: c.response_status(),
+                url: last["url"].as_str().unwrap_or(""),
+                text: c.body(),
+            };
+            yandex::results_from_response(&mut state, CLOCK, &page)
+        });
     (result, state)
 }
 
@@ -121,9 +127,20 @@ mod tests {
             }
 
             let requests = c.call["request"].as_array().expect("request");
-            assert_eq!(requests.len(), c.call["responses"].as_array().unwrap().len(), "{id}");
-            assert!(requests.iter().all(|r| r["url"] == yandex::SEARCH_URL), "{id}");
-            assert_eq!(requests[0]["params"]["request"], yandex::UPLOAD_REQUEST, "{id}");
+            assert_eq!(
+                requests.len(),
+                c.call["responses"].as_array().unwrap().len(),
+                "{id}"
+            );
+            assert!(
+                requests.iter().all(|r| r["url"] == yandex::SEARCH_URL),
+                "{id}"
+            );
+            assert_eq!(
+                requests[0]["params"]["request"],
+                yandex::UPLOAD_REQUEST,
+                "{id}"
+            );
             if let Some(sites) = requests.get(1) {
                 let cbir_id = c.call["responses"][0]["json"]["blocks"][0]["params"]["cbirId"]
                     .as_str()
