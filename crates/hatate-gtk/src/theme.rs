@@ -204,6 +204,9 @@ impl Palette {
 pub const RULES: &str = "
 window, window.background { background: @page; color: @ink; border-radius: 0; box-shadow: none; }
 window.csd { border-radius: 0; box-shadow: none; }
+/* no animation: libadwaita fades outlines and backgrounds over 200 ms, which blurs a state change
+   (a focus ring caught mid-fade is half strength) and a screenshot taken a few frames later */
+* { transition: none; animation: none; }
 * { font-family: 'Space Grotesk', 'Inter', 'Helvetica Neue', Arial, sans-serif; }
 .mono, .eyebrow, .tab, .mode, .status-word, columnview > header button, .stat, .hint, .filter-label {
   font-family: 'JetBrains Mono', 'IBM Plex Mono', 'DejaVu Sans Mono', monospace;
@@ -222,17 +225,21 @@ window.csd { border-radius: 0; box-shadow: none; }
 
 /* the one focus ring: 2px ink, inset on rows (a row's neighbours would paint over an outer
    ring), outset elsewhere. On the stamp-filled selected row the ring is the stamp's text colour. */
-*:focus-visible { outline: 2px solid @ink; outline-offset: 2px; }
-columnview.queue > listview > row:focus-visible,
-columnview.queue > listview > row:focus-within:focus-visible { outline-offset: -2px; }
-columnview.queue > listview > row:selected:focus-visible { outline-color: @stamp_fg; }
-.canvas:focus-visible { outline-offset: -2px; }
-popover modelbutton:focus-visible, popover row:focus-visible, menubar > item:focus-visible,
-popover listview > row:focus-visible, popover button:focus-visible,
-dialog button:focus-visible { outline-offset: -2px; }
+*:focus:focus-visible { outline: 2px solid @ink; outline-offset: 2px; }
+columnview.queue > listview > row:focus:focus-visible,
+columnview.queue > listview > row:focus-within:focus:focus-visible { outline-offset: -2px; }
+columnview.queue > listview > row:selected:focus:focus-visible { outline-color: @stamp_fg; }
+/* buttons sit in linked groups next to a stamp-filled neighbour, so their ring goes inside the
+   border, and on a stamp-filled (checked) button it takes the stamp's text colour */
+button.tab:focus:focus-visible, button.mode:focus:focus-visible { outline-offset: -4px; }
+button.tab:checked:focus:focus-visible, button.mode:checked:focus:focus-visible { outline-color: @stamp_fg; }
+.canvas:focus:focus-visible { outline-offset: -2px; }
+popover modelbutton:focus:focus-visible, popover row:focus:focus-visible, menubar > item:focus:focus-visible,
+popover listview > row:focus:focus-visible, popover button:focus:focus-visible,
+dialog button:focus:focus-visible { outline-offset: -2px; }
 /* containers that merely hold focus (a popover, the dialog and its sheet) draw no ring of their own */
-window:focus-visible, popover:focus-visible, popover > contents:focus-visible, dialog:focus-visible, floating-sheet:focus-visible, sheet:focus-visible,
-dialog widget:focus-visible { outline: none; }
+window:focus:focus-visible, popover:focus:focus-visible, popover > contents:focus:focus-visible, dialog:focus:focus-visible, floating-sheet:focus:focus-visible, sheet:focus:focus-visible,
+dialog widget:focus:focus-visible { outline: none; }
 
 /* tabs and mode toggles: hairline frame, the active one is the stamp (fg/bg swap) */
 button.tab, button.mode { background: transparent; color: @ink_65; border: 1px solid @ink_28;
@@ -276,6 +283,10 @@ scrollbar, scrollbar trough { background: transparent; }
 
 /* review */
 .canvas { background: @sunken; border: 1px solid @ink_18; border-radius: 0; }
+/* the thumb (17 px) sits inside the widget box, so the focus ring outside the box clears it */
+scale.horizontal { min-height: 21px; }
+/* libadwaita outlines the thumb itself in its accent colour while the scale has focus */
+scale:focus slider, scale:focus-within slider, scale slider:focus { outline: none; box-shadow: none; border: none; }
 scale trough { background: @ink_18; min-height: 3px; border-radius: 0; }
 scale highlight { background: @ink_28; border-radius: 0; }
 scale slider { background: @ink; margin: -7px 0; min-width: 4px; min-height: 17px; border-radius: 0; border: none; box-shadow: none; }

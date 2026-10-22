@@ -118,7 +118,13 @@ pub fn build_store(n: u32) -> gio::ListStore {
     let rows: Vec<RowObject> = (0..n)
         .map(|i| {
             seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-            let status = Status::from_u32((seed >> 24) % 6);
+            // The first six rows are one of each status, so the first screen of any shot shows
+            // every glyph; the rest are pseudo-random.
+            let status = if i < 6 {
+                Status::ALL[i as usize]
+            } else {
+                Status::from_u32((seed >> 24) % 6)
+            };
             let matches = match status {
                 Status::Good | Status::Review | Status::Flagged => 1 + (seed >> 16) % 14,
                 _ => 0,
@@ -143,6 +149,7 @@ fn plain_column(
     let factory = gtk4::SignalListItemFactory::new();
     factory.connect_setup(|_, item| {
         let item = item.downcast_ref::<gtk4::ListItem>().expect("ListItem");
+        item.set_focusable(false);
         let label = gtk4::Label::new(None);
         label.set_xalign(0.0);
         label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
@@ -172,6 +179,7 @@ fn status_column(sorter: gtk4::Sorter) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
     factory.connect_setup(|_, item| {
         let item = item.downcast_ref::<gtk4::ListItem>().expect("ListItem");
+        item.set_focusable(false);
         let cell = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
         let glyph = gtk4::Label::new(None);
         glyph.add_css_class("status-glyph");
@@ -219,6 +227,7 @@ fn thumb_column(thumbs: Option<ThumbCache>) -> gtk4::ColumnViewColumn {
     let factory = gtk4::SignalListItemFactory::new();
     factory.connect_setup(|_, item| {
         let item = item.downcast_ref::<gtk4::ListItem>().expect("ListItem");
+        item.set_focusable(false);
         let pic = gtk4::Picture::new();
         pic.add_css_class("thumb");
         pic.set_size_request(32, 32);
@@ -315,6 +324,8 @@ impl Queue {
 
         let scroller = gtk4::ScrolledWindow::new();
         scroller.set_child(Some(&view));
+        // The list is the focus target, not the frame around it.
+        scroller.set_focusable(false);
         scroller.set_vexpand(true);
         scroller.add_css_class("queue-frame");
 

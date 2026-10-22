@@ -19,6 +19,17 @@ use std::time::Instant;
 
 pub const APP_ID: &str = "org.hatate.GtkSpike";
 
+/// Set by any audit line that says FAIL; the process then exits 1, so CI can gate on it.
+static AUDIT_FAILED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// `PASS` or `FAIL`, remembering a failure for the exit code.
+fn verdict(ok: bool) -> &'static str {
+    if !ok {
+        AUDIT_FAILED.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    if ok { "PASS" } else { "FAIL" }
+}
+
 /// Everything the driver needs to reach after the window is built.
 #[derive(Clone)]
 struct Ui {
@@ -58,7 +69,11 @@ pub fn run(opts: Options, start: Instant) -> glib::ExitCode {
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.connect_activate(move |app| build(app, &opts, start));
-    app.run_with_args::<&str>(&[])
+    let code = app.run_with_args::<&str>(&[]);
+    if AUDIT_FAILED.load(std::sync::atomic::Ordering::Relaxed) {
+        return glib::ExitCode::from(1);
+    }
+    code
 }
 
 /// The menubar model: File and View. View carries the sort actions and their shortcuts.
@@ -715,6 +730,9 @@ async fn audit_focus(ui: &Ui, scheme: Scheme, page: &str) {
         scheme.name(),
         targets.len()
     );
+    if page == "queue" {
+        audit_rows(ui).await;
+    }
     for t in targets {
         GtkWindowExt::set_focus(win, None::<&gtk4::Widget>);
         win.set_focus_visible(true);
@@ -723,7 +741,7 @@ async fn audit_focus(ui: &Ui, scheme: Scheme, page: &str) {
             continue;
         };
         t.grab_focus();
-        frames(&wid, 3).await;
+        frames(&wid, 14).await;
         let focused = GtkWindowExt::focus(win);
         let took = focused
             .as_ref()
@@ -736,22 +754,78 @@ async fn audit_focus(ui: &Ui, scheme: Scheme, page: &str) {
         };
         let name = audit_name(&t);
         match audit::ring_stats(&before, &after, area) {
-            None => println!("AUDIT focus {name}: NO_RING (focus_taken={took})"),
+            None if took => {
+                println!(
+                    "AUDIT focus {name}: NO_RING focus_taken=true {}",
+                    verdict(false)
+                );
+            }
+            None => println!("AUDIT focus {name}: SKIP (the widget did not take focus)"),
             Some(r) => println!(
-                "AUDIT focus {name}: ring={} ring_px={} changed_px={} min_contrast_vs_beneath={:.2} beneath={} focus_taken={took} {}",
+                "AUDIT focus {name}: ring={} ring_px={} changed_px={} min_contrast_vs_beneath={:.2} beneath={} at={:?} widget={:?} focus_taken={took} {}",
                 r.ring.hex(),
                 r.ring_px,
                 r.changed,
                 r.min_contrast,
                 r.worst_beneath.hex(),
-                if r.min_contrast >= 3.0 {
-                    "PASS>=3:1"
-                } else {
-                    "FAIL<3:1"
-                }
+                r.worst_at,
+                area,
+                verdict(r.min_contrast >= 3.0)
             ),
         }
     }
+}
+
+/// The focus ring on a list row, the way arrow-key navigation puts it there, on an unselected
+/// and on a selected (stamp-filled) row.
+async fn audit_rows(ui: &Ui) {
+    let win = &ui.win;
+    let wid = win.clone().upcast::<gtk4::Widget>();
+    for (name, selected) in [("unselected", false), ("selected", true)] {
+        ui.queue.selection.unselect_all();
+        if selected {
+            ui.queue.select_range(1, 1);
+        }
+        GtkWindowExt::set_focus(win, None::<&gtk4::Widget>);
+        win.set_focus_visible(true);
+        frames(&wid, 4).await;
+        let Ok(before) = render(win).map(|t| pixels(&t)) else {
+            continue;
+        };
+        ui.queue.view.grab_focus();
+        ui.queue
+            .view
+            .scroll_to(1, None, gtk4::ListScrollFlags::FOCUS, None);
+        frames(&wid, 4).await;
+        let Some(row) = GtkWindowExt::focus(win) else {
+            println!("AUDIT focus queue row ({name}): focus did not reach a row");
+            continue;
+        };
+        let Ok(after) = render(win).map(|t| pixels(&t)) else {
+            continue;
+        };
+        let Some(area) = rect_of(&row, win).map(|r| r.grow(4)) else {
+            continue;
+        };
+        match audit::ring_stats(&before, &after, area) {
+            None => println!(
+                "AUDIT focus queue row ({name}) {}: NO_RING {}",
+                audit_name(&row),
+                verdict(false)
+            ),
+            Some(r) => println!(
+                "AUDIT focus queue row ({name}) {}: ring={} ring_px={} changed_px={} min_contrast_vs_beneath={:.2} beneath={} {}",
+                audit_name(&row),
+                r.ring.hex(),
+                r.ring_px,
+                r.changed,
+                r.min_contrast,
+                r.worst_beneath.hex(),
+                verdict(r.min_contrast >= 3.0)
+            ),
+        }
+    }
+    ui.queue.selection.unselect_all();
 }
 
 /// Open a dropdown, a menubar menu or the dialog and return the popovers now showing, each
@@ -849,10 +923,15 @@ async fn finish(ui: Ui, opts: Options) {
         let target: Option<gtk4::Widget> = match f.as_str() {
             "queue" => {
                 ui.stack.set_visible_child_name("queue");
-                if opts.select_then_focus {
-                    ui.queue.select_range(0, 0);
-                }
-                Some(ui.queue.view.clone().upcast())
+                // Focus row 1 as arrow-key navigation would; optionally select it too.
+                let flags = if opts.select_then_focus {
+                    gtk4::ListScrollFlags::FOCUS | gtk4::ListScrollFlags::SELECT
+                } else {
+                    gtk4::ListScrollFlags::FOCUS
+                };
+                ui.queue.view.grab_focus();
+                ui.queue.view.scroll_to(1, None, flags, None);
+                None
             }
             "tab" => Some(ui.tabs[0].clone().upcast()),
             "canvas" => {
@@ -879,12 +958,12 @@ async fn finish(ui: Ui, opts: Options) {
         frames(&wid, 3).await;
         if let Some(t) = target {
             t.grab_focus();
-            frames(&wid, 4).await;
-            println!(
-                "FOCUS target={f} focus_taken={}",
-                GtkWindowExt::focus(&win).is_some_and(|w| w == t || w.is_ancestor(&t))
-            );
         }
+        frames(&wid, 4).await;
+        println!(
+            "FOCUS target={f} now_on={}",
+            GtkWindowExt::focus(&win).map_or("nothing".to_string(), |w| audit_name(&w))
+        );
     }
 
     // Focus sweep first: it moves focus around, so it runs before anything is opened.
@@ -948,13 +1027,12 @@ async fn finish(ui: Ui, opts: Options) {
                         f.square(),
                         f.partial_alpha_px,
                         f.shadowless(),
-                        if f.square() && f.shadowless() {
-                            "PASS"
-                        } else {
-                            "FAIL"
-                        }
+                        verdict(f.square() && f.shadowless())
                     ),
-                    None => println!("AUDIT popover {name}: nothing opaque rendered"),
+                    None => println!(
+                        "AUDIT popover {name}: nothing opaque rendered {}",
+                        verdict(false)
+                    ),
                 },
                 Err(e) => println!("AUDIT popover {name}: render failed: {e}"),
             }
@@ -985,11 +1063,7 @@ async fn finish(ui: Ui, opts: Options) {
                             r.y,
                             f.corners_square,
                             f.shadow_px,
-                            if f.square() && f.shadowless() {
-                                "PASS"
-                            } else {
-                                "FAIL"
-                            }
+                            verdict(f.square() && f.shadowless())
                         );
                     }
                 }

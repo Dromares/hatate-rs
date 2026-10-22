@@ -5,7 +5,6 @@
 //! rounded one with a soft shadow fails).
 
 use crate::theme::{Rgba, contrast};
-use std::collections::HashMap;
 
 /// Straight-alpha RGBA8 pixels.
 #[derive(Clone)]
@@ -75,39 +74,52 @@ pub struct RingStats {
     pub ring_px: usize,
     /// Lowest WCAG contrast between a ring pixel and the pixel that was there unfocused.
     pub min_contrast: f64,
-    /// The unfocused colour at that worst pixel.
+    /// The unfocused colour at that worst pixel, and where it is.
     pub worst_beneath: Rgba,
+    pub worst_at: (usize, usize),
 }
 
 /// Compare a render without focus to one with focus, inside `area`. `None` if nothing changed,
 /// which is the finding "this widget shows no focus ring".
+///
+/// The ring colour is the colour of the changed pixel that stands furthest from what was there
+/// unfocused; the ring pixels are the changed pixels within a few levels of that colour (so
+/// anti-aliased edge pixels, which are blends, do not count as ring and do not drag the minimum
+/// down). `min_contrast` is the lowest WCAG contrast between a ring pixel and the unfocused
+/// pixel under it.
 pub fn ring_stats(before: &Pixels, after: &Pixels, area: Rect) -> Option<RingStats> {
     let mut changed: Vec<(usize, usize)> = Vec::new();
-    let mut by_colour: HashMap<[u8; 3], usize> = HashMap::new();
+    let mut peak: Option<(f64, Rgba)> = None;
     for y in area.y.max(0)..(area.y + area.h).min(after.h as i64) {
         for x in area.x.max(0)..(area.x + area.w).min(after.w as i64) {
             let (x, y) = (x as usize, y as usize);
             let (a, b) = (before.get(x, y), after.get(x, y));
             if a[..3] != b[..3] {
                 changed.push((x, y));
-                *by_colour.entry([b[0], b[1], b[2]]).or_default() += 1;
+                let c = contrast(after.rgb(x, y), before.rgb(x, y));
+                if peak.is_none_or(|(best, _)| c > best) {
+                    peak = Some((c, after.rgb(x, y)));
+                }
             }
         }
     }
-    let (&ring_rgb, _) = by_colour.iter().max_by_key(|(c, n)| (**n, **c))?;
-    let ring = Rgba::rgb(ring_rgb[0], ring_rgb[1], ring_rgb[2]);
+    let (_, ring) = peak?;
+    let close = |p: Rgba| {
+        (p.0 - ring.0).abs() <= 6.0 && (p.1 - ring.1).abs() <= 6.0 && (p.2 - ring.2).abs() <= 6.0
+    };
     let mut min_contrast = f64::MAX;
     let mut worst = ring;
+    let mut worst_at = (0, 0);
     let mut ring_px = 0;
     for (x, y) in changed.iter().copied() {
-        let b = after.get(x, y);
-        if [b[0], b[1], b[2]] == ring_rgb {
+        if close(after.rgb(x, y)) {
             ring_px += 1;
             let under = before.rgb(x, y);
             let c = contrast(ring, under);
             if c < min_contrast {
                 min_contrast = c;
                 worst = under;
+                worst_at = (x, y);
             }
         }
     }
@@ -117,6 +129,7 @@ pub fn ring_stats(before: &Pixels, after: &Pixels, area: Rect) -> Option<RingSta
         ring_px,
         min_contrast,
         worst_beneath: worst,
+        worst_at,
     })
 }
 

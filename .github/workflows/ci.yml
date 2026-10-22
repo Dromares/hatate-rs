@@ -28,3 +28,19 @@ jobs:
           HATATE_GTK_SMOKE: "1"
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
+      - name: Toolkit versions the audits below run on
+        run: |
+          lsb_release -ds
+          pkg-config --modversion gtk4 libadwaita-1 pango fontconfig
+      # Flat popovers, dialog and focus ring, measured on the pixels this runner renders.
+      # The run exits 1 if any AUDIT line says FAIL (DAN-1983 spike; the branch never merges).
+      - name: Look audits (dark and light, every surface)
+        run: |
+          for scheme in dark light; do
+            for surface in dropdown menubar dialog; do
+              xvfb-run -a cargo run -q -p hatate-gtk -- --scheme "$scheme" --open "$surface" --audit --rows 200
+            done
+          done
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
