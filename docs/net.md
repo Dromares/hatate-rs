@@ -405,3 +405,103 @@ Image-format reading differs from Pillow's in one more way that the differential
 now matches: Pillow's mode for a file (a grey-ramp GIF or BMP is `L`, a bilevel PNG is `1` and
 becomes RGB, 16-bit grey is clipped at 255 on conversion), which decides whether the JPEG has one
 channel or three and so whether it fits under the cap.
+
+## 13. Engine clients, second part (Phase 3.c, DAN-2059)
+
+Python source of truth: `Dromares/Hatate-Linux-Redux` at `76c85c4`. Section 12 is the first part (IQDB,
+trace.moe, the Pawchive lookup); everything in it about the cut, the multipart body, `response_text` and
+the deadline applies here too.
+
+### 13.1 The cut
+
+| Python | Rust | Notes |
+|---|---|---|
+| `ascii2d.search`, `is_blocked`, `reset_blocked_flag` | `engines::ascii2d::Ascii2dClient` | the upload, the redirects it follows, the cookies it keeps, then the feature search at `bovw_url_on(base, color_url)`; the `_blocked` latch is the client's (clones share it) and is set by `Ascii2dError::Blocked` |
+| `saucenao.search` (`_search_json`, `_search_html`) | `engines::saucenao::SauceNaoClient::search` | API key and `db` in the query, the image as `file`; the JSON route waits out a spent burst window first and retries a 429 once after 30 s |
+| `_wait_for_short_window`, `_sleep_interruptibly`, `seconds_until_short_window_clears` | `SauceNaoClient` (private), `saucenao::seconds_until_short_window_clears` | waits go through `clock::Clock`; the quarter-second steps and the `should_stop` checks are Python's |
+| `_last_quota`, `_last_quota_at`, `_daily_limit_reported`, `get_last_quota`, `is_daily_quota_exhausted`, `reset_daily_limit_flag` | `SauceNaoClient::{get_last_quota, last_quota_at, daily_limit_reported, is_daily_quota_exhausted, reset_daily_limit_flag}` | state per client, shared by its clones, filled from `JsonAnswer` |
+| `describe_quota`, `describe_short_window` | `saucenao::{describe_quota, describe_short_window}` | |
+| `record_quota_pause` | `saucenao::record_quota_pause(&QuotaPauseFile, &dyn Clock, searched, remaining)` | writes the 1.d file; a failed write is logged and goes no further |
+| `rate_limit.remaining_delay`, `engine_interval`, `EngineRateLimiter` | `net::pacing` (1.c, unchanged) and `net::pacing::engine_interval_for(&Settings, engine)` | `rate_limit.py` has no wait of its own: it returns how long to wait. The sleeps this ticket compares are SauceNAO's |
+| the `requests.Session` ascii2d builds | `engines::session` | see 13.2 |
+| `time.time`, `time.monotonic`, `time.sleep` | `clock::{Clock, SystemClock, ManualClock}` | `ManualClock` answers at once, advances both clocks by what it is asked to sleep, and keeps the amounts |
+
+Three details that are not in the Python function's signature but are in what it does:
+
+- **ascii2d is outside `core/net.py`.** It builds `requests.Session()` itself, so there is no host gate,
+  no 429 retry, and cookies are live (every `core.net` session refuses them). The client sends each hop
+  with `Redirects::Stop`, `RetryMode::Never` and `NetRequest::without_host_gate()` (a new, opt-in
+  flag; every other request is gated as before).
+- **SauceNAO's query is `urlencode`'s.** `requests` writes `params=` with `quote_plus` (`~` left alone,
+  `*` written `%2A`); the `url` crate's form encoder does the reverse. `client::urlencode` writes Python's
+  form, so a key with either character reaches the server the same way. The key stays out of every log
+  line, error text and `Debug` dump (`net_redaction.rs`, and the network-error test here).
+- **The feature search is a second exchange with its own deadline.** Python wraps each of the two calls in
+  its own `run_with_hard_timeout(..., timeout)`; so does the client. A feature search that fails, for any
+  reason, keeps the colour results.
+
+### 13.2 The ascii2d cookie jar
+
+`engines::session::CookieJar` is `http.cookiejar` with `DefaultCookiePolicy` as `requests` uses it, for
+what a Rails site behind Cloudflare sends: `Set-Cookie` with `Path`, `Domain`, `Secure`, `Max-Age`,
+`Expires`, `Version` and the ones the policy ignores (`HttpOnly`, `SameSite`). What is matched, each by
+the differential:
+
+- the default path (`/search/file` sets `/search`; a `Version` keeps the slash), the segment-boundary
+  path match on the way back, `Secure` kept off plain http, the host-only / domain split, the embedded-dot
+  rule for a `Domain`, `Domain` lower-cased;
+- `Max-Age` beats `Expires`, a second `Max-Age` replaces the first and a second `Expires` is ignored,
+  a past date deletes and a bad one is a session cookie, `Expires` with no value is ignored;
+- a value attribute with no value, a `Max-Age` that is not a number or a `Version` that is not one drops
+  that cookie; a bare `Max-Age` drops **every** cookie of the answer (`http.cookiejar` hits a `TypeError`
+  it does not expect); `Version` above 1 is refused (RFC 2965 is off);
+- a deletion in an answer applies to what the jar held before it, never to a cookie the same answer sets;
+- the order of the `Cookie` header: the jar's own iteration order, then a stable sort by path length;
+- the per-request jar of a redirect chain: `requests` copies the previous request's jar, stores the
+  answer's cookies in it and merges the session's, and stores each hop's answer in the session's jar
+  **twice**. A cookie an answer both deletes and sets moves to the end of the session's list the second
+  time, and so is ordered differently in the next hop's header and in the feature search's.
+
+Not matched, and not generated by the differential (a real site does not send them): `Set-Cookie2`,
+`Port`, `Comment`, quoted values, a negative `Version`, date formats other than
+`Wdy, DD Mon YYYY HH:MM:SS GMT` and `Wdy, DD-Mon-YYYY HH:MM:SS GMT` (`http2time` reads about six), a
+cookie scoped to a host other than the one asked, and a redirect to another host (the differential never
+leaves the local server). A page that meets one reads its cookies as the nearest supported form, or not
+at all; this is the L1 row below.
+
+### 13.3 What is not matched, with counts
+
+The transport differential sends the same scripted answers through the Python at `76c85c4`
+(`requests.adapters.HTTPAdapter.send` scripted, so `requests`' own redirect, cookie and multipart code
+runs, and `core.net` runs for real; time is a fake clock whose sleeps are recorded) and through the Rust
+clients (a local https replay server, a `ManualClock`). It compares the return value or the error class
+and message; every request (method, path and query, `User-Agent`, `Referer`, the `Cookie` header as
+sent, content type, body length, and each multipart part's disposition, type, length and whether it is
+the file's bytes); every sleep (the quarter-second steps); how many times `should_stop` was asked; the
+module state after each search (the quota reading, the time it was stamped, the daily latch, the labels
+`describe_quota` and `describe_short_window` give); and the 1.d file `record_quota_pause` wrote. The
+harness is outside the repository (the tree is Rust only); its logs are
+`worktrees/DAN-2059-differential-s7.log` and `...-s4242.log`.
+
+Per seed: 3580 cases = 1400 `ascii2d.search` (redirect chains of 0 to 31 hops with cookies of every
+supported attribute, challenge and plain refusals, pages with and without a hash, a failed or redirected
+feature search, 5 charsets, `X-RateLimit-*` headers), 700 `saucenao.session` (1 to 4 searches on one
+client: JSON and HTML routes, 429 once and twice, a spent burst window, `should_stop` raised after 0, 1,
+5 or 200 questions, odd keys, quota fields as ints, numeric strings and junk, error messages with and
+without the daily-limit markers), 600 `engine_interval`, 400 `remaining_delay`, 300 `EngineRateLimiter`
+sequences, 120 `describe_*` / `seconds_until_short_window_clears`, 60 `record_quota_pause`. **0
+unexplained differences in both seeds.** The 1300 `rate_limit` cases and the 180 quota-helper cases have
+no difference at all. Every difference falls in one of these classes (a case can be in more than one):
+
+| Class | What differs | Why it stays | seed 7 | seed 4242 |
+|---|---|---|---|---|
+| **D1** transport failure text | `requests` raises a `RequestException`, an `OSError`, so ascii2d's and SauceNAO's `except OSError` takes it first and the message reads `Could not read image: <requests' text>`; the port says `ascii2d request failed: <net layer's text>` / `SauceNAO request failed: <text>`. For ascii2d's redirect limit the text after the prefix is equal (`Exceeded 30 redirects.`) | the prefix is Python's bug (it calls a refused connection an unreadable image), and the text after it is `requests`'. Same ruling as section 12.2 D1 | 192 | 181 |
+| **S1** an answer shape the API never sends | a `similarity` that is `null` or `""`, a `results` that is a number, a `header` that is a list or a string: Python raises `TypeError`, `ValueError` or `AttributeError` out of `search`; the port returns a `SauceNaoError` that names the field (`SauceNAO's similarity is not a number`). A `header` that is a non-empty string, list or number still stamps `_last_quota_at` before it fails, as Python does (`JsonAnswer::stamps_quota_time`) | the 2.g halves decided this and say so (`docs/parsers.md`, "shapes the API never sends"); in the engine runner either is "this engine failed" | 198 | 198 |
+| **C2** undeclared charset | an answer with no `Content-Type`, or none that names a charset, is decoded by `requests` with `charset_normalizer`; the port reads valid UTF-8 as UTF-8 and anything else as Windows-1252. The detector picks other encodings for valid UTF-8 too (a short page with `×` and CJK read as MacCyrillic), so the dimensions line differs; section 12.2 saw only non-UTF-8 bodies | ascii2d declares `text/html; charset=utf-8` and SauceNAO `text/html; charset=UTF-8` (the corpus has no headers to confirm it, and nothing may touch the network here: the 3.i smoke is where the real `Content-Type` of both can be read) | 14 | 18 |
+| total differing cases | | | 372 | 369 |
+
+| Not a difference found, but a limit | |
+|---|---|
+| **C1** declared non-UTF-8 charset | section 12.2 handed it to this ticket: "if a real fixture declares a non-UTF-8 charset, 3.c matches it and adds `encoding_rs`". No fixture of ascii2d or SauceNAO in `corpus/` declares a charset (`grep -ic charset` is 0 on every `input.*`), so C1 is unchanged and `encoding_rs` is not added |
+| **L1** cookie shapes beyond 13.2 | `Set-Cookie2`, `Port`, dates in the other `http2time` forms, a negative `Version`, quoted values, cross-host cookies and redirects; the real site does not send them |
+| **G1** `X-RateLimit-*` on SauceNAO | SauceNAO goes through the host gate as it does through `core/net.py`. The gate sleeps on tokio's clock, not the injected one, so the differential does not send those headers to SauceNAO; the gate itself is tested in `net/stack_tests.rs` |

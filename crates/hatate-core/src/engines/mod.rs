@@ -28,6 +28,12 @@
 //! text); `iqdb::IqdbClient`, `tracemoe::TraceMoeClient` and `pawchive_lookup::PawchiveLookupClient`
 //! each own a `NetClient` and the host they talk to, and put a deadline over the whole exchange.
 //! The pure halves still open no socket and read no file.
+//!
+//! **Phase 3.c (DAN-2059): the request halves of ascii2d and SauceNAO.** `ascii2d::Ascii2dClient`
+//! (its own session: [`session`] keeps its cookies and follows its redirects, and the `_blocked`
+//! latch is the client's) and `saucenao::SauceNaoClient` (the burst-window wait and the one retry
+//! after a 429 through an injected [`crate::clock::Clock`], the quota reading and the daily-limit
+//! latch kept per client). `docs/net.md` section 13 has what is and is not matched.
 
 pub mod ascii2d;
 pub mod client;
