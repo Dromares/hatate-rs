@@ -1,0 +1,14 @@
+{
+  "results": {
+    "core.google_images.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": true
+        }
+      },
+      "message": "Google Vision quota is exhausted, so it can't answer any more images this month: Quota exceeded. Turn Google Images off under Settings > Engine, or raise the quota in the Google Cloud console.",
+      "raises": "GoogleImagesBlockedError"
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "results": {
+    "core.google_images.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": false
+        }
+      },
+      "returns": [
+        {
+          "similarity": 78.0,
+          "source_name": "deviantart.com",
+          "thumb_url": "https://images.test/full.jpg",
+          "title": "A Picture & friends by someone",
+          "url": "https://www.deviantart.com/someone/art/A-Picture-123"
+        },
+        {
+          "similarity": 76.0,
+          "source_name": "rule34.us",
+          "thumb_url": "https://rule34storage.b-cdn.net/posts/1383/1383457/1383457.picsmall.jpg",
+          "title": null,
+          "url": "https://rule34.us/index.php?r=posts/view&id=1383457"
+        },
+        {
+          "similarity": 70.0,
+          "source_name": "example.test",
+          "thumb_url": "https://example.test/crop.jpg",
+          "title": "A crop of it",
+          "url": "https://example.test/partial-only"
+        },
+        {
+          "similarity": 68.0,
+          "source_name": "images.test",
+          "thumb_url": "https://images.test/partial-cdn.jpg",
+          "title": null,
+          "url": "https://images.test/partial-cdn.jpg"
+        },
+        {
+          "similarity": 60.0,
+          "source_name": "youtube.com",
+          "thumb_url": null,
+          "title": "Monkey Mischief",
+          "url": "https://www.youtube.com/shorts/qT_OeqrMtU8"
+        }
+      ]
+    }
+  }
+}

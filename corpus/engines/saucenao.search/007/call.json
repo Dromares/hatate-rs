@@ -1,0 +1,81 @@
+{
+  "args": {
+    "image_path": "<image>",
+    "settings": {
+      "__dataclass__": "SauceNaoSettings",
+      "api_key": "<api-key>",
+      "dbmask": 999,
+      "min_similarity": 60.0,
+      "namespace": "",
+      "pause_search_on_quota_exhausted": true,
+      "tag_types": [
+        "character",
+        "material"
+      ],
+      "use_json_api": true
+    }
+  },
+  "callables": [
+    "core.saucenao.search"
+  ],
+  "kind": "mocked_transport",
+  "request": [
+    {
+      "allow_redirects": null,
+      "data_fields": null,
+      "file_fields": [
+        "file"
+      ],
+      "has_headers": null,
+      "json_body": false,
+      "layer": "net",
+      "method": "POST",
+      "params": {
+        "api_key": "<api-key>",
+        "db": 999,
+        "output_type": 2
+      },
+      "timeout": 30.0,
+      "url": "https://saucenao.com/search.php"
+    },
+    {
+      "allow_redirects": null,
+      "data_fields": null,
+      "file_fields": [
+        "file"
+      ],
+      "has_headers": null,
+      "json_body": false,
+      "layer": "net",
+      "method": "POST",
+      "params": {
+        "api_key": "<api-key>",
+        "db": 999,
+        "output_type": 2
+      },
+      "timeout": 30.0,
+      "url": "https://saucenao.com/search.php"
+    }
+  ],
+  "responses": [
+    {
+      "json": {
+        "header": {
+          "long_limit": 5000,
+          "long_remaining": 100,
+          "short_limit": 17,
+          "short_remaining": 5,
+          "status": 0
+        },
+        "results": []
+      },
+      "status": 429
+    },
+    {
+      "body": "input",
+      "body_kind": "json",
+      "status": 429
+    }
+  ],
+  "state_before": "fresh module state (every module-level counter and latch at its import-time value)"
+}

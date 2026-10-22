@@ -1,0 +1,13 @@
+{
+  "results": {
+    "core.reddit._feed_entries": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "cached_keys": []
+        }
+      },
+      "returns": null
+    }
+  }
+}

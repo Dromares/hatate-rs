@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": 403,
+    "message": "Cloud Vision API has not been used in project 1",
+    "status": "PERMISSION_DENIED"
+  }
+}

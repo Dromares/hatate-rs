@@ -1,0 +1,14 @@
+{
+  "results": {
+    "core.google_images.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": false
+        }
+      },
+      "message": "Google returned HTTP 500",
+      "raises": "GoogleImagesError"
+    }
+  }
+}

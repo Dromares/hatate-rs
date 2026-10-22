@@ -1,0 +1,14 @@
+{
+  "results": {
+    "core.ascii2d.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "blocked": false
+        }
+      },
+      "message": "ascii2d returned HTTP 403",
+      "raises": "Ascii2dError"
+    }
+  }
+}

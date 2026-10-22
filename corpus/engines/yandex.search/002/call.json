@@ -1,0 +1,39 @@
+{
+  "args": {
+    "image_path": "<image>",
+    "timeout": 5
+  },
+  "callables": [
+    "core.yandex.search"
+  ],
+  "kind": "mocked_transport",
+  "request": [
+    {
+      "allow_redirects": null,
+      "data_fields": null,
+      "file_fields": [
+        "upfile"
+      ],
+      "has_headers": null,
+      "json_body": false,
+      "layer": "session",
+      "method": "POST",
+      "params": {
+        "format": "json",
+        "request": "{\"blocks\":[{\"block\":\"b-page_type_search-by-image__link\"}]}",
+        "rpt": "imageview"
+      },
+      "timeout": 5,
+      "url": "https://yandex.com/images/search"
+    }
+  ],
+  "responses": [
+    {
+      "body": "input",
+      "body_kind": "text",
+      "status": 200,
+      "url": "https://yandex.com/showcaptcha?cc=1&retpath=x"
+    }
+  ],
+  "state_before": "fresh module state (every module-level counter and latch at its import-time value)"
+}

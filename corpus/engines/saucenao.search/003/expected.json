@@ -1,0 +1,19 @@
+{
+  "results": {
+    "core.saucenao.search": {
+      "effects": {
+        "sleeps": [],
+        "state_after": {
+          "daily_limit_reported": false,
+          "last_quota": {
+            "long_limit": 100,
+            "long_remaining": 82,
+            "short_limit": 6,
+            "short_remaining": 5
+          }
+        }
+      },
+      "returns": []
+    }
+  }
+}
