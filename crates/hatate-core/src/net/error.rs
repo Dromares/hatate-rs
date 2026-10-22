@@ -127,13 +127,7 @@ fn chain(err: &(dyn StdError + 'static)) -> String {
 fn classify(err: &reqwest::Error) -> ErrorKind {
     let mut next: Option<&(dyn StdError + 'static)> = Some(err);
     while let Some(e) = next {
-        if e.downcast_ref::<rustls::Error>().is_some() {
-            return ErrorKind::Tls;
-        }
-        if let Some(io) = e.downcast_ref::<std::io::Error>()
-            && let Some(inner) = io.get_ref()
-            && inner.downcast_ref::<rustls::Error>().is_some()
-        {
+        if is_tls(e) {
             return ErrorKind::Tls;
         }
         next = e.source();
@@ -147,6 +141,25 @@ fn classify(err: &reqwest::Error) -> ErrorKind {
     } else {
         ErrorKind::Other
     }
+}
+
+/// A rustls error, or an `io::Error` wrapping one at any depth (tokio-rustls
+/// wraps the handshake error in an `io::Error`, and hyper-util wraps that again).
+fn is_tls(err: &(dyn StdError + 'static)) -> bool {
+    if err.downcast_ref::<rustls::Error>().is_some() {
+        return true;
+    }
+    let mut io = err.downcast_ref::<std::io::Error>();
+    while let Some(e) = io {
+        let Some(inner) = e.get_ref() else {
+            return false;
+        };
+        if inner.downcast_ref::<rustls::Error>().is_some() {
+            return true;
+        }
+        io = inner.downcast_ref::<std::io::Error>();
+    }
+    false
 }
 
 /// Removes the request's query string, and the full URL, from a message in case
