@@ -24,7 +24,8 @@ pub fn truthy(v: &Value) -> bool {
     }
 }
 
-/// `int(x)`: ints, floats (truncated), bools and numeric strings.
+/// `int(x)`: ints, floats (truncated), bools and strings `int()` reads (surrounding whitespace, a
+/// sign, decimal digits of any script, single underscores between digits).
 pub fn int(v: &Value) -> Option<i64> {
     match v {
         Value::Bool(b) => Some(i64::from(*b)),
@@ -32,7 +33,7 @@ pub fn int(v: &Value) -> Option<i64> {
             let f = n.as_f64()?;
             (f.is_finite() && f.abs() < 9.0e18).then_some(f.trunc() as i64)
         }),
-        Value::String(s) => s.trim().parse().ok(),
+        Value::String(s) => crate::boorus::sizes::py_int(s),
         _ => None,
     }
 }
