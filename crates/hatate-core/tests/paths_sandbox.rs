@@ -169,3 +169,48 @@ fn rust_settings_file_collides_with_nothing_in_section_1_2() {
         sb.paths.config_dir().join(rust)
     );
 }
+
+/// DAN-1982: the Rust log is `hatate-rs.log`; it must collide with no name in 1.2 (or a
+/// rotated copy of one) and with nothing the Rust app already writes (`hatate-rs.json`).
+#[test]
+fn rust_log_file_collides_with_nothing_in_sections_1_2_and_1_3() {
+    let doc = common::doc();
+    let start = doc.find("### 1.2 Files and sub-directories").unwrap();
+    let end = doc[start..].find("### 1.4").unwrap() + start; // 1.2 and 1.3 together
+    let section = &doc[start..end];
+    let names: Vec<&str> = section
+        .lines()
+        .filter(|l| l.starts_with("| `"))
+        .flat_map(|l| l.split('|').nth(1).unwrap().split(','))
+        .filter_map(|cell| cell.split('`').nth(1))
+        .collect();
+    assert!(
+        names.contains(&"app.log") && names.contains(&"matched_urls.log"),
+        "{names:?}"
+    );
+    let log = hatate_core::paths::RUST_LOG_FILE_NAME;
+    assert_eq!(log, "hatate-rs.log");
+    let mut mine = vec![log.to_owned()];
+    mine.extend((1..=3).map(|n| format!("{log}.{n}")));
+    for m in &mine {
+        for n in &names {
+            assert_ne!(m, n, "collides with {n}");
+            // Nor with a rotated copy of any listed file (`app.log.1`, ...).
+            for k in 1..=3 {
+                assert_ne!(*m, format!("{n}.{k}"), "collides with {n}.{k}");
+            }
+        }
+        // 1.3 lives under CACHE_DIR, a different directory, but check the prose too.
+        assert!(
+            !section.contains(m.as_str()),
+            "{m} is mentioned in the spec's file list"
+        );
+    }
+    assert_ne!(log, hatate_core::paths::RUST_SETTINGS_FILE_NAME);
+    let sb = Sandbox::new();
+    assert_eq!(
+        sb.paths.rust_log_file(),
+        sb.config_dir().join("hatate-rs.log")
+    );
+    assert_ne!(sb.paths.rust_log_file(), sb.paths.app_log());
+}

@@ -25,6 +25,11 @@ pub const APP_DIR_NAME: &str = "hatate-linux";
 /// Section 1.2 has no file of this name (a test checks the whole list).
 pub const RUST_SETTINGS_FILE_NAME: &str = "hatate-rs.json";
 
+/// Name of the Rust app's own log (DAN-1982, rule 6.4). It sits in `CONFIG_DIR` next to
+/// `app.log`, rotated the same way (`.1` `.2` `.3`), and the Rust app never writes
+/// `app.log` itself. Section 1.2 has no file of this name (a test checks the whole list).
+pub const RUST_LOG_FILE_NAME: &str = "hatate-rs.log";
+
 /// No home directory could be found, and a path under it was needed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoHomeDir;
@@ -119,6 +124,11 @@ impl Paths {
     /// `hatate-rs.json`: settings only the Rust app has (never in `config.json`).
     pub fn rust_settings_file(&self) -> PathBuf {
         self.in_config(RUST_SETTINGS_FILE_NAME)
+    }
+
+    /// `hatate-rs.log`: the Rust app's own log (never `app.log`).
+    pub fn rust_log_file(&self) -> PathBuf {
+        self.in_config(RUST_LOG_FILE_NAME)
     }
 
     /// `session.db`.
