@@ -208,7 +208,13 @@ pub fn parse_preview_url(body: &str, url: &str) -> Option<String> {
     let Some(post) = load_post(body, url) else {
         return parse_html_preview_url(body, url);
     };
-    url_field(&post, "large_file_url").or_else(|| url_field(&post, "preview_file_url"))
+    // Python's `large or preview`: when the first is empty the second is returned as it is, even
+    // if it is an empty string too.
+    url_field(&post, "large_file_url").or_else(|| {
+        post.get("preview_file_url")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    })
 }
 
 /// The original's real dimensions: what the size comparison should judge against, not the

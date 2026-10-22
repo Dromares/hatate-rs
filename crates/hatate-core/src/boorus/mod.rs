@@ -24,6 +24,8 @@ pub mod parsed;
 pub mod rating;
 pub mod sizes;
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
 use serde_json::{Map, Value};
 use tracing::{debug, info, warn};
 
@@ -304,15 +306,26 @@ pub fn gone_marker(body: &str, markers: &[&str]) -> Option<String> {
     })
 }
 
+/// Runs one hook, returning `default` (and logging) if it panics.
+fn guarded<T>(url: &str, hook: &str, default: T, run: impl FnOnce() -> T) -> T {
+    catch_unwind(AssertUnwindSafe(run)).unwrap_or_else(|_| {
+        warn!("{hook} panicked for {url} (continuing without it)");
+        default
+    })
+}
+
 /// The half of `fetch_page_info` that runs once the body is in hand and its status was 200:
 /// every hook asked of the one body, and `incomplete_reason` asked when the match came back
 /// missing its tags or its file. Sets `fetched`, `body` and `fetched_url`; the caller adds
 /// `gone_reason` (from [`gone_marker`] or a redirect).
 ///
-/// Python wraps each hook in `try/except` so one parser slip cannot take the others down. Ported
-/// hooks return values, so there is nothing to catch here. Parser-health counters
-/// (`record_empty`, `record_success`) are the caller's: the result says whether `tags` is empty
-/// and whether the parser calls that normal (`empty_result_is_normal`).
+/// Python wraps each hook in `try/except` so one parser slip cannot take the others down: a
+/// parser that raises in `parse` loses its tags and keeps its file URL, which is the right blast
+/// radius. A hook that panics is caught the same way here and counts as "has nothing to say". A
+/// panic is a bug in the port, not a way for a site to answer, so the message still goes to the
+/// log. Parser-health counters (`record_empty`, `record_success`) are the caller's: the result
+/// says whether `tags` is empty and whether the parser calls that normal
+/// (`empty_result_is_normal`).
 pub fn page_info_from_body(
     parser: &SiteParser,
     body: &str,
@@ -320,36 +333,54 @@ pub fn page_info_from_body(
     fetched_url: &str,
     ctx: &Context,
 ) -> BooruPageInfo {
-    let tags = (parser.parse)(body, url, ctx);
-    let file_url = parser.parse_file_url.and_then(|hook| hook(body, url, ctx));
-    let preview_url = parser
-        .parse_preview_url
-        .and_then(|hook| hook(body, url, ctx));
-    let restricted = parser
-        .parse_restriction
-        .and_then(|hook| hook(body, url, ctx));
-    let page_count = parser
-        .parse_page_count
-        .map_or(1, |hook| hook(body, url, ctx).max(1));
-    let (width, height) = parser
-        .parse_dimensions
-        .map_or((None, None), |hook| hook(body, url, ctx));
-    let rating = parser.parse_rating.and_then(|hook| hook(body, url, ctx));
-    let (file_format, file_size_bytes) = parser
-        .parse_file_info
-        .map_or((None, None), |hook| hook(body, url, ctx));
-    let canonical_url = parser
-        .parse_canonical_url
-        .and_then(|hook| hook(body, url, ctx));
+    let tags = guarded(url, "parse", Vec::new(), || (parser.parse)(body, url, ctx));
+    let file_url = guarded(url, "parse_file_url", None, || {
+        parser.parse_file_url.and_then(|hook| hook(body, url, ctx))
+    });
+    let preview_url = guarded(url, "parse_preview_url", None, || {
+        parser
+            .parse_preview_url
+            .and_then(|hook| hook(body, url, ctx))
+    });
+    let restricted = guarded(url, "parse_restriction", None, || {
+        parser
+            .parse_restriction
+            .and_then(|hook| hook(body, url, ctx))
+    });
+    let page_count = guarded(url, "parse_page_count", 1, || {
+        parser
+            .parse_page_count
+            .map_or(1, |hook| hook(body, url, ctx).max(1))
+    });
+    let (width, height) = guarded(url, "parse_dimensions", (None, None), || {
+        parser
+            .parse_dimensions
+            .map_or((None, None), |hook| hook(body, url, ctx))
+    });
+    let rating = guarded(url, "parse_rating", None, || {
+        parser.parse_rating.and_then(|hook| hook(body, url, ctx))
+    });
+    let (file_format, file_size_bytes) = guarded(url, "parse_file_info", (None, None), || {
+        parser
+            .parse_file_info
+            .map_or((None, None), |hook| hook(body, url, ctx))
+    });
+    let canonical_url = guarded(url, "parse_canonical_url", None, || {
+        parser
+            .parse_canonical_url
+            .and_then(|hook| hook(body, url, ctx))
+    });
 
     // Asked when the match came back missing something a complete one would have, its tags, its
     // file, or both, and only of a parser with something to say about why. The file matters as
     // much as the tags: e621 hands back a withheld post's tags in full and nulls only its file
     // url, so a tags-only condition would never fire for the case that needs explaining.
     let incomplete_reason = if tags.is_empty() || file_url.is_none() {
-        parser
-            .incomplete_reason
-            .and_then(|hook| hook(body, url, ctx))
+        guarded(url, "incomplete_reason", None, || {
+            parser
+                .incomplete_reason
+                .and_then(|hook| hook(body, url, ctx))
+        })
     } else {
         None
     };
@@ -410,6 +441,14 @@ mod tests {
         );
         assert!(find_parser("https://example.com/").is_none());
         assert!(find_parser("").is_none());
+        // The probe URL, and a URL with no scheme.
+        assert!(find_parser("https://danbooru.donmai.us/posts/1000000").is_some());
+        assert!(find_parser("danbooru.donmai.us/posts/1").is_some());
+        // A host inside another host's name, or in a path, is nobody's.
+        assert!(find_parser("https://hentaivox.com/view/186931/6").is_none());
+        assert!(find_parser("https://r34.app/posts/rule34.xxx/anna_(tekuho)").is_none());
+        assert!(find_parser("https://mangadex.org/chapter/abc/").is_none());
+        assert!(find_parser("https://e-hentai.org/g/1234567/abcdef0123/").is_none());
     }
 
     #[test]
@@ -426,6 +465,37 @@ mod tests {
                 parser.name
             );
         }
+    }
+
+    #[test]
+    fn the_hook_list_names_every_field_in_order() {
+        let all = SiteParser {
+            resolve_fetch_url: Some(|u| u.to_string()),
+            resolve_fetch_url_with_context: Some(|u, _| u.to_string()),
+            parse_file_url: Some(why),
+            parse_preview_url: Some(why),
+            parse_dimensions: Some(|_, _, _| (None, None)),
+            parse_rating: Some(why),
+            parse_file_info: Some(|_, _, _| (None, None)),
+            parse_page_count: Some(|_, _, _| 1),
+            parse_pages: Some(|_, _, _| Vec::new()),
+            pages_api_url: Some(|_| None),
+            parse_restriction: Some(why),
+            restriction_for_status: Some(|_, _, _, _| None),
+            parse_canonical_url: Some(why),
+            incomplete_reason: Some(why),
+            ..SiteParser::new("all", never_matches, no_tags)
+        };
+        let names: Vec<_> = OPTIONAL_PARSER_HOOKS
+            .iter()
+            .map(|(name, _)| *name)
+            .collect();
+        assert_eq!(all.defined_hooks(), names);
+        assert!(
+            SiteParser::new("none", never_matches, no_tags)
+                .defined_hooks()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -509,6 +579,58 @@ mod tests {
         assert!(info.fetched);
         // No parser matched: nothing was requested, which is not "fetched and found nothing".
         assert!(!BooruPageInfo::default().fetched);
+    }
+
+    #[test]
+    fn a_hook_that_panics_costs_its_own_answer_and_nothing_else() {
+        let ctx = Context::default();
+        fn boom(_: &str, _: &str, _: &Context) -> Vec<Tag> {
+            panic!("markup moved")
+        }
+        // `parse` blows up: no tags, and the file URL is still there.
+        let parser = SiteParser {
+            parse_file_url: Some(file),
+            incomplete_reason: Some(why),
+            ..SiteParser::new("t", never_matches, boom)
+        };
+        let info = page_info_from_body(&parser, "b", "u", "f", &ctx);
+        assert!(info.tags.is_empty());
+        assert_eq!(info.file_url.as_deref(), Some("https://f/x.png"));
+        assert_eq!(info.incomplete_reason.as_deref(), Some("withheld"));
+        // `parse_rating` blows up: no rating, and the tags are still there.
+        let parser = SiteParser {
+            parse_rating: Some(|_, _, _| panic!("markup moved")),
+            parse_dimensions: Some(|_, _, _| panic!("markup moved")),
+            parse_page_count: Some(|_, _, _| panic!("markup moved")),
+            parse_file_info: Some(|_, _, _| panic!("markup moved")),
+            ..SiteParser::new("t", never_matches, two_tags)
+        };
+        let info = page_info_from_body(&parser, "b", "u", "f", &ctx);
+        assert_eq!(info.rating, None);
+        assert_eq!((info.width, info.height), (None, None));
+        assert_eq!((info.file_format, info.file_size_bytes), (None, None));
+        assert_eq!(info.page_count, 1);
+        assert_eq!(info.tags.len(), 2);
+        // A hook that panics while asked "why is this incomplete?" does not cost the match.
+        let parser = SiteParser {
+            incomplete_reason: Some(|_, _, _| panic!("boom")),
+            ..SiteParser::new("t", never_matches, no_tags)
+        };
+        assert_eq!(
+            page_info_from_body(&parser, "b", "u", "f", &ctx).incomplete_reason,
+            None
+        );
+    }
+
+    #[test]
+    fn rating_is_kept_out_of_the_tag_list() {
+        let parser = SiteParser {
+            parse_rating: Some(|_, _, _| Some("explicit".to_string())),
+            ..SiteParser::new("t", never_matches, two_tags)
+        };
+        let info = page_info_from_body(&parser, "b", "u", "f", &Context::default());
+        assert_eq!(info.rating.as_deref(), Some("explicit"));
+        assert_eq!(info.tags, [tag("a"), tag("b")]);
     }
 
     #[test]

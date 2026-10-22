@@ -30,16 +30,19 @@ pub fn json_of(body: &str) -> Result<Value, serde_json::Error> {
 }
 
 /// bs4's `tag.get_text(strip=True)`: every string under the tag, each stripped, empty ones
-/// dropped, joined with nothing. Text that bs4 files under `<script>`, `<style>` or `<template>`
-/// is not page text and is left out, as is any comment.
+/// dropped, joined with nothing. A string that bs4 files under `<script>`, `<style>` or
+/// `<template>` is not page text and is left out, however deep inside it sits and wherever the
+/// tag being read is (bs4 decides when it parses, from the innermost such tag still open). A
+/// comment is not text either.
 pub fn text_of(el: ElementRef<'_>) -> String {
     el.descendants()
         .filter_map(|node| match node.value() {
             Node::Text(text) => {
-                let hidden = node
-                    .parent()
-                    .and_then(|p| p.value().as_element())
-                    .is_some_and(|p| matches!(p.name(), "script" | "style" | "template"));
+                let hidden = node.ancestors().any(|a| {
+                    a.value()
+                        .as_element()
+                        .is_some_and(|e| matches!(e.name(), "script" | "style" | "template"))
+                });
                 (!hidden)
                     .then(|| pycompat::strip(text))
                     .filter(|s| !s.is_empty())
@@ -76,6 +79,16 @@ mod tests {
     fn script_style_and_comments_are_not_text() {
         let html = soup_of("<div id=d>a<script>var x</script><style>p{}</style><!-- c -->b</div>");
         assert_eq!(text_of(first(&html, "#d")), "ab");
+    }
+
+    #[test]
+    fn template_text_is_hidden_whatever_the_tag_being_read() {
+        let html = soup_of(
+            "<template><p id=p>in <b>deep</b></p></template><div id=d><template>t</template>u</div>",
+        );
+        // html5ever keeps template content in a fragment; bs4 marks it by the tag it was inside.
+        assert_eq!(text_of(first(&html, "#d")), "u");
+        assert_eq!(text_of(first(&html, "#p")), "");
     }
 
     #[test]
