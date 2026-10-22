@@ -192,6 +192,14 @@ impl Candidate {
             tag_version,
         }
     }
+
+    /// Stores an availability verdict together with when it was reached (`now`, epoch seconds), so
+    /// the date cannot drift from the verdict it dates. An inconclusive check clears the date too:
+    /// "unknown as of last Tuesday" is not a fact worth keeping.
+    pub fn record_availability(&mut self, available: Option<bool>, now: f64) {
+        self.remote_available = available;
+        self.availability_checked_at = available.map(|_| now);
+    }
 }
 
 /// One image in the list (3.4): the 16 keys in the order `_entry_to_dict` writes them.

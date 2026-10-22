@@ -227,7 +227,7 @@ async fn execute(
 
         let headers = resp.headers().clone();
         let mut buf: Vec<u8> = Vec::new();
-        if method != Method::Head {
+        if method != Method::Head && req.body_only_on.is_none_or(|only| only == status.as_u16()) {
             // With a probe, `buf` holds what has been taken in whole blocks; `pending` is the
             // partial block still arriving.
             let mut pending: Vec<u8> = Vec::new();

@@ -34,14 +34,22 @@ pub enum Raised {
     /// `UnicodeEncodeError`: `http.client` sends a header value as Latin-1, and `requests` has
     /// let a value with a character past U+00FF through its own check. No request is made.
     UnicodeEncode(String),
+    /// An exception from urllib3 that `requests` did not wrap, because the caller read the raw
+    /// response itself (`resp.raw.read`): `ProtocolError` for a connection that broke mid-body,
+    /// `DecodeError` for a body its `Content-Encoding` could not decode.
+    BodyRead {
+        class: &'static str,
+        message: String,
+    },
 }
 
 impl std::fmt::Display for Raised {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Raised::HardTimeout(m) | Raised::ValueError(m) | Raised::UnicodeEncode(m) => {
-                f.write_str(m)
-            }
+            Raised::HardTimeout(m)
+            | Raised::ValueError(m)
+            | Raised::UnicodeEncode(m)
+            | Raised::BodyRead { message: m, .. } => f.write_str(m),
         }
     }
 }

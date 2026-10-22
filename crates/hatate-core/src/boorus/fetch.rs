@@ -498,7 +498,11 @@ async fn fetch_artist(net: &NetClient, profile_url: &str) -> Result<Option<Strin
 
 /// Folds a renewed DeviantArt session cookie back into settings
 /// (`site_access.capture_rotated_deviantart_cookies`).
-fn capture_rotated_deviantart_cookies(url: &str, resp: &PyResponse, sink: &mut SettingsSink<'_>) {
+pub(crate) fn capture_rotated_deviantart_cookies(
+    url: &str,
+    resp: &PyResponse,
+    sink: &mut SettingsSink<'_>,
+) {
     let set_cookies: Vec<(String, String)> = resp
         .headers
         .get_all(http::header::SET_COOKIE)

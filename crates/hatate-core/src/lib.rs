@@ -1,11 +1,13 @@
 //! Shared library for the Hatate Rust rewrite. Work in progress.
 
+pub mod availability;
 pub mod boorus;
 pub mod cache;
 pub mod config;
 pub mod crash_marker;
 pub mod engines;
 mod fsutil;
+pub mod hydrus_url;
 pub mod lru;
 pub mod model;
 pub mod net;
