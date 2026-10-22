@@ -59,6 +59,17 @@ pub fn engine_interval(
     }
 }
 
+/// [`engine_interval`] read from the settings: `engine_interval(engine, settings.engine_delays,
+/// settings.delay_min_seconds, settings.delay_max_seconds)`.
+pub fn engine_interval_for(settings: &crate::config::Settings, engine: &str) -> (f64, f64) {
+    engine_interval(
+        engine,
+        settings.engine_delays.get(engine).map(Vec::as_slice),
+        settings.delay_min_seconds,
+        settings.delay_max_seconds,
+    )
+}
+
 /// `min + (max - min) * unit`, for `unit` in `[0, 1)`: Python's `random.uniform`
 /// with the random number supplied by the caller.
 pub fn uniform(min: f64, max: f64, unit: f64) -> f64 {
@@ -156,6 +167,25 @@ mod tests {
             engine_interval("pawchiveindex", Some(&[10.0, 20.0]), 45.0, 75.0),
             (0.0, 0.0)
         );
+    }
+
+    #[test]
+    fn the_settings_supply_the_overrides_and_the_global_pair() {
+        use crate::config::Settings;
+        let home: std::ffi::OsString = "/nonexistent-pacing-home".into();
+        let paths = crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| home.clone()))
+            .expect("paths");
+        let mut settings = Settings::with_defaults(&paths);
+        assert_eq!(engine_interval_for(&settings, "iqdb"), (45.0, 75.0));
+        // `test_what_is_saved_is_what_the_limiter_reads`: an override is read back for its engine
+        // only, and the local engine is never paced.
+        settings.engine_delays = crate::config::OrderedMap(vec![
+            ("saucenao".to_owned(), vec![20.0, 10.0]),
+            ("pawchiveindex".to_owned(), vec![5.0, 6.0]),
+        ]);
+        assert_eq!(engine_interval_for(&settings, "saucenao"), (10.0, 20.0));
+        assert_eq!(engine_interval_for(&settings, "iqdb"), (45.0, 75.0));
+        assert_eq!(engine_interval_for(&settings, "pawchiveindex"), (0.0, 0.0));
     }
 
     #[test]

@@ -1195,3 +1195,164 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod quota_tests {
+    //! The Python tests of the quota helpers (`tests/test_core_utils.py`: `TestSauceNaoQuotaText`,
+    //! `TestSauceNaoShortWindowText`, `TestSauceNaoBurstWindow`, `TestQuotaPausePersistence`).
+    use super::*;
+    use crate::clock::ManualClock;
+    use crate::paths::Paths;
+
+    fn short(remaining: Option<i64>) -> SauceNaoQuota {
+        SauceNaoQuota {
+            short_remaining: remaining,
+            short_limit: Some(17),
+            ..SauceNaoQuota::default()
+        }
+    }
+
+    #[test]
+    fn headroom_means_no_waiting() {
+        // Pausing at one remaining would halve a batch's throughput to avoid a 429 that has not
+        // happened.
+        for remaining in [1, 5, 17] {
+            let quota = short(Some(remaining));
+            assert_eq!(
+                seconds_until_short_window_clears(Some(&quota), 1000.0, 1000.0),
+                0.0
+            );
+        }
+    }
+
+    #[test]
+    fn an_exhausted_window_waits_the_rest_of_it_and_never_a_negative_time() {
+        let quota = short(Some(0));
+        assert_eq!(
+            seconds_until_short_window_clears(Some(&quota), 1000.0, 1010.0),
+            SHORT_WINDOW_SECONDS - 10.0
+        );
+        assert_eq!(
+            seconds_until_short_window_clears(Some(&quota), 1000.0, 1100.0),
+            0.0
+        );
+        assert_eq!(
+            seconds_until_short_window_clears(Some(&quota), 1000.0, 9999.0),
+            0.0
+        );
+    }
+
+    #[test]
+    fn nothing_observed_yet_does_not_wait_and_the_daily_limit_is_not_this_functions_business() {
+        assert_eq!(seconds_until_short_window_clears(None, 0.0, 1000.0), 0.0);
+        let unknown = short(None);
+        assert_eq!(
+            seconds_until_short_window_clears(Some(&unknown), 0.0, 1000.0),
+            0.0
+        );
+        let spent_day = SauceNaoQuota {
+            short_remaining: Some(5),
+            short_limit: Some(17),
+            long_remaining: Some(0),
+            long_limit: Some(5000),
+        };
+        assert_eq!(
+            seconds_until_short_window_clears(Some(&spent_day), 1000.0, 1000.0),
+            0.0
+        );
+    }
+
+    fn daily(remaining: Option<i64>, limit: Option<i64>) -> SauceNaoQuota {
+        SauceNaoQuota {
+            long_remaining: remaining,
+            long_limit: limit,
+            ..SauceNaoQuota::default()
+        }
+    }
+
+    #[test]
+    fn the_daily_allowance_reads_as_used_out_of_the_limit_else_what_is_left_else_nothing() {
+        assert_eq!(
+            describe_quota(Some(&daily(Some(40), Some(100)))),
+            "SauceNAO: 60/100 used today"
+        );
+        assert_eq!(
+            describe_quota(Some(&daily(Some(40), None))),
+            "SauceNAO: 40 left today"
+        );
+        // "No search made this session" is not "no quota left".
+        assert_eq!(describe_quota(None), "");
+        assert_eq!(describe_quota(Some(&daily(None, None))), "");
+        assert_eq!(
+            describe_quota(Some(&daily(Some(0), Some(100)))),
+            "SauceNAO: 100/100 used today"
+        );
+    }
+
+    #[test]
+    fn the_burst_window_reads_as_a_tooltip() {
+        let with = |remaining, limit| SauceNaoQuota {
+            short_remaining: remaining,
+            short_limit: limit,
+            ..SauceNaoQuota::default()
+        };
+        assert_eq!(
+            describe_short_window(Some(&with(Some(2), Some(6)))),
+            "4/6 used in the current ~30s window"
+        );
+        assert_eq!(
+            describe_short_window(Some(&with(Some(2), None))),
+            "2 remaining in the current ~30s window"
+        );
+        assert_eq!(describe_short_window(None), "");
+        assert_eq!(describe_short_window(Some(&with(None, None))), "");
+    }
+
+    fn profile() -> (tempfile::TempDir, Paths) {
+        let dir = tempfile::Builder::new()
+            .prefix("hatate-dan2059-pause-")
+            .tempdir()
+            .unwrap();
+        let home: std::ffi::OsString = dir.path().join("home").into();
+        let config: std::ffi::OsString = dir.path().join("config").into();
+        let paths = Paths::from_lookup(|k| match k {
+            "HOME" => Some(home.clone()),
+            "XDG_CONFIG_HOME" => Some(config.clone()),
+            _ => None,
+        })
+        .unwrap();
+        (dir, paths)
+    }
+
+    #[test]
+    fn a_recorded_pause_round_trips_and_clears() {
+        let (_dir, paths) = profile();
+        let file = QuotaPauseFile::new(&paths);
+        assert_eq!(file.read(), None);
+        // 2026-01-15 13:00 UTC.
+        let clock = ManualClock::new(1_768_482_000.0, 0.0);
+        record_quota_pause(&file, &clock, 42, 58);
+        let state = file.read().unwrap();
+        assert_eq!((state.searched, state.remaining), (42, 58));
+        assert_eq!(state.paused_at, 1_768_482_000.0);
+        // The reset time is an absolute, timezone-aware ISO time: the next 00:00 UTC.
+        assert_eq!(state.reset_at, "2026-01-16T00:00:00+00:00");
+        file.clear().unwrap();
+        assert_eq!(file.read(), None);
+        // Clearing when nothing was recorded does not raise.
+        file.clear().unwrap();
+    }
+
+    #[test]
+    fn a_pause_that_cannot_be_written_is_logged_and_goes_no_further() {
+        let (_dir, paths) = profile();
+        let file = QuotaPauseFile::new(&paths);
+        // The directory it would be written to is a file.
+        let target = paths.saucenao_quota_pause();
+        let parent = target.parent().unwrap();
+        std::fs::create_dir_all(parent.parent().unwrap()).unwrap();
+        std::fs::write(parent, "not a directory").unwrap();
+        record_quota_pause(&file, &ManualClock::new(1.0, 0.0), 1, 1);
+        assert_eq!(file.read(), None);
+    }
+}
