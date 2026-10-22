@@ -185,7 +185,9 @@ where
         let gate = self.gate.clone();
         Box::pin(async move {
             let host = req.host_key();
-            gate.wait_for_reopen(&host, &req).await?;
+            if req.gated {
+                gate.wait_for_reopen(&host, &req).await?;
+            }
             req.started = Some(Instant::now());
             inner.call(req).await
         })
@@ -235,11 +237,14 @@ where
         Box::pin(async move {
             let host = req.host_key();
             let gap = req.min_gap;
-            if let Some(gap) = gap {
+            let gated = req.gated;
+            if let (true, Some(gap)) = (gated, gap) {
                 gate.wait_min_gap(&host, gap).await;
             }
             let result = inner.call(req).await;
-            gate.note_response(&host, result.as_ref().ok().map(|r| &r.headers), gap);
+            if gated {
+                gate.note_response(&host, result.as_ref().ok().map(|r| &r.headers), gap);
+            }
             result
         })
     }

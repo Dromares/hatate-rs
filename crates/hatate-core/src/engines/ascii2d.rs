@@ -13,15 +13,22 @@
 //! [`bovw_url`] only when that returns one.
 
 use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
+use std::time::Instant;
 
 use regex::Regex;
 use scraper::{ElementRef, Selector};
 use serde::Serialize;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
+use super::client::{Failure, OnTick, multipart_upload, read_upload, response_text, ticking};
+use super::session::{Session, SessionRequest};
 use super::{Response, extract_dimensions};
 use crate::boorus::parsed::{classes_of, soup_of, text_stripped};
+use crate::hard_timeout::HardTimeoutError;
+use crate::net::{Method, NetClient};
 use crate::{pycompat, pyurl};
 
 pub const ASCII2D_URL: &str = "https://ascii2d.net/";
@@ -99,7 +106,13 @@ pub fn hash_from_url(url: &str) -> Option<String> {
 /// Where the feature search for a colour page lives, or `None` when the colour URL carries no
 /// hash (then `search` asks no second question).
 pub fn bovw_url(color_url: &str) -> Option<String> {
-    hash_from_url(color_url).map(|hash| format!("https://ascii2d.net/search/bovw/{hash}"))
+    bovw_url_on(ASCII2D_URL, color_url)
+}
+
+/// [`bovw_url`] against another address: the client asks the host it was given, which a test
+/// serves from a local server. `base` ends in `/`, as [`ASCII2D_URL`] does.
+pub fn bovw_url_on(base: &str, color_url: &str) -> Option<String> {
+    hash_from_url(color_url).map(|hash| format!("{base}search/bovw/{hash}"))
 }
 
 /// The parts of `search` after the colour page is in hand.
@@ -272,6 +285,166 @@ pub fn dedupe(matches: Vec<Ascii2dMatch>) -> Vec<Ascii2dMatch> {
         }
     }
     best
+}
+
+/// The request half of `core/ascii2d.py`: `search`, `is_blocked` and `reset_blocked_flag`.
+///
+/// One upload POST (a `requests.Session`: see [`super::session`], which keeps its cookies and
+/// follows its redirects), then, when the answer names a colour search, a GET of the feature
+/// search at [`bovw_url_on`] with the same session. What the answers mean is
+/// [`search_from_responses`]. The `_blocked` latch Python keeps in a module global is the
+/// client's; clones share it. Both addresses come from the constructor, so a test serves them
+/// from a local server; `new` uses the real one.
+#[derive(Clone)]
+pub struct Ascii2dClient {
+    net: NetClient,
+    base: String,
+    blocked: Arc<AtomicBool>,
+}
+
+impl Ascii2dClient {
+    /// The real ascii2d.net.
+    pub fn new(net: NetClient) -> Self {
+        Self::with_base(net, ASCII2D_URL)
+    }
+
+    /// The same client against another address (a local https server in tests), `base` ending in
+    /// `/`. Not reachable from `config.json`, the environment or a flag.
+    pub fn with_base(net: NetClient, base: &str) -> Self {
+        Ascii2dClient {
+            net,
+            base: base.to_owned(),
+            blocked: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// `is_blocked`: ascii2d has answered with a Cloudflare challenge and the batch should stop
+    /// asking.
+    pub fn is_blocked(&self) -> bool {
+        self.blocked.load(Ordering::SeqCst)
+    }
+
+    /// `reset_blocked_flag`: cleared when a new search starts, in case the block has lifted.
+    pub fn reset_blocked_flag(&self) {
+        self.blocked.store(false, Ordering::SeqCst);
+    }
+
+    /// `search`: upload to ascii2d and return colour + feature matches, colour first.
+    ///
+    /// `timeout` is both the per-read timeout and a deadline over each exchange (the upload with
+    /// its redirects, then the feature search separately), as `run_with_hard_timeout(..., timeout)`
+    /// is around each in Python. `on_tick` is the UI countdown, see [`OnTick`].
+    pub async fn search(
+        &self,
+        image_path: &Path,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+    ) -> Result<Vec<Ascii2dMatch>, Ascii2dError> {
+        debug!("Uploading {} to ascii2d", image_path.display());
+        let (data, filename) = read_upload(image_path)
+            .await
+            .map_err(|e| Ascii2dError::Failed(format!("Could not read image: {}", e.0)))?;
+        let upload = multipart_upload("file", &filename, &data);
+        let mut session = Session::new(
+            self.net.clone(),
+            vec![
+                ("User-Agent", USER_AGENT.to_owned()),
+                ("Referer", self.base.clone()),
+            ],
+        );
+        let file_url = format!("{}search/file", self.base);
+        let started = Instant::now();
+        let sent = ticking(
+            "Waiting on ascii2d",
+            timeout,
+            on_tick.clone(),
+            session.send(
+                SessionRequest {
+                    method: Method::Post,
+                    url: &file_url,
+                    upload: Some(&upload),
+                },
+                timeout,
+                started,
+            ),
+        )
+        .await;
+        let color = match sent {
+            Ok(resp) => resp,
+            Err(Failure::Deadline(HardTimeoutError(why))) => {
+                error!(
+                    "ascii2d request for {} exceeded the hard deadline",
+                    image_path.display()
+                );
+                return Err(Ascii2dError::Failed(format!(
+                    "ascii2d request timed out: {why}"
+                )));
+            }
+            Err(Failure::Transport(why)) => {
+                error!("ascii2d request failed for {}", image_path.display());
+                return Err(Ascii2dError::Failed(format!(
+                    "ascii2d request failed: {why}"
+                )));
+            }
+        };
+        let color_text = response_text(&color);
+        let color_url = color.url.as_str().to_owned();
+        let color_answer = Response {
+            status: color.status.as_u16(),
+            url: &color_url,
+            text: &color_text,
+        };
+        // Everything up to the feature search: the status mapping, the challenge check, the
+        // sanity check of the page. An error here is the answer.
+        let colour_only = match search_from_responses(&color_answer, None) {
+            Ok(matches) => matches,
+            Err(err) => {
+                if err == Ascii2dError::Blocked {
+                    self.blocked.store(true, Ordering::SeqCst);
+                }
+                return Err(err);
+            }
+        };
+        let Some(bovw_url) = bovw_url_on(&self.base, &color_url) else {
+            return Ok(colour_only);
+        };
+
+        let started = Instant::now();
+        let fetched = ticking(
+            "Waiting on ascii2d (feature)",
+            timeout,
+            on_tick,
+            session.send(
+                SessionRequest {
+                    method: Method::Get,
+                    url: &bovw_url,
+                    upload: None,
+                },
+                timeout,
+                started,
+            ),
+        )
+        .await;
+        match fetched {
+            Ok(bovw) => {
+                let bovw_text = response_text(&bovw);
+                let bovw_final = bovw.url.as_str().to_owned();
+                let bovw_answer = Response {
+                    status: bovw.status.as_u16(),
+                    url: &bovw_final,
+                    text: &bovw_text,
+                };
+                search_from_responses(&color_answer, Some(&bovw_answer))
+            }
+            Err(failure) => {
+                // Colour results are already in hand; a failed feature search must not throw
+                // those away.
+                warn!("ascii2d feature search failed (colour results kept)");
+                debug!("ascii2d feature search failure: {failure:?}");
+                Ok(colour_only)
+            }
+        }
+    }
 }
 
 #[cfg(test)]

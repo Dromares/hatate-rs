@@ -3,6 +3,7 @@
 pub mod availability;
 pub mod boorus;
 pub mod cache;
+pub mod clock;
 pub mod config;
 pub mod crash_marker;
 pub mod engine_ids;
