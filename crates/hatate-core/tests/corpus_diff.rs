@@ -48,7 +48,13 @@ pub struct Port {
 }
 
 /// Every parser that has a Rust port.
-static PORTS: &[&Port] = &[&corpus_ports::danbooru::PORT];
+static PORTS: &[&Port] = &[
+    &corpus_ports::danbooru::PORT,
+    &corpus_ports::e621::PORT,
+    &corpus_ports::moebooru::PORT,
+    &corpus_ports::paheal::PORT,
+    &corpus_ports::rule34us::PORT,
+];
 
 /// The Python exception class a `raises` item names, and the Rust error variant that stands for
 /// it. `BooruError` and `BooruContentGoneError` are `hatate_core::boorus::BooruError::{Fetch,

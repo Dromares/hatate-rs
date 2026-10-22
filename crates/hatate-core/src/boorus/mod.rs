@@ -19,9 +19,13 @@
 //! hand: [`page_info_from_body`].
 
 pub mod danbooru;
+pub mod e621;
 pub mod host;
+pub mod moebooru;
+pub mod paheal;
 pub mod parsed;
 pub mod rating;
+pub mod rule34us;
 pub mod sizes;
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -189,16 +193,16 @@ pub static PARSERS: &[&SiteParser] = &[
     &danbooru::PARSER,
     // gelbooru
     // safebooru
-    // moebooru
+    &moebooru::PARSER,
     // pixiv
-    // e621
+    &e621::PARSER,
     // zerochan
     // eshuushuu
     // animepictures
     // rule34
     // xbooru
-    // paheal
-    // rule34us
+    &paheal::PARSER,
+    &rule34us::PARSER,
     // redditpost
     // deviantart
     // pawchive
