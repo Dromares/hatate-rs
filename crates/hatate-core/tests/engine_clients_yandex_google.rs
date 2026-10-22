@@ -1271,3 +1271,35 @@ async fn the_consent_cookie_goes_to_google_hosts_only() {
             .all(|r| r.header("referer") == Some("https://www.google.com/"))
     );
 }
+
+#[tokio::test]
+async fn google_images_counts_down_under_the_label_of_its_route_and_clears() {
+    let pki = TestPki::generate();
+    let server = ReplayServer::https(
+        &pki,
+        vec![
+            html_page("<html></html>").delayed(Duration::from_millis(1300)),
+            json_reply(200, json!({"responses": [{}]})).delayed(Duration::from_millis(1300)),
+        ],
+    )
+    .await;
+    let client = GoogleImagesClient::with_urls(
+        net(&pki),
+        &server.url("/searchbyimage/upload"),
+        &server.url("/v1/images:annotate"),
+    );
+    let file = image("x.png");
+    for (api_key, label) in [
+        (key_of(""), "Waiting on Google Images"),
+        (key(), "Waiting on Google (Vision)"),
+    ] {
+        let (on_tick, seen) = ticks();
+        client
+            .search(&file.path, 30.0, Some(on_tick), &api_key)
+            .await
+            .unwrap();
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.first().unwrap().0, label);
+        assert_eq!(seen.last().unwrap(), &(String::new(), 0.0, 0.0));
+    }
+}

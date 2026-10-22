@@ -865,7 +865,12 @@ fn reencode_converts_every_mode_to_three_channels() {
 
 #[test]
 fn reencode_refuses_what_pillow_cannot_open() {
-    for bytes in [&b""[..], b"not an image", b"\x00\x00\x00\x18ftypmp42", b"\x89PNG\r\n\x1a\n"] {
+    for bytes in [
+        &b""[..],
+        b"not an image",
+        b"\x00\x00\x00\x18ftypmp42",
+        b"\x89PNG\r\n\x1a\n",
+    ] {
         assert!(reencode_jpeg(bytes, 1600, 90).is_err(), "{bytes:?}");
     }
     // A truncated picture: the header is fine, the data is not.
