@@ -364,7 +364,12 @@ mod tests {
             encoding: None,
         };
         assert_eq!(resp(b"{\"a\": 1}").json().unwrap()["a"], 1);
-        assert_eq!(resp(b"{\0\"\0a\0\"\0:\01\0}\0").json().unwrap()["a"], 1);
+        assert_eq!(
+            resp(b"{\x00\"\x00a\x00\"\x00:\x001\x00}\x00")
+                .json()
+                .unwrap()["a"],
+            1
+        );
         assert!(resp(b"nope").json().is_err());
     }
 }

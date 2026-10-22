@@ -17,6 +17,9 @@ icu_normalizer = { version = "2.1", default-features = false, features = ["compi
 # The WHATWG named-character-reference table, for `pycompat::html_unescape`. Already in the
 # lockfile through scraper's html5ever, so no new crate.
 markup5ever = "0.40"
+# MD5 for `local_md5` (Sankaku finds a post by the local file's hash). Same RustCrypto family and
+# `digest` as the dev-only `sha2`.
+md-5 = "0.10"
 regex = "1.13.1"
 # rustls with NO built-in provider: reqwest then reads the process-wide default
 # provider, which `net::install_crypto_provider` installs explicitly (DAN-1909).

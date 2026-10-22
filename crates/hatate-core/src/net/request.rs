@@ -114,8 +114,11 @@ impl fmt::Debug for Body {
 pub struct BodyProbe {
     pub chunk: usize,
     pub cap: usize,
-    pub done: Arc<dyn Fn(&[u8]) -> bool + Send + Sync>,
+    pub done: ProbeDone,
 }
+
+/// Whether what has been taken so far is enough.
+pub type ProbeDone = Arc<dyn Fn(&[u8]) -> bool + Send + Sync>;
 
 impl fmt::Debug for BodyProbe {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

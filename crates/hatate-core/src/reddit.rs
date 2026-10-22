@@ -10,17 +10,21 @@
 //! When the post cannot be found, the match becomes the direct image link instead. That still
 //! gets the picture, and never the whole subreddit.
 //!
-//! This is the parse half. The request half is Phase 3: the HTTP GET of a feed (Python's
-//! `net.get` with [`USER_AGENT`]), the per-session `_feed_cache` it fills (keyed by
-//! [`feed_cache_key`], only for a 200 answer), and the loop over [`FEEDS`] that
-//! [`resolve_listing`] is handed as `find_post`.
+//! The parse half is the pure functions; the request half (DAN-2058) is at the end:
+//! [`fetch_feed_entries`] is the HTTP GET of a feed with [`USER_AGENT`] and the per-session
+//! [`FeedCache`] it fills (keyed by [`feed_cache_key`], only for a 200 answer), [`find_post`] the
+//! loop over [`FEEDS`], and [`resolve_listing_online`] hands that to [`resolve_listing`].
 
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use regex::Regex;
-use tracing::info;
+use tracing::{debug, info};
 
+use crate::net::{ErrorKind, NetClient};
 use crate::pycompat;
+use crate::pyresponse::PyResponse;
+use crate::remote::{Raised, get_request};
 
 pub const USER_AGENT: &str = "linux:hatate-linux:1.0 (reverse image tagger)";
 
@@ -298,4 +302,106 @@ mod tests {
         assert_eq!(find_post_in(&entries, "zzz"), None);
         assert_eq!(find_post_in(&[], "abc"), None);
     }
+}
+
+// -- the network half ---------------------------------------------------------------------------
+
+/// `_feed_cache`: feeds already read this session, by [`feed_cache_key`]. Unbounded, like
+/// Python's dict.
+#[derive(Debug, Default)]
+pub struct FeedCache {
+    feeds: std::sync::Mutex<HashMap<String, Vec<String>>>,
+}
+
+impl FeedCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The keys held, sorted.
+    pub fn keys(&self) -> Vec<String> {
+        let mut keys: Vec<String> = self.feeds.lock().unwrap().keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+}
+
+/// `_feed_entries`: one subreddit feed's entries, from the session cache or one GET. `Ok(None)` is
+/// a failure that is not remembered: a network fault may clear, and so may a 429. A hard deadline
+/// is [`Raised::HardTimeout`]: `requests.RequestException` is all Python's handler catches.
+pub async fn fetch_feed_entries(
+    net: &NetClient,
+    cache: &FeedCache,
+    subreddit: &str,
+    feed: &str,
+    timeout: f64,
+) -> Result<Option<Vec<String>>, Raised> {
+    let key = feed_cache_key(subreddit, feed);
+    if let Some(entries) = cache.feeds.lock().unwrap().get(&key) {
+        return Ok(Some(entries.clone()));
+    }
+    let url = feed_url(subreddit, feed);
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        http::header::USER_AGENT,
+        http::HeaderValue::from_static(USER_AGENT),
+    );
+    let Ok(req) = get_request(&url, timeout, Some(timeout), &headers, None) else {
+        return Ok(None);
+    };
+    let resp = match net.send(req).await {
+        Ok(resp) => PyResponse::from_net(resp),
+        Err(e) if e.kind() == ErrorKind::DeadlineExceeded => {
+            return Err(Raised::HardTimeout(e.detail().to_string()));
+        }
+        Err(e) => {
+            debug!("Reddit feed {url} failed: {e}");
+            return Ok(None); // not cached: a network fault may clear
+        }
+    };
+    let Some(entries) = feed_entries(resp.status, &resp.text()) else {
+        debug!("Reddit feed {url} returned HTTP {}", resp.status);
+        return Ok(None); // 429s clear too; do not remember them
+    };
+    cache.feeds.lock().unwrap().insert(key, entries.clone());
+    Ok(Some(entries))
+}
+
+/// The URL of the post in `subreddit` whose image is `media_id`: the first feed, newest first,
+/// holding an entry that names it and links to a post. A feed that could not be read counts as
+/// empty.
+pub async fn find_post(
+    net: &NetClient,
+    cache: &FeedCache,
+    subreddit: &str,
+    media_id: &str,
+    timeout: f64,
+) -> Result<Option<String>, Raised> {
+    for feed in FEEDS {
+        let entries = fetch_feed_entries(net, cache, subreddit, feed, timeout)
+            .await?
+            .unwrap_or_default();
+        if let Some(post) = find_post_in(&entries, media_id) {
+            return Ok(Some(post));
+        }
+    }
+    Ok(None)
+}
+
+/// `resolve_listing(url, image_url, timeout)` with the lookup done: what to use instead of a
+/// subreddit listing URL (see [`resolve_listing`]), asking Reddit when there is something to ask.
+pub async fn resolve_listing_online(
+    net: &NetClient,
+    cache: &FeedCache,
+    url: &str,
+    image_url: Option<&str>,
+    timeout: f64,
+) -> Result<Option<String>, Raised> {
+    let found = match (subreddit_of(url), media_of(image_url)) {
+        (Some(subreddit), Some((media_id, _))) => {
+            find_post(net, cache, &subreddit, &media_id, timeout).await?
+        }
+        _ => None,
+    };
+    Ok(resolve_listing(url, image_url, |_, _| found))
 }

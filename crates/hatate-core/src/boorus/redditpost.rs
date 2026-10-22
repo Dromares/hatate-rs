@@ -65,12 +65,21 @@ static PREVIEW_ID_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 /// What the registry knows about this site: one entry per hook the module defines.
 ///
-/// `parse_dimensions` is not in it: Python defines it, but it reads the remote file, so its
-/// caller has to supply that read (Phase 3).
+/// `parse_dimensions` reads the remote file in Python. Here the registered hook answers from
+/// `ctx.remote_image_sizes`, which the fetch (`boorus::fetch`) fills by the ranged read of the file
+/// [`dimensions_request`] names, under that URL, before the hooks run.
 pub static PARSER: SiteParser = SiteParser {
     resolve_fetch_url: Some(resolve_fetch_url),
     parse_file_url: Some(|body, url, _: &Context| parse_file_url(body, url)),
     parse_preview_url: Some(|body, url, _| parse_preview_url(body, url)),
+    parse_dimensions: Some(|body, url, ctx| {
+        parse_dimensions(body, url, |file_url, _agent| {
+            ctx.remote_image_sizes
+                .get(file_url)
+                .copied()
+                .unwrap_or((None, None))
+        })
+    }),
     incomplete_reason: Some(|body, url, _| incomplete_reason(body, url)),
     ..SiteParser::new("redditpost", matches, |body, url, _| parse(body, url))
 };
@@ -134,6 +143,13 @@ pub fn parse_file_url(body: &str, _url: &str) -> Option<String> {
 
 pub fn parse_preview_url(body: &str, _url: &str) -> Option<String> {
     preview(post_entry(body)?)
+}
+
+/// The URL whose first bytes [`parse_dimensions`] needs read, or `None` when it needs nothing (the
+/// file is not on `i.redd.it`, so no request is made at all). The read is made with
+/// [`USER_AGENT`], as Python's is.
+pub fn dimensions_request(body: &str, url: &str) -> Option<String> {
+    parse_file_url(body, url).filter(|file_url| on_host(file_url, &["i.redd.it"]))
 }
 
 /// The original's size, read from its first bytes: `(None, None)` unless the file is on
@@ -372,13 +388,14 @@ mod tests {
     }
 
     #[test]
-    fn redditpost_defines_the_hooks_python_does_but_the_remote_size_read() {
+    fn redditpost_defines_the_hooks_python_does() {
         assert_eq!(
             PARSER.defined_hooks(),
             [
                 "resolve_fetch_url",
                 "parse_file_url",
                 "parse_preview_url",
+                "parse_dimensions",
                 "incomplete_reason"
             ]
         );

@@ -132,7 +132,7 @@ pub async fn download_bytes(
         return match data_uri_bytes(url) {
             Ok(bytes) if !bytes.is_empty() => Some(bytes),
             Ok(_) => None,
-            Err(()) => {
+            Err(DecodeError) => {
                 debug!("Could not decode a data: URI");
                 None
             }
@@ -324,9 +324,14 @@ pub fn referer_for_candidate(
 
 // -- data: URIs --------------------------------------------------------------------------------
 
+/// A `data:` URI payload that does not decode: the `ValueError` and `binascii.Error` that
+/// `download_bytes` catches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecodeError;
+
 /// The bytes a `data:` URI carries. `Err` is what `download_bytes` catches
 /// (`ValueError`, `binascii.Error`).
-fn data_uri_bytes(url: &str) -> Result<Vec<u8>, ()> {
+fn data_uri_bytes(url: &str) -> Result<Vec<u8>, DecodeError> {
     let (header, payload) = match url.split_once(',') {
         Some((header, payload)) => (header, payload),
         None => (url, ""),
@@ -340,9 +345,9 @@ fn data_uri_bytes(url: &str) -> Result<Vec<u8>, ()> {
 
 /// `base64.b64decode(str)`: ASCII text only (`ValueError` otherwise), characters outside the
 /// alphabet skipped, and a short last group an error (`binascii.a2b_base64`, non-strict).
-pub fn b64decode(payload: &str) -> Result<Vec<u8>, ()> {
+pub fn b64decode(payload: &str) -> Result<Vec<u8>, DecodeError> {
     if !payload.is_ascii() {
-        return Err(());
+        return Err(DecodeError);
     }
     let mut out = Vec::with_capacity(payload.len() / 4 * 3);
     let (mut quad_pos, mut left, mut pads) = (0u8, 0u8, 0u8);
@@ -384,7 +389,7 @@ pub fn b64decode(payload: &str) -> Result<Vec<u8>, ()> {
         }
     }
     if quad_pos != 0 {
-        return Err(());
+        return Err(DecodeError);
     }
     Ok(out)
 }
@@ -447,12 +452,12 @@ mod tests {
     #[test]
     fn base64_follows_binascii_non_strict() {
         assert_eq!(b64decode("aGk=").unwrap(), b"hi");
-        assert_eq!(b64decode("aGk").is_err(), true);
+        assert!(b64decode("aGk").is_err());
         assert_eq!(b64decode("aG k=\n").unwrap(), b"hi");
-        assert_eq!(b64decode("a").is_err(), true);
+        assert!(b64decode("a").is_err());
         assert_eq!(b64decode("aGk=junk").unwrap(), b"hi");
         assert_eq!(b64decode("").unwrap(), b"");
-        assert_eq!(b64decode("\u{e9}").is_err(), true);
+        assert!(b64decode("\u{e9}").is_err());
     }
 
     #[test]

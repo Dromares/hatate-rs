@@ -55,19 +55,19 @@ mod tests {
 
     type Ticks = Mutex<Vec<(String, f64, f64)>>;
 
-    fn recorder() -> (Ticks, impl Fn(&Ticks) -> Vec<(String, i64, f64)>) {
-        (Mutex::new(Vec::new()), |t: &Ticks| {
-            t.lock()
-                .unwrap()
-                .iter()
-                .map(|(l, r, total)| (l.clone(), r.round() as i64, *total))
-                .collect()
-        })
+    /// What was ticked, with the remaining seconds rounded.
+    fn seen(ticks: &Ticks) -> Vec<(String, i64, f64)> {
+        ticks
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(l, r, total)| (l.clone(), r.round() as i64, *total))
+            .collect()
     }
 
     #[tokio::test(start_paused = true)]
     async fn it_ticks_each_second_then_clears() {
-        let (ticks, seen) = recorder();
+        let ticks = Ticks::default();
         let cb = |l: &str, r: f64, t: f64| ticks.lock().unwrap().push((l.to_string(), r, t));
         let out = ticked("Fetching", 5.0, Some(&cb), async {
             sleep(Duration::from_millis(2500)).await;
@@ -87,7 +87,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn it_stops_counting_at_zero_but_still_clears() {
-        let (ticks, seen) = recorder();
+        let ticks = Ticks::default();
         let cb = |l: &str, r: f64, t: f64| ticks.lock().unwrap().push((l.to_string(), r, t));
         ticked("x", 2.0, Some(&cb), sleep(Duration::from_secs(10))).await;
         assert_eq!(
