@@ -1,6 +1,7 @@
 //! The request and response types the tower stack carries.
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -105,6 +106,29 @@ impl fmt::Debug for Body {
     }
 }
 
+/// A body read that stops early, as Python's `stream=True` plus `iter_content(chunk)` does
+/// (`core/boorus/_remote_size.py`): the body is taken in blocks of `chunk` bytes (the last one
+/// shorter), and reading stops, with the connection dropped, after the first block that leaves
+/// `done` true or the total at `cap` bytes. The response body is what was taken.
+#[derive(Clone)]
+pub struct BodyProbe {
+    pub chunk: usize,
+    pub cap: usize,
+    pub done: ProbeDone,
+}
+
+/// Whether what has been taken so far is enough.
+pub type ProbeDone = Arc<dyn Fn(&[u8]) -> bool + Send + Sync>;
+
+impl fmt::Debug for BodyProbe {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BodyProbe")
+            .field("chunk", &self.chunk)
+            .field("cap", &self.cap)
+            .finish_non_exhaustive()
+    }
+}
+
 /// A request. `timeout` is mandatory, as in `core/net.py:108`.
 #[derive(Clone)]
 pub struct NetRequest {
@@ -121,6 +145,8 @@ pub struct NetRequest {
     pub retry: RetryMode,
     /// Least time between two requests to the same host.
     pub min_gap: Option<Duration>,
+    /// Stop reading the body early (a ranged read of a file's first bytes).
+    pub probe: Option<BodyProbe>,
     /// When the exchange began, for the deadline. Set by the stack.
     pub(crate) started: Option<Instant>,
 }
@@ -149,6 +175,7 @@ impl NetRequest {
             redirects: Redirects::Default,
             retry: RetryMode::Once429,
             min_gap: None,
+            probe: None,
             started: None,
         })
     }
@@ -227,6 +254,11 @@ impl NetRequest {
         self
     }
 
+    pub fn with_probe(mut self, probe: BodyProbe) -> Self {
+        self.probe = Some(probe);
+        self
+    }
+
     /// `host` or `host:port`, lower-cased: Python's `netloc` (`core/net.py:76`).
     pub fn host_key(&self) -> String {
         host_key(&self.url)
@@ -297,6 +329,7 @@ impl fmt::Debug for NetRequest {
             .field("redirects", &self.redirects)
             .field("retry", &self.retry)
             .field("min_gap", &self.min_gap)
+            .field("probe", &self.probe)
             .finish()
     }
 }

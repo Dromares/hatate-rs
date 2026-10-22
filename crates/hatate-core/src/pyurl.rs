@@ -528,6 +528,65 @@ pub fn quote(s: &str) -> String {
     out
 }
 
+/// `quote(s, safe=safe)`: the UTF-8 bytes of every character other than an ASCII letter, digit,
+/// `_.-~` or one of `safe` become `%XX` (upper-case hex).
+pub fn quote_safe(s: &str, safe: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for byte in s.bytes() {
+        if byte.is_ascii_alphanumeric()
+            || matches!(byte, b'_' | b'.' | b'-' | b'~')
+            || (byte.is_ascii() && safe.as_bytes().contains(&byte))
+        {
+            out.push(char::from(byte));
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+/// `requests.utils.requote_uri`: the spelling `requests` puts on the wire. Percent-escapes of
+/// unreserved characters are decoded (`%7E` becomes `~`), and every character that is neither
+/// reserved nor unreserved is escaped, so `|`, `^`, `{`, `}` and `"` leave as `%7C %5E %7B %7D %22`.
+/// A malformed escape (`%zz`) escapes the `%` itself.
+pub fn requote_uri(uri: &str) -> String {
+    const SAFE_WITH_PERCENT: &str = "!#$%&'()*+,/:;=?@[]~";
+    const SAFE_WITHOUT_PERCENT: &str = "!#$&'()*+,/:;=?@[]~";
+    match unquote_unreserved(uri) {
+        Some(decoded) => quote_safe(&decoded, SAFE_WITH_PERCENT),
+        None => quote_safe(uri, SAFE_WITHOUT_PERCENT),
+    }
+}
+
+/// `requests.utils.unquote_unreserved`; `None` where Python raises `InvalidURL`.
+fn unquote_unreserved(uri: &str) -> Option<String> {
+    let mut parts = uri.split('%');
+    let mut out = String::from(parts.next().unwrap_or(""));
+    for part in parts {
+        let mut chars = part.chars();
+        let (a, b) = (chars.next(), chars.next());
+        match (a, b) {
+            (Some(a), Some(b)) if a.is_alphanumeric() && b.is_alphanumeric() => {
+                // `int(h, 16)`: both must be hex digits, else `ValueError` -> `InvalidURL`.
+                let value = a.to_digit(16)? * 16 + b.to_digit(16)?;
+                let c = char::from(value as u8);
+                if c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '~') {
+                    out.push(c);
+                    out.push_str(&part[a.len_utf8() + b.len_utf8()..]);
+                } else {
+                    out.push('%');
+                    out.push_str(part);
+                }
+            }
+            _ => {
+                out.push('%');
+                out.push_str(part);
+            }
+        }
+    }
+    Some(out)
+}
+
 /// `unquote(s)`: `%XX` runs are decoded as UTF-8 with U+FFFD for what is not; a `%` not followed
 /// by two hex digits stays as it is.
 pub fn unquote(s: &str) -> String {

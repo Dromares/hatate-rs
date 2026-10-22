@@ -1,0 +1,1556 @@
+[
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/001",
+  "item": "pawchive-001",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/data/pixiv/6714576/post/154701291/deadbeef00000000000000000000000000000000000000000000000000000000.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/001",
+  "item": "pawchive-001",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/data/pixiv/6714576/post/154701291/deadbeef00000000000000000000000000000000000000000000000000000000.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/002",
+  "item": "pawchive-002",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/bb/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/002",
+  "item": "pawchive-002",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/bb/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/003",
+  "item": "pawchive-003",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://pawchive.pw/api/v1/fanbox/user/1/profile"
+   }
+  ],
+  "returns": {
+   "returns": [
+    {
+     "name": "Some_Artist",
+     "namespace": "artist",
+     "source": "Booru"
+    }
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/003",
+  "item": "pawchive-003",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://pawchive.pw/api/v1/fanbox/user/1/profile"
+   }
+  ],
+  "returns": {
+   "returns": []
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/003",
+  "item": "pawchive-003",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/00/00/0000000000000000000000000000000000000000000000000000000000000015.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/003",
+  "item": "pawchive-003",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/00/00/0000000000000000000000000000000000000000000000000000000000000015.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/006",
+  "item": "pawchive-006",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/93/0e/930e7282.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/006",
+  "item": "pawchive-006",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/93/0e/930e7282.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/007",
+  "item": "pawchive-007",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/93/0e/930e7282.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/007",
+  "item": "pawchive-007",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/93/0e/930e7282.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/008",
+  "item": "pawchive-008",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/a6/bc/a6bc.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/008",
+  "item": "pawchive-008",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/a6/bc/a6bc.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/011",
+  "item": "pawchive-011",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/bb/5edb92f91a4b48b99a3a13a9ef68c0f9.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/011",
+  "item": "pawchive-011",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/bb/5edb92f91a4b48b99a3a13a9ef68c0f9.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/013",
+  "item": "pawchive-013",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/bb/3d0341fb4f0c4f88b4789860ab639f92.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/013",
+  "item": "pawchive-013",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/bb/3d0341fb4f0c4f88b4789860ab639f92.jpg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/015",
+  "item": "pawchive-015",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://pawchive.pw/api/v1/patreon/user/99999999/profile"
+   }
+  ],
+  "returns": {
+   "returns": [
+    {
+     "name": "Some_Artist",
+     "namespace": "artist",
+     "source": "Booru"
+    }
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/015",
+  "item": "pawchive-015",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://pawchive.pw/api/v1/patreon/user/99999999/profile"
+   }
+  ],
+  "returns": {
+   "returns": []
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/016",
+  "item": "pawchive-016",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://pawchive.pw/api/v1/fanbox/user/1/profile"
+   }
+  ],
+  "returns": {
+   "returns": [
+    {
+     "name": "Some_Artist",
+     "namespace": "artist",
+     "source": "Booru"
+    }
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/016",
+  "item": "pawchive-016",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://pawchive.pw/api/v1/fanbox/user/1/profile"
+   }
+  ],
+  "returns": {
+   "returns": []
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/016",
+  "item": "pawchive-016",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/016",
+  "item": "pawchive-016",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/017",
+  "item": "pawchive-017",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://x/api/v1/fanbox/user/1/profile"
+   }
+  ],
+  "returns": {
+   "returns": [
+    {
+     "name": "Some_Artist",
+     "namespace": "artist",
+     "source": "Booru"
+    }
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/017",
+  "item": "pawchive-017",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://x/api/v1/fanbox/user/1/profile"
+   }
+  ],
+  "returns": {
+   "returns": []
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/018",
+  "item": "pawchive-018",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://pawchive.pw/api/v1/fanbox/user/1/profile"
+   }
+  ],
+  "returns": {
+   "returns": [
+    {
+     "name": "Some_Artist",
+     "namespace": "artist",
+     "source": "Booru"
+    }
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse",
+  "dir": "corpus/boorus/pawchive/018",
+  "item": "pawchive-018",
+  "requests": [
+   {
+    "headers": {
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://pawchive.pw/api/v1/fanbox/user/1/profile"
+   }
+  ],
+  "returns": {
+   "returns": []
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/018",
+  "item": "pawchive-018",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.pawchive.parse_dimensions",
+  "dir": "corpus/boorus/pawchive/018",
+  "item": "pawchive-018",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "hatate-linux/1.0 (+https://github.com/nostrenz/hatate-iqdb-tagger)"
+    },
+    "method": "GET",
+    "url": "https://file.pawchive.pw/data/aa/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.redditpost.parse_dimensions",
+  "dir": "corpus/boorus/redditpost/001",
+  "item": "redditpost-001",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "linux:hatate-linux:1.0 (reverse image tagger)"
+    },
+    "method": "GET",
+    "url": "https://i.redd.it/m42sxjdyus7e1.jpeg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.redditpost.parse_dimensions",
+  "dir": "corpus/boorus/redditpost/001",
+  "item": "redditpost-001",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "linux:hatate-linux:1.0 (reverse image tagger)"
+    },
+    "method": "GET",
+    "url": "https://i.redd.it/m42sxjdyus7e1.jpeg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "7b226e616d65223a2022536f6d6520417274697374227d",
+    "headers": {
+     "Content-Type": "application/json"
+    },
+    "status": 200,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "89504e470d0a1a0a0000000d49484452000001410000007b080200000065faa5190000018449444154789cedd3a10d002100c040788946b3ff983f048234b99ba0a673ed3380acef750070c5c3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc3d0e66168f330b47918da3c0c6d1e86360f439b87a1cdc330d27efa8801320de5a3610000000049454e44ae426082",
+    "headers": {
+     "Content-Range": "bytes 0-444/445",
+     "Content-Type": "image/png"
+    },
+    "status": 206,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.redditpost.parse_dimensions",
+  "dir": "corpus/boorus/redditpost/003",
+  "item": "redditpost-003",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "linux:hatate-linux:1.0 (reverse image tagger)"
+    },
+    "method": "GET",
+    "url": "https://i.redd.it/m42sxjdyus7e1.jpeg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    321,
+    123
+   ]
+  },
+  "variant": "ok"
+ },
+ {
+  "answers": [
+   {
+    "body_hex": "6f6f7073",
+    "headers": {},
+    "status": 500,
+    "when": "/profile"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://file.pawchive.pw/"
+   },
+   {
+    "body_hex": "676f6e65",
+    "headers": {},
+    "status": 404,
+    "when": "https://i.redd.it/"
+   }
+  ],
+  "callable": "core.boorus.redditpost.parse_dimensions",
+  "dir": "corpus/boorus/redditpost/003",
+  "item": "redditpost-003",
+  "requests": [
+   {
+    "headers": {
+     "range": "bytes=0-524287",
+     "user-agent": "linux:hatate-linux:1.0 (reverse image tagger)"
+    },
+    "method": "GET",
+    "url": "https://i.redd.it/m42sxjdyus7e1.jpeg"
+   }
+  ],
+  "returns": {
+   "returns": [
+    null,
+    null
+   ]
+  },
+  "variant": "down"
+ }
+]

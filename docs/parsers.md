@@ -130,12 +130,15 @@ has needed yet:
   reaches it. `$` is written `\n?\z`, because Python's `$` also matches before a final newline.
 - **A hook that needs a socket takes the read as an argument.** `redditpost::parse_dimensions`
   calls Python's `_remote_size.image_size` for a file on `i.redd.it`; here the caller passes that
-  read (`remote_size(file_url, user_agent)`) and the hook is not in the module's `PARSER` until
-  the Phase 3 client exists. The corpus runner passes a read that fails the item if it is called.
+  read (`remote_size(file_url, user_agent)`). The registered hook in `PARSER` answers from
+  `Context::remote_image_sizes`, which `boorus::fetch` fills by the ranged read (Phase 3.b,
+  `docs/network-halves.md`). The corpus runner still passes a read that fails the item if it is
+  called, and `tests/corpus_net_replay.rs` runs those items over https.
 - **Engine code that is half parse, half request** (`core/reddit.py`) is split the same way:
   `reddit::feed_entries(status, text)` is what `_feed_entries` does once the response is in hand,
   `reddit::resolve_listing` takes the feed lookup as an argument, and the GET, the session
-  cache and the loop over the feeds are Phase 3. The runner's `Call::response_status` and
+  cache and the loop over the feeds are `reddit::{fetch_feed_entries, find_post,
+  resolve_listing_online}` (Phase 3.b). The runner's `Call::response_status` and
   `Call::call` carry the `mocked_transport` items' recorded response.
 
 A new difference found by a later port is written down here, with the corpus item that exposed
