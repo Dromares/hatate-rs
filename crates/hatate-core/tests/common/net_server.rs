@@ -307,6 +307,12 @@ pub struct TestPki {
 
 impl TestPki {
     pub fn generate() -> Self {
+        Self::generate_for(&[])
+    }
+
+    /// As [`TestPki::generate`], with the leaf also valid for each name in `names` (the site
+    /// hosts a test reaches through `NetConfig::with_host_override`).
+    pub fn generate_for(names: &[&str]) -> Self {
         let mut ca_params = CertificateParams::new(Vec::<String>::new()).unwrap();
         ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
         ca_params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
@@ -315,7 +321,9 @@ impl TestPki {
             .push(rcgen::DnType::CommonName, "hatate-rs test CA (throw-away)");
         let ca = CertifiedIssuer::self_signed(ca_params, KeyPair::generate().unwrap()).unwrap();
 
-        let mut leaf_params = CertificateParams::new(vec!["localhost".to_owned()]).unwrap();
+        let mut sans = vec!["localhost".to_owned()];
+        sans.extend(names.iter().map(|n| (*n).to_owned()));
+        let mut leaf_params = CertificateParams::new(sans).unwrap();
         leaf_params
             .subject_alt_names
             .push(SanType::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST)));

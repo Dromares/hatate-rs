@@ -50,6 +50,9 @@ fn build_client(cfg: &NetConfig) -> Result<reqwest::Client, NetError> {
     let mut builder = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .tls_danger_accept_invalid_certs(!cfg.verify_tls);
+    for (host, addr) in &cfg.host_overrides {
+        builder = builder.resolve(host, *addr);
+    }
     if !cfg.extra_root_certs_der.is_empty() {
         let certs = cfg
             .extra_root_certs_der
@@ -195,22 +198,49 @@ async fn execute(
         let headers = resp.headers().clone();
         let mut buf: Vec<u8> = Vec::new();
         if method != Method::Head {
+            // With a probe, `buf` holds what has been taken in whole blocks; `pending` is the
+            // partial block still arriving.
+            let mut pending: Vec<u8> = Vec::new();
+            let mut stopped = false;
             loop {
                 let Some((wait, by_deadline)) = slice(req.timeout, deadline_at) else {
                     return Err(expired(&url, true));
                 };
                 match timeout(wait, resp.chunk()).await {
                     Ok(Ok(Some(chunk))) => {
-                        if buf.len() + chunk.len() > cfg.max_body_bytes {
-                            return Err(NetError::new(
-                                ErrorKind::BodyTooLarge,
-                                Some(&url),
-                                format!("more than {} bytes", cfg.max_body_bytes),
-                            ));
+                        let Some(probe) = &req.probe else {
+                            if buf.len() + chunk.len() > cfg.max_body_bytes {
+                                return Err(NetError::new(
+                                    ErrorKind::BodyTooLarge,
+                                    Some(&url),
+                                    format!("more than {} bytes", cfg.max_body_bytes),
+                                ));
+                            }
+                            buf.extend_from_slice(&chunk);
+                            continue;
+                        };
+                        pending.extend_from_slice(&chunk);
+                        while pending.len() >= probe.chunk.max(1) {
+                            let block: Vec<u8> = pending.drain(..probe.chunk.max(1)).collect();
+                            buf.extend_from_slice(&block);
+                            if (probe.done)(&buf) || buf.len() >= probe.cap {
+                                stopped = true;
+                                break;
+                            }
                         }
-                        buf.extend_from_slice(&chunk);
+                        if stopped {
+                            break;
+                        }
                     }
-                    Ok(Ok(None)) => break,
+                    Ok(Ok(None)) => {
+                        if let Some(probe) = &req.probe
+                            && !pending.is_empty()
+                        {
+                            buf.extend_from_slice(&pending);
+                            let _ = (probe.done)(&buf);
+                        }
+                        break;
+                    }
                     Ok(Err(e)) => return Err(NetError::from_reqwest(e, &url)),
                     Err(_) => return Err(expired(&url, by_deadline)),
                 }

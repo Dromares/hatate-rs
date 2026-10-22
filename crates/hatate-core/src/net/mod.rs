@@ -27,7 +27,7 @@ pub use error::{ErrorKind, NetError};
 pub use gate::{HostGate, MAX_HOST_WAIT};
 pub use provider::install_crypto_provider;
 pub use request::{
-    Body, HYDRUS_KEY_HEADER, Method, NetRequest, NetResponse, Part, Redirects, RetryMode,
+    Body, BodyProbe, HYDRUS_KEY_HEADER, Method, NetRequest, NetResponse, Part, Redirects, RetryMode,
 };
 pub use retry::{RETRY_AFTER_DEFAULT, RETRY_AFTER_MAX, polite_wait, retry_after};
 pub use secret::{Cookies, Secret, redact_url};
