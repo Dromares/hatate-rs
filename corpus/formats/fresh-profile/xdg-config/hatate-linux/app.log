@@ -1,0 +1,8 @@
+2026-10-21 23:31:47 [INFO] hatate: Logging started, writing to /tmp/hatate-fresh-profile-p3il3wba/xdg/config/hatate-linux/app.log
+2026-10-21 23:31:47 [INFO] hatate.config: No config file at /tmp/hatate-fresh-profile-p3il3wba/xdg/config/hatate-linux/config.json, creating one with defaults
+2026-10-21 23:31:47 [DEBUG] hatate.config: Settings saved to /tmp/hatate-fresh-profile-p3il3wba/xdg/config/hatate-linux/config.json
+2026-10-21 23:31:47 [INFO] hatate.session_db: Saved session: 6 entries (6 rewritten, 0 removed) to /tmp/hatate-fresh-profile-p3il3wba/xdg/config/hatate-linux/session.db
+2026-10-21 23:31:47 [INFO] hatate.session: Saved session with 6 entries to /tmp/hatate-fresh-profile-p3il3wba/named-session.json
+2026-10-21 23:31:47 [DEBUG] hatate.search_cache: Saved search cache entry for aaaaaaaaaaaa (2 candidate(s))
+2026-10-21 23:31:47 [DEBUG] hatate.search_cache: Saved search cache entry for bbbbbbbbbbbb (0 candidate(s))
+2026-10-21 23:31:47 [DEBUG] hatate.matched_urls_log: Logged matched URL for example-1.png to /tmp/hatate-fresh-profile-p3il3wba/xdg/config/hatate-linux/matched_urls.log

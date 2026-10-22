@@ -1,0 +1,1 @@
+{"timestamp": "2026-10-22T03:31:47Z", "tool": "list_rows", "tier": "read", "allowed": true, "reason": null, "dry_run": false, "row": null, "candidate_index": null, "arguments": {"token": "<redacted>", "limit": 5}, "outcome": {"rows": 0}}

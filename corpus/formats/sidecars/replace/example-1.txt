@@ -1,0 +1,7 @@
+1girl
+character:example_character
+solo
+artist:example_artist
+hand_added
+already_in_hydrus
+hatate:auto_tag
