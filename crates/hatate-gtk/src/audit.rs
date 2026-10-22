@@ -307,9 +307,7 @@ pub fn card_flatness(
             if off {
                 shadow_px += 1;
                 if shadow_px <= 6 && std::env::var_os("HATATE_AUDIT_DEBUG").is_some() {
-                    eprintln!(
-                        "AUDITDBG shadow px ({x},{y}) under={u:?} with={w:?} fit={fit:?}"
-                    );
+                    eprintln!("AUDITDBG shadow px ({x},{y}) under={u:?} with={w:?} fit={fit:?}");
                 }
             }
         }
