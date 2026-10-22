@@ -80,6 +80,9 @@ static PORTS: &[&Port] = &[
     &corpus_ports::pawchive_lookup::LOOKUP,
     &corpus_ports::saucenao::TAGS,
     &corpus_ports::saucenao::SEARCH,
+    &corpus_ports::google_lens::PAYLOAD,
+    &corpus_ports::google_lens::EXACT_MATCHES,
+    &corpus_ports::google_lens::EXACT_TILES,
 ];
 
 /// The Python exception class a `raises` item names, and the Rust error variant that stands for

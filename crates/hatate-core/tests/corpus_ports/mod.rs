@@ -8,6 +8,7 @@ pub mod deviantart;
 pub mod e621;
 pub mod eshuushuu;
 pub mod gelbooru;
+pub mod google_lens;
 pub mod iqdb;
 pub mod joyreactor;
 pub mod mangadex;

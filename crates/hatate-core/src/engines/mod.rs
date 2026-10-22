@@ -19,6 +19,7 @@
 //! No function here opens a socket or reads a file.
 
 pub mod ascii2d;
+pub mod google_lens;
 pub mod iqdb;
 pub mod pawchive_lookup;
 pub mod saucenao;
