@@ -192,7 +192,14 @@ impl HydrusError {
                     .to_owned()
             }
             ErrorKind::InvalidInput => "There was nothing to send to Hydrus.".to_owned(),
-            ErrorKind::Database | ErrorKind::NotFound => {
+            // The engine kinds belong to the search engines; a Hydrus call never builds one.
+            ErrorKind::Database
+            | ErrorKind::NotFound
+            | ErrorKind::EngineUnavailable
+            | ErrorKind::EngineBlocked
+            | ErrorKind::EngineFailed
+            | ErrorKind::FormatRefused
+            | ErrorKind::Unexpected => {
                 "Hydrus failed in a way Hatate does not expect. Try again.".to_owned()
             }
             ErrorKind::Io => {

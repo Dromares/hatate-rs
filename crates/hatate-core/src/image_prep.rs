@@ -726,6 +726,24 @@ pub fn reencode_jpeg(data: &[u8], max_side: u32, quality: u8) -> Result<Vec<u8>,
     picture.to_jpeg_with(quality, false)
 }
 
+/// `flat.save(buffer, format="JPEG", quality=quality)` for an `RGB` picture (Pillow's defaults
+/// otherwise: standard Huffman tables, 4:2:0). Like [`reencode_jpeg`], the bytes are the encoder
+/// crate's, not Pillow's; the dimensions and the pixels going in are.
+pub fn encode_rgb_jpeg(
+    width: u32,
+    height: u32,
+    rgb: Vec<u8>,
+    quality: u8,
+) -> Result<Vec<u8>, String> {
+    Pixels {
+        width,
+        height,
+        grey: false,
+        data: rgb,
+    }
+    .to_jpeg_with(quality, false)
+}
+
 /// `_downscale_to_fit`: the JPEG bytes and the `.jpg` filename.
 fn downscale_to_fit(
     path: &Path,

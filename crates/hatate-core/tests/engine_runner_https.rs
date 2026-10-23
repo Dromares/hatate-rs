@@ -50,7 +50,12 @@ fn image() -> Image {
         .tempdir()
         .unwrap();
     let path = dir.path().join("shot.png");
-    std::fs::write(&path, b"a small picture").unwrap();
+    // A real picture: Lens now checks the format before it asks its browser (DAN-2163).
+    let mut png = Vec::new();
+    image::RgbImage::from_pixel(4, 4, image::Rgb([200, 30, 30]))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    std::fs::write(&path, png).unwrap();
     Image { _dir: dir, path }
 }
 

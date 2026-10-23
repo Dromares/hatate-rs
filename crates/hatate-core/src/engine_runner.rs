@@ -76,6 +76,9 @@ pub enum LensError {
     Blocked(String),
     /// `GoogleLensError`.
     Failed(String),
+    /// An exception Python lets out of `search` that is not a `GoogleLensError`
+    /// (`find_parser`'s `ValueError`, a decompression bomb).
+    Unexpected(String),
 }
 
 /// A match from the local Pawchive index (`pawchive_index.IndexMatch`): the fields the collector
@@ -639,9 +642,10 @@ impl EngineRunner {
                 self.collect_google_images(job, settings, candidates, errors, on_tick)
                     .await
             }
-            ids::GOOGLE_LENS => Ok(self
-                .collect_google_lens(job, settings, candidates, errors, on_tick)
-                .await),
+            ids::GOOGLE_LENS => {
+                self.collect_google_lens(job, settings, candidates, errors, on_tick)
+                    .await
+            }
             ids::YANDEX => {
                 self.collect_yandex(job, settings, candidates, errors, on_tick, should_stop)
                     .await
@@ -1110,7 +1114,7 @@ impl EngineRunner {
         candidates: &mut Vec<Candidate>,
         errors: &mut Vec<String>,
         on_tick: Option<OnTick>,
-    ) -> bool {
+    ) -> Result<bool, Raised> {
         if self.engines.google_lens_is_blocked() {
             // Google challenged and the check went unanswered, or there is no browser engine to
             // render with. The row still says so, or an image whose other engines also found
@@ -1125,7 +1129,7 @@ impl EngineRunner {
             };
             debug!("Skipping Google Lens for {} - {why}", job.filename);
             errors.push(format!("Google Lens: not searched ({why})"));
-            return false;
+            return Ok(false);
         }
 
         self.engines
@@ -1164,23 +1168,26 @@ impl EngineRunner {
                         m.height,
                     );
                 }
-                found
+                Ok(found)
             }
             Err(LensError::Unavailable(exc)) => {
                 error!("Google Lens cannot run: {exc}");
                 errors.push(format!("Google Lens: {exc}"));
-                false
+                Ok(false)
             }
             Err(LensError::Blocked(exc)) => {
                 error!("Google Lens was challenged and stood down: {exc}");
                 errors.push(format!("Google Lens: {exc}"));
-                false
+                Ok(false)
             }
             Err(LensError::Failed(exc)) => {
                 error!("Google Lens search failed for {}: {exc}", job.filename);
                 errors.push(format!("Google Lens: {exc}"));
-                false
+                Ok(false)
             }
+            // Not an error of the engine's own: Python's `except GoogleLensError` does not catch
+            // it, so it leaves the collector.
+            Err(LensError::Unexpected(exc)) => Err(Raised(exc)),
         }
     }
 

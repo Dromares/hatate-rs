@@ -168,6 +168,8 @@ struct PngState {
     seq_num: Option<u32>,
     size: (u32, u32),
     n_frames: Option<u32>,
+    /// `"bbox" in im_info`: an `fcTL` came before the pixel data.
+    bbox: bool,
 }
 
 enum Flow {
@@ -358,6 +360,7 @@ impl PngState {
                 {
                     return None;
                 }
+                self.bbox = true;
             }
             _ => {}
         }
@@ -374,6 +377,7 @@ fn png(data: &[u8]) -> Option<(Info, Option<Vec<u8>>)> {
         seq_num: None,
         size: (0, 0),
         n_frames: None,
+        bbox: false,
     };
     let mut pos = 8;
     // `PngImageFile._open`: chunks up to the first IDAT, each with its checksum verified.
@@ -601,6 +605,9 @@ fn jpeg(data: &[u8]) -> Option<(Info, Option<Vec<u8>>)> {
     Some((info, exif))
 }
 
+/// What `jpeg_factory` looks for in an `APP1` to tell an Ultra HDR image from an MPO.
+const HDRGM: &[u8] = b" hdrgm:Version=\"";
+
 fn jpeg_app(
     marker: u16,
     s: &[u8],
@@ -608,6 +615,10 @@ fn jpeg_app(
     icclist: &mut Vec<Vec<u8>>,
     exif: &mut Option<Vec<u8>>,
 ) {
+    if marker == 0xffe1 && s.windows(HDRGM.len()).any(|w| w == HDRGM) {
+        // Not an `info` key of Pillow's: `jpeg_factory` looks for this in `applist`.
+        info.set("hdrgm", Val::Other);
+    }
     if marker == 0xffe0 && s.starts_with(b"JFIF") {
         info.set("jfif", Val::Other);
     } else if marker == 0xffe1 && s.starts_with(b"Exif\0\0") {
@@ -901,4 +912,232 @@ fn bytes_repr(b: &[u8]) -> String {
     }
     s.push(quote);
     s
+}
+
+// ---------------------------------------------------------------------------------------------
+// Frame count
+
+/// `getattr(Image.open(io.BytesIO(data)), "n_frames", 1)` for the formats whose signature
+/// `google_lens.media_type` hands on to `_is_animated` (JPEG, PNG, WebP; a BMP has one frame).
+/// `None` is `Image.open` or `n_frames` raising, which `_is_animated` reads as "not animated".
+pub(crate) fn frame_count(data: &[u8]) -> Option<u64> {
+    if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        png_frame_count(data)
+    } else if data.starts_with(b"\xff\xd8\xff") {
+        jpeg_frame_count(data)
+    } else if data.starts_with(b"RIFF") && data.get(8..12) == Some(b"WEBP") {
+        webp_frame_count(data)
+    } else {
+        Some(1)
+    }
+}
+
+/// `PngImageFile._open`: `n_frames` from `acTL`, one more when the `IDAT` holds a default image
+/// that is not the first animation frame.
+fn png_frame_count(data: &[u8]) -> Option<u64> {
+    let mut st = PngState {
+        info: Info::default(),
+        mode: "",
+        text_memory: 0,
+        seq_num: None,
+        size: (0, 0),
+        n_frames: None,
+        bbox: false,
+    };
+    let mut pos = 8;
+    loop {
+        let header = data.get(pos..pos + 8)?;
+        let cid = &header[4..];
+        if !is_cid(cid) {
+            return None;
+        }
+        let length = be32(header, 0)? as usize;
+        let body_at = pos + 8;
+        if matches!(cid, b"IDAT" | b"fdAT" | b"IEND") {
+            break;
+        }
+        let body = data.get(body_at..body_at.checked_add(length)?)?;
+        st.call(cid, body)?;
+        let crc = data.get(body_at + length..body_at + length + 4)?;
+        if !crc_ok(cid, body, crc) {
+            return None;
+        }
+        pos = body_at + length + 4;
+    }
+    if st.mode.is_empty() || st.size.0 == 0 || st.size.1 == 0 {
+        return None;
+    }
+    // `chunk_IDAT` (also called by `chunk_fdAT`) marks the default image when an `acTL` was seen
+    // and no `fcTL` put a box on the frame.
+    Some(match st.n_frames {
+        Some(n) if !st.bbox => u64::from(n) + 1,
+        Some(n) => u64::from(n),
+        None => 1,
+    })
+}
+
+/// `jpeg_factory`: an `APP2` MPF index naming more than one image makes the file an MPO, whose
+/// `n_frames` is that number. Anything the index gets wrong makes it a plain JPEG (one frame), or
+/// raises; both read as not animated.
+fn jpeg_frame_count(data: &[u8]) -> Option<u64> {
+    let (info, _) = jpeg(data)?;
+    let Some(Val::Bytes(mp)) = info.get("mp") else {
+        return Some(1);
+    };
+    let big = mp.starts_with(b"MM\x00\x2a");
+    if !big && !mp.starts_with(b"II\x2a\x00") {
+        return Some(1);
+    }
+    let u16_at = |at: usize| -> Option<u16> {
+        let b: [u8; 2] = mp.get(at..at + 2)?.try_into().ok()?;
+        Some(if big {
+            u16::from_be_bytes(b)
+        } else {
+            u16::from_le_bytes(b)
+        })
+    };
+    let u32_at = |at: usize| -> Option<u32> {
+        let b: [u8; 4] = mp.get(at..at + 4)?.try_into().ok()?;
+        Some(if big {
+            u32::from_be_bytes(b)
+        } else {
+            u32::from_le_bytes(b)
+        })
+    };
+    let ifd = u32_at(4)? as usize;
+    let entries = usize::from(u16_at(ifd)?);
+    let (mut quant, mut raw) = (None, None);
+    for i in 0..entries {
+        let at = ifd + 2 + 12 * i;
+        let (tag, kind, count) = (u16_at(at)?, u16_at(at + 2)?, u32_at(at + 4)? as usize);
+        match (tag, kind) {
+            (0xB001, 3 | 4) if count == 1 => {
+                quant = Some(if kind == 3 {
+                    u64::from(u16_at(at + 8)?)
+                } else {
+                    u64::from(u32_at(at + 8)?)
+                });
+            }
+            (0xB002, 7) => {
+                let start = if count > 4 {
+                    u32_at(at + 8)? as usize
+                } else {
+                    at + 8
+                };
+                raw = Some(mp.get(start..start.checked_add(count)?)?);
+            }
+            _ => {}
+        }
+    }
+    let (quant, raw) = (quant?, raw?);
+    if quant <= 1 {
+        return Some(1);
+    }
+    for n in 0..usize::try_from(quant).ok()? {
+        let attribute = {
+            let b: [u8; 4] = raw.get(n * 16..n * 16 + 4)?.try_into().ok()?;
+            if big {
+                u32::from_be_bytes(b)
+            } else {
+                u32::from_le_bytes(b)
+            }
+        };
+        raw.get(n * 16..n * 16 + 16)?;
+        if (attribute >> 24) & 7 != 0 {
+            return Some(1);
+        }
+    }
+    if info.get("hdrgm").is_some() {
+        return Some(1);
+    }
+    Some(quant)
+}
+
+/// libwebp's demuxer, as `WebPAnimDecoder` uses it: the frames of an animation, `1` for a still
+/// picture. A file it refuses is `None`.
+fn webp_frame_count(data: &[u8]) -> Option<u64> {
+    let le32 = |at: usize| -> Option<usize> {
+        Some(u32::from_le_bytes(data.get(at..at + 4)?.try_into().ok()?) as usize)
+    };
+    let riff_end = le32(4)?.checked_add(8)?;
+    if riff_end < 12 + 8 || data.len() < riff_end {
+        return None;
+    }
+    let data = &data[..riff_end];
+    let first = data.get(12..16)?;
+    if first != b"VP8X" {
+        // A still picture of the simple kind: one frame, or the decoder refuses it, and either
+        // way `_is_animated` answers no.
+        return Some(1);
+    }
+    if le32(16)? != 10 {
+        return None;
+    }
+    let flags = *data.get(20)?;
+    let animated = flags & 0x02 != 0;
+    let canvas = (
+        1 + usize::from_le_bytes([data[24], data[25], data[26], 0, 0, 0, 0, 0]),
+        1 + usize::from_le_bytes([data[27], data[28], data[29], 0, 0, 0, 0, 0]),
+    );
+    if canvas.0.checked_mul(canvas.1)? >= 1 << 32 {
+        return None;
+    }
+    if !animated {
+        return Some(1);
+    }
+    let (mut pos, mut frames, mut anim) = (30usize, 0u64, false);
+    while pos + 8 <= data.len() {
+        let size = le32(pos + 4)?;
+        let body = data.get(pos + 8..(pos + 8).checked_add(size)?)?;
+        match &data[pos..pos + 4] {
+            b"ANIM" => {
+                if size < 6 {
+                    return None;
+                }
+                anim = true;
+            }
+            b"ANMF" => {
+                if !anim || size < 16 {
+                    return None;
+                }
+                let u24 = |at: usize| {
+                    usize::from_le_bytes([body[at], body[at + 1], body[at + 2], 0, 0, 0, 0, 0])
+                };
+                let (x, y) = (2 * u24(0), 2 * u24(3));
+                let (w, h) = (1 + u24(6), 1 + u24(9));
+                if x + w > canvas.0 || y + h > canvas.1 {
+                    return None;
+                }
+                // The frame's own picture: a `VP8 `/`VP8L` chunk (with an optional `ALPH`).
+                let mut at = 16;
+                let mut seen = false;
+                while at + 8 <= body.len() {
+                    let sub = u32::from_le_bytes(body[at + 4..at + 8].try_into().ok()?) as usize;
+                    let payload = body.get(at + 8..at + 8 + sub)?;
+                    if matches!(&body[at..at + 4], b"VP8 " | b"VP8L") {
+                        let mut still = b"RIFF\0\0\0\0WEBP".to_vec();
+                        still.extend_from_slice(&body[at..at + 8]);
+                        still.extend_from_slice(payload);
+                        let (iw, ih) = crate::pyimage::image_size(&still)?;
+                        if (iw as usize, ih as usize) != (w, h) {
+                            return None;
+                        }
+                        seen = true;
+                        break;
+                    }
+                    at += 8 + sub + (sub & 1);
+                }
+                if !seen {
+                    return None;
+                }
+                frames += 1;
+            }
+            _ => {}
+        }
+        pos += 8 + size + (size & 1);
+    }
+    if frames == 0 {
+        return None;
+    }
+    Some(frames)
 }
