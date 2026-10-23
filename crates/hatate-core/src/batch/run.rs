@@ -119,7 +119,12 @@ pub struct Autosave<'a> {
 
 impl<'a> Autosave<'a> {
     pub fn new(sink: &'a dyn SessionSink, reporter: &'a dyn Reporter, now: f64) -> Self {
-        Autosave { sink, reporter, last: now, failed: false }
+        Autosave {
+            sink,
+            reporter,
+            last: now,
+            failed: false,
+        }
     }
 
     /// Saves if autosave is on and the interval (at least ten seconds) has passed.
@@ -127,7 +132,9 @@ impl<'a> Autosave<'a> {
         if !settings.autosave_session || entries.is_empty() {
             return;
         }
-        let interval = settings.autosave_interval_seconds.max(MIN_AUTOSAVE_INTERVAL_SECONDS);
+        let interval = settings
+            .autosave_interval_seconds
+            .max(MIN_AUTOSAVE_INTERVAL_SECONDS);
         if now - self.last >= interval as f64 {
             self.save(entries, now);
         }
@@ -148,7 +155,8 @@ impl<'a> Autosave<'a> {
             Err(why) => {
                 self.failed = true;
                 warn!("Autosave failed: {why}");
-                self.reporter.line(&format!("warning: could not save the session: {why}"));
+                self.reporter
+                    .line(&format!("warning: could not save the session: {why}"));
             }
         }
     }
@@ -178,8 +186,11 @@ pub async fn run_batch(env: &BatchEnv<'_>, folder: &Path, entries: &mut Vec<Entr
 
     let files = scan_folder(folder);
     outcome.found = files.len();
-    env.reporter
-        .line(&format!("found {} file(s) under {}", files.len(), folder.display()));
+    env.reporter.line(&format!(
+        "found {} file(s) under {}",
+        files.len(),
+        folder.display()
+    ));
 
     // `_import_files`: the entries already in the list that have no hash yet are hashed in the
     // same pass, piggybacking on it rather than a separate one later.
@@ -188,12 +199,20 @@ pub async fn run_batch(env: &BatchEnv<'_>, folder: &Path, entries: &mut Vec<Entr
         .filter(|e| e.hydrus_hash.as_deref().is_none_or(str::is_empty))
         .map(|e| PathBuf::from(&e.path))
         .collect();
-    let to_hash: Vec<PathBuf> = needing_hash.into_iter().chain(files.iter().cloned()).collect();
+    let to_hash: Vec<PathBuf> = needing_hash
+        .into_iter()
+        .chain(files.iter().cloned())
+        .collect();
 
     if !to_hash.is_empty() {
-        env.reporter.line(&format!("hashing {} file(s)", to_hash.len()));
+        env.reporter
+            .line(&format!("hashing {} file(s)", to_hash.len()));
         let progress = |done: usize, total: usize, eta: f64| {
-            let eta = if eta >= 0.0 { format!(", about {eta:.0}s left") } else { String::new() };
+            let eta = if eta >= 0.0 {
+                format!(", about {eta:.0}s left")
+            } else {
+                String::new()
+            };
             env.reporter.line(&format!("hashing {done}/{total}{eta}"));
         };
         let Some(path_to_hash) = hash_files(
@@ -279,7 +298,10 @@ pub async fn search_pending(
     let mut queue = pending;
     let mut searched = 0usize;
     let mut ending = Ending::Finished;
-    info!("Search worker starting: {} image(s) to process", queue.len());
+    info!(
+        "Search worker starting: {} image(s) to process",
+        queue.len()
+    );
 
     let mut i = 0usize;
     while i < queue.len() {
@@ -339,7 +361,10 @@ pub async fn search_pending(
         if let Err(exc) = result {
             // A bug or an unexpected condition must not end the whole batch: mark this one image
             // and keep going.
-            tracing::error!("Unexpected error searching {}: {exc}", entries[idx].filename());
+            tracing::error!(
+                "Unexpected error searching {}: {exc}",
+                entries[idx].filename()
+            );
             let entry = &mut entries[idx];
             entry.status = MatchStatus::Error;
             entry.error_message = Some(format!("Unexpected error: {exc}"));
@@ -395,9 +420,9 @@ pub async fn search_pending(
             );
             // Persisted, not just printed: the point of an unattended run is that nobody
             // necessarily is looking (DAN-486).
-            if let Err(e) = env
-                .quota_file
-                .record(&QuotaPause::starting_at(clock.wall(), done, remaining))
+            if let Err(e) =
+                env.quota_file
+                    .record(&QuotaPause::starting_at(clock.wall(), done, remaining))
             {
                 warn!("Could not record the SauceNAO quota pause: {e}");
             }
@@ -405,7 +430,10 @@ pub async fn search_pending(
                 "SauceNAO's daily quota is exhausted: paused after {done} image(s), \
                  {remaining} left unsearched"
             ));
-            ending = Ending::PausedForQuota { searched: done, remaining };
+            ending = Ending::PausedForQuota {
+                searched: done,
+                remaining,
+            };
             break;
         }
 
@@ -424,8 +452,10 @@ pub async fn search_pending(
 
         if entries[idx].result_source.as_deref() == Some("cached") {
             // No real engine request was made, so there is nothing to rate-limit against.
-            debug!("{} was served from the search cache, skipping the rate-limit wait",
-                entries[idx].filename());
+            debug!(
+                "{} was served from the search cache, skipping the rate-limit wait",
+                entries[idx].filename()
+            );
             i += 1;
             continue;
         }
@@ -437,7 +467,10 @@ pub async fn search_pending(
             .iter()
             .map(|engine| {
                 let (low, high) = engine_interval_for(&snapshot, engine);
-                ((*engine).to_owned(), uniform(low, high, (env.unit_random)()))
+                (
+                    (*engine).to_owned(),
+                    uniform(low, high, (env.unit_random)()),
+                )
             })
             .collect();
         let wait = if engines_reported.load(Ordering::SeqCst) > 0 {
@@ -451,7 +484,11 @@ pub async fn search_pending(
                  than per-host pacing",
                 entries[idx].filename()
             );
-            remaining_delay(delay, *engines_finished_at.lock().unwrap(), clock.monotonic())
+            remaining_delay(
+                delay,
+                *engines_finished_at.lock().unwrap(),
+                clock.monotonic(),
+            )
         };
         if wait < delay {
             debug!(
@@ -488,7 +525,11 @@ fn queue_retries(env: &BatchEnv<'_>, entries: &[Entry], done: &[usize]) -> Vec<u
     let retryable: Vec<usize> = failed
         .iter()
         .copied()
-        .filter(|&i| env.engine.runner.retry_could_help(entries[i].error_message.as_deref()))
+        .filter(|&i| {
+            env.engine
+                .runner
+                .retry_could_help(entries[i].error_message.as_deref())
+        })
         .collect();
     if retryable.len() < failed.len() {
         // Their only failures were engines that have stood down for the run: a retry would skip

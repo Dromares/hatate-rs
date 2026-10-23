@@ -151,6 +151,19 @@ impl LiveEngines {
     }
 }
 
+impl LiveEngines {
+    /// What `_launch_search_worker` does before a run: forget the remembered SauceNAO quota
+    /// exhaustion, and every engine that stood down on an earlier run (ascii2d, Google, Lens,
+    /// Yandex), since a site's bot check comes and goes.
+    pub fn reset_run_state(&self) {
+        self.saucenao.reset_daily_limit_flag();
+        self.ascii2d.reset_blocked_flag();
+        self.google_images.reset_blocked_flag();
+        self.lens.reset_blocked_flag();
+        self.yandex.reset_blocked_flag();
+    }
+}
+
 impl Engines for LiveEngines {
     fn iqdb<'a>(
         &'a self,

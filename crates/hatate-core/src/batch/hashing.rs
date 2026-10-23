@@ -34,7 +34,11 @@ pub fn hash_from_filename(path: &Path) -> String {
     let base = base.to_string_lossy();
     let name = base.strip_suffix('\n').unwrap_or(&base);
     let bytes = name.as_bytes();
-    if bytes.len() < 64 || !bytes[..64].iter().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+    if bytes.len() < 64
+        || !bytes[..64]
+            .iter()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
         return String::new();
     }
     let rest = &name[64..];
@@ -42,7 +46,11 @@ pub fn hash_from_filename(path: &Path) -> String {
         None => rest.is_empty(),
         Some(ext) => !ext.is_empty() && ext.bytes().all(|b| b.is_ascii_alphanumeric()),
     };
-    if ok { name[..64].to_owned() } else { String::new() }
+    if ok {
+        name[..64].to_owned()
+    } else {
+        String::new()
+    }
 }
 
 /// `verify_filename_hashes`: reads a few of the files named like a hash and checks their real hash
@@ -96,7 +104,9 @@ pub fn split_by_filename_hash(
     hash_source: &str,
 ) -> (HashMap<PathBuf, String>, Vec<PathBuf>) {
     if !uses_filename_hashes(hash_source) {
-        tracing::debug!("hash_source={hash_source:?} - reading every file rather than using filenames");
+        tracing::debug!(
+            "hash_source={hash_source:?} - reading every file rather than using filenames"
+        );
         return (HashMap::new(), paths.to_vec());
     }
     let candidates: Vec<PathBuf> = paths
@@ -174,16 +184,36 @@ pub fn hash_files(
     let start = Instant::now();
 
     let (from_name, to_read) = split_by_filename_hash(paths, hash_source);
-    let bytes_to_read: u64 = to_read.iter().map(|p| sizes.get(p.as_path()).copied().unwrap_or(0)).sum();
+    let bytes_to_read: u64 = to_read
+        .iter()
+        .map(|p| sizes.get(p.as_path()).copied().unwrap_or(0))
+        .sum();
 
     let emitter = ProgressEmitter::new(progress);
     let offset = from_name.len();
     let mut result = from_name;
     if !to_read.is_empty() {
         let run = if workers == 1 {
-            run_sequential(&to_read, &sizes, offset, total, bytes_to_read, stop, &emitter)
+            run_sequential(
+                &to_read,
+                &sizes,
+                offset,
+                total,
+                bytes_to_read,
+                stop,
+                &emitter,
+            )
         } else {
-            run_parallel(&to_read, &sizes, workers, offset, total, bytes_to_read, stop, &emitter)
+            run_parallel(
+                &to_read,
+                &sizes,
+                workers,
+                offset,
+                total,
+                bytes_to_read,
+                stop,
+                &emitter,
+            )
         };
         result.extend(run);
         if stop.load(Ordering::SeqCst) {
@@ -208,7 +238,10 @@ struct ProgressEmitter<'a> {
 
 impl<'a> ProgressEmitter<'a> {
     fn new(sink: Option<OnHashProgress<'a>>) -> Self {
-        ProgressEmitter { sink, last: Mutex::new(None) }
+        ProgressEmitter {
+            sink,
+            last: Mutex::new(None),
+        }
     }
 
     /// `_emit_progress`: throttled, but always emits the final update so the bar cannot be left
@@ -218,13 +251,19 @@ impl<'a> ProgressEmitter<'a> {
         let now = Instant::now();
         let mut last = self.last.lock().unwrap_or_else(|e| e.into_inner());
         if done < total
-            && last.is_some_and(|t| now.duration_since(t).as_secs_f64() < PROGRESS_EMIT_INTERVAL_SECONDS)
+            && last.is_some_and(|t| {
+                now.duration_since(t).as_secs_f64() < PROGRESS_EMIT_INTERVAL_SECONDS
+            })
         {
             return;
         }
         *last = Some(now);
         drop(last);
-        sink(done, total, estimate_remaining(total_bytes, bytes_done, elapsed));
+        sink(
+            done,
+            total,
+            estimate_remaining(total_bytes, bytes_done, elapsed),
+        );
     }
 }
 
@@ -250,7 +289,13 @@ fn run_sequential(
         if !h.is_empty() {
             result.insert(path.clone(), h);
         }
-        emitter.emit(offset + i + 1, total, total_bytes, bytes_done, start.elapsed().as_secs_f64());
+        emitter.emit(
+            offset + i + 1,
+            total,
+            total_bytes,
+            bytes_done,
+            start.elapsed().as_secs_f64(),
+        );
     }
     result
 }
@@ -288,7 +333,10 @@ fn run_parallel(
                     let Some(path) = paths.get(i) else { return };
                     let h = hash_file(path);
                     if !h.is_empty() {
-                        result.lock().unwrap_or_else(|e| e.into_inner()).insert(path.clone(), h);
+                        result
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .insert(path.clone(), h);
                     }
                     let size = sizes.get(path.as_path()).copied().unwrap_or(0);
                     let b = bytes_done.fetch_add(size, Ordering::SeqCst) + size;
@@ -307,7 +355,10 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     fn sha_hex(data: &[u8]) -> String {
-        Sha256::digest(data).iter().map(|b| format!("{b:02x}")).collect()
+        Sha256::digest(data)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
     }
 
     #[test]
@@ -445,7 +496,11 @@ mod tests {
     fn the_estimate_waits_for_enough_data() {
         assert_eq!(estimate_remaining(0, 10, 5.0), -1.0);
         assert_eq!(estimate_remaining(1000, 0, 5.0), -1.0);
-        assert_eq!(estimate_remaining(1000, 500, 1.0), -1.0, "too early in seconds");
+        assert_eq!(
+            estimate_remaining(1000, 500, 1.0),
+            -1.0,
+            "too early in seconds"
+        );
         assert_eq!(estimate_remaining(1000, 10, 5.0), -1.0, "under 2% done");
         assert_eq!(estimate_remaining(1000, 500, 2.0), 2.0);
         assert_eq!(estimate_remaining(1000, 1000, 2.0), 0.0);

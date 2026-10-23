@@ -13,3 +13,13 @@ name = "hatate"
 path = "src/main.rs"
 
 [dependencies]
+hatate-core = { path = "../hatate-core" }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "sync", "macros", "signal"] }
+tracing = "0.1"
+# The `batch` command's log output on stderr. Already a dev-dependency of hatate-core, so it is in
+# the lockfile and builds with the same features.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+image = { version = "0.25.9", default-features = false, features = ["png"] }

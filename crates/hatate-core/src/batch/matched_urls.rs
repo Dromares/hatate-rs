@@ -42,7 +42,10 @@ pub fn log_matched_url(log_path: &str, stamp: &str, image_filename: &str, url: &
         file.write_all(format!("[{stamp}] {image_filename} -> {url}\n").as_bytes())
     })();
     match result {
-        Ok(()) => debug!("Logged matched URL for {image_filename} to {}", path.display()),
+        Ok(()) => debug!(
+            "Logged matched URL for {image_filename} to {}",
+            path.display()
+        ),
         Err(e) => error!(
             "Could not write matched-URL log entry to {}: {e}",
             path.display()

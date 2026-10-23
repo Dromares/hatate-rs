@@ -172,10 +172,21 @@ mod tests {
 
     #[test]
     fn extension_set_is_the_python_one_case_insensitive() {
-        for ok in ["a.jpg", "a.JPEG", "a.Png", "x.y.webp", "v.MKV", "a.tiff", "a.jxl"] {
+        for ok in [
+            "a.jpg", "a.JPEG", "a.Png", "x.y.webp", "v.MKV", "a.tiff", "a.jxl",
+        ] {
             assert!(has_image_extension(ok), "{ok}");
         }
-        for no in ["a.txt", "a", ".png", "a.png.bak", "png", "a.", "a.jpe", "..png"] {
+        for no in [
+            "a.txt",
+            "a",
+            ".png",
+            "a.png.bak",
+            "png",
+            "a.",
+            "a.jpe",
+            "..png",
+        ] {
             assert!(!has_image_extension(no), "{no}");
         }
     }
@@ -185,7 +196,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("sub/deeper")).unwrap();
-        for f in ["b.png", "a.JPG", "note.txt", "sub/c.gif", "sub/deeper/d.webp"] {
+        for f in [
+            "b.png",
+            "a.JPG",
+            "note.txt",
+            "sub/c.gif",
+            "sub/deeper/d.webp",
+        ] {
             std::fs::write(root.join(f), b"x").unwrap();
         }
         let names: Vec<String> = scan_folder(root)
