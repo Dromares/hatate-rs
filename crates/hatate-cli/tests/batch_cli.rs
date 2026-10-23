@@ -157,22 +157,36 @@ fn sigterm_during_hashing_stops_the_run_with_143() {
         let f = std::fs::File::create(pics.path().join(format!("f{i:02}.png"))).unwrap();
         f.set_len(100 * 1024 * 1024).unwrap();
     }
-    let child = Command::new(env!("CARGO_BIN_EXE_hatate"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_hatate"))
         .args(["batch", pics.path().to_str().unwrap()])
         .env_clear()
         .env("HOME", home.path())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(700));
+    // Signal only once the run says it is hashing: that line comes after the handlers are
+    // installed, so a slow start cannot deliver SIGTERM to a process still on its default action.
+    let mut err = String::new();
+    let mut lines = std::io::BufReader::new(child.stderr.take().unwrap());
+    loop {
+        let mut line = String::new();
+        if std::io::BufRead::read_line(&mut lines, &mut line).unwrap() == 0 {
+            break;
+        }
+        err.push_str(&line);
+        if line.contains("hashing 60 file(s)") {
+            break;
+        }
+    }
+    assert!(err.contains("hashing 60 file(s)"), "{err}");
     let status = Command::new("kill")
         .args(["-TERM", &child.id().to_string()])
         .status()
         .unwrap();
     assert!(status.success());
-    let out = child.wait_with_output().unwrap();
-    let err = text(&out.stderr);
-    assert_eq!(out.status.code(), Some(143), "{err}");
+    std::io::Read::read_to_string(&mut lines, &mut err).unwrap();
+    let exit = child.wait().unwrap();
+    assert_eq!(exit.code(), Some(143), "{err}");
     assert!(err.contains("stopping"), "{err}");
     assert!(
         !SessionStore::new(&paths_in(home.path())).has_saved_session(),
