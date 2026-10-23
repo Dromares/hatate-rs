@@ -259,6 +259,11 @@ impl Entry {
         }
     }
 
+    /// `ImageEntry.filename`: the last `/`-separated part of the path, for log lines and messages.
+    pub fn filename(&self) -> &str {
+        self.path.rsplit('/').next().unwrap_or(&self.path)
+    }
+
     /// The active candidate, if the index points at one.
     pub fn selected_candidate(&self) -> Option<&Candidate> {
         self.candidates.get(self.selected_candidate_index)

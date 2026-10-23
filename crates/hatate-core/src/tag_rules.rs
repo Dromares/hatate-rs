@@ -206,18 +206,13 @@ pub fn apply_outcome_tags(entry: &mut Entry, settings: &Settings) -> Vec<Tag> {
     if !tags.is_empty() {
         debug!(
             "{}: applied {} by-rule tag(s) for status={}: {}",
-            file_name(&entry.path),
+            entry.filename(),
             tags.len(),
             entry.status.as_str(),
             tags.iter().map(Tag::display).collect::<Vec<_>>().join(", ")
         );
     }
     tags
-}
-
-/// `ImageEntry.filename`: the last path component, for log lines.
-fn file_name(path: &str) -> &str {
-    path.rsplit(['/', '\\']).next().unwrap_or(path)
 }
 
 #[cfg(test)]
