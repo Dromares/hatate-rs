@@ -472,6 +472,49 @@ async fn an_image_served_from_the_cache_costs_no_gap() {
     assert_eq!(w.clock.slept(), before, "no gap after a cached image");
 }
 
+/// Python logs `entry.matched_url`, a stored field, and a cached result whose matches have all
+/// died since is left holding the dead URL (`select_candidate(-1)` changes nothing). The log line
+/// is for a row with no candidates; the differential found it (DAN-2065, 1 of 294 entries).
+#[tokio::test]
+async fn a_cached_result_whose_matches_all_died_still_logs_the_url_python_kept() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png"]);
+    w.settings.lock().unwrap().log_file_path =
+        w.root.join("matched.log").to_string_lossy().into_owned();
+    w.match_every_image(1);
+    let mut first = Vec::new();
+    w.run(&dir, &mut first).await;
+    assert_eq!(first[0].status, MatchStatus::Good);
+
+    // The cached match is now known to be gone (what an earlier availability sweep leaves).
+    let cache = w.paths.search_cache_dir();
+    for f in std::fs::read_dir(&cache).unwrap() {
+        let f = f.unwrap().path();
+        let text = std::fs::read_to_string(&f).unwrap();
+        assert!(text.contains(URL));
+        assert!(text.contains("\"remote_available\": true"), "{text}");
+        let text = text
+            .replace(URL, "https://danbooru.donmai.us/posts/6")
+            .replace("\"remote_available\": true", "\"remote_available\": false");
+        std::fs::write(&f, text).unwrap();
+    }
+    std::fs::remove_file(w.root.join("matched.log")).unwrap();
+    let mut second = Vec::new();
+    w.run(&dir, &mut second).await;
+
+    let e = &second[0];
+    assert_eq!(e.result_source.as_deref(), Some("cached"));
+    assert!(e.candidates.is_empty(), "the dead match was dropped");
+    assert_eq!(e.status, MatchStatus::Good, "the cached verdict stays");
+    let matched = std::fs::read_to_string(w.root.join("matched.log")).unwrap();
+    assert!(
+        matched
+            .trim_end()
+            .ends_with("a.png -> https://danbooru.donmai.us/posts/6"),
+        "{matched}"
+    );
+}
+
 #[tokio::test]
 async fn stop_saves_the_session_and_leaves_the_rest_unsearched() {
     let w = world().await;

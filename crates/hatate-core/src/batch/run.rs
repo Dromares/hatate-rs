@@ -383,8 +383,8 @@ pub async fn search_pending(
             && matches!(entry_status, MatchStatus::Good | MatchStatus::Poor)
         {
             if let Some(url) = entries[idx]
-                .selected_candidate()
-                .map(|c| c.url.as_str())
+                .matched_url
+                .as_deref()
                 .filter(|u| !u.is_empty())
             {
                 log_matched_url(

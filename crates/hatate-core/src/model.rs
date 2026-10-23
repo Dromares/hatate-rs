@@ -248,6 +248,12 @@ pub struct Entry {
     /// (3.4 has no such key); it describes this run.
     #[serde(skip)]
     pub last_searched: Option<f64>,
+    /// `ImageEntry.matched_url`: the URL `select_candidate` last copied. It can outlive the
+    /// candidate it came from (Python's cache path calls `select_candidate(-1)`, which changes
+    /// nothing, when every cached match turned out dead), and the batch's matched-URL log reads
+    /// it, so it is kept the same way. Not stored: a loaded row gets it from `select_candidate`.
+    #[serde(skip)]
+    pub matched_url: Option<String>,
 }
 
 impl Entry {
@@ -271,6 +277,7 @@ impl Entry {
             tags: Vec::new(),
             interrupted_mid_search: false,
             last_searched: None,
+            matched_url: None,
         }
     }
 
@@ -287,13 +294,14 @@ impl Entry {
     /// `ImageEntry.select_candidate` (`core/models.py:279-298`) as far as it touches stored
     /// state: make `index` the active candidate and **replace** the search-engine and booru
     /// tags with that candidate's own, keeping the others. An index out of range changes
-    /// nothing. (`matched_url`, `similarity` and the other derived fields are read through
+    /// nothing. (`similarity` and the other derived fields are read through
     /// [`Entry::selected_candidate`] instead of being copied.)
     pub fn select_candidate(&mut self, index: usize) {
         if index >= self.candidates.len() {
             return;
         }
         self.selected_candidate_index = index;
+        self.matched_url = Some(self.candidates[index].url.clone());
         let engine: Vec<Tag> = self.candidates[index]
             .engine_tags
             .iter()
@@ -476,6 +484,25 @@ mod tests {
         // Out of range: nothing changes.
         e.select_candidate(7);
         assert_eq!(e.selected_candidate_index, 1);
+    }
+
+    #[test]
+    fn matched_url_is_copied_by_select_candidate_and_outlives_the_candidates() {
+        let mut e = Entry::new("/a");
+        e.candidates = vec![Candidate::new("https://a.example.invalid/1")];
+        assert_eq!(e.matched_url, None);
+        e.select_candidate(0);
+        assert_eq!(
+            e.matched_url.as_deref(),
+            Some("https://a.example.invalid/1")
+        );
+        // `select_candidate(-1)` on a list that emptied changes nothing: the URL stays.
+        e.candidates.clear();
+        e.select_candidate(0);
+        assert_eq!(
+            e.matched_url.as_deref(),
+            Some("https://a.example.invalid/1")
+        );
     }
 
     #[test]

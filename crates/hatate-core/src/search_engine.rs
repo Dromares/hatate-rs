@@ -921,6 +921,7 @@ impl SearchEngine {
                 // good result.
                 entry.candidates = Vec::new();
                 entry.status = MatchStatus::NotFound;
+                entry.matched_url = None;
                 entry.result_source = Some("fresh".to_owned());
                 entry.searched_without_saucenao = opts.skip_saucenao;
                 self.mark_searched(entry);
