@@ -61,15 +61,20 @@ venv; the Rust side ran offline (`unshare -rn`) against a scripted local server.
 outside the repo (the tree is Rust only); its log is `worktrees/DAN-2130-differential.log`. Every
 comparison is exact.
 
-| Family | Cases | Compared |
+| Family | Cases (ops) | Compared |
 |---|---|---|
-| `send_file_upload`: 1 or 2 calls on one entry, random answers for add_file / associate_url / add_tags / metadata / permission / set_notes (status codes, aborts, timeouts, bad JSON, wrong shapes, hash absent / empty / upper case), source filter on and off, note on and off, entries with 0 to 3 candidates, any selection, stale URL, settings `None` | 5 363 | every `ImportResult` field, the entry afterwards (hash, error message, sent, confirmed, matched URL, candidate URLs, tags), every request (method, path and query, key header, content type, body bytes, timeout, verify) |
-| `record_duplicate_relationship` / `duplicate_verdict` over generated pictures (same, resized, cropped, brightened, patched, blurred, mirrored, rotated, other; PNG, JPEG, WebP, GIF, BMP, TIFF; damaged files) and the real fixtures | 3 040 + 610 | the returned warning, the verdict, every request |
-| `write_provenance_note`, `_imported_bytes`, `_joined`, `_repoint`, `_is_exact_copy`, `similarity_label` / `_tooltip` (rounding halves, nan, inf, -0), `tags_to_send`, `provenance_note` text and date | about 4 000 | return values, entry state, requests, the temp files left behind |
-| `_validate_magic_bytes`, `_validate_image_decodes`, `_looks_like_a_web_page` over generated pictures in 7 formats, damaged in 6 ways, every real fixture whole and cut at 25, 50, 90 and 99 % | about 2 700 | the message or `None` |
-| Time zones for the note's date | 6 (New York, Kolkata, UTC, London, Auckland, Los Angeles) over dates from 2000 to 2038 | the text of the note |
+| `send_file_upload`: 1 or 2 calls on one entry, random answers for add_file / associate_url / add_tags / metadata / permission / set_notes (status codes, aborts, timeouts, bad JSON, wrong shapes, hash absent / empty / upper case), source filter on and off, note on and off, entries with 0 to 3 candidates, any selection, stale URL, settings `None` | 5 471 (7 088) | every `ImportResult` field, the entry afterwards (hash, error message, sent, confirmed, matched URL, candidate URLs, tags), every request (method, path and query, key header, content type, body bytes, timeout, verify) |
+| `record_duplicate_relationship` (generated pictures: same, resized, cropped, brightened, patched, blurred, mirrored, rotated, other; PNG, JPEG, WebP, GIF, BMP, TIFF; damaged files; hashes equal, upper case, empty) and the real fixtures | 3 043 (3 043) | the returned warning and every request |
+| `duplicate_verdict`, the same pictures and the real fixtures (each fixture against itself and against the next one) | 1 885 (1 885) | the verdict |
+| `write_provenance_note` | 1 745 (1 745) | the warning, every request |
+| `_imported_bytes` | 519 (519) | the bytes or `None`, every request, the temp files left behind |
+| `_repoint`, `_is_exact_copy`, `_joined`, `similarity_label` / `_tooltip` (rounding halves, nan, inf, -0), `tags_to_send`, `provenance_note` text and date | 2 106 (4 357) | return values and entry state |
+| `_validate_magic_bytes` (generated pictures in 7 formats, container signatures, every fixture with 5 claimed formats) | 1 459 (3 929) | the message or `None` |
+| `_validate_image_decodes` (the same, damaged in 6 ways; every fixture whole and cut at 25, 50, 90 and 99 %) | 1 509 (3 417) | the message or `None` |
+| `_looks_like_a_web_page` | 568 (1 467) | the boolean |
+| Time zones for the note's date | 6 (New York, Kolkata, UTC, London, Auckland, Los Angeles), dates from 2000 to 2038 | the text of the note |
 
-**Total: 18 305 cases, 28 345 ops, 27 255 requests, 0 unexplained differences.** (Seeds 11 to 16, N 3000
+**Total: 18 305 cases, 28 350 ops generated and 28 345 compared (the 5 later ops of a case that stopped at a C2 are not), 27 255 requests, 0 unexplained differences.** (Seeds 11 to 16, N 3000
 each, and the fixture family; `gen.py SEED N OUT [fixtures]`.) The real fixtures are the PNG, JPEG,
 WebP, GIF, BMP, TIFF, ICO and PPM files under `tests/data/image_compare` (the Python repo's own, via
 3.g); the generated pictures come from `gen.py` with the seeds above. Hydrus is a scripted local server
