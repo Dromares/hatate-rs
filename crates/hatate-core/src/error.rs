@@ -16,6 +16,20 @@ pub enum ErrorKind {
     /// The request never got an answer: the net layer's own kind says why (could not connect,
     /// TLS refused, timed out, ...).
     Net(net::ErrorKind),
+    /// Hydrus answered 401: it rejected the access key.
+    AccessKeyRejected,
+    /// Hydrus answered 403: the access key lacks a permission.
+    PermissionDenied,
+    /// Hydrus answered another status of 400 or more.
+    HttpStatus,
+    /// Hydrus answered, but the body is not shaped the way the client reads it. Python lets such
+    /// an answer raise an `AttributeError` or `TypeError` that its own `except HydrusError`
+    /// handlers do not catch, and so does this kind.
+    UnexpectedResponse,
+    /// The call was made with nothing to do (no hashes to show, for example).
+    InvalidInput,
+    /// A local file could not be written.
+    Io,
     /// A picture could not be read from disk (missing, unreadable, not a file).
     ImageUnreadable,
     /// The bytes are not a picture this build can decode.

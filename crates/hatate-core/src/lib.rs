@@ -14,6 +14,7 @@ pub mod engines;
 pub mod error;
 mod fsutil;
 pub mod hard_timeout;
+pub mod hydrus_client;
 pub mod hydrus_tag_lookup;
 pub mod hydrus_url;
 pub mod image_compare;
