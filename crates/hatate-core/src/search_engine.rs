@@ -246,7 +246,7 @@ impl SearchEngine {
 
     /// `_measure_tag_band`: snapshots the tag/lender picture BEFORE the tagless rescue runs, so a
     /// rescued entry measured afterwards does not make the tagless band read as empty.
-    fn measure_tag_band(
+    pub fn measure_tag_band(
         &self,
         entry: &Entry,
         chosen_index: usize,
@@ -266,7 +266,7 @@ impl SearchEngine {
     /// `_finish_tag_band_measurement`: completes the snapshot with the final tag count and writes
     /// the row. The count is `countable_tags`, not `entry.tags`: the by-rule tags are the app's
     /// own bookkeeping, and counting them would inflate the band.
-    fn finish_tag_band_measurement(
+    pub fn finish_tag_band_measurement(
         &self,
         measurement: Option<EntryMeasurement>,
         entry: &Entry,
@@ -1268,4 +1268,272 @@ pub fn cache_entry_for(entry: &Entry, now: f64) -> CacheEntry {
     cached.error_message = entry.error_message.clone();
     cached.selected_candidate_index = entry.selected_candidate_index;
     cached
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::TagSource;
+
+    fn settings() -> Settings {
+        let paths =
+            crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| "/home/test".into()))
+                .unwrap();
+        Settings::with_defaults(&paths)
+    }
+
+    fn candidate(url: &str, similarity: f64) -> Candidate {
+        let mut c = Candidate::new(url);
+        c.similarity = similarity;
+        c
+    }
+
+    /// `TestDecideStatus._entry`: `n_tags` general booru tags, a local size and the match's.
+    fn entry(n_tags: usize, local: Option<(i64, i64)>, matched: Option<(i64, i64)>) -> Entry {
+        let mut e = Entry::new("x.jpg");
+        e.tags = (0..n_tags)
+            .map(|i| Tag {
+                name: format!("tag{i}"),
+                namespace: Some("general".into()),
+                source: TagSource::Booru,
+            })
+            .collect();
+        if let Some((w, h)) = local {
+            e.local_width = Some(w);
+            e.local_height = Some(h);
+        }
+        if let Some((w, h)) = matched {
+            let mut c = Candidate::new("https://example.test/1");
+            c.width = Some(w);
+            c.height = Some(h);
+            e.candidates = vec![c];
+        }
+        e
+    }
+
+    #[test]
+    fn few_tags_is_poor() {
+        // test_boorus_harness.TestDecideStatus.test_few_tags_is_poor
+        assert_eq!(
+            decide_status(&entry(2, None, None), &settings()),
+            MatchStatus::Poor
+        );
+    }
+
+    #[test]
+    fn enough_tags_and_no_size_info_is_good() {
+        // TestDecideStatus.test_enough_tags_and_no_size_info_is_good
+        assert_eq!(
+            decide_status(&entry(5, None, None), &settings()),
+            MatchStatus::Good
+        );
+    }
+
+    #[test]
+    fn enough_tags_but_a_much_larger_match_is_poor() {
+        // TestDecideStatus.test_enough_tags_but_match_is_much_larger_is_poor
+        let e = entry(5, Some((1000, 1000)), Some((2000, 2000)));
+        assert_eq!(decide_status(&e, &settings()), MatchStatus::Poor);
+    }
+
+    #[test]
+    fn enough_tags_and_only_slightly_larger_is_good() {
+        // TestDecideStatus.test_enough_tags_and_only_slightly_larger_is_good
+        let e = entry(5, Some((1000, 1000)), Some((1050, 1050)));
+        assert_eq!(decide_status(&e, &settings()), MatchStatus::Good);
+    }
+
+    #[test]
+    fn the_height_gain_alone_can_flag_it_and_the_switch_turns_the_comparison_off() {
+        let mut s = settings();
+        let e = entry(5, Some((1000, 1000)), Some((1000, 1200)));
+        assert_eq!(decide_status(&e, &s), MatchStatus::Poor);
+        s.match_conditions.require_larger_than_local = false;
+        assert_eq!(decide_status(&e, &s), MatchStatus::Good);
+    }
+
+    #[test]
+    fn a_zero_or_missing_size_skips_the_comparison() {
+        // `entry.local_width and entry.match_width`: zero is false in Python.
+        let s = settings();
+        assert_eq!(
+            decide_status(&entry(5, Some((0, 0)), Some((2000, 2000))), &s),
+            MatchStatus::Good
+        );
+        assert_eq!(
+            decide_status(&entry(5, Some((1000, 1000)), Some((0, 0))), &s),
+            MatchStatus::Good
+        );
+        // A missing local height leaves the height gain at zero.
+        let mut e = entry(5, Some((1000, 1000)), Some((1000, 5000)));
+        e.local_height = None;
+        assert_eq!(decide_status(&e, &s), MatchStatus::Good);
+    }
+
+    #[test]
+    fn stale_rule_tags_do_not_promote_poor_to_good() {
+        // test_outcome_tags.TestTheRuleDoesNotFeedItself.test_stale_rule_tags_do_not_promote_poor_to_good
+        let mut s = settings();
+        s.match_conditions.require_larger_than_local = false;
+        let mut e = entry(
+            (s.match_conditions.min_tags_for_good - 1) as usize,
+            None,
+            None,
+        );
+        for name in ["found", "few tags"] {
+            e.tags.push(Tag {
+                name: name.into(),
+                namespace: Some("hatate".into()),
+                source: crate::tag_rules::OUTCOME_TAG_SOURCE,
+            });
+        }
+        assert_eq!(decide_status(&e, &s), MatchStatus::Poor);
+    }
+
+    #[test]
+    fn dedupe_keeps_the_best_copy_of_a_url_in_the_place_of_its_first_appearance() {
+        let got = dedupe(vec![
+            candidate("a", 50.0),
+            candidate("b", 60.0),
+            candidate("a", 90.0),
+            candidate("c", 10.0),
+            candidate("b", 60.0),
+        ]);
+        let urls: Vec<(&str, f64)> = got.iter().map(|c| (c.url.as_str(), c.similarity)).collect();
+        assert_eq!(urls, [("a", 90.0), ("b", 60.0), ("c", 10.0)]);
+        // A tie keeps the first copy (strictly greater replaces).
+        let mut first = candidate("a", 70.0);
+        first.engine = "IQDB".into();
+        let mut second = candidate("a", 70.0);
+        second.engine = "SauceNAO".into();
+        assert_eq!(dedupe(vec![first, second])[0].engine, "IQDB");
+        assert!(dedupe(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn the_cache_glue_round_trips_a_candidate() {
+        let mut c = candidate("https://danbooru.donmai.us/posts/1", 91.5);
+        c.source_name = Some("Danbooru".into());
+        c.thumb_url = Some("https://t/1.jpg".into());
+        c.similarity_measured = true;
+        c.width = Some(10);
+        c.height = Some(20);
+        c.engine = "SauceNAO".into();
+        c.engine_tags = vec![CandidateTag {
+            name: "e".into(),
+            namespace: Some("x".into()),
+        }];
+        c.booru_tags = vec![CandidateTag {
+            name: "b".into(),
+            namespace: None,
+        }];
+        c.direct_file_url = Some("d".into());
+        c.preview_url = Some("p".into());
+        c.remote_format = Some("PNG".into());
+        c.remote_size_bytes = Some(12);
+        c.incomplete_reason = Some("why".into());
+        c.tags_borrowed_from = Some("from".into());
+        c.remote_available = Some(true);
+        c.availability_checked_at = Some(5.0);
+        c.restricted = Some("gold".into());
+        c.booru_tags_fetched = true;
+        c.remote_info_fetched = true;
+        let back = candidate_from_cache(&candidate_to_cache(&c));
+        assert_eq!(back, c);
+        // `thumb_bytes` is deliberately not cached.
+        c.thumb_bytes = Some(vec![1]);
+        assert_eq!(
+            candidate_from_cache(&candidate_to_cache(&c)).thumb_bytes,
+            None
+        );
+    }
+
+    #[test]
+    fn applying_a_cached_result_selects_its_stored_index_and_swaps_the_tags() {
+        let mut a = candidate("a", 90.0);
+        a.booru_tags = vec![CandidateTag {
+            name: "from-a".into(),
+            namespace: None,
+        }];
+        let mut b = candidate("b", 80.0);
+        b.booru_tags = vec![CandidateTag {
+            name: "from-b".into(),
+            namespace: None,
+        }];
+        let mut source = Entry::new("x.png");
+        source.status = MatchStatus::Good;
+        source.error_message = Some("note".into());
+        source.candidates = vec![a, b];
+        source.selected_candidate_index = 1;
+        let cached = cache_entry_for(&source, 100.0);
+        assert_eq!(cached.selected_candidate_index, 1);
+        assert_eq!(cached.cached_at, Some(100.0));
+
+        let mut fresh = Entry::new("x.png");
+        fresh.tags.push(Tag {
+            name: "mine".into(),
+            namespace: None,
+            source: TagSource::User,
+        });
+        apply_cached_result(&mut fresh, &cached);
+        assert_eq!(fresh.status, MatchStatus::Good);
+        assert_eq!(fresh.error_message.as_deref(), Some("note"));
+        assert_eq!(fresh.selected_candidate_index, 1);
+        let names: Vec<&str> = fresh.tags.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["mine", "from-b"]);
+        // The cache's read flag: a result written by the current format is "fetched".
+        assert!(
+            fresh
+                .candidates
+                .iter()
+                .all(|c| !c.booru_tags_fetched || c.url.len() == 1)
+        );
+    }
+
+    #[test]
+    fn a_cached_result_with_no_candidates_changes_no_selection() {
+        let mut e = Entry::new("x.png");
+        e.selected_candidate_index = 3;
+        let cached = CacheEntry::new(cache::MatchStatus::NotFound, Vec::new(), 1.0);
+        apply_cached_result(&mut e, &cached);
+        assert_eq!(e.status, MatchStatus::NotFound);
+        assert_eq!(e.selected_candidate_index, 3);
+    }
+
+    #[test]
+    fn local_dimensions_come_from_the_header_and_an_unreadable_file_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("a.png");
+        let mut img = image::RgbImage::new(7, 5);
+        img.put_pixel(0, 0, image::Rgb([1, 2, 3]));
+        img.save(&png).unwrap();
+        let mut e = Entry::new(png.to_str().unwrap());
+        load_local_dimensions(&mut e).unwrap();
+        assert_eq!((e.local_width, e.local_height), (Some(7), Some(5)));
+
+        // Not an image, and not a file: the entry keeps what it had.
+        let junk = dir.path().join("junk.png");
+        std::fs::write(&junk, b"not an image").unwrap();
+        let mut e = Entry::new(junk.to_str().unwrap());
+        e.local_width = Some(1);
+        e.local_height = Some(2);
+        load_local_dimensions(&mut e).unwrap();
+        assert_eq!((e.local_width, e.local_height), (Some(1), Some(2)));
+        let mut e = Entry::new(dir.path().join("missing.png").to_str().unwrap());
+        load_local_dimensions(&mut e).unwrap();
+        assert_eq!(e.local_width, None);
+    }
+
+    #[test]
+    fn error_classes_are_python_exception_names() {
+        let hard = SearchError::Remote(RemoteRaised::HardTimeout("Timed out after 30s".into()));
+        assert_eq!(hard.class_name(), Some("HardTimeoutError"));
+        assert_eq!(hard.to_string(), "Timed out after 30s");
+        let raised = SearchError::Engine(crate::engine_runner::Raised("boom".into()));
+        assert_eq!(raised.class_name(), None);
+        assert_eq!(raised.to_string(), "boom");
+        let value =
+            SearchError::Resolve(ResolveError::Raised(RemoteRaised::ValueError("x".into())));
+        assert_eq!(value.class_name(), Some("ValueError"));
+    }
 }

@@ -671,3 +671,469 @@ pub fn load_measurements(path: &std::path::Path) -> std::io::Result<Vec<EntryMea
     }
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::CandidateTag;
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    #[allow(clippy::too_many_arguments)]
+    fn candidate(
+        url: &str,
+        similarity: f64,
+        booru: &[&str],
+        engine_tags: &[&str],
+        engine: &str,
+        site: Option<&str>,
+        available: Option<bool>,
+        borrowed_from: Option<&str>,
+    ) -> Candidate {
+        let tags = |names: &[&str]| -> Vec<CandidateTag> {
+            names
+                .iter()
+                .map(|n| CandidateTag {
+                    name: (*n).to_owned(),
+                    namespace: None,
+                })
+                .collect()
+        };
+        let mut c = Candidate::new(url);
+        c.source_name = site.map(str::to_owned);
+        c.similarity = similarity;
+        c.engine = engine.to_owned();
+        c.booru_tags = tags(booru);
+        c.engine_tags = tags(engine_tags);
+        c.remote_available = available;
+        c.tags_borrowed_from = borrowed_from.map(str::to_owned);
+        c
+    }
+
+    fn plain(url: &str, similarity: f64, booru: &[&str]) -> Candidate {
+        candidate(url, similarity, booru, &[], "IQDB", None, None, None)
+    }
+
+    #[test]
+    fn the_boundary_is_min_tags_for_good_not_a_hardcoded_five() {
+        // TestBuckets.test_the_boundary_is_min_tags_for_good_not_a_hardcoded_five
+        assert_eq!(bucket_for(0, 5), BUCKET_TAGLESS);
+        assert_eq!(bucket_for(1, 5), BUCKET_UNDER_TAGGED);
+        assert_eq!(bucket_for(4, 5), BUCKET_UNDER_TAGGED);
+        assert_eq!(bucket_for(5, 5), BUCKET_WELL_TAGGED);
+        assert_eq!(bucket_for(5, 10), BUCKET_UNDER_TAGGED);
+        assert_eq!(bucket_for(10, 10), BUCKET_WELL_TAGGED);
+    }
+
+    #[test]
+    fn a_min_of_zero_puts_everything_above_tagless_in_range() {
+        // TestBuckets.test_min_of_zero_puts_everything_above_tagless_in_range
+        assert_eq!(bucket_for(0, 0), BUCKET_TAGLESS);
+        assert_eq!(bucket_for(1, 0), BUCKET_WELL_TAGGED);
+        assert_eq!(bucket_for(-3, 5), BUCKET_TAGLESS);
+    }
+
+    #[test]
+    fn entry_tags_and_chosen_booru_tags_are_bucketed_separately() {
+        // TestMeasureEntry.test_entry_tags_and_chosen_booru_tags_are_bucketed_separately
+        let chosen = candidate(
+            "https://paheal.net/1",
+            90.0,
+            &["a", "b", "c"],
+            &["d", "e"],
+            "IQDB",
+            None,
+            None,
+            None,
+        );
+        let m = measure_entry(5, &[chosen], 0, 5, 5.0, true);
+        assert_eq!(m.entry_bucket, BUCKET_WELL_TAGGED);
+        assert_eq!(m.chosen_booru_bucket, BUCKET_UNDER_TAGGED);
+        assert_eq!(m.entry_tag_count, 5);
+        assert_eq!(m.chosen_booru_tag_count, 3);
+        assert_eq!(m.chosen_engine_tag_count, 2);
+    }
+
+    #[test]
+    fn it_uses_the_real_similarity_gate() {
+        // TestMeasureEntry.test_it_uses_the_real_similarity_gate
+        let chosen = plain("https://mangadex.org/1", 90.0, &[]);
+        let close = plain("https://gelbooru.com/1", 87.0, &["x", "y"]);
+        let far = plain("https://danbooru.donmai.us/1", 40.0, &["z"; 50]);
+        let m = measure_entry(0, &[chosen, close, far], 0, 5, 5.0, true);
+        assert_eq!(m.eligible_lender_count, 1);
+        assert_eq!(m.best_lender_tag_count, 2);
+        assert_eq!(m.best_tagged_lender_tag_count, 2);
+    }
+
+    #[test]
+    fn zero_slack_excludes_a_weaker_match() {
+        // TestMeasureEntry.test_zero_slack_excludes_a_weaker_match
+        let chosen = plain("https://mangadex.org/1", 90.0, &[]);
+        let close = plain("https://gelbooru.com/1", 89.0, &["x"]);
+        let both = [chosen, close];
+        assert_eq!(
+            measure_entry(0, &both, 0, 5, 0.0, true).eligible_lender_count,
+            0
+        );
+        assert_eq!(
+            measure_entry(0, &both, 0, 5, 1.0, true).eligible_lender_count,
+            1
+        );
+    }
+
+    #[test]
+    fn an_eligible_lender_with_no_recorded_tags_is_counted_apart() {
+        // TestMeasureEntry.test_an_eligible_lender_with_no_recorded_tags_is_counted_apart
+        let chosen = plain("https://mangadex.org/1", 90.0, &[]);
+        let blank = plain("https://sankakucomplex.com/1", 90.0, &[]);
+        let m = measure_entry(0, &[chosen, blank], 0, 5, 5.0, true);
+        assert_eq!(m.eligible_lender_count, 1);
+        assert_eq!(m.lenders_with_tags, 0);
+        assert_eq!(m.best_tagged_lender_tag_count, 0);
+        assert_eq!(m.tagged_lender_cross_engine, None);
+    }
+
+    #[test]
+    fn cross_engine_lending_is_distinguishable() {
+        // TestMeasureEntry.test_cross_engine_lending_is_distinguishable
+        let chosen = candidate(
+            "https://mangadex.org/1",
+            90.0,
+            &[],
+            &[],
+            "SauceNAO",
+            None,
+            None,
+            None,
+        );
+        let lender = candidate(
+            "https://gelbooru.com/1",
+            90.0,
+            &["x"],
+            &[],
+            "IQDB",
+            Some("Gelbooru"),
+            None,
+            None,
+        );
+        let m = measure_entry(0, &[chosen.clone(), lender], 0, 5, 5.0, true);
+        assert_eq!(m.tagged_lender_cross_engine, Some(true));
+        assert_eq!(m.best_tagged_lender_site.as_deref(), Some("Gelbooru"));
+
+        let same = candidate(
+            "https://gelbooru.com/2",
+            90.0,
+            &["x"],
+            &[],
+            "SauceNAO",
+            None,
+            None,
+            None,
+        );
+        let m2 = measure_entry(0, &[chosen, same], 0, 5, 5.0, true);
+        assert_eq!(m2.tagged_lender_cross_engine, Some(false));
+    }
+
+    #[test]
+    fn the_richest_lender_is_reported_not_merely_the_closest() {
+        // TestMeasureEntry.test_the_richest_lender_is_reported_not_merely_the_closest
+        let chosen = plain("https://mangadex.org/1", 90.0, &[]);
+        let closest = plain("https://a.test/1", 90.0, &["x"]);
+        let richest = plain("https://b.test/1", 88.0, &["x", "y", "z"]);
+        let m = measure_entry(0, &[chosen, closest, richest], 0, 5, 5.0, true);
+        assert_eq!(m.best_lender_tag_count, 1);
+        assert_eq!(m.best_tagged_lender_tag_count, 3);
+        assert_eq!(m.lenders_with_tags, 2);
+    }
+
+    #[test]
+    fn the_first_of_equally_rich_lenders_wins() {
+        // `max(tagged, key=_tag_count)` keeps the first of equals.
+        let chosen = plain("https://mangadex.org/1", 90.0, &[]);
+        let mut first = plain("https://a.test/1", 90.0, &["x", "y"]);
+        first.engine = "SauceNAO".to_owned();
+        let second = plain("https://b.test/1", 90.0, &["x", "y"]);
+        let m = measure_entry(0, &[chosen, first, second], 0, 5, 5.0, true);
+        assert_eq!(m.best_tagged_lender_engine.as_deref(), Some("SauceNAO"));
+    }
+
+    #[test]
+    fn an_already_rescued_entry_is_flagged() {
+        // TestMeasureEntry.test_an_already_rescued_entry_is_flagged
+        let chosen = candidate(
+            "https://mangadex.org/1",
+            90.0,
+            &["x"],
+            &[],
+            "IQDB",
+            None,
+            None,
+            Some("https://gelbooru.com/1"),
+        );
+        assert!(measure_entry(1, &[chosen], 0, 5, 5.0, true).already_borrowed);
+    }
+
+    #[test]
+    fn no_candidates_is_recorded_rather_than_crashing() {
+        // TestMeasureEntry.test_no_candidates_is_recorded_rather_than_crashing
+        let m = measure_entry(0, &[], 0, 5, 5.0, true);
+        assert!(m.all_matches_dead);
+        assert_eq!(m.eligible_lender_count, 0);
+        // An out-of-range index is a bug elsewhere, not a reason to lose the row.
+        let m = measure_entry(3, &[plain("u", 90.0, &[])], 7, 5, 5.0, true);
+        assert_eq!(m.entry_tag_count, 3);
+        assert!(!m.all_matches_dead);
+    }
+
+    #[test]
+    fn measuring_leaves_what_it_measures_alone() {
+        // TestMeasureEntry.test_it_does_not_mutate_what_it_measures (the borrow checker's half:
+        // `measure_entry` takes a shared slice; this checks the values too)
+        let candidates = [
+            plain("https://mangadex.org/1", 90.0, &[]),
+            plain("https://gelbooru.com/1", 90.0, &["x", "y"]),
+        ];
+        let before = candidates.clone();
+        measure_entry(0, &candidates, 0, 5, 5.0, true);
+        assert_eq!(candidates, before);
+    }
+
+    fn rows() -> Vec<EntryMeasurement> {
+        let base = EntryMeasurement::default;
+        vec![
+            EntryMeasurement {
+                eligible_lender_count: 1,
+                best_tagged_lender_tag_count: 40,
+                tagged_lender_cross_engine: Some(true),
+                best_tagged_lender_site: Some("Gelbooru".into()),
+                chosen_site: Some("MangaDex".into()),
+                ..base()
+            },
+            EntryMeasurement {
+                eligible_lender_count: 2,
+                chosen_site: Some("Sankaku".into()),
+                ..base()
+            },
+            EntryMeasurement {
+                entry_bucket: BUCKET_UNDER_TAGGED.into(),
+                chosen_booru_bucket: BUCKET_UNDER_TAGGED.into(),
+                chosen_site: Some("paheal".into()),
+                ..base()
+            },
+            EntryMeasurement {
+                entry_bucket: BUCKET_UNDER_TAGGED.into(),
+                chosen_booru_bucket: BUCKET_UNDER_TAGGED.into(),
+                eligible_lender_count: 1,
+                best_tagged_lender_tag_count: 6,
+                tagged_lender_cross_engine: Some(false),
+                best_tagged_lender_site: Some("Rule34".into()),
+                chosen_site: Some("paheal".into()),
+                ..base()
+            },
+            EntryMeasurement {
+                entry_bucket: BUCKET_WELL_TAGGED.into(),
+                chosen_booru_bucket: BUCKET_UNDER_TAGGED.into(),
+                chosen_site: Some("paheal".into()),
+                ..base()
+            },
+        ]
+    }
+
+    fn band<'a>(s: &'a [BucketSummary], name: &str) -> &'a BucketSummary {
+        s.iter().find(|b| b.bucket == name).unwrap()
+    }
+
+    #[test]
+    fn rates_are_per_band() {
+        // TestSummarize.test_rates_are_per_band
+        let s = summarize(&rows(), Bucketing::Entry);
+        let tagless = band(&s, BUCKET_TAGLESS);
+        assert_eq!(tagless.entries, 2);
+        assert_eq!(tagless.with_eligible_lender, 2);
+        assert_eq!(tagless.with_tagged_lender, 1);
+        assert_eq!(tagless.eligible_lender_rate(), 1.0);
+        assert_eq!(tagless.tagged_lender_rate(), 0.5);
+        assert_eq!(tagless.mean_lender_tags(), 40.0);
+
+        let thin = band(&s, BUCKET_UNDER_TAGGED);
+        assert_eq!(thin.entries, 2);
+        assert_eq!(thin.with_eligible_lender, 1);
+        assert_eq!(thin.cross_engine_lenders, 0);
+        assert_eq!(thin.same_engine_lenders, 1);
+        assert_eq!(thin.lender_tag_max, 6);
+        assert_eq!(
+            thin.chosen_sites,
+            BTreeMap::from([("paheal".to_owned(), 2)])
+        );
+    }
+
+    #[test]
+    fn the_two_bucketings_disagree_and_both_are_reported() {
+        // TestSummarize.test_the_two_bucketings_disagree_and_both_are_reported
+        let by_entry = summarize(&rows(), Bucketing::Entry);
+        let by_chosen = summarize(&rows(), Bucketing::ChosenBooru);
+        assert_eq!(band(&by_entry, BUCKET_UNDER_TAGGED).entries, 2);
+        assert_eq!(band(&by_chosen, BUCKET_UNDER_TAGGED).entries, 3);
+        assert_eq!(band(&by_entry, BUCKET_WELL_TAGGED).entries, 1);
+        assert_eq!(band(&by_chosen, BUCKET_WELL_TAGGED).entries, 0);
+    }
+
+    #[test]
+    fn an_empty_band_has_no_rate_rather_than_a_division_error() {
+        // TestSummarize.test_an_empty_band_has_no_rate_rather_than_a_division_error
+        let s = summarize(&[], Bucketing::Entry);
+        let thin = band(&s, BUCKET_UNDER_TAGGED);
+        assert_eq!(thin.entries, 0);
+        assert_eq!(thin.eligible_lender_rate(), 0.0);
+        assert_eq!(thin.mean_lender_tags(), 0.0);
+    }
+
+    #[test]
+    fn an_unknown_bucketing_is_rejected() {
+        // TestSummarize.test_an_unknown_bucketing_is_rejected
+        assert_eq!(Bucketing::parse("entry"), Ok(Bucketing::Entry));
+        assert_eq!(Bucketing::parse("chosen_booru"), Ok(Bucketing::ChosenBooru));
+        assert_eq!(
+            Bucketing::parse("whatever"),
+            Err("unknown bucketing: 'whatever'".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_table_and_json_carry_the_rates() {
+        // TestSummarize.test_the_table_and_json_carry_the_rates
+        let s = summarize(&rows(), Bucketing::Entry);
+        let table = format_table(&s, "T");
+        assert!(table.starts_with("### T\n\n| band | entries |"), "{table}");
+        assert!(table.contains("| `1..min-1` | 2 | 1 (50.0%)"), "{table}");
+        let json = summary_to_value(&s);
+        assert_eq!(json[BUCKET_TAGLESS]["tagged_lender_rate"], 0.5);
+        assert_eq!(json[BUCKET_UNDER_TAGGED]["entries"], 2);
+        assert_eq!(json[BUCKET_UNDER_TAGGED]["chosen_sites"]["paheal"], 2);
+    }
+
+    #[test]
+    fn the_recorder_is_off_unless_the_environment_names_a_file() {
+        // TestRecorder.test_off_unless_the_environment_names_a_file
+        assert!(Recorder::from_env(|_| None).is_none());
+        assert!(Recorder::from_env(|_| Some("   ".into())).is_none());
+        let rec =
+            Recorder::from_env(|k| (k == ENV_OUTPUT_PATH).then(|| " /tmp/x.jsonl ".to_owned()))
+                .unwrap();
+        assert_eq!(rec.path, PathBuf::from("/tmp/x.jsonl"));
+    }
+
+    #[test]
+    fn rows_round_trip_and_a_truncated_one_is_skipped() {
+        // TestRecorder.test_rows_round_trip_and_a_truncated_one_is_skipped
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("m.jsonl");
+        let rec = Recorder::new(&path);
+        rec.record(&EntryMeasurement {
+            entry_tag_count: 3,
+            entry_bucket: BUCKET_UNDER_TAGGED.into(),
+            ..EntryMeasurement::default()
+        });
+        rec.record(&EntryMeasurement {
+            entry_tag_count: 9,
+            entry_bucket: BUCKET_WELL_TAGGED.into(),
+            chosen_similarity: Some(96.5),
+            chosen_site: Some("Dänbooru".into()),
+            tagged_lender_cross_engine: Some(false),
+            ..EntryMeasurement::default()
+        });
+        assert_eq!(rec.written(), 2);
+        // A killed run leaves a half-written last line.
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        file.write_all(br#"{"entry_tag_count": 4, "entry_b"#)
+            .unwrap();
+        let rows = load_measurements(&path).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.entry_tag_count).collect::<Vec<_>>(),
+            [3, 9]
+        );
+        assert_eq!(rows[1].chosen_similarity, Some(96.5));
+        assert_eq!(rows[1].chosen_site.as_deref(), Some("Dänbooru"));
+        assert_eq!(rows[1].tagged_lender_cross_engine, Some(false));
+        assert_eq!(rows[0].entry_bucket, BUCKET_UNDER_TAGGED);
+    }
+
+    #[test]
+    fn an_unwritable_path_does_not_raise() {
+        // TestRecorder.test_an_unwritable_path_does_not_raise
+        let rec = Recorder::new("/no-such-dir-dan55/m.jsonl");
+        rec.record(&EntryMeasurement::default());
+        assert_eq!(rec.written(), 0);
+    }
+
+    #[test]
+    fn unknown_fields_in_a_recording_are_ignored() {
+        // TestRecorder.test_unknown_fields_in_a_recording_are_ignored
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("m.jsonl");
+        std::fs::write(
+            &path,
+            "{\"entry_tag_count\": 2, \"from_a_later_version\": true}\n\n",
+        )
+        .unwrap();
+        let rows = load_measurements(&path).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].entry_tag_count, 2);
+        assert!(rows[0].liveness_known);
+    }
+
+    #[test]
+    fn a_row_with_a_field_of_the_wrong_type_is_skipped() {
+        // The documented difference from Python (module note): its dataclass keeps whatever it is given.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("m.jsonl");
+        std::fs::write(
+            &path,
+            "{\"entry_tag_count\": \"two\"}\n[1]\n{\"entry_tag_count\": 5}\n",
+        )
+        .unwrap();
+        let rows = load_measurements(&path).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.entry_tag_count).collect::<Vec<_>>(),
+            [5]
+        );
+    }
+
+    #[test]
+    fn a_row_is_written_as_python_json_dumps_with_sorted_keys() {
+        // The black-box contract with `tools/measure_tag_bands.py`: the line is byte for byte
+        // `json.dumps(asdict(m), sort_keys=True)`. The differential compares this against Python's
+        // own recorder; this pins the shape.
+        let m = EntryMeasurement {
+            entry_tag_count: 2,
+            chosen_engine: Some("IQDB".into()),
+            chosen_site: Some("é\"".into()),
+            chosen_similarity: Some(100.0),
+            best_lender_similarity: Some(1e-7),
+            ..EntryMeasurement::default()
+        };
+        assert_eq!(
+            m.to_json_line(),
+            "{\"all_matches_dead\": false, \"already_borrowed\": false, \"best_lender_engine\": null, \
+             \"best_lender_similarity\": 1e-07, \"best_lender_site\": null, \"best_lender_tag_count\": 0, \
+             \"best_tagged_lender_engine\": null, \"best_tagged_lender_site\": null, \
+             \"best_tagged_lender_tag_count\": 0, \"candidate_count\": 0, \"chosen_booru_bucket\": \"0\", \
+             \"chosen_booru_tag_count\": 0, \"chosen_engine\": \"IQDB\", \"chosen_engine_tag_count\": 0, \
+             \"chosen_similarity\": 100.0, \"chosen_site\": \"\\u00e9\\\"\", \"eligible_lender_count\": 0, \
+             \"entry_bucket\": \"0\", \"entry_tag_count\": 2, \"lenders_with_tags\": 0, \
+             \"liveness_known\": true, \"tagged_lender_cross_engine\": null}"
+        );
+    }
+
+    #[test]
+    fn an_empty_source_name_is_no_site() {
+        // `str(name) if name else None`
+        let mut c = plain("u", 90.0, &[]);
+        c.source_name = Some(String::new());
+        assert_eq!(measure_entry(0, &[c], 0, 5, 5.0, true).chosen_site, None);
+    }
+}
