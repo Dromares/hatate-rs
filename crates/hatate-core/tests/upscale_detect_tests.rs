@@ -451,6 +451,18 @@ fn the_source_comparison_messages_match_python() {
 }
 
 #[test]
+fn the_shipped_threshold_is_fifteen_percent_gain() {
+    // `Real` is what the worker uses: 15.5% larger is flagged, 14.9% is not, at either edge.
+    let flagged = |lw, lh, sw, sh| Real.compare_to_source(lw, lh, sw, sh).flagged;
+    assert!(flagged(1155, 1155, 1000, 1000));
+    // 1.15 - 1.0 is 0.1499999..., so exactly 15% on paper is not flagged, in Python or here.
+    assert!(!flagged(1150, 800, 1000, 800));
+    assert!(flagged(1151, 800, 1000, 800));
+    assert!(!flagged(1149, 1149, 1000, 1000));
+    assert!(flagged(800, 1155, 800, 1000), "the taller edge counts too");
+}
+
+#[test]
 fn a_file_that_cannot_be_read_says_so_in_pythons_words() {
     let dir = tempfile::tempdir().unwrap();
     let gone = dir.path().join("gone.png");
