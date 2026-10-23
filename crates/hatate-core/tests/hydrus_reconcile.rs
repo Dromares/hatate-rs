@@ -327,6 +327,22 @@ async fn the_worker_reconciles_over_plain_http_by_hash() {
 }
 
 #[tokio::test]
+async fn the_worker_asks_hydrus_about_at_most_256_hashes_per_request() {
+    // `BATCH_SIZE` is what `run_reconcile` ships with (Python's `BATCH_SIZE`); the tests above
+    // pass the size in, so this is the one that goes through the shipped constant.
+    assert_eq!(BATCH_SIZE, 256);
+    let server = TestServer::http(hydrus_answering(vec![])).await;
+    let settings = settings_for(&server.url(""), true);
+    let mut entries: Vec<Entry> = (0..=BATCH_SIZE)
+        .map(|i| waiting(&format!("{i}.png"), &format!("{i:064x}")))
+        .collect();
+    let result = run_reconcile(&mut entries, &settings, None, None).await;
+    assert_eq!(result.checked, BATCH_SIZE + 1);
+    // 256 hashes in the first question, the 257th in a second.
+    assert_eq!(server.request_count(), 2);
+}
+
+#[tokio::test]
 async fn the_worker_with_nothing_waiting_makes_no_request() {
     let server = TestServer::http(hydrus_answering(vec![])).await;
     let settings = settings_for(&server.url(""), true);

@@ -84,6 +84,10 @@ impl Clock for SystemClock {
 /// A clock that never waits: `sleep` advances `wall` and `monotonic` by the amount asked and
 /// returns at once, and every amount asked for is kept. A test (or a dry run) reads the sleeps
 /// back instead of measuring how long they took.
+///
+/// A loop that waits on it and never ends would hang a test, because no sleep ever takes time. A
+/// test that knows how many sleeps it needs sets [`ManualClock::with_sleep_limit`]; the clock then
+/// panics on the sleep past it, and the test fails instead of hanging.
 #[derive(Debug)]
 pub struct ManualClock {
     inner: Mutex<ManualState>,
@@ -94,6 +98,7 @@ struct ManualState {
     wall: f64,
     monotonic: f64,
     sleeps: Vec<f64>,
+    max_sleeps: Option<usize>,
 }
 
 impl ManualClock {
@@ -104,8 +109,16 @@ impl ManualClock {
                 wall,
                 monotonic,
                 sleeps: Vec::new(),
+                max_sleeps: None,
             }),
         }
+    }
+
+    /// Panics on the sleep after the `max_sleeps`-th, so a loop that waits on this clock and never
+    /// ends fails its test instead of hanging it.
+    pub fn with_sleep_limit(self, max_sleeps: usize) -> Self {
+        self.inner.lock().unwrap().max_sleeps = Some(max_sleeps);
+        self
     }
 
     /// Moves both clocks on without a sleep being asked for (time passing between calls).
@@ -137,6 +150,12 @@ impl Clock for ManualClock {
 
     fn sleep(&self, seconds: f64) -> BoxFuture<'_, ()> {
         let mut state = self.inner.lock().unwrap();
+        if let Some(max) = state.max_sleeps {
+            assert!(
+                state.sleeps.len() < max,
+                "ManualClock was asked to sleep more than {max} times: a loop that waits on it is not ending"
+            );
+        }
         state.sleeps.push(seconds);
         if seconds > 0.0 {
             state.wall += seconds;
@@ -171,5 +190,14 @@ mod tests {
         assert_eq!((clock.wall(), clock.monotonic()), (1011.75, 16.75));
         assert_eq!(clock.sleeps(), vec![0.25, 1.5]);
         assert_eq!(clock.slept(), 1.75);
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "is not ending")]
+    async fn the_manual_clock_fails_a_loop_that_never_stops_sleeping_instead_of_hanging() {
+        let clock = ManualClock::new(0.0, 0.0).with_sleep_limit(100);
+        loop {
+            clock.sleep(0.0).await;
+        }
     }
 }
