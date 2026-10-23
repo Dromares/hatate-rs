@@ -66,6 +66,14 @@ pub const PERMISSION_EDIT_FILE_NOTES: i64 = 7;
 /// Where a permission is granted, in Hydrus's own menu wording.
 pub const WHERE_PERMISSIONS_LIVE: &str = "Hydrus: services \u{2192} review services \u{2192} local \u{2192} client api, then edit your access key and tick it";
 
+/// `HYDRUS_PERMISSIONS[id]`: the name of the checkbox for a permission id.
+pub fn permission_name(id: i64) -> Option<&'static str> {
+    HYDRUS_PERMISSIONS
+        .iter()
+        .find(|(known, _)| *known == id)
+        .map(|(_, name)| *name)
+}
+
 /// `_looks_like_service_key`: whether this is a hex service key rather than a service name. A
 /// best-effort guess (Hydrus's own local tag service key is a short hex string, not a fixed
 /// length), used only to pick which JSON field to try first.
@@ -221,6 +229,20 @@ pub struct HydrusFile {
     pub tags: Vec<String>,
 }
 
+impl HydrusFile {
+    /// `HydrusFile(file_id=..., hash=...)`: no mime or size, and `tags` an empty list.
+    pub fn new(file_id: Option<i64>, hash: &str) -> Self {
+        HydrusFile {
+            file_id,
+            hash: hash.to_owned(),
+            mime: None,
+            width: None,
+            height: None,
+            tags: Vec::new(),
+        }
+    }
+}
+
 /// What `get_tags_and_sizes_for_hashes` knows about one hash: its current tags and the size
 /// Hydrus has recorded.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,15 +385,10 @@ fn extract_current_tags(entry: &Map<String, Value>) -> Result<Vec<String>, Hydru
 }
 
 /// A value Python would keep as it is but that this client holds as an integer.
-fn int_field(
-    row: &Map<String, Value>,
-    key: &str,
-) -> Result<Option<i64>, HydrusError> {
+fn int_field(row: &Map<String, Value>, key: &str) -> Result<Option<i64>, HydrusError> {
     match row.get(key) {
         None | Some(Value::Null) => Ok(None),
-        Some(Value::Number(n)) if n.is_i64() || n.is_u64() => {
-            Ok(n.as_i64())
-        }
+        Some(Value::Number(n)) if n.is_i64() || n.is_u64() => Ok(n.as_i64()),
         Some(other) => Err(HydrusError::unexpected(format!(
             "'{key}' is a {} where an integer is expected",
             type_name(other)
@@ -379,10 +396,7 @@ fn int_field(
     }
 }
 
-fn string_field(
-    row: &Map<String, Value>,
-    key: &str,
-) -> Result<Option<String>, HydrusError> {
+fn string_field(row: &Map<String, Value>, key: &str) -> Result<Option<String>, HydrusError> {
     match row.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(s)) => Ok(Some(s.clone())),
@@ -488,7 +502,8 @@ impl HydrusClient {
         mut cfg: NetConfig,
     ) -> Result<Self, HydrusError> {
         cfg.verify_tls = settings.verify_ssl;
-        let net = NetClient::new(cfg).map_err(|e| HydrusError::unreachable(&settings.api_url, &e))?;
+        let net =
+            NetClient::new(cfg).map_err(|e| HydrusError::unreachable(&settings.api_url, &e))?;
         Ok(HydrusClient {
             settings: settings.clone(),
             net,
@@ -532,7 +547,10 @@ impl HydrusClient {
         self.with_key(req)
     }
 
-    async fn exchange(&self, req: Result<NetRequest, NetError>) -> Result<NetResponse, HydrusError> {
+    async fn exchange(
+        &self,
+        req: Result<NetRequest, NetError>,
+    ) -> Result<NetResponse, HydrusError> {
         let req = req.map_err(|e| HydrusError::unreachable(&self.settings.api_url, &e))?;
         self.net
             .send(req)
@@ -574,15 +592,15 @@ impl HydrusClient {
                 format!("Hydrus returned HTTP {status}: {}", head(&text, 300)),
             ));
         }
-        Ok(resp
-            .json()
-            .unwrap_or_else(|_| Value::Object(Map::new())))
+        Ok(resp.json().unwrap_or_else(|_| Value::Object(Map::new())))
     }
 
     /// `_get`.
     pub async fn get(&self, path: &str, params: &[(&str, String)]) -> Result<Value, HydrusError> {
         debug!("GET {path}");
-        let resp = self.exchange(self.request(Method::Get, path, params)).await?;
+        let resp = self
+            .exchange(self.request(Method::Get, path, params))
+            .await?;
         Self::handle(path, resp)
     }
 
@@ -717,13 +735,13 @@ impl HydrusClient {
     }
 
     /// `get_file_metadata`: the metadata of these file ids.
-    pub async fn get_file_metadata(&self, file_ids: &[i64]) -> Result<Vec<HydrusFile>, HydrusError> {
+    pub async fn get_file_metadata(
+        &self,
+        file_ids: &[i64],
+    ) -> Result<Vec<HydrusFile>, HydrusError> {
         let ids = Value::Array(file_ids.iter().map(|id| Value::from(*id)).collect());
         let data = self
-            .get(
-                "/get_files/file_metadata",
-                &[("file_ids", py_dumps(&ids))],
-            )
+            .get("/get_files/file_metadata", &[("file_ids", py_dumps(&ids))])
             .await?;
         let mut result = Vec::new();
         for m in metadata_rows(&data)? {
@@ -756,7 +774,10 @@ impl HydrusClient {
         hashes: &[String],
     ) -> Result<Vec<(String, Vec<String>)>, HydrusError> {
         let known = self.get_tags_and_sizes_for_hashes(hashes).await?;
-        Ok(known.iter().map(|(h, i)| (h.to_owned(), i.tags.clone())).collect())
+        Ok(known
+            .iter()
+            .map(|(h, i)| (h.to_owned(), i.tags.clone()))
+            .collect())
     }
 
     /// `get_tags_and_sizes_for_hashes`: `{hash: (tags, size_or_None)}`. The size comes back in the
@@ -882,10 +903,8 @@ impl HydrusClient {
         if holds {
             return Ok(None);
         }
-        let name = HYDRUS_PERMISSIONS
-            .iter()
-            .find(|(id, _)| *id == permission_id)
-            .map(|(_, name)| (*name).to_owned())
+        let name = permission_name(permission_id)
+            .map(str::to_owned)
             .unwrap_or_else(|| format!("permission {permission_id}"));
         Ok(Some(format!(
             "your Hydrus access key does not have the \"{name}\" permission. Add it in {WHERE_PERMISSIONS_LIVE}"
@@ -897,11 +916,18 @@ impl HydrusClient {
     /// Only call it for hashes [`HydrusClient::filter_known_hashes`] confirmed, or the answer is
     /// Hydrus's fallback icon rather than an error.
     pub async fn fetch_thumbnail(&self, hash: &str) -> Result<Vec<u8>, HydrusError> {
-        let req = self.request(Method::Get, "/get_files/thumbnail", &[("hash", hash.to_owned())]);
+        let req = self.request(
+            Method::Get,
+            "/get_files/thumbnail",
+            &[("hash", hash.to_owned())],
+        );
         let resp = match self.exchange(req).await {
             Ok(resp) => resp,
             Err(e) => {
-                debug!("Hydrus thumbnail request failed for {}: {e}", head(hash, 12));
+                debug!(
+                    "Hydrus thumbnail request failed for {}: {e}",
+                    head(hash, 12)
+                );
                 return Err(e);
             }
         };
@@ -979,9 +1005,12 @@ impl HydrusClient {
 
     /// `download_file`: the file's bytes, written to `dest_path`.
     pub async fn download_file(&self, file_id: i64, dest_path: &Path) -> Result<(), HydrusError> {
-        let req = NetRequest::get(&requote_uri(&self.get_file_path_url(file_id)), self.timeout())
-            .map(|req| req.with_retry(RetryMode::Never).without_host_gate())
-            .and_then(|req| self.with_key(req));
+        let req = NetRequest::get(
+            &requote_uri(&self.get_file_path_url(file_id)),
+            self.timeout(),
+        )
+        .map(|req| req.with_retry(RetryMode::Never).without_host_gate())
+        .and_then(|req| self.with_key(req));
         let req = req.map_err(|e| {
             HydrusError::local(
                 ErrorKind::Net(e.kind()),
@@ -1053,5 +1082,157 @@ impl HydrusClient {
             Err(e) => return Err(e),
         }
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn tags(v: Value) -> Result<Vec<String>, HydrusError> {
+        extract_current_tags(v.as_object().unwrap())
+    }
+
+    #[test]
+    fn an_empty_string_an_odd_length_and_non_hex_are_names_not_keys() {
+        assert!(!looks_like_service_key(""));
+        assert!(!looks_like_service_key("   "));
+        assert!(!looks_like_service_key("abc"));
+        assert!(!looks_like_service_key("my tags"));
+        assert!(!looks_like_service_key("zz"));
+    }
+
+    #[test]
+    fn hydrus_own_default_local_key_is_a_key_though_it_is_not_64_long() {
+        // The hex of the text "local tags": 20 characters.
+        assert!(looks_like_service_key("6c6f63616c2074616773"));
+        assert!(looks_like_service_key("  AAbb  "));
+    }
+
+    #[test]
+    fn the_permission_table_is_hydrus_own() {
+        assert_eq!(PERMISSION_EDIT_FILE_RELATIONSHIPS, 8);
+        assert_eq!(permission_name(8), Some("Edit File Relationships"));
+        assert_eq!(permission_name(7), Some("Edit File Notes"));
+        assert_eq!(permission_name(14), None);
+    }
+
+    #[test]
+    fn current_tags_are_sorted_and_combined_across_services() {
+        let got = tags(json!({"tags": {
+            "a": {"display_tags": {"0": ["b", "a"]}},
+            "b": {"storage_tags": {"0": ["a", "c"]}},
+            "c": {"display_tags": {"1": ["pending"]}},
+            "d": 5,
+        }}))
+        .unwrap();
+        assert_eq!(got, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn display_tags_win_over_storage_tags_only_when_they_are_not_empty() {
+        let got = tags(json!({"tags": {"a": {
+            "display_tags": {}, "storage_tags": {"0": ["from_storage"]}}}}))
+        .unwrap();
+        assert_eq!(got, vec!["from_storage"]);
+        let got = tags(json!({"tags": {"a": {
+            "display_tags": {"1": ["x"]}, "storage_tags": {"0": ["from_storage"]}}}}))
+        .unwrap();
+        assert!(got.is_empty(), "a non-empty display_tags is the one read");
+    }
+
+    #[test]
+    fn an_absent_or_falsy_tags_value_is_no_tags() {
+        for v in [
+            json!({}),
+            json!({"tags": null}),
+            json!({"tags": {}}),
+            json!({"tags": 0}),
+        ] {
+            assert!(tags(v).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn a_tag_list_is_iterated_as_python_iterates_it() {
+        // A string is its characters; a dict is its keys.
+        assert_eq!(
+            tags(json!({"tags": {"a": {"display_tags": {"0": "ab"}}}})).unwrap(),
+            vec!["a", "b"]
+        );
+        assert_eq!(
+            tags(json!({"tags": {"a": {"display_tags": {"0": {"k": 1, "j": 2}}}}})).unwrap(),
+            vec!["j", "k"]
+        );
+        let err = tags(json!({"tags": {"a": {"display_tags": {"0": 5}}}})).unwrap_err();
+        assert_eq!(err.message(), "'int' object is not iterable");
+        let err = tags(json!({"tags": {"a": {"display_tags": {"0": [["x"]]}}}})).unwrap_err();
+        assert_eq!(err.message(), "unhashable type: 'list'");
+        let err = tags(json!({"tags": {"a": {"display_tags": ["x"]}}})).unwrap_err();
+        assert_eq!(err.message(), "'list' object has no attribute 'get'");
+    }
+
+    #[test]
+    fn a_non_string_tag_is_an_unexpected_response_not_a_silent_number() {
+        let err = tags(json!({"tags": {"a": {"display_tags": {"0": [5]}}}})).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnexpectedResponse);
+    }
+
+    #[test]
+    fn dumps_matches_pythons_json_dumps_defaults() {
+        assert_eq!(py_dumps(&json!([])), "[]");
+        assert_eq!(py_dumps(&json!({})), "{}");
+        assert_eq!(py_dumps(&json!(["a", "b"])), r#"["a", "b"]"#);
+        assert_eq!(
+            py_dumps(&json!({"a": [1, 2.0, -3], "b": {"c": null}})),
+            r#"{"a": [1, 2.0, -3], "b": {"c": null}}"#
+        );
+        assert_eq!(
+            py_dumps(&json!("\u{e9}\u{1f600}\n\"\\\u{7f}")),
+            "\"\\u00e9\\ud83d\\ude00\\n\\\"\\\\\\u007f\""
+        );
+    }
+
+    #[test]
+    fn int_reads_as_python_int_does() {
+        assert_eq!(py_int(&json!(5)).unwrap(), 5);
+        assert_eq!(py_int(&json!("41")).unwrap(), 41);
+        assert_eq!(py_int(&json!(" 41 ")).unwrap(), 41);
+        assert_eq!(py_int(&json!(2.9)).unwrap(), 2);
+        assert_eq!(py_int(&json!(true)).unwrap(), 1);
+        assert_eq!(
+            py_int(&json!("4x")).unwrap_err().message(),
+            "invalid literal for int() with base 10: '4x'"
+        );
+        assert_eq!(
+            py_int(&json!([1])).unwrap_err().message(),
+            "int() argument must be a string, a bytes-like object or a real number, not 'list'"
+        );
+    }
+
+    #[test]
+    fn an_error_for_a_person_names_no_secret_whatever_its_kind() {
+        let errs = [
+            HydrusError::new(ErrorKind::AccessKeyRejected, Some(401), "key=SECRET"),
+            HydrusError::new(ErrorKind::PermissionDenied, Some(403), "key=SECRET"),
+            HydrusError::new(ErrorKind::HttpStatus, Some(500), "key=SECRET"),
+            HydrusError::new(ErrorKind::UnexpectedResponse, None, "key=SECRET"),
+            HydrusError::new(ErrorKind::InvalidInput, None, "key=SECRET"),
+            HydrusError::new(ErrorKind::Io, None, "[Errno 2] No such file: '/home/x'"),
+        ];
+        for e in errs {
+            assert!(!e.user_message().contains("SECRET"));
+            assert!(!e.user_message().contains("/home"));
+            assert!(!e.user_message().contains("Errno"));
+        }
+    }
+
+    #[test]
+    fn a_default_config_is_not_configured_and_a_key_makes_it_so() {
+        let mut s = HydrusSettings::default();
+        assert!(!s.is_configured());
+        s.access_key = crate::config::Secret::new("0".repeat(64));
+        assert!(s.is_configured());
     }
 }

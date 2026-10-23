@@ -64,10 +64,17 @@ pub fn hash_from_filename(path: &str) -> String {
         .unwrap_or_default()
 }
 
-/// `verify_filename_hashes`: reads a few of the given files and checks their real hash against
-/// the one in the filename, so a batch of merely hash-shaped names is not trusted. `sample_size`
-/// is 3 in Python's callers.
-pub fn verify_filename_hashes(paths: &[String], sample_size: usize) -> bool {
+/// `sample_size=3`, the default of `verify_filename_hashes`.
+pub const FILENAME_HASH_SAMPLE_SIZE: usize = 3;
+
+/// `verify_filename_hashes(paths)`: reads a few of the given files and checks their real hash
+/// against the one in the filename, so a batch of merely hash-shaped names is not trusted.
+pub fn verify_filename_hashes(paths: &[String]) -> bool {
+    verify_filename_hashes_sampled(paths, FILENAME_HASH_SAMPLE_SIZE)
+}
+
+/// `verify_filename_hashes(paths, sample_size)`.
+pub fn verify_filename_hashes_sampled(paths: &[String], sample_size: usize) -> bool {
     let candidates: Vec<&String> = paths
         .iter()
         .filter(|p| !hash_from_filename(p).is_empty())
@@ -342,5 +349,130 @@ mod tests {
             .map(|b| format!("{b:02x}"))
             .collect();
         assert_eq!(hash_file(&path), want);
+    }
+
+    fn name_for(data: &[u8]) -> String {
+        Sha256::digest(data)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect()
+    }
+
+    #[test]
+    fn a_hydrus_style_name_gives_its_hash_and_an_ordinary_one_gives_nothing() {
+        let h = "ab".repeat(32);
+        assert_eq!(hash_from_filename(&format!("/x/fa1/{h}.jpg")), h);
+        assert_eq!(hash_from_filename(&h), h);
+        assert_eq!(
+            hash_from_filename(&format!("{h}.jpg\n")),
+            h,
+            "Python's `$` allows a final newline"
+        );
+        for name in ["my_picture", "abc123", "IMG_0042", "/x/dir.jpg/", ""] {
+            assert_eq!(hash_from_filename(name), "", "{name}");
+        }
+        assert_eq!(hash_from_filename(&format!("{}.jpg", h.to_uppercase())), "");
+        assert_eq!(hash_from_filename(&format!("{h}.")), "");
+        assert_eq!(hash_from_filename(&format!("{h}.tar.gz")), "");
+        assert_eq!(hash_from_filename(&format!("a{h}")), "");
+    }
+
+    #[test]
+    fn the_derived_hash_equals_the_real_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let name = name_for(b"some real bytes here");
+        let path = dir.path().join(format!("{name}.jpg"));
+        std::fs::write(&path, b"some real bytes here").unwrap();
+        assert_eq!(hash_from_filename(path.to_str().unwrap()), hash_file(&path));
+    }
+
+    #[test]
+    fn verification_passes_on_a_genuine_store_and_rejects_names_that_lie() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut real = Vec::new();
+        for i in 0..10 {
+            let data = format!("file {i}");
+            let name = name_for(data.as_bytes());
+            let path = dir.path().join(format!("{name}.jpg"));
+            std::fs::write(&path, data).unwrap();
+            real.push(path.to_str().unwrap().to_owned());
+        }
+        assert!(verify_filename_hashes(&real));
+        let mut liars = Vec::new();
+        for i in 0..10 {
+            let name = name_for(format!("name {i}").as_bytes());
+            let path = dir.path().join(format!("{name}.png"));
+            std::fs::write(&path, format!("entirely different content {i}")).unwrap();
+            liars.push(path.to_str().unwrap().to_owned());
+        }
+        assert!(!verify_filename_hashes(&liars));
+    }
+
+    #[test]
+    fn verification_declines_when_there_is_nothing_to_verify_or_a_file_is_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        let ordinary: Vec<String> = (0..3)
+            .map(|i| {
+                dir.path()
+                    .join(format!("ordinary{i}.jpg"))
+                    .to_str()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        assert!(!verify_filename_hashes(&ordinary));
+        assert!(!verify_filename_hashes(&[]));
+        let missing = vec![
+            dir.path()
+                .join(format!("{}.jpg", "cd".repeat(32)))
+                .to_str()
+                .unwrap()
+                .to_owned(),
+        ];
+        assert!(!verify_filename_hashes(&missing));
+    }
+
+    #[test]
+    fn the_sample_is_every_nth_candidate_up_to_the_sample_size() {
+        // Ten candidates, sample 3: step 3, so candidates 0, 3 and 6 are read. Only those three
+        // are real; the rest lie, and the batch still passes, as Python's does.
+        let dir = tempfile::tempdir().unwrap();
+        let mut paths = Vec::new();
+        for i in 0..10 {
+            let data = format!("file {i}");
+            let name = name_for(data.as_bytes());
+            let path = dir.path().join(format!("{name}.jpg"));
+            let real = matches!(i, 0 | 3 | 6);
+            std::fs::write(&path, if real { data } else { "lie".to_owned() }).unwrap();
+            paths.push(path.to_str().unwrap().to_owned());
+        }
+        assert!(verify_filename_hashes(&paths));
+        assert!(!verify_filename_hashes_sampled(&paths, 10));
+    }
+
+    #[test]
+    fn a_tag_splits_at_the_first_colon_only() {
+        let t = parse_tag("character:re:zero", TagSource::Hydrus);
+        assert_eq!(
+            (t.namespace.as_deref(), t.name.as_str()),
+            (Some("character"), "re:zero")
+        );
+        let t = parse_tag("1girl", TagSource::Hydrus);
+        assert_eq!((t.namespace, t.name.as_str()), (None, "1girl"));
+        let t = parse_tag(":x", TagSource::Hydrus);
+        assert_eq!((t.namespace.as_deref(), t.name.as_str()), (Some(""), "x"));
+    }
+
+    #[test]
+    fn a_size_that_is_unknown_zero_or_unreadable_passes_and_a_different_one_does_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.jpg");
+        std::fs::write(&path, vec![b'x'; 1000]).unwrap();
+        let p = path.to_str().unwrap();
+        assert!(size_matches(p, Some(1000)));
+        assert!(!size_matches(p, Some(9999)));
+        assert!(size_matches(p, None));
+        assert!(size_matches(p, Some(0)));
+        assert!(size_matches("/no/such/file", Some(5)));
     }
 }
