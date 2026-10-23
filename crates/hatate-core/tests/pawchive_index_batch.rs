@@ -348,7 +348,8 @@ async fn a_batch_over_a_folder_finds_the_indexed_posts_and_saves_them_in_the_ses
     assert!(
         ran.requests
             .iter()
-            .all(|r| r.starts_with("/api/v1/") || r.starts_with("/thumbnail/")),
+            .all(|r| r.starts_with("pawchive.pw/api/v1/")
+                || r.starts_with("img.pawchive.pw/thumbnail/")),
         "{:?}",
         ran.requests
     );

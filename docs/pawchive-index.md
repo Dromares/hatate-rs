@@ -21,11 +21,7 @@ server, and the scripted answers include a 404 original and a creator with zero 
 
 Not here, and who owns it:
 
-- **Wiring the index into the engine runner.** `engine_backends::LiveEngines::pawchive_index` still
-  answers `IndexAnswer::Empty`, as in Phase 3. Turning it into `is_empty()`, `fingerprints(path)` and
-  `search(hash16, hydrus_hash)` over the user's `pawchive_index.db` changes what `hatate batch` does
-  with that file, so it is a separate, small change (proposed to Cloud in the submission comment), not
-  something this port does quietly.
+- **Wiring the index into the engine runner** is Phase 4.h (DAN-2145): section 7.
 - The Qt classes themselves (`PawchiveIndexWorker`, `PawchiveFindWorker`) and the Index window:
   Phase 6.
 
@@ -173,9 +169,124 @@ is given.
 | `test_pawchive_index.py::TestTheIndex` (10) | `an_edited_copy_is_found_and_scored_as_the_same_picture`, `a_different_picture_is_not_a_match`, `the_same_sha256_is_the_very_same_file`, `one_result_per_post_on_its_closest_image`, `new_images_are_searchable_straight_away`, `removing_an_artist_removes_their_images`, `artists_report_what_was_indexed`, `a_lightly_cropped_copy_still_surfaces_as_one_to_review`, `the_scale_keeps_variants_below_the_auto_import_line`, `links_name_the_artist` |
 | `test_pawchive_index.py::TestIndexingAnArtist` (6) | `every_page_of_posts_and_every_image_is_indexed`, `a_refresh_fetches_only_what_is_new`, `non_images_are_skipped_and_a_404_original_is_counted_not_fatal`, `stopping_keeps_what_was_done_and_the_next_run_carries_on`, `being_rate_limited_is_waited_out_not_fatal`, `an_edited_copy_of_an_indexed_image_is_found_after_a_crawl` |
 | `test_pawchive_index.py::TestFindingArtistsByName` (1) | `the_creator_list_is_downloaded_once_then_kept_for_a_week` |
-| `test_pawchive_index.py::TestTheIndexAsASearchEngine` (6) | These call `search_engine._collect_pawchive_index`, `core.rate_limit.engine_interval`, `_engine_waves` and `_resolve_multipage_candidate`, which are the engine runner's, pacing and multipage code ported in Phases 1 and 3 (`engine_runner::tests`, `net/pacing.rs`, `tests/multipage_tests.rs`). The index half they use (`add_images`, `search`, `is_empty` on a missing file) is `an_edited_copy_is_found...`, `the_same_sha256_is_the_very_same_file` and `an_index_that_does_not_exist_yet_is_empty_and_costs_no_file`. Wiring `LiveEngines` is section 1 |
+| `test_pawchive_index.py::TestTheIndexAsASearchEngine` (6) | These call `search_engine._collect_pawchive_index`, `core.rate_limit.engine_interval`, `_engine_waves` and `_resolve_multipage_candidate`, which are the engine runner's, pacing and multipage code ported in Phases 1 and 3 (`engine_runner::tests`, `net/pacing.rs`, `tests/multipage_tests.rs`). The index half they use (`add_images`, `search`, `is_empty` on a missing file) is `an_edited_copy_is_found...`, `the_same_sha256_is_the_very_same_file` and `an_index_that_does_not_exist_yet_is_empty_and_costs_no_file`. Wiring `LiveEngines` is section 7, and each of the six maps there |
 | `test_workers_background.py::TestPawchiveIndexWorker` (8) | `each_job_is_indexed_in_order_and_reported`, `progress_from_the_crawler_is_forwarded`, `a_stop_requested_mid_job_is_visible_to_the_crawler_and_ends_the_batch`, `a_stop_before_the_run_starts_indexes_nothing`, `a_failure_mid_batch_ends_the_run_with_the_error_and_keeps_what_was_reported` (covers both crash tests); "the index is opened at the path the worker was given" is the index the caller passes (asserted in `run_jobs`); "the job list is copied" does not apply: `jobs` is a borrowed slice the caller cannot change mid-run; `finished_all` is the return of `run_index_jobs` |
 | `test_workers_background.py::TestPawchiveFindWorker` (3) | `the_find_worker_body_emits_results_with_no_error`, `the_find_worker_body_emits_a_failure_as_text_beside_an_empty_list`, `the_find_worker_body_emits_no_matches_as_an_empty_list_and_no_error` |
 | `test_parsers_and_tags.py::TestInlineTagEdit` (10) | `tag_rules::tests::inline_edit_clearing_the_text_deletes_the_tag`, `inline_edit_whitespace_only_counts_as_cleared`, `inline_edit_a_rename_keeps_the_original_source`, `inline_edit_a_bare_name_clears_the_namespace`, `inline_edit_the_remap_rules_apply_to_hand_typed_edits`, `inline_edit_renaming_onto_an_existing_tag_drops_the_older_one`, `inline_edit_an_ordinary_rename_drops_nothing`, `inline_edit_the_edited_tag_keeps_its_slot` (the object-identity test), `split_tag_text_splits_on_the_first_colon` (both `split_tag_text` tests, 3.g); plus `inline_edit_a_duplicate_after_the_target_is_dropped_too` and `inline_edit_a_target_that_is_not_in_the_list_changes_nothing` |
 | `test_gui_smoke.py::TestPawchiveIndexWindow`, `test_gui_harness.py` (the Index dialog) | Qt window: Phase 6 |
 | `test_outcome_tags.py`, `test_core_utils.py`, `test_tag_rules.py`, `test_search_quality.py` (they set `enable_pawchive_index`) | do not call a function in scope: a settings flag |
+
+## 7. Wiring the index into `hatate batch` (Phase 4.h, DAN-2145)
+
+`LiveEngines::pawchive_index` answered `IndexAnswer::Empty` from Phase 3 until this change. It now
+searches the profile's `pawchive_index.db` (`Paths::pawchive_index_db`, Python's `INDEX_DB`),
+exactly as `engine_runner._collect_pawchive_index` does, in the same order:
+
+1. `index.is_empty()`: a missing file, or one with no fingerprinted image, is `Empty`. The local file
+   is not read for it, and a missing index file is not created.
+2. `fingerprints(path)`: a local file that cannot be decoded is `Unreadable`, which the runner turns
+   into the error line `Pawchive index: could not read the local file`.
+3. `search(hash16, hydrus_hash)`: `Matches`, possibly none. A match whose SHA-256 equals the entry's
+   hash is labelled as the exact engine (`Pawchive`), any other as `Pawchive index`.
+
+An error from the index file (a damaged database) is the error line `Pawchive index: <message>`
+and the image's search goes on; the message is SQLite's own words, which `rusqlite` and `sqlite3`
+both pass through (`file is not a database` in the differential).
+
+| Python | Rust |
+|---|---|
+| `engine_runner._shared_pawchive_index` (one instance for every search) | the `PawchiveIndex` inside `LiveEngines`, built by `LiveEngines::for_profile(net, clock, &paths)` (what `hatate-cli`'s `batch_cmd` calls) or `with_pawchive_index(index)`. A `LiveEngines::new` without one answers as an empty index |
+| `engine_runner._collect_pawchive_index` | `engine_backends::search_index` (the index half), `EngineRunner::collect_pawchive_index` (Phase 3, the candidates) |
+| `enable_pawchive_index` | `engine_runner::engine_waves`: the engine is in the first wave only when the setting is on (Phase 3) |
+
+**The index file is read-only to a batch.** Python's `_connect` runs the schema's `CREATE ... IF NOT
+EXISTS` statements, which write nothing to an index that already has its tables, and no search adds
+a row. The Rust index does the same. Both facts are asserted on the bytes and the mtime of the file
+before and after a batch (`a_batch_never_writes_the_users_index`, `searching_never_writes_the_users_index`),
+and both are in the differentials below (1,728 session entries, and every one of the 8,420 index
+runs). The one case where a search writes is a file that exists but has no tables (zero bytes, say):
+both create the schema. The two files are then the same except for the four-byte SQLite version
+number in the header (offsets 96 to 99, the library that wrote it: CPython's 3.54.0 against the
+`rusqlite` bundled build), which is class X1 below.
+
+### The differentials
+
+Python is `76c85c4` as in section 3 (CPython 3.14.8, Pillow 12.3.0, the repo's venv). The harness is
+outside the repo; the log is `worktrees/DAN-2145-differential.log`.
+
+1. **The collector.** Python's `_collect_pawchive_index` and the Rust `LiveEngines::pawchive_index`
+   through `EngineRunner::run_engines_parallel(["pawchiveindex"])` were given the same index files
+   and the same local files. The index files are the 4,207 pairs the 4.f differential left (one
+   written by Python and one by Rust from the same scripted crawl), plus three damaged files (4096
+   bytes of `x`, a truncated copy, a zero-byte file) given as both halves of a pair. Each file was
+   opened by both collectors: 8,420 index runs. The local files are the thumbnails that crawl served (the very
+   same bytes), a resized JPEG and a mirrored PNG of each, an unrelated picture, a text file named
+   `.png` and a path that does not exist; the hydrus hash is none, a row's SHA-256 in lower and upper
+   case, or a random one. Each index run keeps one shared index across its queries, as the app does.
+   **212,208 collector calls** (70,068 found, 105,620 not found, 36,512 could not read the file, 8
+   index errors): the return value, every candidate (every serialised field, plus `page_index`,
+   `thumb_bytes` and `booru_tags_fetched`), the error list, the files left in the folder, and the
+   index file's bytes and mtime after, all equal. The 24 engine plans (`enable_pawchive_index` x
+   secondary mode x extras held back x `enable_pawchive`) are equal too. **Differences: X1 only.**
+2. **`hatate batch` end to end.** 150 folders (3 to 8 indexed posts; per folder an exact copy, a
+   resized JPEG, a recompressed JPEG, a mirror, an unrelated picture, sometimes a non-image),
+   searched by Python's real `SearchWorker.run()` (IQDB answers nothing; the Pawchive post and
+   profile pages, the thumbnails and 404s are scripted at `HTTPAdapter.send`) and by `run_batch`
+   over `LiveEngines::for_profile` (the same answers from a local https server, `NetClient::new`
+   with the explicit provider). Each folder was run on a Python-written and on a Rust-written index
+   file, 300 runs. Python then opened every session the Rust run wrote (`session_db.load_entries`)
+   and compared it entry for entry with its own: **1,728 entries, 0 differences**; the requests
+   made (host, path, query), and the index file's bytes and mtime, are equal too. The outcomes
+   cover good, poor and not found, both engine labels, and the unreadable-file error line.
+   The shipped binary is not run in the differential: its primary engine is IQDB on the real host
+   and no flag redirects an engine host (the rule). What it adds over `run_batch` is the one line
+   `LiveEngines::for_profile`, which `hatate_batch_builds_its_engines_over_the_profiles_index` pins.
+
+### What is not matched
+
+| Class | What differs | Count | Why it is kept |
+|---|---|---|---|
+| **X1** SQLite version stamp | an index file that exists with no tables is given the schema by both searches; the two files hold the same objects and differ only at bytes 96 to 99, the version of the SQLite library that wrote them | 1 input file, 2 index runs, 4 collector calls (the results of those calls are equal) | the number is the linked library's. Not observable through any API |
+| **X2** a failure that is not SQLite's | Python catches `sqlite3.Error` only; a stored dhash that is not hex (`ValueError`) or an unusable folder (`OSError`) escapes the collector as that exception. Here every failure of the index is the error line `Pawchive index: <message>` | not generated (needs a hand-damaged row) | the image's search carries on instead of ending on an exception; the index writes only valid hashes |
+| **X3** decompression bomb | a picture past Pillow's pixel limit raises `DecompressionBombError` out of `fingerprints`. The search reads the entry's size first, which raises the same error before any engine runs (`SearchError::Bomb`), so the collector never sees one; if it did, the line here is `Pawchive index: <the error's text>` | not generated (needs a 179-megapixel file) | unreachable through a search |
+
+### The tests
+
+`tests/pawchive_index_wiring.rs` (11) drives `LiveEngines` and the runner; `tests/pawchive_index_batch.rs`
+(3) drives `run_batch` over a profile with an index. No server is needed for the first; the second
+serves the Pawchive pages from a local https server.
+
+| Rule | Test |
+|---|---|
+| index missing; not created | `a_missing_index_file_is_empty_and_is_not_created` |
+| index empty: no file read | `an_index_with_nothing_fingerprinted_is_empty_and_the_local_file_is_not_read` |
+| matches found: post, thumbnail, similarity | `a_resized_copy_of_an_indexed_image_is_found_with_its_post_and_thumbnail` |
+| the exact label by hydrus hash | `the_hydrus_hash_makes_the_same_file_an_exact_match_at_100`, `through_the_runner_a_match_is_a_candidate_labelled_by_exactness` |
+| none found is a search, not an error | `an_image_the_index_does_not_know_is_a_search_that_found_nothing` |
+| local file unreadable (not a picture, missing) | `a_local_file_that_is_not_a_picture_is_unreadable_and_says_so` |
+| a damaged database | `a_database_that_cannot_be_read_is_an_error_row_not_a_crash` |
+| the index file is read-only (bytes, mtime, no journal) | `searching_never_writes_the_users_index`, `a_batch_never_writes_the_users_index` |
+| `enable_pawchive_index` true and false | `the_setting_decides_whether_the_index_runs`, `with_the_setting_off_the_index_is_not_asked_and_not_touched` |
+| `hatate batch` uses the profile's index | `hatate_batch_builds_its_engines_over_the_profiles_index`, `a_batch_over_a_folder_finds_the_indexed_posts_and_saves_them_in_the_session` |
+
+Network-client rule: the index is local, so there is no client of its own. The Pawchive booru pages
+the batch fetches for a found post go over https through `NetClient::new` (the second file). No
+engine or site host is redirected in the shipped binary: `for_profile` takes no host.
+
+### Python tests that exercise a function in scope
+
+`test_pawchive_index.py::TestTheIndexAsASearchEngine` (6):
+
+| Python | Rust |
+|---|---|
+| `test_an_empty_index_costs_nothing_not_even_a_file_read` | `an_index_with_nothing_fingerprinted_is_empty_and_the_local_file_is_not_read`, `a_missing_index_file_is_empty_and_is_not_created` |
+| `test_an_edited_copy_becomes_a_measured_candidate` | `a_resized_copy_of_an_indexed_image_is_found_with_its_post_and_thumbnail` (the index half), `through_the_runner_a_match_is_a_candidate_labelled_by_exactness` (the candidate; "measured" is `reports_real_similarity("Pawchive index")`, Phase 3) |
+| `test_the_very_same_file_is_labelled_as_an_exact_copy` | `the_hydrus_hash_makes_the_same_file_an_exact_match_at_100`, `through_the_runner_a_match_is_a_candidate_labelled_by_exactness` |
+| `test_it_never_makes_the_search_wait` | `net/pacing.rs` (3.f): `engine_interval` is not touched by this ticket |
+| `test_it_runs_in_the_first_wave` | `engine_runner::tests::pawchive_runs_up_front_after_the_primary_even_with_extras_held_back` (3.f), `the_setting_decides_whether_the_index_runs` |
+| `test_its_thumbnail_names_the_image_in_a_multi_image_post` | `multipage_tests.rs::test_its_thumbnail_names_the_image_in_a_multi_image_post` (3.g); the thumbnail is `IndexMatch.thumb_url`, which `a_resized_copy_of_an_indexed_image_is_found_with_its_post_and_thumbnail` pins |
+
+The tests that set `enable_pawchive_index` (`test_core_utils.py:1903, 4108, 4147`,
+`test_search_quality.py:30, 4506`, `test_outcome_tags.py:422`, `test_tag_rules.py:119`) call
+`pipeline_summary` and `_no_match`, which are not in scope; the setting's effect on the plan is
+`the_setting_decides_whether_the_index_runs` and Phase 3's `engine_waves` tests.

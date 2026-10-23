@@ -37,10 +37,9 @@ propagate: an exception that is not the engine's own error type (`YandexError::U
 `GoogleImagesError::Unexpected`, `PawchiveError::HardTimeout`, or a panic). `on_engine_finished` is
 told either way.
 
-## What a build without Google Lens and the Pawchive index answers
+## What a build without Google Lens answers
 
-Both are later phases (5 and 4). `LiveEngines` answers for them as Python does when the engine
-cannot run:
+Google Lens is Phase 5. `LiveEngines` answers for it as Python does when the engine cannot run:
 
 * **Google Lens** copies `google_lens.search`'s unavailable path. The pacing `wait_for_turn` runs
   before every search that is not blocked (45 s between starts, requested of the injected clock). The
@@ -53,8 +52,11 @@ cannot run:
   text. Not copied: `announce_unavailable` (the once-per-session GUI alert) and
   `prepare_for_lens`'s format check, so a readable file that Python would refuse as "not in a
   format Google Lens accepts" gets the unavailable answer instead.
-* **The Pawchive index** answers as an index with nothing in it: `index.is_empty()` is true, so
-  `_collect_pawchive_index` returns False with no error and without reading the file.
+
+The Pawchive index was in this list until Phase 4.h: `LiveEngines::for_profile` now searches the
+profile's `pawchive_index.db` (`docs/pawchive-index.md` section 7). A `LiveEngines::new` with no
+index handed in answers as an index with nothing in it: `index.is_empty()` is true, so
+`_collect_pawchive_index` returns False with no error and without reading the file.
 
 ## Differences that are not differences found
 
