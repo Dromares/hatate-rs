@@ -180,7 +180,7 @@ pub fn pid_is_alive(pid: u64) -> Result<bool, StagingError> {
     }
     let Ok(pid) = i32::try_from(pid) else {
         return Err(StagingError::PidOutOfRange(
-            "signed integer is greater than maximum".to_owned(),
+            "Python int too large to convert to C int".to_owned(),
         ));
     };
     // SAFETY: `kill` with signal 0 sends nothing; it only asks whether the process exists.
