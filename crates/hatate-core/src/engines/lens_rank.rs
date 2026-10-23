@@ -252,3 +252,195 @@ pub fn keep_taggable_first(
         .map(|(_, m)| m)
         .collect())
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    fn m(url: &str) -> GoogleLensMatch {
+        GoogleLensMatch {
+            url: url.to_owned(),
+            thumb_url: None,
+            similarity: 0.0,
+            title: None,
+            source_name: None,
+            width: None,
+            height: None,
+        }
+    }
+
+    fn urls(matches: &[GoogleLensMatch]) -> Vec<&str> {
+        matches.iter().map(|m| m.url.as_str()).collect()
+    }
+
+    const TAGGABLE: &str = "https://danbooru.donmai.us/posts/";
+    const PLAIN: &str = "https://example.com/p/";
+
+    #[test]
+    fn the_budget_is_a_floor_not_a_ceiling() {
+        assert_eq!(effective_timeout(30.0), 90.0);
+        assert_eq!(effective_timeout(90.0), 90.0);
+        assert_eq!(effective_timeout(300.0), 300.0);
+    }
+
+    #[test]
+    fn precise_rule34_searches_come_first_and_repeats_are_dropped() {
+        let tiles = json!([
+            {"text": "Rule 34 / blue_eyes 250x177 Rule 34"},
+            {"text": "Rule 34 / parent:10755759 250x177 Rule 34"},
+            "not a tile",
+            {"text": "  Rule 34 / blue_eyes  "},
+            {"text": "Rule 34 / ID:5"},
+            {"text": "Rule 34 | 4585855 / - Rule 34"},
+            {"text": null},
+        ]);
+        assert_eq!(
+            rule34_searches(&tiles),
+            vec!["parent:10755759", "ID:5", "blue_eyes"]
+        );
+        assert!(rule34_searches(&json!(null)).is_empty());
+    }
+
+    #[test]
+    fn taggable_sites_go_ahead_of_the_rest_and_each_half_keeps_its_order() {
+        let input = vec![
+            m(&format!("{PLAIN}1")),
+            m(&format!("{TAGGABLE}2")),
+            m(&format!("{PLAIN}3")),
+            m(&format!("{TAGGABLE}4")),
+        ];
+        let out = taggable_first(input).unwrap();
+        assert_eq!(
+            urls(&out),
+            vec![
+                &format!("{TAGGABLE}2")[..],
+                &format!("{TAGGABLE}4")[..],
+                &format!("{PLAIN}1")[..],
+                &format!("{PLAIN}3")[..],
+            ]
+        );
+    }
+
+    #[test]
+    fn a_malformed_host_is_the_exception_python_lets_out() {
+        let err = taggable_first(vec![m("http://[bad/")]).unwrap_err();
+        assert_eq!(err, Unexpected("invalid URL".to_owned()));
+    }
+
+    #[test]
+    fn a_list_under_the_limit_is_untouched() {
+        let input: Vec<_> = (0..8).map(|i| m(&format!("{PLAIN}{i}"))).collect();
+        assert_eq!(keep_taggable_first(input.clone(), 8, 0, 0).unwrap(), input);
+    }
+
+    #[test]
+    fn untaggable_sites_do_not_crowd_out_one_that_gives_tags() {
+        // Ranks 0..11 are untaggable, rank 12 is the one post that would tag the image.
+        let mut input: Vec<_> = (0..12).map(|i| m(&format!("{PLAIN}{i}"))).collect();
+        input.push(m(&format!("{TAGGABLE}9")));
+        let out = keep_taggable_first(input, 8, 0, 0).unwrap();
+        assert_eq!(out.len(), 8);
+        assert!(urls(&out).contains(&format!("{TAGGABLE}9").as_str()));
+        // The rest fill what is left, in the order they were given.
+        assert_eq!(urls(&out)[0], format!("{PLAIN}0"));
+    }
+
+    #[test]
+    fn reserved_slots_keep_the_best_taggable_visual_matches_in_a_crowd_of_exact_ones() {
+        // DAN-357: 10 taggable exact matches would fill all 8 slots on their own.
+        let mut input: Vec<_> = (0..10).map(|i| m(&format!("{TAGGABLE}{i}"))).collect();
+        input.extend((100..103).map(|i| m(&format!("{TAGGABLE}{i}"))));
+        let out = keep_taggable_first(input.clone(), 8, 10, 2).unwrap();
+        let kept: Vec<_> = urls(&out)
+            .iter()
+            .map(|u| u.rsplit('/').next().unwrap())
+            .collect();
+        assert_eq!(kept, vec!["0", "1", "2", "3", "4", "5", "100", "101"]);
+        let without = keep_taggable_first(input, 8, 10, 0).unwrap();
+        assert_eq!(urls(&without).len(), 8);
+        assert!(!urls(&without).iter().any(|u| u.ends_with("/100")));
+    }
+
+    struct FindsReddit;
+
+    impl LensSites for FindsReddit {
+        fn find_rule34_post(
+            &self,
+            tags: &str,
+            _: Option<&Hash>,
+        ) -> Option<(String, Option<String>, i64)> {
+            (tags == "parent:1").then(|| {
+                (
+                    "https://rule34.xxx/index.php?page=post&s=view&id=1".to_owned(),
+                    Some("https://thumb/1.jpg".to_owned()),
+                    3,
+                )
+            })
+        }
+
+        fn find_reddit_post(&self, subreddit: &str, media_id: &str) -> Option<String> {
+            Some(format!(
+                "https://www.reddit.com/r/{subreddit}/comments/{media_id}/"
+            ))
+        }
+    }
+
+    #[test]
+    fn a_subreddit_listing_is_swapped_for_its_post_or_dropped_and_never_listed_twice() {
+        let listing = m("https://www.reddit.com/r/Pics/");
+        let mut with_image = listing.clone();
+        with_image.thumb_url = Some("https://preview.redd.it/abc123.jpg?width=100".to_owned());
+        let (exact, visual) = resolve_subreddits(
+            vec![with_image.clone(), listing.clone()],
+            vec![with_image, m(&format!("{PLAIN}1"))],
+            &FindsReddit,
+        );
+        // The one with an image resolves; the listing with none is dropped; the second copy of
+        // the resolved URL (in the other group) is not listed again.
+        assert_eq!(
+            urls(&exact),
+            vec!["https://www.reddit.com/r/Pics/comments/abc123/"]
+        );
+        assert_eq!(urls(&visual), vec![&format!("{PLAIN}1")[..]]);
+        // A lookup that finds nothing falls back to the image link itself.
+        let mut lone = listing;
+        lone.thumb_url = Some("https://preview.redd.it/abc123.jpg".to_owned());
+        let (exact, _) = resolve_subreddits(vec![lone], vec![], &NoSites);
+        assert_eq!(urls(&exact), vec!["https://i.redd.it/abc123.jpg"]);
+    }
+
+    #[test]
+    fn the_first_rule34_search_that_finds_its_post_is_the_one_used() {
+        let tiles = json!([
+            {"text": "Rule 34 / blue_eyes"},
+            {"text": "Rule 34 / parent:1"},
+        ]);
+        let png = {
+            let mut out = Vec::new();
+            image::RgbImage::from_pixel(8, 8, image::Rgb([9, 9, 9]))
+                .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+                .unwrap();
+            out
+        };
+        let found = recover_rule34_searches(&tiles, &png, &FindsReddit).unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].url,
+            "https://rule34.xxx/index.php?page=post&s=view&id=1"
+        );
+        assert_eq!(found[0].title.as_deref(), Some("Rule 34 / parent:1"));
+        assert_eq!(found[0].source_name.as_deref(), Some("rule34.xxx"));
+        assert!(
+            recover_rule34_searches(&tiles, &png, &NoSites)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            recover_rule34_searches(&json!([]), &png, &FindsReddit)
+                .unwrap()
+                .is_empty()
+        );
+    }
+}

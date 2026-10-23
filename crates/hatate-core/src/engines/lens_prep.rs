@@ -296,3 +296,128 @@ pub fn upload_script(image_bytes: &[u8], filename: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn png(pixel: image::Rgba<u8>) -> Vec<u8> {
+        let mut out = Vec::new();
+        image::RgbaImage::from_pixel(3, 2, pixel)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+            .unwrap();
+        out
+    }
+
+    #[test]
+    fn the_media_type_is_read_from_the_bytes_and_unknown_bytes_are_none() {
+        assert_eq!(media_type(b"\xff\xd8\xff\xe0rest"), Some("image/jpeg"));
+        assert_eq!(media_type(b"\x89PNG\r\n\x1a\nrest"), Some("image/png"));
+        assert_eq!(media_type(b"GIF89a.."), Some("image/gif"));
+        assert_eq!(media_type(b"BM\x00\x00"), Some("image/bmp"));
+        assert_eq!(
+            media_type(b"RIFF\x00\x00\x00\x00WEBPVP8 "),
+            Some("image/webp")
+        );
+        assert_eq!(media_type(b"RIFF\x00\x00\x00\x00WAVEfmt "), None);
+        // JPEG XL, AVIF, a text file, nothing at all.
+        assert_eq!(media_type(b"\xff\x0a\x00"), None);
+        assert_eq!(media_type(b"\x00\x00\x00\x1cftypavif"), None);
+        assert_eq!(media_type(b"hello"), None);
+        assert_eq!(media_type(b""), None);
+    }
+
+    #[test]
+    fn a_transparent_pixel_flattens_to_white_and_an_opaque_one_is_left_alone() {
+        let (w, h, rgb) = flattened_rgb(&png(image::Rgba([10, 20, 30, 0]))).unwrap();
+        assert_eq!((w, h), (3, 2));
+        assert!(rgb.iter().all(|c| *c == 255));
+        let (_, _, rgb) = flattened_rgb(&png(image::Rgba([10, 20, 30, 255]))).unwrap();
+        assert_eq!(&rgb[..3], &[10, 20, 30]);
+        // Half transparent: DIV255(255 * 127 + c * 128) with Pillow's rounding.
+        let (_, _, rgb) = flattened_rgb(&png(image::Rgba([0, 100, 200, 128]))).unwrap();
+        assert_eq!(&rgb[..3], &[127, 177, 227]);
+        assert!(flattened_rgb(b"not a picture").is_none());
+    }
+
+    #[test]
+    fn a_still_png_is_not_animated_and_a_truncated_one_is_not_either() {
+        let still = png(image::Rgba([1, 2, 3, 255]));
+        assert!(!is_animated(&still));
+        assert!(!is_animated(&still[..20]));
+        assert!(!is_animated(b""));
+    }
+
+    #[test]
+    fn an_animated_png_is_animated_and_one_with_a_single_frame_is_not() {
+        let mut apng = png(image::Rgba([1, 2, 3, 255]));
+        // acTL (2 frames, loop 0) straight after IHDR, then IDAT as the default image.
+        let at = 8 + 8 + 13 + 4;
+        apng.splice(at..at, chunk(b"acTL", &[0, 0, 0, 2, 0, 0, 0, 0]));
+        assert!(is_animated(&apng), "default image plus two frames");
+        let mut single = png(image::Rgba([1, 2, 3, 255]));
+        single.splice(at..at, chunk(b"acTL", &[0, 0, 0, 1, 0, 0, 0, 0]));
+        // One frame and the IDAT is a separate default image: Pillow counts both.
+        assert!(is_animated(&single));
+        let mut with_box = png(image::Rgba([1, 2, 3, 255]));
+        let mut fctl = vec![0u8; 26];
+        fctl[7] = 3;
+        fctl[11] = 2;
+        with_box.splice(
+            at..at,
+            [
+                chunk(b"acTL", &[0, 0, 0, 1, 0, 0, 0, 0]),
+                chunk(b"fcTL", &fctl),
+            ]
+            .concat(),
+        );
+        assert!(!is_animated(&with_box), "the IDAT is the one frame");
+    }
+
+    fn chunk(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+        let mut crc = crc32fast::Hasher::new();
+        crc.update(kind);
+        crc.update(body);
+        let mut out = (body.len() as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(kind);
+        out.extend_from_slice(body);
+        out.extend_from_slice(&crc.finalize().to_be_bytes());
+        out
+    }
+
+    #[test]
+    fn base64_matches_the_standard_alphabet_with_padding() {
+        assert_eq!(b64encode(b""), "");
+        assert_eq!(b64encode(b"f"), "Zg==");
+        assert_eq!(b64encode(b"fo"), "Zm8=");
+        assert_eq!(b64encode(b"foo"), "Zm9v");
+        assert_eq!(b64encode(b"foobar"), "Zm9vYmFy");
+        assert_eq!(b64encode(&[0xfb, 0xff, 0xfe]), "+//+");
+    }
+
+    #[test]
+    fn the_upload_script_carries_its_arguments_as_ascii_json_and_nothing_else() {
+        let script = upload_script(b"\xff\xd8\xff\xe0", "a\"b\\c\u{e9}\u{1f600}.jpg");
+        // `json.dumps`: quote and backslash escaped, everything non-ASCII as lower-case UTF-16
+        // escapes.
+        let bs = '\\';
+        let name = format!("\"a{bs}\"b{bs}{bs}c{bs}u00e9{bs}ud83d{bs}ude00.jpg\"");
+        let tail = format!(
+            "}})(\"/9j/4A==\", {name}, \"https://www.google.com/searchbyimage/upload\", \"image/jpeg\")"
+        );
+        assert!(script.contains(&tail), "{script}");
+        assert!(script.starts_with("\n(function (b64, name, action, mime) {"));
+        assert!(script.is_ascii());
+        // Bytes that are no known picture are offered as a JPEG, as Python does.
+        assert!(
+            upload_script(b"???", "x").trim_end().ends_with(
+                "\"x\", \"https://www.google.com/searchbyimage/upload\", \"image/jpeg\")"
+            )
+        );
+        assert!(
+            upload_script(b"GIF89a", "x")
+                .trim_end()
+                .ends_with("\"image/gif\")")
+        );
+    }
+}
