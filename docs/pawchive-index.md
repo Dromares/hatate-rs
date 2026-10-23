@@ -191,7 +191,11 @@ exactly as `engine_runner._collect_pawchive_index` does, in the same order:
 
 An error from the index file (a damaged database) is the error line `Pawchive index: <message>`
 and the image's search goes on; the message is SQLite's own words, which `rusqlite` and `sqlite3`
-both pass through (`file is not a database` in the differential).
+both pass through (`file is not a database` in the differential). One exception: `rusqlite` ends
+the text of a failed open with `: <path of the file>`, where `sqlite3` says only `unable to open
+database file`. The path is cut from the message (it would otherwise reach `Entry.error_message`,
+which carries no paths) and stays in `detail()`. A folder where the file should be and a file the
+user may not open are both this case.
 
 | Python | Rust |
 |---|---|
@@ -228,6 +232,11 @@ outside the repo; the log is `worktrees/DAN-2145-differential.log`.
    `thumb_bytes` and `booru_tags_fetched`), the error list, the files left in the folder, and the
    index file's bytes and mtime after, all equal. The 24 engine plans (`enable_pawchive_index` x
    secondary mode x extras held back x `enable_pawchive`) are equal too. **Differences: X1 only.**
+   A second run of the same pair covers an index that cannot be opened: a folder named
+   `pawchive_index.db`, and a zero-byte file of mode 000 (both sides run as the same user), each
+   queried with 7 local files and hydrus hashes. 4 index runs, 28 collector calls, every one the
+   error line `Pawchive index: unable to open database file`; 0 differences. Before the fix the
+   Rust line ended in the index file's full path.
 2. **`hatate batch` end to end.** 150 folders (3 to 8 indexed posts; per folder an exact copy, a
    resized JPEG, a recompressed JPEG, a mirror, an unrelated picture, sometimes a non-image),
    searched by Python's real `SearchWorker.run()` (IQDB answers nothing; the Pawchive post and
@@ -239,8 +248,9 @@ outside the repo; the log is `worktrees/DAN-2145-differential.log`.
    made (host, path, query), and the index file's bytes and mtime, are equal too. The outcomes
    cover good, poor and not found, both engine labels, and the unreadable-file error line.
    The shipped binary is not run in the differential: its primary engine is IQDB on the real host
-   and no flag redirects an engine host (the rule). What it adds over `run_batch` is the one line
-   `LiveEngines::for_profile`, which `hatate_batch_builds_its_engines_over_the_profiles_index` pins.
+   and no flag redirects an engine host (the rule). What it adds over `run_batch` is `build_engines`
+   (`LiveEngines::for_profile`), which `batch_cmd::tests::the_batch_engines_search_the_profiles_pawchive_index`
+   pins: reverting `build_engines` to `LiveEngines::new` turns it red.
 
 ### What is not matched
 
@@ -252,8 +262,9 @@ outside the repo; the log is `worktrees/DAN-2145-differential.log`.
 
 ### The tests
 
-`tests/pawchive_index_wiring.rs` (11) drives `LiveEngines` and the runner; `tests/pawchive_index_batch.rs`
-(3) drives `run_batch` over a profile with an index. No server is needed for the first; the second
+`tests/pawchive_index_wiring.rs` (12) drives `LiveEngines` and the runner; `tests/pawchive_index_batch.rs`
+(3) drives `run_batch` over a profile with an index; `hatate-cli`'s `batch_cmd::tests` (1) runs the
+engine build the binary uses. No server is needed for the first; the second
 serves the Pawchive pages from a local https server.
 
 | Rule | Test |
@@ -265,9 +276,10 @@ serves the Pawchive pages from a local https server.
 | none found is a search, not an error | `an_image_the_index_does_not_know_is_a_search_that_found_nothing` |
 | local file unreadable (not a picture, missing) | `a_local_file_that_is_not_a_picture_is_unreadable_and_says_so` |
 | a damaged database | `a_database_that_cannot_be_read_is_an_error_row_not_a_crash` |
+| an index that cannot be opened: no path in the line | `an_index_that_cannot_be_opened_says_so_without_its_path` |
 | the index file is read-only (bytes, mtime, no journal) | `searching_never_writes_the_users_index`, `a_batch_never_writes_the_users_index` |
 | `enable_pawchive_index` true and false | `the_setting_decides_whether_the_index_runs`, `with_the_setting_off_the_index_is_not_asked_and_not_touched` |
-| `hatate batch` uses the profile's index | `hatate_batch_builds_its_engines_over_the_profiles_index`, `a_batch_over_a_folder_finds_the_indexed_posts_and_saves_them_in_the_session` |
+| `hatate batch` uses the profile's index | `batch_cmd::tests::the_batch_engines_search_the_profiles_pawchive_index` (over `build_engines`, the function `batch_cmd` calls), `hatate_batch_builds_its_engines_over_the_profiles_index`, `a_batch_over_a_folder_finds_the_indexed_posts_and_saves_them_in_the_session` |
 
 Network-client rule: the index is local, so there is no client of its own. The Pawchive booru pages
 the batch fetches for a found post go over https through `NetClient::new` (the second file). No
