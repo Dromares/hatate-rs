@@ -45,9 +45,10 @@ Not here, and who owns it:
 
 ## 3. What the ticket text asked for and the tree did not have
 
-1. **"The runner's existing event type" does not exist on `main`.** The 3.i `RunState` channel has
-   not landed. `LensConnection{NotReachable, WaitingForLens, Ready, Blocked}` goes to a standalone
-   sink (`LensClient::with_connection_sink`) that 3.i's event type can wrap. `Ready` and `Blocked`
+1. **"The runner's existing event type" does not exist on `main`.** The runner has no event channel
+   for run state: plan rev 8 moved it to the Phase 6 core-support ticket (3.i never carried it).
+   `LensConnection{NotReachable, WaitingForLens, Ready, Blocked}` goes to a standalone sink
+   (`LensClient::with_connection_sink`) that the Phase 6 event channel carries. `Ready` and `Blocked`
    are each reached by a test (`a_search_ranks_exact_matches_by_position_and_reports_ready`,
    `three_failed_images_in_a_row_stand_the_engine_down_until_a_search_starts_again`);
    `NotReachable` and `WaitingForLens` are 5.b's.
@@ -72,8 +73,8 @@ sides.
 * **`search`, scripted fetch.** Python's `lens_browser.fetch_results_payloads` is patched and the
   Rust `LensFetch` is fed the same scripted `(payloads, tiles)` or the same exception
   (`LensBrowserUnavailable`, `LensChallengeUnanswered`, `LensBrowserError`), with a fake clock, fake
-  sleep and scripted site lookups on both sides: 300 / 2,000 / 2,000 sequences = 6,160 / 41,207 /
-  40,891 steps, long enough to reach the failure counter's latch, the challenge rest and its expiry.
+  sleep and scripted site lookups on both sides: 300 / 2,000 / 2,000 sequences = 6,285 / 40,790 /
+  40,452 steps, long enough to reach the failure counter's latch, the challenge rest and its expiry.
   Compared after every step: every match field, the error class and message, the alerts announced,
   every sleep from `wait_for_turn`, `is_blocked`, `is_resting`, `resting_until`, the fetch arguments
   (bytes hash, mime, name, timeout, flags) and the site-lookup arguments.
@@ -89,14 +90,38 @@ sides.
 
 | Class | What | Count per seed |
 |---|---|---|
-| **F1** | A picture only Pillow decodes (ICO, AVIF, JPEG 2000): Python converts it to JPEG, this build cannot decode it and refuses it (`FormatRefused`, no latch) | 10 of ~168 files |
-| **F2** | An animated PNG cut off after its default image: Pillow converts the first frame, the port's decoder fails on the cut and returns the PNG as it was | 0 to 4 |
-| **F3** | A JPEG with one flipped bit in its entropy data: the port's decoder and libjpeg give different pixels | 0 to 1 |
-| **J1** | The re-encoded JPEG's bytes are `jpeg-encoder`'s, not libjpeg's (granted on DAN-2057). Dimensions, colour mode and the pixels handed to the encoder match. The dHash a Rule 34 lookup takes from those bytes differs with them. | 26 to 28 prep cases; 51, 454, 420 scenario steps |
-| **A1** | `_is_animated` on a GIF or TIFF differs; unobservable, because `media_type` of those is not in `LENS_READS` and they are converted either way | 7 to 9 |
+| **F1** | A picture only Pillow decodes (AVIF, JPEG 2000): Python converts it to JPEG; this build has no decoder for them and refuses them (`FormatRefused`, no latch). Python sends these to Lens and this build does not, so 5.e's coverage table lists it as a known gap. Same class as `hydrus-import.md` C4. | 4 files (`pic.avif`, `pic_rgba.avif`, `pic.jp2`, `pic_rgba.jp2`), each seen in `prep` and in `anim`: 8 cases |
+| **F2** | An animated PNG cut off after its default image: Pillow converts the first frame, the port's decoder fails on the cut and returns the PNG as it was | 2 / 6 / 4 |
+| **J1** | The re-encoded JPEG's bytes are `jpeg-encoder`'s, not libjpeg's (granted on DAN-2057). Dimensions, colour mode and the pixels handed to the encoder match. The dHash a Rule 34 lookup takes from those bytes differs with them, by at most 2 bits of 256 (below). | 32 / 30 / 32 prep cases; 77 / 473 / 435 scenario steps |
+| **A1** | `_is_animated` on a GIF or TIFF differs; unobservable, because `media_type` of those is not in `LENS_READS` and they are converted either way | 7 / 6 / 7 |
 
-F1 to F3 are in decoders merged before this ticket; none is Lens code. They go to Cloud on a
-`Ruling needed` child before the verify ticket opens.
+Each class is keyed in the harness to its file family (F1 by the AVIF and JPEG 2000 magic bytes, F2 by
+the cut-APNG cases), so a new refusal of a PNG or WebP shows up as unexplained and not as F1 or F2.
+A JPEG with one flipped entropy bit, which an earlier run counted as class F3, now matches (0 cases).
+
+**ICO was not F1.** The `image` crate refuses a PNG entry that is not RGBA ("The PNG is not in RGBA
+format!"), and it shows the entry with the most bits where Pillow shows the largest one. `pyraster`
+now reads the directory as Pillow's `IcoFile` does (largest entry, lowest colour depth among equals,
+file order after that), decodes a PNG entry as any other PNG, and hands a bitmap entry to the crate
+alone. The harness gained four icons (RGBA PNG entries, bitmap entries, with and without alpha, a
+256 px entry); all five icons now match, pixels included. Regression tests: `tests/pyraster_ico.rs`,
+red before the change.
+
+**J1 and the Rule 34 lookup.** `find_post_by_search` accepts a post at a 16x16 dHash distance of at
+most `LISTING_MAX_DISTANCE = 6` of 256. For every Rule 34 lookup in every scenario step, the Hamming
+distance between the dHash Python hands the lookup and the one this build does:
+
+| Seed | Lookups | Max | Distribution (distance: lookups) |
+|---|---|---|---|
+| 101 | 665 | 0 | 0: 665 |
+| 202 | 4,471 | 2 | 0: 4,375, 2: 96 |
+| 303 | 4,366 | 1 | 0: 4,273, 1: 93 |
+
+The maximum is 2, which keeps both sides of the threshold on the case that set it (the right post at
+2, the nearest wrong variant at 9). 5.c re-checks this against the real `find_post_by_search`.
+
+F1 and F2 are in decoders merged before this ticket; neither is Lens code. Cloud accepted F1, F2, J1
+and A1 on DAN-2183.
 
 ## 5. Python tests that exercise this code
 
