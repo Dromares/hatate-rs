@@ -19,6 +19,13 @@ pub fn local_hhmm(epoch: f64) -> String {
     hhmm(epoch, &Zone::from_environment())
 }
 
+/// `"%Y-%m-%d %H:%M:%S"` of `epoch` in the process's local zone (`datetime.now().strftime(...)`).
+pub fn local_stamp(epoch: f64) -> String {
+    let zone = Zone::from_environment();
+    let secs = epoch.floor() as i64;
+    crate::timeutil::format_stamp((secs + zone.utc_offset(secs)) as f64)
+}
+
 /// `"%H:%M"` of `epoch` in `zone`.
 fn hhmm(epoch: f64, zone: &Zone) -> String {
     let local = epoch.floor() as i64 + zone.utc_offset(epoch.floor() as i64);

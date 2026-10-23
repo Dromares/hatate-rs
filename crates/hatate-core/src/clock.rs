@@ -33,6 +33,11 @@ pub trait Clock: Send + Sync {
             seconds_of_day % 3600 / 60
         )
     }
+    /// `datetime.now().strftime("%Y-%m-%d %H:%M:%S")`: the local date and time of an instant, for
+    /// a log line. The default is UTC; [`SystemClock`] reads the process's own zone.
+    fn local_stamp(&self, epoch: f64) -> String {
+        crate::timeutil::format_stamp(epoch)
+    }
 }
 
 /// The real clock.
@@ -69,6 +74,10 @@ impl Clock for SystemClock {
 
     fn local_hhmm(&self, epoch: f64) -> String {
         crate::localtime::local_hhmm(epoch)
+    }
+
+    fn local_stamp(&self, epoch: f64) -> String {
+        crate::localtime::local_stamp(epoch)
     }
 }
 
