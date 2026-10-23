@@ -39,10 +39,13 @@ const DIST_BASE: [u16; 30] = [
     2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577,
 ];
 const DIST_EXTRA: [u8; 30] = [
-    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13,
+    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13,
+    13,
 ];
 /// The order the code-length code's lengths are stored in.
-const CLEN_ORDER: [usize; 19] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+const CLEN_ORDER: [usize; 19] = [
+    16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15,
+];
 
 /// A canonical Huffman code: `count[len]` codes of each length, symbols in code order.
 #[derive(Clone)]
@@ -402,9 +405,14 @@ impl<'a> Inflate<'a> {
                     if copy == 0 {
                         return Ok(if room == 0 { Stop::Full } else { Stop::Need });
                     }
-                    self.out.extend_from_slice(&self.data[self.pos..self.pos + copy]);
+                    self.out
+                        .extend_from_slice(&self.data[self.pos..self.pos + copy]);
                     self.pos += copy;
-                    self.st = if copy == n { St::Block } else { St::Copy(n - copy) };
+                    self.st = if copy == n {
+                        St::Block
+                    } else {
+                        St::Copy(n - copy)
+                    };
                 }
                 St::Len => match self.peek(Which::Lit)? {
                     Peek::NeedInput => return Ok(Stop::Need),
@@ -464,7 +472,11 @@ impl<'a> Inflate<'a> {
                         let b = self.out[from + k];
                         self.out.push(b);
                     }
-                    self.st = if n == len { St::Len } else { St::Match(len - n, dist) };
+                    self.st = if n == len {
+                        St::Len
+                    } else {
+                        St::Match(len - n, dist)
+                    };
                 }
                 St::Check => {
                     if !self.need(32) {

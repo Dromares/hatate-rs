@@ -17,8 +17,8 @@
 use std::borrow::Cow;
 use std::io::Write;
 
-use flate2::write::ZlibEncoder;
 use flate2::Compression;
+use flate2::write::ZlibEncoder;
 
 use crate::pyinflate::{Broken, Inflate, Stop};
 
@@ -174,7 +174,11 @@ fn pixel_data(data: &[u8], first_idat: usize) -> PixelData {
     loop {
         let length = be32(data, at).map_or(0, |n| n as usize);
         // `fdAT` carries a 4-byte sequence number in front of the data.
-        let skip = if data.get(at + 4..at + 8) == Some(b"fdAT") { 4 } else { 0 };
+        let skip = if data.get(at + 4..at + 8) == Some(b"fdAT") {
+            4
+        } else {
+            0
+        };
         let body = at + 8 + skip;
         let length = length.saturating_sub(skip);
         let end = body.saturating_add(length);
@@ -282,7 +286,9 @@ fn inflate_rows(px: &PixelData, header: &Header) -> Result<(Vec<u8>, usize), Fai
         } else {
             match stop {
                 Stop::Need => starved = true,
-                Stop::End | Stop::NeedDict | Stop::Full => return Err(Fail::Now(px.lacking.clone())),
+                Stop::End | Stop::NeedDict | Stop::Full => {
+                    return Err(Fail::Now(px.lacking.clone()));
+                }
             }
         }
     }
