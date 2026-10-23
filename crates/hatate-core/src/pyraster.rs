@@ -302,7 +302,97 @@ impl Image {
                 ];
             }
         }
-        src.resample(width, height, box_)
+        src.resample(width, height, box_, Filter::Lanczos)
+    }
+
+    /// `Image.resize((width, height), filter)` with no box and no `reducing_gap`, for modes `L`
+    /// and `RGB`: what `core/image_diff.py` and `core/upscale_detect.py` call.
+    pub fn resize_filtered(&self, width: usize, height: usize, filter: Filter) -> Image {
+        assert!(matches!(self.mode, Mode::L | Mode::Rgb));
+        if self.width == width && self.height == height {
+            return self.clone();
+        }
+        match filter {
+            Filter::Nearest => self.resize_nearest(width, height),
+            Filter::Bilinear | Filter::Bicubic | Filter::Lanczos => self.resample(
+                width,
+                height,
+                [0.0, 0.0, self.width as f64, self.height as f64],
+                filter,
+            ),
+        }
+    }
+
+    /// `Image.resize(.., NEAREST)`: `ImagingScaleAffine`, whose source column is accumulated in
+    /// `double` (`xo += a[0]`) rather than computed per pixel.
+    fn resize_nearest(&self, width: usize, height: usize) -> Image {
+        let ch = self.mode.channels();
+        let (ax, ay) = (
+            self.width as f64 / width as f64,
+            self.height as f64 / height as f64,
+        );
+        let coord = |v: f64| if v < 0.0 { -1 } else { v as i64 };
+        let mut xs = Vec::with_capacity(width);
+        let mut xo = ax * 0.5;
+        for _ in 0..width {
+            xs.push(coord(xo));
+            xo += ax;
+        }
+        let mut out = vec![0u8; width * height * ch];
+        let mut yo = ay * 0.5;
+        for y in 0..height {
+            let yi = coord(yo);
+            if yi >= 0 && (yi as usize) < self.height {
+                let row = &self.data[yi as usize * self.width * ch..][..self.width * ch];
+                for (x, &xi) in xs.iter().enumerate() {
+                    if xi >= 0 && (xi as usize) < self.width {
+                        let (src, dst) = (xi as usize * ch, (y * width + x) * ch);
+                        out[dst..dst + ch].copy_from_slice(&row[src..src + ch]);
+                    }
+                }
+            }
+            yo += ay;
+        }
+        Image {
+            width,
+            height,
+            mode: self.mode,
+            data: out,
+        }
+    }
+
+    /// `image.filter(ImageFilter.GaussianBlur(radius))` for mode `L`: Pillow's three box-blur
+    /// passes (`BoxBlur.c`), each rounding to 8 bits, along x and then along y.
+    pub fn gaussian_blur(&self, radius: f32) -> Image {
+        assert_eq!(self.mode, Mode::L);
+        let (w, h) = (self.width, self.height);
+        if w == 0 || h == 0 || radius == 0.0 {
+            return self.clone();
+        }
+        let box_radius = gaussian_box_radius(radius, 3);
+        let mut data = self.data.clone();
+        for _ in 0..3 {
+            for row in data.chunks_exact_mut(w) {
+                let blurred = box_blur_line(row, box_radius);
+                row.copy_from_slice(&blurred);
+            }
+        }
+        let mut column = vec![0u8; h];
+        for _ in 0..3 {
+            for x in 0..w {
+                for (y, c) in column.iter_mut().enumerate() {
+                    *c = data[y * w + x];
+                }
+                let blurred = box_blur_line(&column, box_radius);
+                for (y, &v) in blurred.iter().enumerate() {
+                    data[y * w + x] = v;
+                }
+            }
+        }
+        Image {
+            data,
+            ..self.clone()
+        }
     }
 
     /// `Image.thumbnail((x, y), Image.LANCZOS)` with the default `reducing_gap` of 2.0, on an
@@ -351,8 +441,8 @@ impl Image {
         }
     }
 
-    /// `ImagingResample` with `LANCZOS` and a (fractional) source box.
-    fn resample(&self, width: usize, height: usize, box_: [f64; 4]) -> Image {
+    /// `ImagingResample` with a (fractional) source box.
+    fn resample(&self, width: usize, height: usize, box_: [f64; 4], filter: Filter) -> Image {
         let ch = self.mode.channels();
         let need_h = width != self.width || box_[0] != 0.0 || box_[2] != width as f64;
         let need_v = height != self.height || box_[1] != 0.0 || box_[3] != height as f64;
@@ -382,6 +472,7 @@ impl Image {
                     width,
                     (box_[0], box_[2]),
                     true,
+                    filter,
                 ));
                 w = width;
             } else if !horizontal && need_v {
@@ -393,6 +484,7 @@ impl Image {
                     height,
                     (box_[1], box_[3]),
                     false,
+                    filter,
                 ));
                 h = height;
             }
@@ -441,6 +533,50 @@ fn thumbnail_size(width: usize, height: usize, size: (i64, i64)) -> Option<(usiz
     Some((x as usize, y as usize))
 }
 
+/// The resampling filters `Image.resize` is called with in this port.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Filter {
+    Nearest,
+    Bilinear,
+    Bicubic,
+    Lanczos,
+}
+
+impl Filter {
+    /// `struct filter.support` of `Resample.c`.
+    fn support(self) -> f64 {
+        match self {
+            Filter::Nearest => 0.0,
+            Filter::Bilinear => 1.0,
+            Filter::Bicubic => 2.0,
+            Filter::Lanczos => 3.0,
+        }
+    }
+
+    /// `bilinear_filter`, `bicubic_filter` (a = -0.5) and `lanczos_filter` of `Resample.c`.
+    fn eval(self, x: f64) -> f64 {
+        match self {
+            Filter::Nearest => unreachable!("nearest does not go through the convolution"),
+            Filter::Bilinear => {
+                let x = x.abs();
+                if x < 1.0 { 1.0 - x } else { 0.0 }
+            }
+            Filter::Bicubic => {
+                const A: f64 = -0.5;
+                let x = x.abs();
+                if x < 1.0 {
+                    ((A + 2.0) * x - (A + 3.0)) * x * x + 1.0
+                } else if x < 2.0 {
+                    (((x - 5.0) * x + 8.0) * x - 4.0) * A
+                } else {
+                    0.0
+                }
+            }
+            Filter::Lanczos => lanczos(x),
+        }
+    }
+}
+
 /// Pillow's Lanczos filter (`Resample.c`, support 3).
 fn lanczos(x: f64) -> f64 {
     fn sinc(x: f64) -> f64 {
@@ -468,6 +604,7 @@ fn resample_axis(
     out_size: usize,
     (in0, in1): (f64, f64),
     horizontal: bool,
+    filter: Filter,
 ) -> Vec<u8> {
     const PRECISION_BITS: u32 = 32 - 8 - 2;
     let in_size = if horizontal { width } else { height };
@@ -476,7 +613,7 @@ fn resample_axis(
     let scale = f64::from(in1 - in0) / out_size as f64;
     let in0 = f64::from(in0);
     let filter_scale = scale.max(1.0);
-    let support = 3.0 * filter_scale;
+    let support = filter.support() * filter_scale;
     let ss = 1.0 / filter_scale;
     let mut taps: Vec<(usize, Vec<i32>)> = Vec::with_capacity(out_size);
     for xx in 0..out_size {
@@ -484,7 +621,7 @@ fn resample_axis(
         let xmin = ((center - support + 0.5) as i64).max(0) as usize;
         let xmax = (((center + support + 0.5) as i64).max(0) as usize).min(in_size);
         let mut k: Vec<f64> = (0..xmax.saturating_sub(xmin))
-            .map(|x| lanczos(((x + xmin) as f64 - center + 0.5) * ss))
+            .map(|x| filter.eval(((x + xmin) as f64 - center + 0.5) * ss))
             .collect();
         let ww: f64 = k.iter().sum();
         if ww != 0.0 {
@@ -527,4 +664,68 @@ fn resample_axis(
         }
         out
     }
+}
+
+/// `_gaussian_blur_radius` of `BoxBlur.c`, in the C's own mix of `float` and `double`.
+fn gaussian_box_radius(radius: f32, passes: i32) -> f32 {
+    let sigma2: f32 = radius * radius / passes as f32;
+    let big_l = (12.0f64 * f64::from(sigma2) + 1.0).sqrt() as f32;
+    let l = ((f64::from(big_l) - 1.0) / 2.0).floor() as f32;
+    let mut a: f32 = (2.0 * l + 1.0) * (l * (l + 1.0) - 3.0 * sigma2);
+    a /= 6.0 * (sigma2 - (l + 1.0) * (l + 1.0));
+    l + a
+}
+
+/// One `ImagingLineBoxBlur8` over a line, with the weights `ImagingHorizontalBoxBlur` derives
+/// from the fractional radius (all `UINT32` arithmetic, wrapping like C).
+fn box_blur_line(line: &[u8], float_radius: f32) -> Vec<u8> {
+    let xsize = line.len() as i32;
+    let radius = float_radius as i32;
+    let ww = (16_777_216f32 / (float_radius * 2.0 + 1.0)) as u32;
+    let fw = (16_777_216u32.wrapping_sub((radius * 2 + 1) as u32 * ww)) / 2;
+    let edge_a = (radius + 1).min(xsize);
+    let edge_b = (xsize - radius - 1).max(0);
+    let lastx = xsize - 1;
+    let at = |i: i32| i32::from(line[i as usize]);
+    let mut out = vec![0u8; line.len()];
+    let mut acc: u32 = (at(0) * (radius + 1)) as u32;
+    for x in 0..edge_a - 1 {
+        acc = acc.wrapping_add(at(x) as u32);
+    }
+    acc = acc.wrapping_add((at(lastx) * (radius - edge_a + 1)) as u32);
+    let mut step = |x: i32, subtract: i32, add: i32, left: i32, right: i32| {
+        acc = acc.wrapping_add((at(add) - at(subtract)) as u32);
+        let bulk = acc
+            .wrapping_mul(ww)
+            .wrapping_add(((at(left) + at(right)) as u32).wrapping_mul(fw));
+        out[x as usize] = (bulk.wrapping_add(1 << 23) >> 24) as u8;
+    };
+    if edge_a <= edge_b {
+        for x in 0..edge_a {
+            step(x, 0, x + radius, 0, x + radius + 1);
+        }
+        for x in edge_a..edge_b {
+            step(
+                x,
+                x - radius - 1,
+                x + radius,
+                x - radius - 1,
+                x + radius + 1,
+            );
+        }
+        for x in edge_b..=lastx {
+            step(x, x - radius - 1, lastx, x - radius - 1, lastx);
+        }
+    } else {
+        for x in 0..edge_b {
+            step(x, 0, x + radius, 0, x + radius + 1);
+        }
+        for x in edge_b..edge_a {
+            step(x, 0, lastx, 0, lastx);
+        }
+        for x in edge_a..=lastx {
+            step(x, x - radius - 1, lastx, x - radius - 1, lastx);
+        }
+    }
+    out
 }
