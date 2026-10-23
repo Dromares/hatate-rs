@@ -374,7 +374,10 @@ async fn the_rewritten_url_is_what_hydrus_is_asked_about_and_sent() {
     let body: Value = serde_json::from_slice(&seen[1].body).unwrap();
     assert_eq!(body["url"], "https://danbooru.donmai.us/posts/7727191");
     assert_eq!(body["show_destination_page"], false);
-    // Queued, not confirmed.
+    // Queued, not confirmed, and no file was uploaded (test_session
+    // `test_url_importer_is_sent_but_not_confirmed`, `a_hydrus_that_accepts_the_url_is_used_as_before`).
+    assert_eq!(result.confirmed, None);
+    assert!(!targets(&server).contains(&"/add_files/add_file".to_owned()));
     assert!(entry.sent_to_hydrus && !entry.hydrus_import_confirmed);
     let _ = std::fs::remove_dir_all(dir);
 }
