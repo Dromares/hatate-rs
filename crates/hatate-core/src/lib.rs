@@ -38,6 +38,7 @@ mod pycompat;
 mod pycsv;
 mod pyfnmatch;
 mod pyimage;
+mod pyinflate;
 pub mod pyjpeg;
 mod pymeta;
 mod pynumpy;

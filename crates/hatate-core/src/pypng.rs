@@ -2,21 +2,25 @@
 //! `Image.open(...).load()` does it, whatever the `png` crate thinks of it.
 //!
 //! Pillow's `PngImageFile.load_read` hands the zlib decoder the payload of the consecutive `IDAT`
-//! chunks and skips each chunk's 4-byte CRC without looking at it, so a bad checksum on a pixel
-//! chunk is invisible to Pillow. The decoder (`ZipDecode`) is zlib's `inflate`: a corrupt stream
-//! is `OSError("broken data stream when reading image file")`, an adler32 that does not match is
-//! the same error, a stream that ends before the last row is "image file is truncated", and
-//! whatever follows the last row is ignored. The chunks after the pixel data are walked by
-//! `load_end`, which never raises. The `png` crate (through `image`) checks every CRC, ignores
+//! chunks, at most `ImageFile.MAXBLOCK` bytes at a time, and skips each chunk's 4-byte CRC without
+//! looking at it: a bad checksum on a pixel chunk is invisible to Pillow. The decoder
+//! (`ZipDecode`) is zlib's `inflate` called once per row (see [`crate::pyinflate`]): a corrupt
+//! stream, or an adler32 that does not match inside the block that completes the last row, is
+//! "broken data stream", a stream that runs out of input before the last row is "image file is
+//! truncated", a stream that ends exactly on a row boundary leaves the rows after it zero, and
+//! whatever follows the last row is never read. The chunks after the pixel data are walked by
+//! `load_end`, which does not raise. The `png` crate (through `image`) checks every CRC, ignores
 //! the adler32 and stops differently, so [`canonical`] re-states the pixel stream as a plain
 //! well-formed PNG (the chunks before the first `IDAT` verbatim, one `IDAT` holding exactly the
-//! rows Pillow reads, `IEND`) that the `image` crate decodes to the same pixels.
+//! rows Pillow got, `IEND`) that the `image` crate decodes to the same pixels.
 
 use std::borrow::Cow;
 use std::io::Write;
 
 use flate2::write::ZlibEncoder;
-use flate2::{Compression, Decompress, FlushDecompress};
+use flate2::Compression;
+
+use crate::pyinflate::{Broken, Inflate, Stop};
 
 /// `ImageFile.MAXBLOCK`: Pillow feeds the decoder at most this many bytes at a time.
 const BLOCK: usize = 65536;
@@ -43,33 +47,42 @@ struct Header {
 impl Header {
     /// The length of each row `ZipDecode` expects from the inflated stream (the row plus its
     /// filter byte), pass by pass for Adam7 (a pass with no pixels has no rows).
-    fn row_lens(&self) -> impl Iterator<Item = usize> {
-        let passes: &[(u64, u64, u64, u64)] = if self.interlaced { &PASSES } else { &[(0, 0, 1, 1)] };
+    fn row_lens(&self) -> impl Iterator<Item = usize> + '_ {
+        let passes: &[(u64, u64, u64, u64)] = if self.interlaced {
+            &PASSES
+        } else {
+            &[(0, 0, 1, 1)]
+        };
         passes.iter().flat_map(move |&(x0, y0, dx, dy)| {
             let w = self.width.saturating_sub(x0).div_ceil(dx);
             let h = self.height.saturating_sub(y0).div_ceil(dy);
-            let len = if w == 0 { 0 } else { (1 + (w * self.bits_per_pixel).div_ceil(8)) as usize };
-            std::iter::repeat_n(len, if w == 0 { 0 } else { h as usize })
+            let (len, rows) = if w == 0 || h == 0 {
+                (0, 0)
+            } else {
+                (1 + (w * self.bits_per_pixel).div_ceil(8), h)
+            };
+            std::iter::repeat_n(len as usize, rows as usize)
         })
     }
 
-    /// The total of [`Header::row_lens`], `None` past what a `usize` holds.
-    fn raw_len(&self) -> Option<usize> {
-        let rows = |w: u64, h: u64| -> Option<u64> {
+    /// Whether the rows add up to something a `usize` holds.
+    fn fits(&self) -> bool {
+        let one = |w: u64, h: u64| -> Option<u64> {
             if w == 0 || h == 0 {
                 return Some(0);
             }
             h.checked_mul(1 + w.checked_mul(self.bits_per_pixel)?.div_ceil(8))
         };
-        if !self.interlaced {
-            return usize::try_from(rows(self.width, self.height)?).ok();
-        }
-        let total = PASSES.iter().try_fold(0u64, |sum, &(x0, y0, dx, dy)| {
-            let w = self.width.saturating_sub(x0).div_ceil(dx);
-            let h = self.height.saturating_sub(y0).div_ceil(dy);
-            sum.checked_add(rows(w, h)?)
-        })?;
-        usize::try_from(total).ok()
+        let total = if self.interlaced {
+            PASSES.iter().try_fold(0u64, |sum, &(x0, y0, dx, dy)| {
+                let w = self.width.saturating_sub(x0).div_ceil(dx);
+                let h = self.height.saturating_sub(y0).div_ceil(dy);
+                sum.checked_add(one(w, h)?)
+            })
+        } else {
+            one(self.width, self.height)
+        };
+        total.is_some_and(|n| usize::try_from(n).is_ok())
     }
 }
 
@@ -77,9 +90,9 @@ fn be32(d: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_be_bytes(d.get(at..at + 4)?.try_into().ok()?))
 }
 
-/// `PngStream.read`'s `is_cid`: four ASCII letters.
+/// `PngImagePlugin.is_cid`: `\w\w\w\w` on bytes.
 fn is_cid(cid: &[u8]) -> bool {
-    cid.len() == 4 && cid.iter().all(u8::is_ascii_alphabetic)
+    cid.len() == 4 && cid.iter().all(|c| c.is_ascii_alphanumeric() || *c == b'_')
 }
 
 /// The `IHDR` fields and where the first `IDAT` chunk starts, or `None` for a file this does not
@@ -119,85 +132,121 @@ fn scan(data: &[u8]) -> Option<(Header, usize)> {
     }
 }
 
-/// The `IDAT` payloads in the blocks Pillow feeds to the decoder, and whether the file ran out
-/// (a chunk cut short, or no complete chunk header after the last one) before a non-pixel chunk.
-fn pixel_blocks(data: &[u8], first_idat: usize) -> (Vec<&[u8]>, bool) {
-    let mut blocks = Vec::new();
+/// What Pillow's `load_read` hands the decoder, and what it says when asked for more after that.
+struct PixelData {
+    /// The payloads of the consecutive pixel chunks, back to back.
+    buf: Vec<u8>,
+    /// Where each block (a payload, cut into [`BLOCK`] pieces) ends in `buf`.
+    ends: Vec<usize>,
+    /// The `OSError` or `SyntaxError` text for a decoder that needs more than there is.
+    lacking: String,
+}
+
+fn bytes_repr(b: &[u8]) -> String {
+    let mut s = String::from("b'");
+    for &c in b {
+        match c {
+            b'\\' => s.push_str("\\\\"),
+            b'\'' => s.push_str("\\'"),
+            b'\t' => s.push_str("\\t"),
+            b'\n' => s.push_str("\\n"),
+            b'\r' => s.push_str("\\r"),
+            0x20..=0x7e => s.push(c as char),
+            _ => s.push_str(&format!("\\x{c:02x}")),
+        }
+    }
+    s.push('\'');
+    s
+}
+
+fn pixel_data(data: &[u8], first_idat: usize) -> PixelData {
+    const TRUNCATED: &str = "image file is truncated";
+    const NOT_PROCESSED: &str = "image file is truncated (0 bytes not processed)";
+    let mut px = PixelData {
+        buf: Vec::new(),
+        ends: Vec::new(),
+        lacking: NOT_PROCESSED.to_string(),
+    };
     let mut at = first_idat;
     loop {
-        let Some(length) = be32(data, at).and_then(|n| usize::try_from(n).ok()) else {
-            return (blocks, true);
-        };
-        let (mut body, mut length) = (at + 8, length);
+        let length = be32(data, at).map_or(0, |n| n as usize);
         // `fdAT` carries a 4-byte sequence number in front of the data.
-        if data.get(at + 4..at + 8) == Some(b"fdAT") {
-            body += 4;
-            length = length.saturating_sub(4);
-        }
+        let skip = if data.get(at + 4..at + 8) == Some(b"fdAT") { 4 } else { 0 };
+        let body = at + 8 + skip;
+        let length = length.saturating_sub(skip);
         let end = body.saturating_add(length);
         let payload = data.get(body.min(data.len())..end.min(data.len())).unwrap_or(&[]);
-        blocks.extend(payload.chunks(BLOCK));
+        for piece in payload.chunks(BLOCK) {
+            px.buf.extend_from_slice(piece);
+            px.ends.push(px.buf.len());
+        }
         if end > data.len() {
-            return (blocks, true);
+            return px;
         }
-        // Skip the CRC without reading it, then the next chunk header must say IDAT/fdAT.
-        at = at + 8 + usize::try_from(be32(data, at).unwrap_or(0)).unwrap_or(0) + 4;
-        match data.get(at + 4..at + 8) {
-            Some(b"IDAT" | b"fdAT") if data.len() >= at + 8 => {}
-            Some(cid) if is_cid(cid) && data.len() >= at + 8 => return (blocks, false),
-            _ => return (blocks, true),
+        // The CRC is skipped unread; then the next chunk header decides.
+        let next = end + 4;
+        let rest = data.len().saturating_sub(next);
+        if rest < 4 {
+            px.lacking = TRUNCATED.to_string();
+            return px;
         }
+        let cid = &data[next + 4..(next + 8).min(data.len())];
+        if !is_cid(cid) {
+            px.lacking = format!("broken PNG file (chunk {})", bytes_repr(cid));
+            return px;
+        }
+        if !matches!(cid, b"IDAT" | b"fdAT" | b"DDAT") {
+            return px;
+        }
+        at = next;
     }
 }
 
-/// The filtered rows `inflate` yields when fed `blocks`, the way `ZipDecode` drives it: one row
-/// per call, only while input is left, so a stream whose input ran out before the last row is
-/// "truncated" even where zlib could still produce the rest from its state. The call that fills
-/// the last row also runs the stream to its end (and so the adler32 check) as far as the input
-/// of that block reaches; the rest of the input is ignored.
-fn inflate_rows(blocks: &[&[u8]], row_lens: impl Iterator<Item = usize>) -> Result<Vec<u8>, &'static str> {
+/// The filtered rows Pillow ends up with, `Err` with its message where it raises.
+fn inflate_rows(px: &PixelData, header: &Header) -> Result<Vec<u8>, String> {
     const BROKEN: &str = "broken data stream when reading image file";
-    let mut z = Decompress::new(true);
-    let mut out: Vec<u8> = Vec::new();
-    let mut rows = row_lens;
-    let Some(mut row_len) = rows.next() else {
-        return Ok(out);
+    let mut inf = Inflate::new(&px.buf);
+    let mut blocks = px.ends.iter();
+    let mut rows = header.row_lens();
+    let Some(first) = rows.next() else {
+        return Ok(Vec::new());
     };
-    let mut row = vec![0u8; row_len];
-    let mut filled = 0usize;
-    for block in blocks {
-        let mut input = *block;
-        while !input.is_empty() {
-            let (in0, out0) = (z.total_in(), z.total_out());
-            let status = z
-                .decompress(input, &mut row[filled..], FlushDecompress::None)
-                .map_err(|_| BROKEN)?;
-            input = &input[(z.total_in() - in0) as usize..];
-            filled += (z.total_out() - out0) as usize;
-            if filled == row_len {
-                out.extend_from_slice(&row);
-                match rows.next() {
-                    Some(next) => {
-                        row_len = next;
-                        row.resize(row_len, 0);
-                        filled = 0;
-                    }
-                    None => {
-                        // Run the stream's tail on, without room for more rows.
-                        z.decompress(input, &mut [], FlushDecompress::None)
-                            .map_err(|_| BROKEN)?;
-                        return Ok(out);
-                    }
+    let mut row_end = first;
+    // `avail_in == 0`: the next block (or the lack of one) is wanted.
+    let mut starved = true;
+    loop {
+        if starved {
+            match blocks.next() {
+                Some(&end) => inf.set_limit(end),
+                None => return Err(px.lacking.clone()),
+            }
+            starved = !inf.has_input();
+            continue;
+        }
+        let stop = inf.run(row_end).map_err(|Broken| BROKEN.to_string())?;
+        if inf.out.len() == row_end {
+            let Some(next) = rows.next() else {
+                return Ok(std::mem::take(&mut inf.out));
+            };
+            if stop == Stop::End {
+                // A stream that ends on a row boundary: the rows after it stay zero.
+                let mut out = std::mem::take(&mut inf.out);
+                out.resize(out.len() + next, 0);
+                for len in rows {
+                    out.resize(out.len() + len, 0);
                 }
-            } else if status == flate2::Status::StreamEnd {
-                return Err(TRUNCATED);
+                return Ok(out);
+            }
+            row_end += next;
+            starved = stop == Stop::Need || !inf.has_input();
+        } else {
+            match stop {
+                Stop::Need => starved = true,
+                Stop::End | Stop::NeedDict | Stop::Full => return Err(px.lacking.clone()),
             }
         }
     }
-    Err(TRUNCATED)
 }
-
-const TRUNCATED: &str = "image file is truncated (0 bytes not processed)";
 
 /// A PNG whose pixel stream is `rows` in a single `IDAT`, behind the chunks `data` has before its
 /// first `IDAT`.
@@ -229,10 +278,9 @@ pub(crate) fn canonical(data: &[u8]) -> Result<Cow<'_, [u8]>, String> {
     let Some((header, first_idat)) = scan(data) else {
         return Ok(Cow::Borrowed(data));
     };
-    if header.raw_len().is_none() {
+    if !header.fits() {
         return Ok(Cow::Borrowed(data));
     }
-    let (blocks, _ran_out) = pixel_blocks(data, first_idat);
-    let rows = inflate_rows(&blocks, header.row_lens()).map_err(str::to_string)?;
+    let rows = inflate_rows(&pixel_data(data, first_idat), &header)?;
     Ok(Cow::Owned(restate(data, first_idat, &rows)))
 }
