@@ -42,6 +42,8 @@ tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
 tower = { version = "0.5", default-features = false, features = ["retry", "util"] }
 tracing = "0.1"
 url = "2"
+chromiumoxide = { version = "0.9.1", default-features = false }
+futures = { version = "0.3", default-features = false, features = ["std", "async-await"] }
 
 [dev-dependencies]
 rcgen = "0.14"

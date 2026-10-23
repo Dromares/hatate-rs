@@ -11,9 +11,11 @@
 //! in module globals; here they are the client's, and clones share them. Time is the injected
 //! [`Clock`]'s, so a test (or the differential) runs a 30-minute rest without waiting for it.
 //!
-//! **Connection state.** The client reports [`LensConnection`] to a sink as it learns it. `Ready`
-//! (a search came back) and `Blocked` (it stood down, or is resting) are reachable here;
-//! `NotReachable` and `WaitingForLens` belong to the browser driver (5.b).
+//! **Connection state.** The client reports [`LensConnection`] to a sink as it learns it:
+//! `WaitingForLens` while a search is under way, then `Ready` (a search came back), `Blocked` (it
+//! stood down, or is resting) or `NotReachable` (the browser cannot be started). A search that
+//! fails without standing the engine down goes back to what it was before, or to `Ready` when it
+//! was nothing: the browser answered, only this image did not.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -357,8 +359,13 @@ impl LensClient {
         self.report(LensConnection::Blocked);
     }
 
+    /// A search that ended without a verdict on the engine: the state it had before it started.
+    fn settle(&self, before: Option<LensConnection>) {
+        self.report(before.unwrap_or(LensConnection::Ready));
+    }
+
     /// `_count_failure`: reports a failed image, standing the engine down after a run of them.
-    fn count_failure(&self, message: &str) -> LensError {
+    fn count_failure(&self, message: &str, before: Option<LensConnection>) -> LensError {
         let failures = {
             let mut state = self.lock();
             state.failures += 1;
@@ -373,6 +380,7 @@ impl LensClient {
                  instead."
             ));
         }
+        self.settle(before);
         LensError::Failed(message.to_owned())
     }
 
@@ -411,6 +419,8 @@ impl LensClient {
             image_path.display()
         );
         let budget = effective_timeout(timeout);
+        let before = self.lock().connection;
+        self.report(LensConnection::WaitingForLens);
         let fetched = {
             let _ticker = ProgressTicker::start("Waiting on Google Lens", budget, on_tick);
             self.fetch
@@ -423,7 +433,9 @@ impl LensClient {
                 // Told once per session, by whoever subscribed: a stood-down engine is
                 // indistinguishable from one that searched and found nothing.
                 self.announce_unavailable(&message, missing);
-                self.latch();
+                // Stood down for the run, and the browser is the reason.
+                self.lock().blocked = true;
+                self.report(LensConnection::NotReachable);
                 return Err(LensError::Unavailable(message));
             }
             Err(LensFetchError::ChallengeUnanswered(exc)) => {
@@ -447,9 +459,10 @@ impl LensClient {
                     "Google Lens browser failed for {}: {exc}",
                     image_path.display()
                 );
-                return Err(
-                    self.count_failure(&format!("the browser could not read the results ({exc})"))
-                );
+                return Err(self.count_failure(
+                    &format!("the browser could not read the results ({exc})"),
+                    before,
+                ));
             }
         };
 
@@ -457,6 +470,7 @@ impl LensClient {
             return Err(self.count_failure(
                 "Google returned a results page with nothing in it. If the browser window \
                  showed \"can't read file\", this image is one Google will not accept.",
+                before,
             ));
         }
 
