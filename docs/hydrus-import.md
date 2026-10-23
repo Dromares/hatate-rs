@@ -80,6 +80,8 @@ WebP, GIF, BMP, TIFF, ICO and PPM files under `tests/data/image_compare` (the Py
 3.g); the generated pictures come from `gen.py` with the seeds above. Hydrus is a scripted local server
 and every access key is 64 zeros.
 
+**Re-run for DAN-2160** (the `pyraster` PNG change; head `6ce2f04`, same seeds, sizes and time zones, the Python side re-run too): 18 305 cases, 28 345 ops compared, 27 255 requests, **0 unexplained differences** (`worktrees/DAN-2160-differential-4c.log`). C8 went from 2 to 0 (seed 16). C1 to C4, C6 and C7 are the same in every seed (C4: 1, 3, 2, 2, 1, 0 and 4; C6: 1; C7: 3 and 12). The one count that moved is C5, down from 652 to 486: every case that left it is a damaged PNG whose words now equal Pillow's (the reject / accept answer was already equal). No new class.
+
 ## 4. Differences that are not matched
 
 Each is counted over the runs above and is brought to Cloud on a `Ruling needed` child of DAN-2130
@@ -91,14 +93,14 @@ before the verify opens.
 | **C2** a `hash` that is not a string | the add_file answer carries a bool, number, list or object as `hash` | carries it into the entry, the URL call and the tags, or fails later with a `TypeError` | `Err(UnexpectedResponse)` before the entry changes | 19 cases (the later ops of such a case and 36 later requests are not compared) |
 | **C3** the address in Pillow's text | `cannot identify image file <_io.BytesIO object at 0x7f...>` | the real address of the object, which differs from run to run | the same text with a fixed address (`0x7f0000000000`) | 436 ops, equal otherwise |
 | **C4** a file the build cannot decode is passed | AVIF; arithmetic, lossless or hierarchical JPEG; a TIFF feature the `image` crate refuses; any of them damaged | Pillow decodes it, or finds it damaged | no error | 13 ops where Python rejects a damaged one (the file Pillow accepts is passed by both) |
-| **C5** the text for a damaged image | a file that is identified but damaged | Pillow's exception text, which has decoder-internal numbers (`image file is truncated (309 bytes not processed)`, `Truncated File Read`, `broken PNG file (bad header checksum in b'IDAT')`, `could not create decoder object`, ...) | the decoder's own text (`image file is truncated`, `unexpected end of file`, ...) | 652 of the 1 088 ops where both reject. **Reject / accept is equal in every one**; only the words after `Downloaded data does not decode as a valid image: ` differ |
+| **C5** the text for a damaged image | a file that is identified but damaged | Pillow's exception text, which has decoder-internal numbers (`image file is truncated (309 bytes not processed)`, `Truncated File Read`, `could not create decoder object`, ...) | the decoder's own text (`image file is truncated`, `unexpected end of file`, ...) | 486 of the 1 088 ops where both reject (652 before DAN-2160: the 166 that went are damaged PNGs, whose words are now Pillow's own: `broken data stream when reading image file`, `image file is truncated (0 bytes not processed)`, `broken PNG file (bad header checksum in b'IDAT')`, `Truncated File Read`, `truncated PNG file`). **Reject / accept is equal in every one**; only the words after `Downloaded data does not decode as a valid image: ` differ |
 | **C6** a damaged ICO | an ICO cut 1 % short | Pillow decodes it | the `image` crate refuses it | 1 op |
 | **C7** a JPEG the build cannot hash | an arithmetic-coded JPEG is the local or the downloaded file | `duplicate_verdict` measures it and answers | `None` (no relationship is written): the inherited `image-compare` C1 | 3 verdicts and 12 requests not made, all on the one fixture `cj_arith.jpg` |
-| **C8** a PNG with a damaged IDAT | a PNG whose IDAT checksum or zlib stream is damaged is the local or the downloaded file | Pillow hashes it (it reads IDAT without checking the CRC) | `pyraster` refuses it: `None` | 2 verdicts. Phase 3 code, not changed here; a follow-up would make `pyraster::open` as lenient as Pillow |
+| **C8** retired | was: a PNG whose IDAT checksum or zlib stream is damaged is the local or the downloaded file (Python hashed it, Rust refused it: 2 verdicts) | | | **0** since DAN-2160, which made `pyraster::open` read the pixel stream the way Pillow does (`image-compare.md` section 3.1). The number is retired, not reused |
 
 What each means for the product: C1 to C3 and C5 change a word in a message and never a decision.
 C4 and C6 are the decode check being lenient where it cannot be strict, and C6 the other way round for
-one damaged container. C7 and C8 mean no duplicate relationship is written for a file Hatate cannot
+one damaged container. C7 means no duplicate relationship is written for a file Hatate cannot
 hash, which is the safe side ("never fire on an unconfirmed verdict"). C2 cannot happen with a real
 Hydrus (its hash is a 64-character string).
 
