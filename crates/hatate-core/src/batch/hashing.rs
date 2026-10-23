@@ -416,6 +416,15 @@ mod tests {
     }
 
     #[test]
+    fn verification_declines_when_there_is_nothing_to_verify() {
+        let dir = tempfile::tempdir().unwrap();
+        let plain = dir.path().join("plain.png");
+        std::fs::write(&plain, b"x").unwrap();
+        assert!(!verify_filename_hashes(&[plain], 3));
+        assert!(!verify_filename_hashes(&[], 3));
+    }
+
+    #[test]
     fn local_hash_source_never_trusts_a_name() {
         let dir = tempfile::tempdir().unwrap();
         let liar = named_file(dir.path(), b"x", &sha_hex(b"not x"));

@@ -20,6 +20,7 @@ use hatate_core::clock::ManualClock;
 use hatate_core::config::Settings;
 use hatate_core::engine_runner::EngineRunner;
 use hatate_core::engines::iqdb::IqdbError;
+use hatate_core::engines::saucenao::SauceNaoError;
 use hatate_core::model::{Entry, MatchStatus};
 use hatate_core::net::{NetClient, NetConfig};
 use hatate_core::paths::Paths;
@@ -723,6 +724,114 @@ async fn continue_without_saucenao_carries_on_and_says_so_once() {
         .count();
     assert_eq!(said, 1);
     assert!(QuotaPauseFile::new(&w.paths).read().is_none());
+    // `test_those_results_are_marked_provisional`: the images searched without SauceNAO say so,
+    // and are kept out of the cache so a later run searches them in full.
+    assert_eq!(
+        entries
+            .iter()
+            .map(|e| e.searched_without_saucenao)
+            .collect::<Vec<_>>(),
+        [false, true, true]
+    );
+    assert_eq!(
+        std::fs::read_dir(w.paths.search_cache_dir())
+            .unwrap()
+            .count(),
+        1,
+        "only the complete result is cached"
+    );
+}
+
+/// `test_stopping_cancels_the_retry_pass`: a retry after Stop would spend the pacing delay to
+/// fail the same way.
+#[tokio::test]
+async fn stopping_cancels_the_retry_pass() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png", "b.png"]);
+    w.engines
+        .iqdb
+        .push(Step::Return(Err(IqdbError("timeout".to_owned()))));
+    w.engines
+        .iqdb
+        .push(Step::Return(Ok(vec![iqdb_match(URL, 96.5)])));
+    *w.reporter.stop_on.lock().unwrap() = Some(("(2/2)".to_owned(), w.stop.clone()));
+    let mut entries = Vec::new();
+    let (outcome, _) = w.run(&dir, &mut entries).await;
+    assert_eq!(outcome.ending, Ending::Stopped);
+    assert_eq!(outcome.searched, 2, "no third attempt");
+    assert_eq!(entries[0].status, MatchStatus::Error);
+}
+
+/// `test_an_exhausted_daily_quota_cancels_the_retry_pass`: with the allowance spent a retry fails
+/// the same way, so none is queued.
+#[tokio::test]
+async fn an_exhausted_quota_cancels_the_retry_pass() {
+    let w = world().await;
+    w.settings.lock().unwrap().secondary_engine_mode = "always".to_owned();
+    let dir = w.pictures(&["a.png"]);
+    w.engines
+        .iqdb
+        .push(Step::Return(Err(IqdbError("timeout".to_owned()))));
+    w.engines
+        .saucenao
+        .push(Step::Return(Err(SauceNaoError("timeout".to_owned()))));
+    // Both engines have been asked once when the first pass ends: the allowance is spent.
+    w.quota_after_calls.store(2, Ordering::SeqCst);
+    let mut entries = Vec::new();
+    let (outcome, _) = w.run(&dir, &mut entries).await;
+    assert_eq!(entries[0].status, MatchStatus::Error);
+    assert_eq!(outcome.searched, 1, "not retried");
+}
+
+/// `test_progress_accounts_for_the_extra_attempts`: the total grows when retries are queued, so
+/// the count stays honest.
+#[tokio::test]
+async fn progress_accounts_for_the_extra_attempts() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png", "b.png"]);
+    w.engines
+        .iqdb
+        .push(Step::Return(Err(IqdbError("timeout".to_owned()))));
+    w.engines
+        .iqdb
+        .push(Step::Return(Ok(vec![iqdb_match(URL, 96.5)])));
+    w.engines
+        .iqdb
+        .push(Step::Return(Ok(vec![iqdb_match(URL, 96.5)])));
+    let mut entries = Vec::new();
+    w.run(&dir, &mut entries).await;
+    let lines = w.lines();
+    assert!(
+        lines.iter().any(|l| l.starts_with("(1/2) a.png")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.starts_with("(2/2) b.png")),
+        "{lines:?}"
+    );
+    assert!(
+        lines.iter().any(|l| l.starts_with("(3/3) a.png")),
+        "{lines:?}"
+    );
+}
+
+/// `test_the_search_worker_spends_the_flag`: a row the last run died on is searched again and
+/// the note about it is spent.
+#[tokio::test]
+async fn a_search_spends_the_interrupted_note() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png"]);
+    let mut row = Entry::new(dir.join("a.png").to_string_lossy());
+    row.interrupted_mid_search = true;
+    let mut entries = vec![row];
+    w.match_every_image(1);
+    let (outcome, _) = w.run(&dir, &mut entries).await;
+    assert_eq!(
+        (outcome.added, outcome.duplicates, outcome.searched),
+        (0, 1, 1)
+    );
+    assert!(!entries[0].interrupted_mid_search);
+    assert_eq!(entries[0].status, MatchStatus::Good);
 }
 
 #[tokio::test]
