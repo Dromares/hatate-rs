@@ -44,7 +44,7 @@ struct Inner {
     raised: HashSet<String>,
 }
 
-/// `subscribe`, `raise_alert`, `already_raised` and `reset`, over one set of listeners and keys.
+/// `subscribe`, `unsubscribe`, `raise_alert`, `already_raised` and `reset`, over one set of listeners and keys.
 #[derive(Default)]
 pub struct EngineAlerts {
     inner: Mutex<Inner>,
@@ -65,6 +65,11 @@ impl EngineAlerts {
         if !inner.listeners.iter().any(|l| Arc::ptr_eq(l, &listener)) {
             inner.listeners.push(listener);
         }
+    }
+
+    /// `unsubscribe`: a listener that was never subscribed is left alone, as in Python.
+    pub fn unsubscribe(&self, listener: &Listener) {
+        self.lock().listeners.retain(|l| !Arc::ptr_eq(l, listener));
     }
 
     /// `raise_alert`: delivers `alert` unless its key has already been delivered. Returns whether
@@ -138,6 +143,25 @@ mod tests {
         alerts.subscribe(Arc::new(move |_: &EngineAlert| *sink.lock().unwrap() += 1));
         assert!(alerts.raise_alert(&alert("k")));
         assert_eq!(*seen.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn an_unsubscribed_listener_stops_hearing() {
+        let alerts = EngineAlerts::new();
+        let seen = Arc::new(Mutex::new(0));
+        let sink = Arc::clone(&seen);
+        let kept: Listener = Arc::new(move |_: &EngineAlert| *sink.lock().unwrap() += 1);
+        let other_sink = Arc::new(Mutex::new(0));
+        let sink = Arc::clone(&other_sink);
+        let dropped: Listener = Arc::new(move |_: &EngineAlert| *sink.lock().unwrap() += 1);
+        alerts.subscribe(Arc::clone(&kept));
+        alerts.subscribe(Arc::clone(&dropped));
+        alerts.unsubscribe(&dropped);
+        // A listener that was never subscribed is not an error.
+        alerts.unsubscribe(&dropped);
+        assert!(alerts.raise_alert(&alert("k")));
+        assert_eq!(*seen.lock().unwrap(), 1);
+        assert_eq!(*other_sink.lock().unwrap(), 0);
     }
 
     #[test]
