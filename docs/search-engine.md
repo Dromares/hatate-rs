@@ -86,7 +86,7 @@ the tool's `report.md` and `summary.json` over the two differ only in the `Sourc
 
 Unit tests next to the code: `search_engine` (13: status decision, dedupe, cache glue, local
 dimensions, error class names), `tag_borrowing` (13), `tag_band_metrics` (24), `hydrus_tag_lookup`
-(3). End to end: `tests/search_image_https.rs` (7), through the binary's own constructor against a
+(3). End to end: `tests/search_image_https.rs` (9), through the binary's own constructor against a
 local https server, with the engines scripted (`tests/common/scripted.rs`):
 
 * `search_image_over_https_through_the_binaries_constructor`: the named https test; engine answer
@@ -94,7 +94,12 @@ local https server, with the engines scripted (`tests/common/scripted.rs`):
 * `a_second_search_of_the_same_file_is_a_cache_hit`, `use_cache_false_searches_again`.
 * `a_gone_page_is_dropped_and_the_image_is_not_found`.
 * `every_engine_failing_is_an_error_entry_and_is_not_cached`.
-* network error: `a_network_error_on_the_booru_page_leaves_the_match_without_tags`.
+* network error: `a_network_error_on_the_booru_page_leaves_the_match_without_tags` (also pins
+  that the failed candidate keeps `booru_tags_fetched` false), and
+  `a_candidate_whose_booru_page_failed_is_retried_on_the_next_selection`.
+* `the_format_head_and_the_preview_download_carry_the_post_page_as_referer`: a post that states
+  no file size, so the format HEAD is issued; the HEAD and the preview download both carry the
+  post page as `Referer`.
 * deadline: `a_booru_page_that_trickles_past_the_deadline_does_not_hang_the_search` (the page
   would take 30 s to arrive; the search ends inside 10 s).
 
@@ -113,6 +118,7 @@ exercise a GUI or worker that calls `search_image` with it patched out; those do
 | `test_tag_band_metrics::TestBuckets` (2), `TestMeasureEntry` (9), `TestSummarize` (5), `TestRecorder` (4) | the same-named `tag_band_metrics::tests` (`the_boundary_is_min_tags_for_good_not_a_hardcoded_five`, `a_min_of_zero_puts_everything_above_tagless_in_range`, `entry_tags_and_chosen_booru_tags_are_bucketed_separately`, `it_uses_the_real_similarity_gate`, `zero_slack_excludes_a_weaker_match`, `an_eligible_lender_with_no_recorded_tags_is_counted_apart`, `cross_engine_lending_is_distinguishable`, `the_richest_lender_is_reported_not_merely_the_closest`, `an_already_rescued_entry_is_flagged`, `no_candidates_is_recorded_rather_than_crashing`, `measuring_leaves_what_it_measures_alone`, `rates_are_per_band`, `the_two_bucketings_disagree_and_both_are_reported`, `an_empty_band_has_no_rate_rather_than_a_division_error`, `an_unknown_bucketing_is_rejected`, `the_table_and_json_carry_the_rates`, `the_recorder_is_off_unless_the_environment_names_a_file`, `rows_round_trip_and_a_truncated_one_is_skipped`, `an_unwritable_path_does_not_raise`, `unknown_fields_in_a_recording_are_ignored`) |
 | `test_tag_band_metrics::TestSearchEngineHook` (4) | the recorder is built once in `SearchEngine::with_recorder`; `the_recorder_is_off_unless_the_environment_names_a_file`; the final tag count after selection and "a measurement failure does not break a search" are the differential's 78 band rows and the 6 raising cases |
 | `test_limit_triage::BucketForTests` (2) | do not apply: `bucket_for` there is the limit-triage tool's, not `tag_band_metrics.bucket_for` (the audit matched the name) |
+| `test_sent_tag_filter::TestTheThreeSends` | does not apply: the Hydrus send path (Phase 4); `hash_file` is only a fake client's `import_file` side effect there |
 | `test_core_utils::TestFilenameHashes` (1), `TestHashSourceSplit` (1), `test_file_hash_worker` (2) | `hydrus_tag_lookup::tests::{hashes_the_raw_bytes_as_lowercase_hex, an_unreadable_file_or_a_directory_is_an_empty_hash, a_file_over_one_chunk_hashes_the_same_as_in_one_piece}` cover `hash_file`; the filename-derived hash and the worker signals are the Qt worker's (Phase 6) |
 | `test_core_utils::TestRateLimitCredit` (2) | `on_engines_done` and `on_engine_finished` are in `SearchOptions`; the differential compares both (`finished`, `done`) in every case |
 | `test_search_quality::TestParallelAlwaysMode` (1), `TestWeakResultFallbackEndToEnd` (3), `TestFallbackSurvivesLosingItsReason` (6), `TestCachedResultsAreRechecked` (1), `TestGoogleImagesNeverFakesANotFound` (1) | the differential: `secondary_engine_mode` `always`, `fallback_below_similarity`, `enabled_sites` and `drop_dead_matches` are in the generated mix, with the all-dead scenario (10 cases) for the retry; the engine order and the cache files written are compared |
