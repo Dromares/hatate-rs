@@ -48,8 +48,9 @@ The harness lives outside the repo (`worktrees/DAN-2064-tools/`); its log is
 `worktrees/DAN-2064-differential.log`. For each case, Python `search_image` at `76c85c4` runs with
 its `requests` transport scripted and its engines scripted, and the Rust `search_image` runs with
 the same scripted engine answers and the same site answers served by a local https server through
-`NetClient::new` (host overrides, a throw-away CA). Both sides run on a fixed clock and in a fresh
-profile. Compared per case: the error class and message; the resulting entry as the session
+`NetClient::new` (host overrides, a throw-away CA). Both sides run in a fresh
+profile; Python's `time.sleep` records the wait instead of sleeping and Rust's clock is a manual one,
+so the two lists of waits are compared; wall-clock timestamps are masked. Compared per case: the error class and message; the resulting entry as the session
 serialisation (status, candidates in order, selected index, tags, dimensions, notes, flags); the
 session-only fields (`booru_tags_fetched`, `remote_info_fetched`, `page_index`, thumbnail hash);
 the cache files written (names and contents, `cached_at` and `availability_checked_at` masked);
