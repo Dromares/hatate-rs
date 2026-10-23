@@ -46,4 +46,11 @@ pub enum ErrorKind {
     ImageUndecodable,
     /// The picture is larger than the decoder will accept (Pillow's decompression-bomb guard).
     ImageTooLarge,
+    /// The matched image could not be downloaded (nothing came back).
+    DownloadFailed,
+    /// The matched image came back but failed an integrity check (an HTML page, the wrong
+    /// format, the wrong size, bytes that do not decode, a file that cannot be hashed).
+    DownloadInvalid,
+    /// Hydrus stored a file whose hash is not the hash of the bytes Hatate sent.
+    HashMismatch,
 }

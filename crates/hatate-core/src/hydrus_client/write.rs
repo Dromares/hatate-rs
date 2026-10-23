@@ -71,6 +71,17 @@ pub struct DeletionStates {
     index: HashMap<String, usize>,
 }
 
+impl FromIterator<(String, DeletionState)> for DeletionStates {
+    /// The dict a lookup returns: a later pair for the same hash replaces the earlier one.
+    fn from_iter<I: IntoIterator<Item = (String, DeletionState)>>(pairs: I) -> Self {
+        let mut states = DeletionStates::default();
+        for (hash, state) in pairs {
+            states.set(&hash, state);
+        }
+        states
+    }
+}
+
 impl DeletionStates {
     fn set(&mut self, hash: &str, state: DeletionState) {
         match self.index.get(hash) {

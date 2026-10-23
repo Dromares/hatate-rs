@@ -12,6 +12,22 @@ use markup5ever::data::NAMED_ENTITIES;
 use regex::Regex;
 use serde_json::Value;
 
+/// `os.path.splitext(p)`: the path without its extension and the extension (with its dot). The
+/// extension starts at the last dot of the last component, and a name made only of leading dots
+/// has none.
+pub fn splitext(p: &str) -> (&str, &str) {
+    let sep = p.rfind('/');
+    if let Some(dot) = p.rfind('.')
+        && sep.is_none_or(|s| dot > s)
+    {
+        let name_start = sep.map_or(0, |s| s + 1);
+        if p[name_start..dot].chars().any(|c| c != '.') {
+            return (&p[..dot], &p[dot..]);
+        }
+    }
+    (p, "")
+}
+
 /// Python truthiness of a JSON value (`x or default`).
 pub fn truthy(v: &Value) -> bool {
     match v {
@@ -192,6 +208,25 @@ fn is_invalid_codepoint(num: u32) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn splitext_follows_os_path() {
+        for (path, stem, ext) in [
+            ("a.jpg", "a", ".jpg"),
+            ("a.tar.gz", "a.tar", ".gz"),
+            (".bashrc", ".bashrc", ""),
+            ("..png", "..png", ""),
+            ("...x.png", "...x", ".png"),
+            ("dir.d/file", "dir.d/file", ""),
+            ("dir.d/file.png", "dir.d/file", ".png"),
+            ("/a/b/.hidden", "/a/b/.hidden", ""),
+            ("/a/b/c.", "/a/b/c", "."),
+            ("", "", ""),
+            ("noext", "noext", ""),
+        ] {
+            assert_eq!(splitext(path), (stem, ext), "{path:?}");
+        }
+    }
 
     #[test]
     fn coercions_follow_python() {
