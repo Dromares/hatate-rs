@@ -228,15 +228,25 @@ pub async fn url_import_refusal(
 /// somewhere else; `None` when it does not move or can't be reached. One HEAD, and only ever
 /// asked for a URL Hydrus has refused.
 pub async fn forwarded_url(net: &NetClient, url: &str) -> Result<Option<String>, UrlImportError> {
+    forwarded_url_within(net, url, FORWARD_CHECK_TIMEOUT).await
+}
+
+/// [`forwarded_url`] with the probe's timeout and hard deadline (both one value, as in Python's
+/// `timeout=15, deadline=15`) given, so a test can reach the deadline branch without waiting the
+/// shipped 15 s.
+pub async fn forwarded_url_within(
+    net: &NetClient,
+    url: &str,
+    timeout: f64,
+) -> Result<Option<String>, UrlImportError> {
     // `net.request` reads `urlparse(url).netloc` before it sends anything, and a `ValueError` is not
     // a `requests.RequestException`.
     pyurl::try_urlparse(url, "")?;
-    let request =
-        NetRequest::head(&pyurl::requote_uri(url), secs(FORWARD_CHECK_TIMEOUT)).map(|mut req| {
-            req.headers = remote::ua_headers();
-            req.with_deadline(secs(FORWARD_CHECK_TIMEOUT))
-                .with_redirects(Redirects::Follow)
-        });
+    let request = NetRequest::head(&pyurl::requote_uri(url), secs(timeout)).map(|mut req| {
+        req.headers = remote::ua_headers();
+        req.with_deadline(secs(timeout))
+            .with_redirects(Redirects::Follow)
+    });
     let response = match request {
         Ok(req) => net.send(req).await,
         Err(e) => Err(e),

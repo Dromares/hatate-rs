@@ -13,6 +13,7 @@ mod common;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use common::{Recorded, Reply, Sandbox, ScriptedEngines, TestPki, TestServer};
 use hatate_core::clock::ManualClock;
@@ -553,10 +554,9 @@ async fn a_timeout_and_a_dropped_connection_fail_the_send_with_a_user_message_th
 }
 
 #[tokio::test]
-async fn the_redirect_probe_that_hits_its_deadline_leaves_the_function_like_hard_timeout_error() {
-    // Python's `_forwarded_url` catches `requests.RequestException`, and `HardTimeoutError` is not
-    // one: it propagates. The probe is given 15 s, so this goes through a client whose stall is
-    // shorter than the deadline only by way of the generic timeout path (a plain failure is None).
+async fn a_dropped_connection_in_the_redirect_probe_is_not_a_redirect_and_not_an_error() {
+    // Python's `_forwarded_url` catches `requests.RequestException`: a connection that goes away
+    // is one, so the probe says "nowhere else" (`None`) and raises nothing.
     let sites = Sites::new(&["gone.example.test"], |_| Reply::aborted()).await;
     assert_eq!(
         hi::forwarded_url(&sites.engine.net, "https://gone.example.test/x")
@@ -565,6 +565,41 @@ async fn the_redirect_probe_that_hits_its_deadline_leaves_the_function_like_hard
         None,
         "a dropped connection is a RequestException: not a redirect, not an error"
     );
+}
+
+#[tokio::test]
+async fn the_redirect_probe_that_hits_its_hard_deadline_leaves_the_function_like_hard_timeout_error()
+ {
+    // `HardTimeoutError` is not a `requests.RequestException`, so Python's `_forwarded_url` lets it
+    // propagate. A server that takes far longer than the probe's deadline to answer reaches that
+    // branch; the shipped 15 s is shortened through `forwarded_url_within`.
+    let sites = Sites::new(&["slow.example.test"], |_| {
+        Reply::ok("").delayed(Duration::from_secs(5))
+    })
+    .await;
+    let started = Instant::now();
+    let err = hi::forwarded_url_within(&sites.engine.net, "https://slow.example.test/x", 0.3)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            hi::UrlImportError::Remote(hatate_core::remote::Raised::HardTimeout(_))
+        ),
+        "{err:?}"
+    );
+    assert_eq!(err.kind(), ErrorKind::Net(net::ErrorKind::DeadlineExceeded));
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "{:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn the_redirect_probe_ships_with_python_s_fifteen_second_deadline() {
+    // Python: `net.request("HEAD", url, timeout=15, deadline=15, ...)`.
+    assert_eq!(hi::FORWARD_CHECK_TIMEOUT, 15.0);
 }
 
 // ---- download_and_send, send_url_or_download ----

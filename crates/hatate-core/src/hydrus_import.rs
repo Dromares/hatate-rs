@@ -39,8 +39,8 @@ mod url;
 pub use url::{
     FORWARD_CHECK_TIMEOUT, MEDIA_EXTENSIONS, URL_TYPE_FILE, URL_TYPE_GALLERY, URL_TYPE_POST,
     URL_TYPE_UNKNOWN, URL_TYPE_WATCHABLE, UrlImportError, download_and_send, download_instead,
-    finish_url_import, forwarded_url, relate_confirmed_url_import, send_url_or_download,
-    send_url_to_importer, url_import_refusal,
+    finish_url_import, forwarded_url, forwarded_url_within, relate_confirmed_url_import,
+    send_url_or_download, send_url_to_importer, url_import_refusal,
 };
 
 /// `ImportResult`: what one import attempt came to.

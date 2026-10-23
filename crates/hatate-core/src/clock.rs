@@ -84,6 +84,10 @@ impl Clock for SystemClock {
 /// A clock that never waits: `sleep` advances `wall` and `monotonic` by the amount asked and
 /// returns at once, and every amount asked for is kept. A test (or a dry run) reads the sleeps
 /// back instead of measuring how long they took.
+///
+/// A loop that waits on it and never ends would hang a test, because no sleep ever takes time: so
+/// the clock panics once it has been asked to sleep [`ManualClock::MAX_SLEEPS`] times, and the test
+/// fails instead.
 #[derive(Debug)]
 pub struct ManualClock {
     inner: Mutex<ManualState>,
@@ -97,6 +101,9 @@ struct ManualState {
 }
 
 impl ManualClock {
+    /// More sleeps than any test here asks for; past it a loop is taken to be stuck.
+    pub const MAX_SLEEPS: usize = 10_000;
+
     /// Both clocks start at the given readings.
     pub fn new(wall: f64, monotonic: f64) -> Self {
         ManualClock {
@@ -137,6 +144,11 @@ impl Clock for ManualClock {
 
     fn sleep(&self, seconds: f64) -> BoxFuture<'_, ()> {
         let mut state = self.inner.lock().unwrap();
+        assert!(
+            state.sleeps.len() < Self::MAX_SLEEPS,
+            "ManualClock was asked to sleep more than {} times: a loop that waits on it is not ending",
+            Self::MAX_SLEEPS
+        );
         state.sleeps.push(seconds);
         if seconds > 0.0 {
             state.wall += seconds;
@@ -171,5 +183,14 @@ mod tests {
         assert_eq!((clock.wall(), clock.monotonic()), (1011.75, 16.75));
         assert_eq!(clock.sleeps(), vec![0.25, 1.5]);
         assert_eq!(clock.slept(), 1.75);
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "is not ending")]
+    async fn the_manual_clock_fails_a_loop_that_never_stops_sleeping_instead_of_hanging() {
+        let clock = ManualClock::new(0.0, 0.0);
+        loop {
+            clock.sleep(0.0).await;
+        }
     }
 }

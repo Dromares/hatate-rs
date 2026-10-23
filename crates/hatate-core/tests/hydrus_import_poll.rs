@@ -261,6 +261,35 @@ async fn progress_reports_the_remaining_seconds_and_never_goes_negative_or_runs_
 }
 
 #[tokio::test]
+async fn progress_is_clamped_at_zero_when_a_slow_check_runs_past_the_timeout() {
+    // The first check takes 100 s of the clock against a 10 s timeout: the time left is negative
+    // before the clamp, and the person sees 0, not -90 (Python's `max(0.0, ...)`).
+    let clock = std::sync::Arc::new(ManualClock::new(0.0, 0.0));
+    let slow = clock.clone();
+    let server = TestServer::http(move |_| {
+        slow.advance(100.0);
+        in_progress()
+    })
+    .await;
+    let client = HydrusClient::new(&hydrus_settings(&server.url(""))).unwrap();
+    let reported = Mutex::new(Vec::new());
+    let on_progress =
+        |remaining: f64, timeout: f64| reported.lock().unwrap().push((remaining, timeout));
+    let options = PollOptions {
+        timeout: 10.0,
+        interval: 2.0,
+        on_progress: Some(&on_progress),
+        ..PollOptions::default()
+    };
+    let got = poll_single_url_import(&client, URL, &options, &*clock)
+        .await
+        .unwrap();
+    assert_eq!(got, None);
+    assert_eq!(*reported.lock().unwrap(), [(0.0, 10.0)]);
+    assert!(clock.sleeps().is_empty());
+}
+
+#[tokio::test]
 async fn a_stop_ends_the_poll_without_a_request_or_part_way_and_is_not_a_failure() {
     let (server, client) = scripted(vec![confirmed(2)]).await;
     let clock = ManualClock::new(0.0, 0.0);
