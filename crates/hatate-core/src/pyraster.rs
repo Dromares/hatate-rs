@@ -129,6 +129,8 @@ pub fn pillow_size(data: &[u8]) -> Result<Option<(u32, u32)>, pyimage::Decompres
 /// Everything that is not a JPEG: the `image` crate's decoders, mapped to Pillow's modes.
 fn open_other(data: &[u8]) -> Result<Image, OpenError> {
     use image::DynamicImage as D;
+    // A PNG is decoded from the pixel stream as Pillow reads it, not as the file stands.
+    let data = &*crate::pypng::canonical(data).map_err(os)?;
     let reader = image::ImageReader::new(std::io::Cursor::new(data))
         .with_guessed_format()
         .map_err(|e| os(e.to_string()))?;

@@ -401,7 +401,19 @@ pub fn validate_image_decodes(data: &[u8], expected_format: Option<&str>) -> Opt
     if is_isobmff(data) && &data[8..12] == b"avif" {
         return None;
     }
-    match pyraster::open(data, None) {
+    let opened = pyraster::open(data, None);
+    // `Image.verify()` sits between the open and the load, and checks every PNG chunk's checksum;
+    // what it raises comes before what the load raises (but not before the open's own errors).
+    let identified = !matches!(&opened, Err(pyraster::OpenError::Os(t)) if t == "cannot identify image file")
+        && !matches!(&opened, Err(pyraster::OpenError::Bomb(_)));
+    if identified && data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        if let Err(text) = crate::pypng::verify(data) {
+            return Some(format!(
+                "Downloaded data does not decode as a valid image: {text}"
+            ));
+        }
+    }
+    match opened {
         Ok(_) => None,
         Err(pyraster::OpenError::Os(text)) => {
             let known = image::guess_format(data).is_ok();
