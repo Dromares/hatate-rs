@@ -581,6 +581,8 @@ name = "hatate-core"
 version = "0.0.0"
 dependencies = [
  "bytes",
+ "crc32fast",
+ "flate2",
  "http",
  "icu_normalizer",
  "image",
