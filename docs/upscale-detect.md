@@ -64,11 +64,37 @@ GIF "invalid code", WebP "Corrupt bitstream" to "failed to read next frame"); th
 None of D1, D2a or D2c occurs in a well-formed file. What each means for the product: the text of a
 "Could not analyze image: ..." line differs for a broken file (the verdict is the same: nothing
 was analysed); for 5 of 711 broken files Python analyses a garbled picture where Rust declines; for
-6 both analyse and the figures differ slightly. These are brought to Cloud on a ruling ticket
-before the verify opens (DAN-2127 acceptance); the options are to accept them as documented
-classes (recommended: the same bar as C1 to C5 for the 3.g decoders), to port Pillow's decode
-buffering for the "N bytes" count, or to port the PNG, GIF, BMP and WebP decoders (a phase of its
-own).
+6 both analyse and the figures differ slightly. Cloud ruled on DAN-2137 (2026-10-23): D1, D2a and
+D2c are accepted as documented classes, on the condition that a well-formed file never differs
+(0 of 1329 here; 0 of 2049 counting the 720 image_diff pairs) and that the D2a and D2c cases are
+listed one per row below.
+
+### The 11 D2a and D2c cases, one per row
+
+Generator `gen_dmg.py OUT SEED 60` (set `dmg1` is seed 3, set `dmg4` is seed 4); the file is
+`OUT/<file>`, the damage is the generator's `kind` (`<format>-<damage>`). Python is Pillow 12.3.0
+and numpy 2.5.3 at `76c85c4`. Floats are shown to the digits that matter; the log compares them
+bit for bit. A field not listed is bit-equal. "Verdict" is `confidence` (and `best_filter`):
+it changed in the 5 rows marked **yes**.
+
+| # | Class | Set, file, damage | Differing fields (Python / Rust) | `confidence` / `best_filter` changed |
+|---|---|---|---|---|
+| 1 | D2a | `dmg1` seed 3, `d0021.png`, png-flip | Python decodes (IDAT checksum not checked), Rust refuses ("broken data stream when reading image file"). `best_factor` 1.5 / none, `best_diff` 2.6617 / none, `detail_fraction` 0.28862 / none, `best_filter` Bicubic / none, `confidence` likely / none | **yes**: likely to none |
+| 2 | D2a | `dmg1` seed 3, `d0092.jpg`, jpg-flip | Python decodes a truncated entropy stream and reports "almost entirely flat/simple content"; Rust refuses ("image file is truncated"). `detail_fraction` 0.013619 / none | no: Python `confidence` is already none, so is Rust's |
+| 3 | D2a | `dmg4` seed 4, `d0245.bmp`, bmp-delete | Python reads a shorter picture, Rust refuses ("failed to fill whole buffer"). `best_factor` 1.5 / none, `best_diff` 1.8721 / none, `detail_fraction` 0.29114 / none, `best_filter` Bicubic / none, `confidence` likely / none | **yes**: likely to none |
+| 4 | D2a | `dmg4` seed 4, `d0251.bmp`, bmp-delete | same shape. `best_diff` 1.1891 / none, `detail_fraction` 0.28962 / none, `best_factor` 1.5 / none, `best_filter` Bicubic / none, `confidence` likely / none | **yes**: likely to none |
+| 5 | D2a | `dmg4` seed 4, `d0273.bmp`, bmp-delete | same shape. `best_diff` 2.3426 / none, `detail_fraction` 0.29089 / none, `best_factor` 1.5 / none, `best_filter` Bicubic / none, `confidence` likely / none | **yes**: likely to none |
+| 6 | D2c | `dmg1` seed 3, `d0085.jpg`, jpg-zero | `best_diff` 34.957 / 1.7790, `detail_fraction` 0.27124 / 0.25338, `confidence` none / likely, message "No strong signal" / "Likely upscaled ~1.5x using Lanczos". `best_factor` and `best_filter` equal (1.5, Lanczos) | **yes**: none to likely. A zeroed run in the entropy data decodes to different garbage; this is the one row where the verdict flips with both sides analysing |
+| 7 | D2c | `dmg1` seed 3, `d0115.jpg`, jpg-flip | `best_diff` 30.338 / 30.277, `detail_fraction` 0.214067 / 0.213567 | no: both none, same factor and filter |
+| 8 | D2c | `dmg1` seed 3, `d0209.webp`, webp-flip | `best_diff` 7.0578 / 7.0340, `detail_fraction` 0.241927 / 0.240104 (lossy WebP, one flipped byte) | no: both "Possibly upscaled ~1.5x using Lanczos" |
+| 9 | D2c | `dmg4` seed 4, `d0072.jpg`, jpg-flip | `best_diff` 6.2326 / 6.3253, `detail_fraction` 0.2511 / 0.251267 | no: both "Possibly upscaled ~1.5x using Lanczos" |
+| 10 | D2c | `dmg4` seed 4, `d0087.jpg`, jpg-insert | `best_diff` 8.8558 / 9.7462, `detail_fraction` 0.202367 / 0.201657 | no: both "Possibly upscaled ~1.5x using Lanczos" |
+| 11 | D2c | `dmg4` seed 4, `d0108.jpg`, jpg-insert | `best_diff` 1.6546 / 1.4536, `detail_fraction` 0.288429 / 0.287952 | no: both "Likely upscaled ~1.5x using Lanczos" |
+
+Rows 1 to 5 are the safe direction (Rust declines, nothing is claimed about the picture). Row 6 is
+the only one where a verdict differs and both sides analyse; it is a garbled file in both cases.
+`best_factor` and `best_filter` never change in rows 2 and 7 to 11, and change in rows 1, 3, 4, 5
+only because Rust has no result at all.
 
 ## 3. Mutation check
 

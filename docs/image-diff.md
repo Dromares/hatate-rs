@@ -22,11 +22,14 @@ Not here: the compare dialog and its wipe view (Phase 5), and where the dialog i
 Python's and returns, additively:
 
 * `delta: Vec<u8>`: one byte per pixel, row-major, at the working size (`width`, `height`): the
-  blurred difference before the threshold. `mask` is zero exactly where `delta < CHANGE_THRESHOLD`.
-  **The ticket text calls this "the levelled, blurred luminance difference". Python's difference is
-  not luminance: `_prepare` keeps colour (a recolour at equal brightness must show) and the
-  difference is the strongest channel's. `delta` is that, so the compare dialog sees what Python
-  thresholds. This is a deliberate reading of the data-contract line, not a gap.**
+  levelled, blurred strongest-channel difference before the threshold. `mask` is non-zero exactly
+  where `delta >= CHANGE_THRESHOLD`.
+  **The ticket's data-contract line said "luminance". Python's difference is not luminance:
+  `_prepare` keeps colour (a recolour at equal brightness must show) and the difference is the
+  strongest channel's. `delta` is that, so the compare dialog sees what Python thresholds. Cloud
+  confirmed this reading on DAN-2137 and it replaces the contract wording for the Phase 6
+  consumers; the invariant `mask == (delta >= CHANGE_THRESHOLD)` is tested
+  (`delta_is_the_mask_before_the_threshold`).**
 * `local_rect`, `match_rect: Option<Rect {x, y, w, h}>`: the bounding box of the non-zero mask pixels,
   rounded outwards into each picture's own pixel coordinates (they differ when the pictures differ
   in size); `None` when nothing changed.

@@ -57,9 +57,9 @@ pub struct Diff {
     pub verdict: String,
     /// `false` when the two do not line up well enough to trust.
     pub reliable: bool,
-    /// The blurred difference before the threshold: one byte per pixel, row-major, at the
-    /// working size. This is the strongest-channel difference Python thresholds, not a
-    /// luminance difference. `mask` is zero exactly where `delta < CHANGE_THRESHOLD`.
+    /// The levelled, blurred strongest-channel difference before the threshold: one byte per
+    /// pixel, row-major, at the working size. It is exactly what Python thresholds (there is no
+    /// separate luminance plane), so `mask` is non-zero exactly where `delta >= CHANGE_THRESHOLD`.
     pub delta: Vec<u8>,
     /// The bounding box of the thresholded mask in the matched picture's pixels; `None` when
     /// nothing changed.
