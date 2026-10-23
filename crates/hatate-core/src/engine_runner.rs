@@ -31,6 +31,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::availability::url_is_structurally_dead;
 use crate::clock::{BoxFuture, Clock};
+use crate::config::SauceNaoSettings;
 use crate::config::{Secret, Settings};
 use crate::engine_ids::{self as ids};
 use crate::engines::ascii2d::{Ascii2dError, Ascii2dMatch};
@@ -42,7 +43,6 @@ use crate::engines::pawchive_lookup::{PawchiveError, PawchiveMatch};
 use crate::engines::saucenao::{SauceNaoError, SauceNaoMatch, ShouldStop};
 use crate::engines::tracemoe::{TraceMoeError, TraceMoeMatch};
 use crate::engines::yandex::{YandexError, YandexMatch};
-use crate::config::SauceNaoSettings;
 use crate::model::{Candidate, CandidateTag, Entry, MatchStatus, Tag};
 use crate::pycompat;
 use crate::pyurl;
@@ -381,9 +381,15 @@ pub fn fallback_is_unnecessary(
 
     let primary = waves[0][0];
     if found_by_engine.get(primary).copied().unwrap_or(false) {
-        (true, format!("the primary engine ({primary}) found results"))
+        (
+            true,
+            format!("the primary engine ({primary}) found results"),
+        )
     } else {
-        (false, format!("the primary engine ({primary}) found nothing"))
+        (
+            false,
+            format!("the primary engine ({primary}) found nothing"),
+        )
     }
 }
 
@@ -525,7 +531,10 @@ impl EngineRunner {
         while let Some(joined) = set.join_next_with_id().await {
             let (name, outcome) = match joined {
                 Ok((id, outcome)) => (names.remove(&id).unwrap_or_default(), outcome),
-                Err(join) => (names.remove(&join.id()).unwrap_or_default(), Err(raised_of(join))),
+                Err(join) => (
+                    names.remove(&join.id()).unwrap_or_default(),
+                    Err(raised_of(join)),
+                ),
             };
             if let Some(finished) = on_engine_finished {
                 finished(&name);
@@ -637,7 +646,10 @@ impl EngineRunner {
                 self.collect_yandex(job, settings, candidates, errors, on_tick, should_stop)
                     .await
             }
-            ids::PAWCHIVE => self.collect_pawchive(job, settings, candidates, errors).await,
+            ids::PAWCHIVE => {
+                self.collect_pawchive(job, settings, candidates, errors)
+                    .await
+            }
             ids::PAWCHIVE_INDEX => Ok(self.collect_pawchive_index(job, candidates, errors).await),
             other => {
                 warn!("Unknown search engine {other:?}");
@@ -939,7 +951,9 @@ impl EngineRunner {
                 }
                 Ok(found)
             }
-            Err(unexpected @ GoogleImagesError::Unexpected(_)) => Err(Raised(unexpected.to_string())),
+            Err(unexpected @ GoogleImagesError::Unexpected(_)) => {
+                Err(Raised(unexpected.to_string()))
+            }
             Err(exc @ (GoogleImagesError::Blocked(_) | GoogleImagesError::JavaScript)) => {
                 error!("Google is blocking this app: {exc}");
                 errors.push(format!("Google Images: {exc}"));
@@ -969,7 +983,9 @@ impl EngineRunner {
                 match self.engines.file_sha256(&job.path).await {
                     Ok(hash) => hash,
                     Err(exc) => {
-                        errors.push(format!("Pawchive: could not read the file to hash it ({exc})"));
+                        errors.push(format!(
+                            "Pawchive: could not read the file to hash it ({exc})"
+                        ));
                         return Ok(false);
                     }
                 }
@@ -1112,7 +1128,9 @@ impl EngineRunner {
             return false;
         }
 
-        self.engines.google_lens_wait_for_turn(on_tick.clone()).await;
+        self.engines
+            .google_lens_wait_for_turn(on_tick.clone())
+            .await;
         let start = self.clock.monotonic();
         match self
             .engines
@@ -1254,7 +1272,8 @@ impl EngineRunner {
             return true;
         }
         for part in parts {
-            let stood_down = (part.starts_with("Google Lens:") && self.engines.google_lens_is_blocked())
+            let stood_down = (part.starts_with("Google Lens:")
+                && self.engines.google_lens_is_blocked())
                 || (part.starts_with("Google Images:") && self.engines.google_images_is_blocked())
                 || (part.starts_with("ascii2d:") && self.engines.ascii2d_is_blocked())
                 || (part.starts_with("Yandex:") && self.engines.yandex_is_blocked());

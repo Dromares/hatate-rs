@@ -174,7 +174,10 @@ mod tests {
             classify_site(Some("Gelbooru"), "https://example.invalid/x"),
             "Gelbooru"
         );
-        assert_eq!(classify_site(Some("nope"), "https://example.invalid/x"), "Other");
+        assert_eq!(
+            classify_site(Some("nope"), "https://example.invalid/x"),
+            "Other"
+        );
         assert_eq!(classify_site(None, ""), "Other");
     }
 

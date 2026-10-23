@@ -27,7 +27,10 @@ pub const UNAVAILABLE_PENALTY: f64 = 1000.0;
 /// `_resolution_bonus`: reward for a match being larger than the local file. Zero (not a penalty)
 /// when either size is unknown or not positive.
 fn resolution_bonus(local_w: i64, local_h: i64, remote_w: i64, remote_h: i64) -> f64 {
-    if [local_w, local_h, remote_w, remote_h].iter().any(|&v| v <= 0) {
+    if [local_w, local_h, remote_w, remote_h]
+        .iter()
+        .any(|&v| v <= 0)
+    {
         return 0.0;
     }
     let ratio = remote_w.max(remote_h) as f64 / local_w.max(local_h) as f64;
@@ -111,7 +114,11 @@ pub fn score_breakdown(
         quality_bonus: quality_bonus(candidate, local_width, local_height),
         quality_bonus_cap: MAX_QUALITY_BONUS,
         unavailable_penalty_applied: unavailable,
-        unavailable_penalty: if unavailable { UNAVAILABLE_PENALTY } else { 0.0 },
+        unavailable_penalty: if unavailable {
+            UNAVAILABLE_PENALTY
+        } else {
+            0.0
+        },
         score: candidate_score(candidate, local_width, local_height),
     }
 }
@@ -139,7 +146,11 @@ pub fn rank_candidates(
         let top = &candidates[0];
         info!(
             "{}: recommending {} over the most similar match {} - score {:.1} (similarity {:.0}%) vs {:.1} (similarity {:.0}%)",
-            if filename.is_empty() { "match" } else { filename },
+            if filename.is_empty() {
+                "match"
+            } else {
+                filename
+            },
             first.url,
             top.url,
             candidate_score(first, local_width, local_height),

@@ -221,8 +221,9 @@ mod tests {
     use crate::config::OrderedMap;
 
     fn settings() -> Settings {
-        let paths = crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| "/home/test".into()))
-            .unwrap();
+        let paths =
+            crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| "/home/test".into()))
+                .unwrap();
         Settings::with_defaults(&paths)
     }
 
@@ -367,9 +368,7 @@ mod tests {
         assert_eq!(apply_outcome_tags(&mut entry, &s).len(), 1);
         assert_eq!(entry.tags.len(), 1);
         entry.status = MatchStatus::Good;
-        entry
-            .tags
-            .push(tag("real", None, TagSource::Booru));
+        entry.tags.push(tag("real", None, TagSource::Booru));
         apply_outcome_tags(&mut entry, &s);
         let shown: Vec<String> = entry.tags.iter().map(Tag::display).collect();
         assert_eq!(shown, vec!["real", "hatate:found"]);
