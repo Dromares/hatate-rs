@@ -499,12 +499,7 @@ impl Core {
                 false,
             );
         }
-        // `json.loads(bytes)` reads a UTF-8 BOM as encoding `utf-8-sig` and drops it.
-        let body = req
-            .body
-            .strip_prefix(&[0xef, 0xbb, 0xbf][..])
-            .unwrap_or(&req.body);
-        let Ok(text) = std::str::from_utf8(body) else {
+        let Some(text) = decode_json_bytes(&req.body) else {
             // `json.loads(bytes)` raises UnicodeDecodeError, which is not a JSONDecodeError: it
             // reaches the transport's catch-all.
             return (
@@ -512,6 +507,7 @@ impl Core {
                 false,
             );
         };
+        let text = text.as_str();
         let raw: Value = match serde_json::from_str(text) {
             Ok(v) => v,
             Err(e) => {
@@ -768,4 +764,128 @@ fn security(req: &Request, is_post: bool) -> Option<Reply> {
         }
     }
     None
+}
+
+/// `json.loads(bytes)`: `s.decode(detect_encoding(s), 'surrogatepass')`. UTF-8 (a BOM is dropped),
+/// UTF-16 and UTF-32 are told apart by a byte-order mark or by where the NUL bytes of the first
+/// four bytes fall. `None` is a `UnicodeDecodeError`. A lone surrogate, which `surrogatepass`
+/// lets through in Python, cannot be held in a Rust `str` and is `None` as well (class J1).
+fn decode_json_bytes(b: &[u8]) -> Option<String> {
+    // (code unit width in bytes, big endian, bytes of byte-order mark to skip)
+    let (width, big, skip) = if b.starts_with(&[0, 0, 0xfe, 0xff]) {
+        (4, true, 4)
+    } else if b.starts_with(&[0xff, 0xfe, 0, 0]) {
+        (4, false, 4)
+    } else if b.starts_with(&[0xfe, 0xff]) {
+        (2, true, 2)
+    } else if b.starts_with(&[0xff, 0xfe]) {
+        (2, false, 2)
+    } else if b.starts_with(&[0xef, 0xbb, 0xbf]) {
+        return String::from_utf8(b[3..].to_vec()).ok();
+    } else if b.len() >= 4 && b[0] == 0 {
+        (if b[1] != 0 { 2 } else { 4 }, true, 0)
+    } else if b.len() >= 4 && b[1] == 0 {
+        (if b[2] != 0 || b[3] != 0 { 2 } else { 4 }, false, 0)
+    } else if b.len() == 2 && (b[0] == 0 || b[1] == 0) {
+        (2, b[0] == 0, 0)
+    } else {
+        return String::from_utf8(b.to_vec()).ok();
+    };
+    let body = &b[skip..];
+    if body.len() % width != 0 {
+        return None;
+    }
+    if width == 2 {
+        let units = body.chunks_exact(2).map(|c| {
+            let pair = [c[0], c[1]];
+            if big {
+                u16::from_be_bytes(pair)
+            } else {
+                u16::from_le_bytes(pair)
+            }
+        });
+        char::decode_utf16(units)
+            .collect::<Result<String, _>>()
+            .ok()
+    } else {
+        body.chunks_exact(4)
+            .map(|c| {
+                let quad = [c[0], c[1], c[2], c[3]];
+                char::from_u32(if big {
+                    u32::from_be_bytes(quad)
+                } else {
+                    u32::from_le_bytes(quad)
+                })
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_json_bytes;
+
+    fn utf16(s: &str, big: bool, bom: bool) -> Vec<u8> {
+        let mut out = Vec::new();
+        if bom {
+            out.extend(if big { [0xfe, 0xff] } else { [0xff, 0xfe] });
+        }
+        for u in s.encode_utf16() {
+            out.extend(if big {
+                u.to_be_bytes()
+            } else {
+                u.to_le_bytes()
+            });
+        }
+        out
+    }
+
+    fn utf32(s: &str, big: bool, bom: bool) -> Vec<u8> {
+        let mut out = Vec::new();
+        if bom {
+            out.extend(if big {
+                [0, 0, 0xfe, 0xff]
+            } else {
+                [0xff, 0xfe, 0, 0]
+            });
+        }
+        for c in s.chars() {
+            out.extend(if big {
+                (c as u32).to_be_bytes()
+            } else {
+                (c as u32).to_le_bytes()
+            });
+        }
+        out
+    }
+
+    #[test]
+    fn utf16_and_utf32_bodies_decode_as_json_loads_does() {
+        let text = r#"{"a":"é☃𝄞"}"#;
+        for big in [false, true] {
+            for bom in [false, true] {
+                assert_eq!(
+                    decode_json_bytes(&utf16(text, big, bom)).as_deref(),
+                    Some(text)
+                );
+                assert_eq!(
+                    decode_json_bytes(&utf32(text, big, bom)).as_deref(),
+                    Some(text)
+                );
+            }
+        }
+        assert_eq!(decode_json_bytes(b"\xef\xbb\xbf{}").as_deref(), Some("{}"));
+        assert_eq!(decode_json_bytes(b"{}").as_deref(), Some("{}"));
+        assert_eq!(decode_json_bytes(b"").as_deref(), Some(""));
+    }
+
+    #[test]
+    fn undecodable_bodies_are_none() {
+        assert_eq!(decode_json_bytes(b"{\"a\":\"\xe9\"}"), None);
+        // A UTF-16 body with an odd number of bytes, a lone surrogate, a UTF-32 code point past
+        // U+10FFFF.
+        assert_eq!(decode_json_bytes(&[0xff, 0xfe, b'{']), None);
+        assert_eq!(decode_json_bytes(&[0xff, 0xfe, 0x00, 0xd8, b'{', 0]), None);
+        assert_eq!(decode_json_bytes(&[0xff, 0xfe, 0, 0, 0, 0, 0x11, 0]), None);
+    }
 }
