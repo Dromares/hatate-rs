@@ -81,6 +81,12 @@ async fn scripted(script: Vec<Reply>) -> (TestServer, HydrusClient) {
     (server, client)
 }
 
+/// A clock that fails the test, rather than hanging it, if a poll loop never ends: the longest
+/// legitimate poll here is the default 60 s in 2 s sleeps.
+fn poll_clock(wall: f64, monotonic: f64) -> ManualClock {
+    ManualClock::new(wall, monotonic).with_sleep_limit(100)
+}
+
 fn polls(server: &TestServer) -> usize {
     server
         .recorded()
@@ -95,7 +101,7 @@ async fn poll(
     interval: f64,
 ) -> (Option<String>, TestServer, ManualClock) {
     let (server, client) = scripted(script).await;
-    let clock = ManualClock::new(0.0, 1000.0);
+    let clock = poll_clock(0.0, 1000.0);
     let options = PollOptions {
         timeout,
         interval,
@@ -214,7 +220,7 @@ async fn it_gives_up_at_the_timeout_and_the_last_sleep_never_overshoots_it() {
 #[tokio::test]
 async fn progress_reports_the_remaining_seconds_and_never_goes_negative_or_runs_after_a_hit() {
     let (_server, client) = scripted(vec![in_progress()]).await;
-    let clock = ManualClock::new(0.0, 1000.0);
+    let clock = poll_clock(0.0, 1000.0);
     let reported = Mutex::new(Vec::new());
     let on_progress =
         |remaining: f64, timeout: f64| reported.lock().unwrap().push((remaining, timeout));
@@ -241,7 +247,7 @@ async fn progress_reports_the_remaining_seconds_and_never_goes_negative_or_runs_
         on_progress: Some(&on_progress),
         ..PollOptions::default()
     };
-    poll_single_url_import(&client, URL, &options, &ManualClock::new(0.0, 0.0))
+    poll_single_url_import(&client, URL, &options, &poll_clock(0.0, 0.0))
         .await
         .unwrap();
     assert!(reported.lock().unwrap().iter().all(|(r, _)| *r >= 0.0));
@@ -261,9 +267,38 @@ async fn progress_reports_the_remaining_seconds_and_never_goes_negative_or_runs_
 }
 
 #[tokio::test]
+async fn progress_is_clamped_at_zero_when_a_slow_check_runs_past_the_timeout() {
+    // The first check takes 100 s of the clock against a 10 s timeout: the time left is negative
+    // before the clamp, and the person sees 0, not -90 (Python's `max(0.0, ...)`).
+    let clock = std::sync::Arc::new(poll_clock(0.0, 0.0));
+    let slow = clock.clone();
+    let server = TestServer::http(move |_| {
+        slow.advance(100.0);
+        in_progress()
+    })
+    .await;
+    let client = HydrusClient::new(&hydrus_settings(&server.url(""))).unwrap();
+    let reported = Mutex::new(Vec::new());
+    let on_progress =
+        |remaining: f64, timeout: f64| reported.lock().unwrap().push((remaining, timeout));
+    let options = PollOptions {
+        timeout: 10.0,
+        interval: 2.0,
+        on_progress: Some(&on_progress),
+        ..PollOptions::default()
+    };
+    let got = poll_single_url_import(&client, URL, &options, &*clock)
+        .await
+        .unwrap();
+    assert_eq!(got, None);
+    assert_eq!(*reported.lock().unwrap(), [(0.0, 10.0)]);
+    assert!(clock.sleeps().is_empty());
+}
+
+#[tokio::test]
 async fn a_stop_ends_the_poll_without_a_request_or_part_way_and_is_not_a_failure() {
     let (server, client) = scripted(vec![confirmed(2)]).await;
-    let clock = ManualClock::new(0.0, 0.0);
+    let clock = poll_clock(0.0, 0.0);
     let stop = || true;
     let options = PollOptions {
         stop_check: Some(&stop),
@@ -314,14 +349,9 @@ async fn an_answer_of_the_wrong_shape_is_not_swallowed() {
     // Only HydrusError is "busy, try again". A list where a dict belongs is Python's
     // AttributeError, and retrying it for sixty seconds would hide a real bug.
     let (_server, client) = scripted(vec![json_reply(json!([1]))]).await;
-    let err = poll_single_url_import(
-        &client,
-        URL,
-        &PollOptions::default(),
-        &ManualClock::new(0.0, 0.0),
-    )
-    .await
-    .unwrap_err();
+    let err = poll_single_url_import(&client, URL, &PollOptions::default(), &poll_clock(0.0, 0.0))
+        .await
+        .unwrap_err();
     assert_eq!(err.kind(), ErrorKind::UnexpectedResponse);
     assert_eq!(err.message(), "'list' object has no attribute 'get'");
 }
@@ -336,7 +366,7 @@ async fn the_poll_over_https_with_certificate_checks_on_never_confirms_and_off_i
     // On: every request is refused at the handshake, which is a HydrusError the poll retries until
     // the timeout, so the answer is `None` and the server never saw a request.
     let on = HydrusClient::new(&hydrus_settings(&server.url(""))).unwrap();
-    let clock = ManualClock::new(0.0, 0.0);
+    let clock = poll_clock(0.0, 0.0);
     let options = PollOptions {
         timeout: 2.0,
         interval: 1.0,
@@ -368,7 +398,7 @@ async fn a_poll_that_times_out_or_loses_the_connection_is_retried_like_any_hydru
     let mut hs = hydrus_settings(&slow.url(""));
     hs.timeout = 0.3;
     let client = HydrusClient::new(&hs).unwrap();
-    let clock = ManualClock::new(0.0, 0.0);
+    let clock = poll_clock(0.0, 0.0);
     let options = PollOptions {
         timeout: 1.0,
         interval: 1.0,
@@ -391,7 +421,7 @@ async fn a_poll_that_times_out_or_loses_the_connection_is_retried_like_any_hydru
     let err = client.get_url_files(URL).await.unwrap_err();
     assert!(matches!(err.kind(), ErrorKind::Net(_)));
     assert_eq!(
-        poll_single_url_import(&client, URL, &options, &ManualClock::new(0.0, 0.0))
+        poll_single_url_import(&client, URL, &options, &poll_clock(0.0, 0.0))
             .await
             .unwrap(),
         None
@@ -479,7 +509,7 @@ async fn the_worker_resolves_each_entry_when_it_confirms_or_when_its_own_timeout
     // a confirms in the first round, b in the third, c never.
     let (server, client) =
         hydrus_by_url(vec![("https://x.test/a", 0), ("https://x.test/b", 2)]).await;
-    let clock = ManualClock::new(0.0, 0.0);
+    let clock = poll_clock(0.0, 0.0);
     let mut events = Events::default();
     let options = PollWorkerOptions {
         timeout: 4.0,
@@ -537,7 +567,7 @@ async fn a_stop_emits_nothing_more_and_still_clears_the_countdown_and_finishes()
         &PollWorkerOptions::default(),
         &|| true,
         &mut events,
-        &ManualClock::new(0.0, 0.0),
+        &poll_clock(0.0, 0.0),
     )
     .await
     .unwrap();
@@ -561,7 +591,7 @@ async fn a_stop_emits_nothing_more_and_still_clears_the_countdown_and_finishes()
         &PollWorkerOptions::default(),
         &stop,
         &mut events,
-        &ManualClock::new(0.0, 0.0),
+        &poll_clock(0.0, 0.0),
     )
     .await
     .unwrap();
@@ -604,7 +634,7 @@ async fn at_most_eight_checks_are_in_flight_at_once() {
         &PollWorkerOptions::default(),
         &|| false,
         &mut events,
-        &ManualClock::new(0.0, 0.0),
+        &poll_clock(0.0, 0.0),
     )
     .await
     .unwrap();
@@ -635,7 +665,7 @@ async fn a_confirmed_import_is_related_before_it_is_reported_and_off_costs_nothi
             },
             &|| false,
             &mut events,
-            &ManualClock::new(0.0, 0.0),
+            &poll_clock(0.0, 0.0),
         )
         .await
         .unwrap();
@@ -655,7 +685,7 @@ async fn a_confirmed_import_is_related_before_it_is_reported_and_off_costs_nothi
         },
         &|| false,
         &mut events,
-        &ManualClock::new(0.0, 0.0),
+        &poll_clock(0.0, 0.0),
     )
     .await
     .unwrap();
@@ -700,7 +730,7 @@ async fn a_non_string_hash_in_the_worker_writes_nothing_and_reports_nothing() {
         },
         &|| false,
         &mut events,
-        &ManualClock::new(0.0, 0.0),
+        &poll_clock(0.0, 0.0),
     )
     .await
     .unwrap_err();
@@ -747,7 +777,7 @@ async fn bookkeeping_that_goes_wrong_does_not_take_the_confirmation_down() {
         },
         &|| false,
         &mut events,
-        &ManualClock::new(0.0, 0.0),
+        &poll_clock(0.0, 0.0),
     )
     .await
     .unwrap();
