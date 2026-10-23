@@ -12,13 +12,14 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use common::{Recorded, Reply, TestPki, TestServer};
-use hatate_core::clock::{Clock, ManualClock};
+use hatate_core::clock::{BoxFuture, Clock, ManualClock};
 use hatate_core::error::ErrorKind;
 use hatate_core::image_compare::{Hash, Source};
 use hatate_core::net::{self, NetClient, NetConfig};
 use hatate_core::pawchive_index::{
-    self, CrawlResult, ImageRow, PawchiveCrawler, PawchiveError, PawchiveIndex, creator_from_url,
-    find_creators_for_ui, fingerprints, run_index_jobs, similarity_for,
+    self, CrawlResult, CreatorFinder, CreatorIndexer, ImageRow, PawchiveCrawler, PawchiveError,
+    PawchiveIndex, creator_from_url, find_creators_for_ui, fingerprints, run_index_jobs,
+    similarity_for,
 };
 use serde_json::{Value, json};
 
@@ -1068,4 +1069,259 @@ async fn an_edited_copy_of_an_indexed_image_is_found_after_a_crawl() {
     let best = &w.index.search_default(Some(&local16), None).unwrap()[0];
     assert_eq!(best.url, "https://pawchive.pw/fanbox/user/42/post/2");
     assert!(best.similarity >= 90.0, "{}", best.similarity);
+}
+
+// ---- the worker bodies with a scripted indexer (workers/pawchive_index_worker.py) ----
+
+type Script = dyn Fn(
+        &str,
+        &str,
+        &(dyn Fn() -> bool + Send + Sync),
+        &mut (dyn FnMut(&str, usize, usize) + Send),
+    ) -> Result<CrawlResult, PawchiveError>
+    + Send
+    + Sync;
+
+struct Scripted {
+    script: Box<Script>,
+    seen_paths: Mutex<Vec<std::path::PathBuf>>,
+    calls: AtomicUsize,
+}
+
+impl Scripted {
+    fn new(script: Box<Script>) -> Self {
+        Scripted {
+            script,
+            seen_paths: Mutex::default(),
+            calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl CreatorIndexer for Scripted {
+    fn index_creator<'a>(
+        &'a self,
+        index: &'a PawchiveIndex,
+        service: &'a str,
+        user_id: &'a str,
+        _delay: f64,
+        should_stop: &'a (dyn Fn() -> bool + Send + Sync),
+        on_progress: &'a mut (dyn FnMut(&str, usize, usize) + Send),
+    ) -> BoxFuture<'a, Result<CrawlResult, PawchiveError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        self.seen_paths
+            .lock()
+            .unwrap()
+            .push(index.path().to_owned());
+        Box::pin(std::future::ready((self.script)(
+            service,
+            user_id,
+            should_stop,
+            on_progress,
+        )))
+    }
+}
+
+fn crawl_result(service: &str, user_id: &str, posts: usize, stopped: bool) -> CrawlResult {
+    // A result the way Python's `CrawlResult(service=..., user_id=..., posts=...)` builds one.
+    let mut r = pawchive_index::CrawlResult::default_for(service, user_id);
+    r.posts = posts;
+    r.stopped = stopped;
+    r
+}
+
+async fn run_jobs(
+    indexer: &Scripted,
+    jobs: &[(&str, &str)],
+    stop: &AtomicBool,
+) -> (
+    pawchive_index::IndexJobsOutcome,
+    Vec<(String, usize, usize)>,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let index = PawchiveIndex::new(dir.path().join("somewhere-else.db"));
+    let jobs: Vec<(String, String)> = jobs
+        .iter()
+        .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+        .collect();
+    let progress = Mutex::new(Vec::new());
+    let mut on_progress =
+        |m: &str, d: usize, t: usize| progress.lock().unwrap().push((m.to_owned(), d, t));
+    let mut on_done = |_: &CrawlResult| {};
+    let out = run_index_jobs(indexer, &index, &jobs, stop, &mut on_progress, &mut on_done).await;
+    assert_eq!(
+        indexer
+            .seen_paths
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|p| p.file_name().unwrap().to_owned())
+            .collect::<Vec<_>>(),
+        vec![std::ffi::OsString::from("somewhere-else.db"); indexer.calls.load(Ordering::SeqCst)],
+        "the index is the one the worker was given"
+    );
+    (out, progress.into_inner().unwrap())
+}
+
+#[tokio::test]
+async fn each_job_is_indexed_in_order_and_reported() {
+    let indexer = Scripted::new(Box::new(|s, u, _, _| Ok(crawl_result(s, u, 3, false))));
+    let (out, _) = run_jobs(
+        &indexer,
+        &[("fa", "1"), ("fa", "2")],
+        &AtomicBool::new(false),
+    )
+    .await;
+    let seen: Vec<(&str, &str)> = out
+        .results
+        .iter()
+        .map(|r| (r.service.as_str(), r.user_id.as_str()))
+        .collect();
+    assert_eq!(seen, [("fa", "1"), ("fa", "2")]);
+    assert!(out.aborted.is_none());
+}
+
+#[tokio::test]
+async fn progress_from_the_crawler_is_forwarded() {
+    let indexer = Scripted::new(Box::new(|s, u, _, progress| {
+        progress("fetching page 1", 1, 4);
+        progress("fingerprinting", 2, 4);
+        Ok(crawl_result(s, u, 0, false))
+    }));
+    let (_, progress) = run_jobs(&indexer, &[("fa", "1")], &AtomicBool::new(false)).await;
+    assert_eq!(
+        progress,
+        [
+            ("fetching page 1".to_owned(), 1, 4),
+            ("fingerprinting".to_owned(), 2, 4)
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_stop_requested_mid_job_is_visible_to_the_crawler_and_ends_the_batch() {
+    let stop = Arc::new(AtomicBool::new(false));
+    let seen = Arc::new(Mutex::new(Vec::<bool>::new()));
+    let (stop_in, seen_in) = (stop.clone(), seen.clone());
+    let indexer = Scripted::new(Box::new(move |s, u, should_stop, _| {
+        seen_in.lock().unwrap().push(should_stop());
+        stop_in.store(true, Ordering::SeqCst);
+        seen_in.lock().unwrap().push(should_stop());
+        Ok(crawl_result(s, u, 0, true))
+    }));
+    let (out, _) = run_jobs(&indexer, &[("fa", "1"), ("fa", "2")], &stop).await;
+    assert_eq!(*seen.lock().unwrap(), [false, true]);
+    assert_eq!(
+        indexer.calls.load(Ordering::SeqCst),
+        1,
+        "the second job is never started"
+    );
+    assert_eq!(out.results.len(), 1);
+}
+
+#[tokio::test]
+async fn a_stop_before_the_run_starts_indexes_nothing() {
+    let indexer = Scripted::new(Box::new(|s, u, _, _| Ok(crawl_result(s, u, 0, false))));
+    let (out, _) = run_jobs(&indexer, &[("fa", "1")], &AtomicBool::new(true)).await;
+    assert_eq!(indexer.calls.load(Ordering::SeqCst), 0);
+    assert!(out.results.is_empty());
+}
+
+#[tokio::test]
+async fn a_failure_mid_batch_ends_the_run_with_the_error_and_keeps_what_was_reported() {
+    let n = AtomicUsize::new(0);
+    let indexer = Scripted::new(Box::new(move |s, u, _, _| {
+        if n.fetch_add(1, Ordering::SeqCst) == 1 {
+            return Err(PawchiveError::new(
+                ErrorKind::UnexpectedResponse,
+                "pawchive changed its API again",
+            ));
+        }
+        Ok(crawl_result(s, u, 7, false))
+    }));
+    let (out, _) = run_jobs(
+        &indexer,
+        &[("fa", "1"), ("fa", "2"), ("fa", "3")],
+        &AtomicBool::new(false),
+    )
+    .await;
+    assert_eq!(
+        out.results
+            .iter()
+            .map(|r| r.user_id.as_str())
+            .collect::<Vec<_>>(),
+        ["1"]
+    );
+    assert_eq!(
+        out.aborted.unwrap().message(),
+        "pawchive changed its API again"
+    );
+    assert_eq!(
+        indexer.calls.load(Ordering::SeqCst),
+        2,
+        "the third job never starts"
+    );
+}
+
+struct Finder(Box<dyn Fn(&str) -> Result<Vec<Value>, PawchiveError> + Send + Sync>);
+
+impl CreatorFinder for Finder {
+    fn find_creators<'a>(
+        &'a self,
+        query: &'a str,
+        cache: &'a std::path::Path,
+    ) -> BoxFuture<'a, Result<Vec<Value>, PawchiveError>> {
+        assert!(
+            cache.ends_with("creators.json"),
+            "the cache path is passed straight through"
+        );
+        Box::pin(std::future::ready((self.0)(query)))
+    }
+}
+
+#[tokio::test]
+async fn the_find_worker_body_emits_results_with_no_error() {
+    let creators = vec![json!({"name": "somebody", "service": "fa", "id": "1"})];
+    let want = creators.clone();
+    let finder = Finder(Box::new(move |q| {
+        assert_eq!(q, "some");
+        Ok(creators.clone())
+    }));
+    let (found, error) = find_creators_for_ui(
+        &finder,
+        "some",
+        std::path::Path::new("/tmp/x/creators.json"),
+    )
+    .await;
+    assert_eq!((found, error.is_none()), (want, true));
+}
+
+#[tokio::test]
+async fn the_find_worker_body_emits_a_failure_as_text_beside_an_empty_list() {
+    let finder = Finder(Box::new(|_| {
+        Err(PawchiveError::new(
+            ErrorKind::Net(net::ErrorKind::Connect),
+            "connection reset",
+        ))
+    }));
+    let (found, error) = find_creators_for_ui(
+        &finder,
+        "some",
+        std::path::Path::new("/tmp/x/creators.json"),
+    )
+    .await;
+    assert!(found.is_empty());
+    assert_eq!(error.unwrap().message(), "connection reset");
+}
+
+#[tokio::test]
+async fn the_find_worker_body_emits_no_matches_as_an_empty_list_and_no_error() {
+    let finder = Finder(Box::new(|_| Ok(Vec::new())));
+    let (found, error) = find_creators_for_ui(
+        &finder,
+        "nobody",
+        std::path::Path::new("/tmp/x/creators.json"),
+    )
+    .await;
+    assert!(found.is_empty() && error.is_none());
 }

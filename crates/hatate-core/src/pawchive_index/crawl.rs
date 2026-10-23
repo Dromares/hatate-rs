@@ -14,7 +14,7 @@ use super::{
     PawchiveError, REQUEST_DELAY, RETRY_WAIT, THUMBNAIL_URL, USER_AGENT, fingerprints, py_text,
 };
 use crate::boorus::sizes::py_float;
-use crate::clock::{Clock, SystemClock};
+use crate::clock::{BoxFuture, Clock, SystemClock};
 use crate::engines::client::urlencode;
 use crate::engines::pawchive_lookup::files_of;
 use crate::error::ErrorKind;
@@ -470,7 +470,7 @@ impl PawchiveCrawler {
         progress: &mut (dyn FnMut(&str, usize, usize) + Send),
         todo: &[(String, i64, String, Option<Value>)],
         rows: &mut Vec<Pending>,
-        shown: &dyn Fn(&CrawlResult) -> String,
+        shown: &(dyn Fn(&CrawlResult) -> String + Sync),
     ) -> Result<(), Abort> {
         let (service, user_id) = (result.service.clone(), result.user_id.clone());
         for (done, (post_id, page_index, path, title)) in todo.iter().enumerate() {
@@ -739,6 +739,63 @@ fn json_of(resp: &PyResponse) -> Result<Value, PawchiveError> {
     })
 }
 
+/// What `run_index_jobs` calls to index one artist: [`PawchiveCrawler`] in the app, a scripted
+/// stand-in in a test (Python's worker tests patch `index_creator` the same way).
+pub trait CreatorIndexer: Send + Sync {
+    fn index_creator<'a>(
+        &'a self,
+        index: &'a PawchiveIndex,
+        service: &'a str,
+        user_id: &'a str,
+        delay: f64,
+        should_stop: &'a (dyn Fn() -> bool + Send + Sync),
+        on_progress: &'a mut (dyn FnMut(&str, usize, usize) + Send),
+    ) -> BoxFuture<'a, Result<CrawlResult, PawchiveError>>;
+}
+
+impl CreatorIndexer for PawchiveCrawler {
+    fn index_creator<'a>(
+        &'a self,
+        index: &'a PawchiveIndex,
+        service: &'a str,
+        user_id: &'a str,
+        delay: f64,
+        should_stop: &'a (dyn Fn() -> bool + Send + Sync),
+        on_progress: &'a mut (dyn FnMut(&str, usize, usize) + Send),
+    ) -> BoxFuture<'a, Result<CrawlResult, PawchiveError>> {
+        Box::pin(PawchiveCrawler::index_creator(
+            self,
+            index,
+            service,
+            user_id,
+            delay,
+            should_stop,
+            on_progress,
+        ))
+    }
+}
+
+/// What `find_creators_for_ui` calls to search the artists.
+pub trait CreatorFinder: Send + Sync {
+    fn find_creators<'a>(
+        &'a self,
+        query: &'a str,
+        cache: &'a Path,
+    ) -> BoxFuture<'a, Result<Vec<Value>, PawchiveError>>;
+}
+
+impl CreatorFinder for PawchiveCrawler {
+    fn find_creators<'a>(
+        &'a self,
+        query: &'a str,
+        cache: &'a Path,
+    ) -> BoxFuture<'a, Result<Vec<Value>, PawchiveError>> {
+        Box::pin(PawchiveCrawler::find_creators(
+            self, query, false, cache, 50,
+        ))
+    }
+}
+
 /// What the Qt `PawchiveIndexWorker.run` leaves behind: the results it emitted, and the failure
 /// that ended it early (Python logs it with `log.exception` and emits `finished_all`).
 #[derive(Debug, Default)]
@@ -751,7 +808,7 @@ pub struct IndexJobsOutcome {
 /// `request_stop`; `on_progress` is the `progress` signal and `on_creator_done` the `creator_done`
 /// signal. The caller emits `finished_all` when this returns.
 pub async fn run_index_jobs(
-    crawler: &PawchiveCrawler,
+    crawler: &dyn CreatorIndexer,
     index: &PawchiveIndex,
     jobs: &[(String, String)],
     stop: &AtomicBool,
@@ -793,11 +850,11 @@ pub async fn run_index_jobs(
 /// `PawchiveFindWorker.run`, without Qt: the artists found and the error text, as the `done`
 /// signal carries them.
 pub async fn find_creators_for_ui(
-    crawler: &PawchiveCrawler,
+    crawler: &dyn CreatorFinder,
     query: &str,
     cache: &Path,
 ) -> (Vec<Value>, Option<PawchiveError>) {
-    match crawler.find_creators(query, false, cache, 50).await {
+    match crawler.find_creators(query, cache).await {
         Ok(found) => (found, None),
         Err(err) => {
             tracing::warn!("Pawchive artist search failed: {err}");

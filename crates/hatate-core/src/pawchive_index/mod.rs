@@ -38,7 +38,10 @@ use crate::image_compare::{Hash, Source, dhash_pair};
 use crate::net::{self, NetError};
 use crate::pyimage::DecompressionBomb;
 
-pub use crawl::{IndexJobsOutcome, PawchiveCrawler, find_creators_for_ui, run_index_jobs};
+pub use crawl::{
+    CreatorFinder, CreatorIndexer, IndexJobsOutcome, PawchiveCrawler, find_creators_for_ui,
+    run_index_jobs,
+};
 pub use db::PawchiveIndex;
 
 pub const API: &str = "https://pawchive.pw/api/v1";
@@ -123,6 +126,11 @@ pub struct CrawlResult {
 }
 
 impl CrawlResult {
+    /// `CrawlResult(service=..., user_id=...)`: nothing found, nothing wrong.
+    pub fn default_for(service: &str, user_id: &str) -> Self {
+        Self::new(service, user_id)
+    }
+
     fn new(service: &str, user_id: &str) -> Self {
         CrawlResult {
             service: service.to_owned(),
@@ -159,7 +167,8 @@ pub struct PawchiveError {
 }
 
 impl PawchiveError {
-    pub(crate) fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
+    /// An error of a kind with Python's text for it (also what a stand-in [`CreatorIndexer`] fails with).
+    pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         let message = message.into();
         PawchiveError {
             kind,
