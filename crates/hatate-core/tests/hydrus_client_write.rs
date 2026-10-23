@@ -679,7 +679,10 @@ async fn deletion_states_of_an_odd_answer_fail_the_way_python_does() {
     let (_s, client) =
         world(|_| json_reply(json!({"metadata": [{"hash": [1], "file_id": 1}]}))).await;
     let err = client.deletion_states(&strings(&[H1])).await.unwrap_err();
-    assert_eq!(err.message(), "unhashable type: 'list'");
+    assert_eq!(
+        err.message(),
+        "cannot use 'list' as a dict key (unhashable type: 'list')"
+    );
     let (_s, client) = world(|_| json_reply(json!([]))).await;
     let err = client.deletion_states(&strings(&[H1])).await.unwrap_err();
     assert_eq!(err.message(), "'list' object has no attribute 'get'");

@@ -367,9 +367,10 @@ impl HydrusClient {
                 Value::String(s) => s.as_str(),
                 // `states[h] = ...` with an unhashable key.
                 Value::Array(_) | Value::Object(_) => {
+                    // CPython 3.14's text.
+                    let ty = type_name(hash);
                     return Err(HydrusError::unexpected(format!(
-                        "unhashable type: '{}'",
-                        type_name(hash)
+                        "cannot use '{ty}' as a dict key (unhashable type: '{ty}')"
                     )));
                 }
                 other => {
