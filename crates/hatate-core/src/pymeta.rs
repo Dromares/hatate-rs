@@ -1004,32 +1004,81 @@ fn jpeg_frame_count(data: &[u8]) -> Option<u64> {
             u32::from_le_bytes(b)
         })
     };
+    // `ImageFileDirectory_v2.load`: tags are kept as they are read, and a directory that runs out of
+    // bytes (an entry, or the data an entry points to) ends the load with what it has.
+    let mut tags: Vec<(u16, u16, usize, &[u8])> = Vec::new();
     let ifd = u32_at(4)? as usize;
-    let entries = usize::from(u16_at(ifd)?);
-    let (mut quant, mut raw) = (None, None);
-    for i in 0..entries {
-        let at = ifd + 2 + 12 * i;
-        let (tag, kind, count) = (u16_at(at)?, u16_at(at + 2)?, u32_at(at + 4)? as usize);
-        match (tag, kind) {
-            (0xB001, 3 | 4) if count == 1 => {
-                quant = Some(if kind == 3 {
-                    u64::from(u16_at(at + 8)?)
-                } else {
-                    u64::from(u32_at(at + 8)?)
-                });
+    'load: {
+        let Some(entries) = u16_at(ifd) else {
+            break 'load;
+        };
+        for i in 0..usize::from(entries) {
+            let at = ifd + 2 + 12 * i;
+            let (Some(tag), Some(kind), Some(count), Some(slot)) =
+                (u16_at(at), u16_at(at + 2), u32_at(at + 4), mp.get(at + 8..at + 12))
+            else {
+                break 'load;
+            };
+            let count = count as usize;
+            // `_load_dispatch`: the size of one value of each type Pillow reads.
+            let unit = match kind {
+                1 | 2 | 6 | 7 => 1,
+                3 | 8 => 2,
+                4 | 9 | 11 | 13 => 4,
+                5 | 10 | 12 | 16 => 8,
+                _ => continue,
+            };
+            let size = count.saturating_mul(unit);
+            let data = if size > 4 {
+                let offset = u32_at(at + 8)? as usize;
+                match offset.checked_add(size).and_then(|end| mp.get(offset..end)) {
+                    Some(data) => data,
+                    None => break 'load,
+                }
+            } else {
+                &slot[..size]
+            };
+            if data.is_empty() {
+                continue;
             }
-            (0xB002, 7) => {
-                let start = if count > 4 {
-                    u32_at(at + 8)? as usize
-                } else {
-                    at + 8
-                };
-                raw = Some(mp.get(start..start.checked_add(count)?)?);
-            }
-            _ => {}
+            tags.push((tag, kind, count, data));
         }
     }
-    let (quant, raw) = (quant?, raw?);
+    let last = |wanted: u16| tags.iter().rev().find(|t| t.0 == wanted);
+    // `mpheader[45057] > 1`: a single whole number; anything else is a TypeError, a plain JPEG.
+    let Some(&(_, kind, 1, value)) = last(0xB001) else {
+        return Some(1);
+    };
+    let word = |data: &[u8]| -> Option<u64> {
+        let mut b = [0u8; 8];
+        let n = data.len();
+        if big {
+            b[8 - n..].copy_from_slice(data);
+        } else {
+            b[..n].copy_from_slice(data);
+        }
+        Some(if big {
+            u64::from_be_bytes(b)
+        } else {
+            u64::from_le_bytes(b)
+        })
+    };
+    let quant = match kind {
+        1 | 3 | 4 | 13 | 16 => word(value)?,
+        6 | 8 | 9 => {
+            let bits = value.len() as u32 * 8;
+            let raw = word(value)?;
+            if raw >> (bits - 1) & 1 == 1 {
+                return Some(1);
+            }
+            raw
+        }
+        _ => return Some(1),
+    };
+    // `struct.unpack_from` wants bytes: an `UNDEFINED` entry list.
+    let Some(&(_, 7, _, raw)) = last(0xB002) else {
+        return Some(1);
+    };
     if quant <= 1 {
         return Some(1);
     }
