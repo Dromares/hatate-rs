@@ -213,6 +213,13 @@ impl Default for HydrusSettings {
         Self::defaults()
     }
 }
+impl HydrusSettings {
+    /// Whether a Hydrus access key is set (DAN-2116). A separate question from whether Hydrus
+    /// answers, which is the client's `HydrusStatus` and not decided here.
+    pub fn is_configured(&self) -> bool {
+        !self.access_key.is_empty()
+    }
+}
 impl Default for McpSettings {
     fn default() -> Self {
         Self::defaults()
