@@ -170,6 +170,14 @@ pub struct Candidate {
     /// `MatchCandidate.page_index`: which image of a multi-image post this is. Session-only.
     #[serde(skip)]
     pub page_index: i64,
+    /// `MatchCandidate.booru_tags_fetched`: whether the booru page has been tried yet. A session
+    /// load always restores `False`; only the search cache restores it (see `cache`). Session-only.
+    #[serde(skip)]
+    pub booru_tags_fetched: bool,
+    /// `MatchCandidate.remote_info_fetched`: whether the format/size HEAD has been tried yet (it
+    /// may still have failed). Session-only.
+    #[serde(skip)]
+    pub remote_info_fetched: bool,
 }
 
 impl Candidate {
@@ -199,6 +207,8 @@ impl Candidate {
             tag_version,
             thumb_bytes: None,
             page_index: 0,
+            booru_tags_fetched: false,
+            remote_info_fetched: false,
         }
     }
 
@@ -234,6 +244,10 @@ pub struct Entry {
     /// [`mark_interrupted_mid_search`]). Describes one launch, never stored (3.4).
     #[serde(skip)]
     pub interrupted_mid_search: bool,
+    /// `ImageEntry.last_searched`: when `mark_searched` last ran (epoch seconds). Not stored
+    /// (3.4 has no such key); it describes this run.
+    #[serde(skip)]
+    pub last_searched: Option<f64>,
 }
 
 impl Entry {
@@ -256,6 +270,7 @@ impl Entry {
             candidates: Vec::new(),
             tags: Vec::new(),
             interrupted_mid_search: false,
+            last_searched: None,
         }
     }
 

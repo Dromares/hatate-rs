@@ -10,6 +10,9 @@ pub use net_server::*;
 mod replay;
 #[allow(unused_imports)]
 pub use replay::*;
+mod scripted;
+#[allow(unused_imports)]
+pub use scripted::*;
 
 use std::collections::HashMap;
 use std::ffi::OsString;
