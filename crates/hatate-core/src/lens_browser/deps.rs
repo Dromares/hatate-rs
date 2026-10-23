@@ -137,8 +137,8 @@ pub fn chromium_installed(env: &BrowserEnv) -> Option<bool> {
     let entries = fs::read_dir(&root).ok()?;
     for entry in entries {
         let Ok(entry) = entry else { return None };
-        let is_download = entry.file_name().to_string_lossy().starts_with("chromium-")
-            && entry.path().is_dir();
+        let is_download =
+            entry.file_name().to_string_lossy().starts_with("chromium-") && entry.path().is_dir();
         if is_download {
             return Some(true);
         }
@@ -257,7 +257,10 @@ pub fn check_dependencies(env: &BrowserEnv) -> DependencyStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LaunchFailure {
     /// The executable could not be started (`ENOENT`, `EACCES`, not a binary).
-    Spawn { kind: std::io::ErrorKind, text: String },
+    Spawn {
+        kind: std::io::ErrorKind,
+        text: String,
+    },
     /// Chromium exited before it said where its DevTools endpoint is.
     Exited { text: String },
     /// Chromium ran but never said where its DevTools endpoint is.
@@ -290,12 +293,13 @@ pub fn classify_launch_failure(
 ) -> Option<DependencyStatus> {
     use std::io::ErrorKind::{NotFound, PermissionDenied};
     match failure {
-        LaunchFailure::Spawn { kind, .. } if matches!(kind, NotFound | PermissionDenied) => {
-            Some(DependencyStatus {
-                missing: Some(LensMissing::Chromium),
-                message: missing_chromium_message(env),
-            })
-        }
+        LaunchFailure::Spawn {
+            kind: NotFound | PermissionDenied,
+            ..
+        } => Some(DependencyStatus {
+            missing: Some(LensMissing::Chromium),
+            message: missing_chromium_message(env),
+        }),
         _ => None,
     }
 }
@@ -344,7 +348,11 @@ mod tests {
         env.playwright_browsers_path = Some(dir.path().join("pw").into());
         assert_eq!(chromium_installed(&env), Some(false), "no directory yet");
         fs::create_dir_all(dir.path().join("pw/chromium_headless_shell-1")).unwrap();
-        assert_eq!(chromium_installed(&env), Some(false), "a headless shell is no window");
+        assert_eq!(
+            chromium_installed(&env),
+            Some(false),
+            "a headless shell is no window"
+        );
         fs::create_dir_all(dir.path().join("pw/chromium-1243")).unwrap();
         assert_eq!(chromium_installed(&env), Some(true));
         env.playwright_browsers_path = Some("0".into());
@@ -379,14 +387,20 @@ mod tests {
         make_exe(&bin.join("google-chrome"));
         let mut env = env_in(dir.path());
         env.path = Some(bin.clone().into());
-        assert_eq!(find_chromium(&env).unwrap().source, BrowserSource::Path("google-chrome"));
+        assert_eq!(
+            find_chromium(&env).unwrap().source,
+            BrowserSource::Path("google-chrome")
+        );
         make_exe(&bin.join("chromium-browser"));
         assert_eq!(
             find_chromium(&env).unwrap().source,
             BrowserSource::Path("chromium-browser")
         );
         make_exe(&bin.join("chromium"));
-        assert_eq!(find_chromium(&env).unwrap().source, BrowserSource::Path("chromium"));
+        assert_eq!(
+            find_chromium(&env).unwrap().source,
+            BrowserSource::Path("chromium")
+        );
         env.appimage = true;
         assert_eq!(find_chromium(&env), None);
         let status = check_dependencies(&env);
@@ -415,9 +429,15 @@ mod tests {
         assert!(classify_launch_failure(&spawn(ErrorKind::PermissionDenied), &env).is_some());
         assert!(classify_launch_failure(&spawn(ErrorKind::OutOfMemory), &env).is_none());
         for other in [
-            LaunchFailure::Exited { text: "Opening in existing browser session.".into() },
-            LaunchFailure::NoEndpoint { text: "late".into() },
-            LaunchFailure::Connect { text: "refused".into() },
+            LaunchFailure::Exited {
+                text: "Opening in existing browser session.".into(),
+            },
+            LaunchFailure::NoEndpoint {
+                text: "late".into(),
+            },
+            LaunchFailure::Connect {
+                text: "refused".into(),
+            },
         ] {
             assert_eq!(classify_launch_failure(&other, &env), None);
         }

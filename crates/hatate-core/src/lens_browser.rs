@@ -174,7 +174,10 @@ pub fn browser_gone(error: &StepError) -> bool {
 pub fn first_line(text: &str, type_name: &str) -> String {
     let text = pycompat::strip(text);
     let line = text
-        .split(['\n', '\r', '\u{0b}', '\u{0c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}'])
+        .split([
+            '\n', '\r', '\u{0b}', '\u{0c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}',
+            '\u{2029}',
+        ])
         .next()
         .unwrap_or("");
     if text.is_empty() {
@@ -188,7 +191,11 @@ fn step_error_to_fetch_error(error: StepError) -> LensFetchError {
     match error {
         StepError::Lens(e) => e,
         StepError::Page(e) => {
-            let name = if e.is_target_closed() { "TargetClosedError" } else { "Error" };
+            let name = if e.is_target_closed() {
+                "TargetClosedError"
+            } else {
+                "Error"
+            };
             LensFetchError::Browser(first_line(e.message(), name))
         }
     }
@@ -260,17 +267,27 @@ impl Job {
 
 /// The per-search half, Python's `_one`: 5.c.
 pub trait SearchStep: Send + Sync + 'static {
-    fn one(&self, ctx: StepCtx, job: Arc<JobRequest>) -> BoxFuture<'_, Result<LensPayloads, StepError>>;
+    fn one(
+        &self,
+        ctx: StepCtx,
+        job: Arc<JobRequest>,
+    ) -> BoxFuture<'_, Result<LensPayloads, StepError>>;
 }
 
 /// The step of a build that has not ported `_one` yet. It touches no page and no network.
 pub struct UnportedSearch;
 
 impl SearchStep for UnportedSearch {
-    fn one(&self, _: StepCtx, _: Arc<JobRequest>) -> BoxFuture<'_, Result<LensPayloads, StepError>> {
-        Box::pin(std::future::ready(Err(StepError::Lens(LensFetchError::Browser(
-            "the Lens page steps are not part of this build yet".to_owned(),
-        )))))
+    fn one(
+        &self,
+        _: StepCtx,
+        _: Arc<JobRequest>,
+    ) -> BoxFuture<'_, Result<LensPayloads, StepError>> {
+        Box::pin(std::future::ready(Err(StepError::Lens(
+            LensFetchError::Browser(
+                "the Lens page steps are not part of this build yet".to_owned(),
+            ),
+        ))))
     }
 }
 
@@ -319,7 +336,8 @@ impl StepCtx {
     pub async fn turn_off_safesearch_blur(&self) {
         let outcome: Result<(), PageError> = async {
             let page = &self.page;
-            page.goto(&self.core.settings.safesearch_url, 30_000).await?;
+            page.goto(&self.core.settings.safesearch_url, 30_000)
+                .await?;
             page.wait_for_timeout(3000).await?;
             let radios = page.locator("[role=radio]");
             for index in 0..radios.count().await? {
@@ -371,7 +389,9 @@ impl StepCtx {
         if !self.is_challenged().await? {
             return Ok(());
         }
-        tracing::info!("Google is asking for a robot check ({where_}) - waiting for the user to answer it");
+        tracing::info!(
+            "Google is asking for a robot check ({where_}) - waiting for the user to answer it"
+        );
         let settings = &self.core.settings;
         // The one time the window does need the user.
         settings.attention.ask_for_input(WINDOW_CLASS);
@@ -384,7 +404,9 @@ impl StepCtx {
                         "the robot check in the browser window went unanswered".to_owned(),
                     )));
                 }
-                self.page.wait_for_timeout(settings.challenge_poll_ms).await?;
+                self.page
+                    .wait_for_timeout(settings.challenge_poll_ms)
+                    .await?;
                 waited += settings.challenge_poll_ms;
             }
             Ok(())
@@ -406,12 +428,18 @@ struct Queue {
 
 impl Queue {
     fn put(&self, item: Option<Job>) {
-        self.items.lock().unwrap_or_else(|p| p.into_inner()).push_back(item);
+        self.items
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push_back(item);
         self.ready.notify_one();
     }
 
     fn get_nowait(&self) -> Option<Option<Job>> {
-        self.items.lock().unwrap_or_else(|p| p.into_inner()).pop_front()
+        self.items
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .pop_front()
     }
 
     async fn get(&self) -> Option<Job> {
@@ -601,7 +629,9 @@ fn drain(core: &Core, failure: &RunFailure) {
 
 /// The thread body: a runtime of its own, and `_run` on it.
 fn run_thread(core: Arc<Core>) {
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build();
     match runtime {
         Ok(runtime) => runtime.block_on(run(&core)),
         Err(error) => drain(&core, &RunFailure::Other(error.to_string())),
@@ -621,7 +651,8 @@ impl Session {
     async fn close(mut self) {
         let _ = tokio::time::timeout(Duration::from_secs(5), self.browser.close()).await;
         if let Some(mut chrome) = self.chrome.take() {
-            let _ = tokio::task::spawn_blocking(move || chrome.finish(Duration::from_secs(5))).await;
+            let _ =
+                tokio::task::spawn_blocking(move || chrome.finish(Duration::from_secs(5))).await;
         }
         self.events.abort();
     }
@@ -657,11 +688,12 @@ async fn run(core: &Arc<Core>) {
 /// `_launch` and `_launch_context`.
 async fn launch_session(core: &Arc<Core>) -> Result<Session, RunFailure> {
     let settings = &core.settings;
-    ensure_profile_dir(&settings.profile_dir).map_err(|error| {
-        RunFailure::Other(os_error_text(&error, &settings.profile_dir))
-    })?;
+    ensure_profile_dir(&settings.profile_dir)
+        .map_err(|error| RunFailure::Other(os_error_text(&error, &settings.profile_dir)))?;
     tracing::info!("Starting Chromium for Google Lens");
-    let in_use = |text: &str| text.contains("already in use") || text.contains("Opening in existing browser");
+    let in_use = |text: &str| {
+        text.contains("already in use") || text.contains("Opening in existing browser")
+    };
     let profile_in_use = || {
         RunFailure::ProfileInUse(format!(
             "Another Chromium is already using the Lens profile at {}. Close it - or, if a \
@@ -732,7 +764,10 @@ enum Served {
     /// The window was closed under a job, which is to be run again in a fresh one.
     Interrupted(Job),
     /// The session could not be used at all; `first` is the job it was handed, if it had one.
-    Failed { failure: RunFailure, first: Option<Job> },
+    Failed {
+        failure: RunFailure,
+        first: Option<Job>,
+    },
 }
 
 /// `_serve`: runs jobs until asked to stop, or until the browser window is closed under us.
@@ -750,7 +785,11 @@ async fn serve(core: &Arc<Core>, session: &Session, first: Option<Job>) -> Serve
             };
         }
     };
-    let page = LensPage::new(page, Arc::clone(&session.gone), Arc::clone(&core.settings.waits));
+    let page = LensPage::new(
+        page,
+        Arc::clone(&session.gone),
+        Arc::clone(&core.settings.waits),
+    );
     if let Err(error) = page.emulate().await {
         return Served::Failed {
             failure: RunFailure::Other(error.message().to_owned()),
@@ -770,16 +809,22 @@ async fn serve(core: &Arc<Core>, session: &Session, first: Option<Job>) -> Serve
                 None => return Served::Stopped,
             },
         };
-        let attempt = AssertUnwindSafe(core.settings.step.one(ctx.clone(), Arc::clone(&current.request)))
-            .catch_unwind()
-            .await;
+        let attempt = AssertUnwindSafe(
+            core.settings
+                .step
+                .one(ctx.clone(), Arc::clone(&current.request)),
+        )
+        .catch_unwind()
+        .await;
         let result = attempt.unwrap_or_else(|panic| {
             let text = panic
                 .downcast_ref::<&str>()
                 .map(|s| (*s).to_owned())
                 .or_else(|| panic.downcast_ref::<String>().cloned())
                 .unwrap_or_else(|| "panic".to_owned());
-            Err(StepError::Lens(LensFetchError::Browser(first_line(&text, "Error"))))
+            Err(StepError::Lens(LensFetchError::Browser(first_line(
+                &text, "Error",
+            ))))
         });
         match result {
             Ok(payloads) => {
@@ -854,14 +899,22 @@ mod tests {
         let secret = "/home/someone/.config/hatate/lens_profile";
         for error in [
             LensFetchError::Unavailable {
-                message: format!("The browser could not be started: profile at {secret}: os error 13"),
+                message: format!(
+                    "The browser could not be started: profile at {secret}: os error 13"
+                ),
                 missing: None,
             },
             LensFetchError::ChallengeUnanswered(format!("{secret} os error 2")),
-            LensFetchError::Browser(format!("failed at https://x/?key=hunter2 {secret} os error 2")),
+            LensFetchError::Browser(format!(
+                "failed at https://x/?key=hunter2 {secret} os error 2"
+            )),
         ] {
             let shown = error.user_message();
-            assert!(!shown.contains(secret) && !shown.contains("os error") && !shown.contains("hunter2"));
+            assert!(
+                !shown.contains(secret)
+                    && !shown.contains("os error")
+                    && !shown.contains("hunter2")
+            );
             assert!(error.detail().contains("os error"));
         }
         assert_eq!(

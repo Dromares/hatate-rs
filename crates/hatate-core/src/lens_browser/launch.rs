@@ -82,7 +82,10 @@ pub struct LaunchSpec {
 /// The argv after the executable. Headed, `--class=hatate-lens`, no `--enable-automation`,
 /// automation-controlled blink feature off, the profile, the DevTools port, `about:blank`.
 pub fn argv(spec: &LaunchSpec) -> Vec<String> {
-    let mut args: Vec<String> = PLAYWRIGHT_DEFAULT_ARGS.iter().map(|a| (*a).to_owned()).collect();
+    let mut args: Vec<String> = PLAYWRIGHT_DEFAULT_ARGS
+        .iter()
+        .map(|a| (*a).to_owned())
+        .collect();
     args.push(format!("--class={WINDOW_CLASS}"));
     args.push("--disable-blink-features=AutomationControlled".to_owned());
     args.extend(spec.extra_args.iter().cloned());
@@ -275,7 +278,10 @@ mod tests {
         ] {
             assert!(args.iter().any(|a| a == needed), "missing {needed}");
         }
-        assert!(!args.iter().any(|a| a.starts_with("--headless")), "Lens is headed");
+        assert!(
+            !args.iter().any(|a| a.starts_with("--headless")),
+            "Lens is headed"
+        );
         assert_eq!(args.last().map(String::as_str), Some("about:blank"));
         // The DevTools transport is the one flag that differs from Playwright's launch.
         assert!(args.iter().any(|a| a == "--remote-debugging-port=0"));
@@ -287,8 +293,14 @@ mod tests {
         let mut with = spec();
         with.extra_args = vec!["--ozone-platform=headless".to_owned()];
         let args = argv(&with);
-        let extra = args.iter().position(|a| a == "--ozone-platform=headless").unwrap();
-        let profile = args.iter().position(|a| a.starts_with("--user-data-dir")).unwrap();
+        let extra = args
+            .iter()
+            .position(|a| a == "--ozone-platform=headless")
+            .unwrap();
+        let profile = args
+            .iter()
+            .position(|a| a.starts_with("--user-data-dir"))
+            .unwrap();
         assert!(extra < profile);
         assert!(!argv(&spec()).iter().any(|a| a.contains("ozone")));
     }
@@ -309,19 +321,23 @@ mod tests {
     fn a_browser_that_exits_before_announcing_is_an_exited_failure_with_its_output() {
         let dir = tempfile::tempdir().unwrap();
         let exe = dir.path().join("chrome");
-        std::fs::write(&exe, "#!/bin/sh\necho 'Opening in existing browser session.'\n").unwrap();
-        std::fs::set_permissions(
+        std::fs::write(
             &exe,
-            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+            "#!/bin/sh\necho 'Opening in existing browser session.'\n",
         )
         .unwrap();
+        std::fs::set_permissions(&exe, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
         let spec = LaunchSpec {
             executable: exe,
             ..spec()
         };
         match launch(&spec, Duration::from_secs(5)).err().unwrap() {
             LaunchFailure::Exited { text } => {
-                assert!(text.contains("Opening in existing browser session."), "{text}")
+                assert!(
+                    text.contains("Opening in existing browser session."),
+                    "{text}"
+                )
             }
             other => panic!("{other:?}"),
         }

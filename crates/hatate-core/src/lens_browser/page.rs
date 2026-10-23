@@ -80,7 +80,10 @@ impl PageError {
     fn from_cdp(api: &str, error: &CdpError) -> Self {
         let text = error.to_string();
         let gone = match error {
-            CdpError::Ws(_) | CdpError::Io(_) | CdpError::ChannelSendError(_) | CdpError::NoResponse => true,
+            CdpError::Ws(_)
+            | CdpError::Io(_)
+            | CdpError::ChannelSendError(_)
+            | CdpError::NoResponse => true,
             CdpError::Chrome(_) | CdpError::ChromeMessage(_) => {
                 text.contains("Target closed")
                     || text.contains("No target with given id")
@@ -117,7 +120,11 @@ pub struct LensPage {
 }
 
 impl LensPage {
-    pub(super) fn new(page: chromiumoxide::Page, gone: Arc<AtomicBool>, waits: Arc<dyn Clock>) -> Self {
+    pub(super) fn new(
+        page: chromiumoxide::Page,
+        gone: Arc<AtomicBool>,
+        waits: Arc<dyn Clock>,
+    ) -> Self {
         LensPage { page, gone, waits }
     }
 
@@ -192,7 +199,11 @@ impl LensPage {
             .event_listener::<EventDomContentEventFired>()
             .await
             .map_err(cdp)?;
-        let started = self.page.execute(NavigateParams::new(url)).await.map_err(cdp)?;
+        let started = self
+            .page
+            .execute(NavigateParams::new(url))
+            .await
+            .map_err(cdp)?;
         if let Some(text) = &started.result.error_text {
             return Err(PageError::other(API, format!("{text} at {url}")));
         }
@@ -201,16 +212,17 @@ impl LensPage {
             return Ok(());
         }
         let wait = async {
-            loop {
-                match loaded.next().await {
-                    Some(_) => return Ok(()),
-                    None => return Err(PageError::target_closed(API)),
-                }
+            match loaded.next().await {
+                Some(_) => Ok(()),
+                None => Err(PageError::target_closed(API)),
             }
         };
         match tokio::time::timeout(Duration::from_millis(timeout_ms), wait).await {
             Ok(result) => result,
-            Err(_) => Err(PageError::other(API, format!("Timeout {timeout_ms}ms exceeded."))),
+            Err(_) => Err(PageError::other(
+                API,
+                format!("Timeout {timeout_ms}ms exceeded."),
+            )),
         }
     }
 
@@ -232,16 +244,23 @@ impl LensPage {
     }
 
     /// `page.evaluate(expression)` for an expression that yields JSON.
-    pub async fn evaluate<T: DeserializeOwned>(&self, api: &str, expression: &str) -> Result<T, PageError> {
+    pub async fn evaluate<T: DeserializeOwned>(
+        &self,
+        api: &str,
+        expression: &str,
+    ) -> Result<T, PageError> {
         self.check(api)?;
         let result = self
             .page
             .evaluate(expression)
             .await
             .map_err(|e| PageError::from_cdp(api, &e))?;
-        result
-            .into_value()
-            .map_err(|e| PageError::other(api, format!("the page returned a value that cannot be read: {e}")))
+        result.into_value().map_err(|e| {
+            PageError::other(
+                api,
+                format!("the page returned a value that cannot be read: {e}"),
+            )
+        })
     }
 
     /// `page.locator(selector)`.
@@ -274,13 +293,20 @@ impl Locator {
     }
 
     fn target(&self) -> String {
-        format!("{QUERY_ALL}({})[{}]", self.quoted(), self.index.unwrap_or(0))
+        format!(
+            "{QUERY_ALL}({})[{}]",
+            self.quoted(),
+            self.index.unwrap_or(0)
+        )
     }
 
     /// `locator.count()`.
     pub async fn count(&self) -> Result<usize, PageError> {
         self.page
-            .evaluate("Locator.count", &format!("{QUERY_ALL}({}).length", self.quoted()))
+            .evaluate(
+                "Locator.count",
+                &format!("{QUERY_ALL}({}).length", self.quoted()),
+            )
             .await
     }
 
@@ -296,10 +322,19 @@ impl Locator {
     pub async fn inner_text(&self) -> Result<String, PageError> {
         let found: Option<String> = self
             .page
-            .evaluate("Locator.inner_text", &format!("(() => {{ const e = {}; return e ? e.innerText : null; }})()", self.target()))
+            .evaluate(
+                "Locator.inner_text",
+                &format!(
+                    "(() => {{ const e = {}; return e ? e.innerText : null; }})()",
+                    self.target()
+                ),
+            )
             .await?;
         found.ok_or_else(|| {
-            PageError::other("Locator.inner_text", format!("Timeout {DEFAULT_TIMEOUT_MS}ms exceeded."))
+            PageError::other(
+                "Locator.inner_text",
+                format!("Timeout {DEFAULT_TIMEOUT_MS}ms exceeded."),
+            )
         })
     }
 
@@ -309,7 +344,10 @@ impl Locator {
         self.page
             .evaluate(
                 "Locator.get_attribute",
-                &format!("(() => {{ const e = {}; return e ? e.getAttribute({name}) : null; }})()", self.target()),
+                &format!(
+                    "(() => {{ const e = {}; return e ? e.getAttribute({name}) : null; }})()",
+                    self.target()
+                ),
             )
             .await
     }
@@ -332,25 +370,39 @@ impl Locator {
                 break point;
             }
             if tokio::time::Instant::now() >= deadline {
-                return Err(PageError::other(API, format!("Timeout {timeout_ms}ms exceeded.")));
+                return Err(PageError::other(
+                    API,
+                    format!("Timeout {timeout_ms}ms exceeded."),
+                ));
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         };
         let cdp = |e: CdpError| PageError::from_cdp(API, &e);
-        let mouse = |kind: DispatchMouseEventType, button: MouseButton, buttons: i64, clicks: i64| {
-            DispatchMouseEventParams::builder()
-                .r#type(kind)
-                .x(x)
-                .y(y)
-                .button(button)
-                .buttons(buttons)
-                .click_count(clicks)
-                .build()
-        };
+        let mouse =
+            |kind: DispatchMouseEventType, button: MouseButton, buttons: i64, clicks: i64| {
+                DispatchMouseEventParams::builder()
+                    .r#type(kind)
+                    .x(x)
+                    .y(y)
+                    .button(button)
+                    .buttons(buttons)
+                    .click_count(clicks)
+                    .build()
+            };
         for params in [
             mouse(DispatchMouseEventType::MouseMoved, MouseButton::None, 0, 0),
-            mouse(DispatchMouseEventType::MousePressed, MouseButton::Left, 1, 1),
-            mouse(DispatchMouseEventType::MouseReleased, MouseButton::Left, 0, 1),
+            mouse(
+                DispatchMouseEventType::MousePressed,
+                MouseButton::Left,
+                1,
+                1,
+            ),
+            mouse(
+                DispatchMouseEventType::MouseReleased,
+                MouseButton::Left,
+                0,
+                1,
+            ),
         ] {
             let params = params.map_err(|e| PageError::other(API, e))?;
             self.page.page.execute(params).await.map_err(cdp)?;
