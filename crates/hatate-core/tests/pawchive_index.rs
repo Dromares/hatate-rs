@@ -788,30 +788,43 @@ async fn a_self_signed_site_is_refused_by_the_shipped_client() {
 }
 
 #[tokio::test]
-async fn a_slow_site_is_a_timeout_after_the_requests_thirty_seconds() {
-    // 30 s is the crawl's per-request timeout; the server holds the reply back past a short one.
+async fn a_slow_site_is_a_timeout_error_after_the_requests_wait() {
     let pki = TestPki::generate();
     let server = TestServer::https(&pki, |_| {
-        Reply::ok("{}").delayed(std::time::Duration::from_secs(3))
+        Reply::ok("[]").delayed(std::time::Duration::from_secs(3))
     })
     .await;
     let net =
         NetClient::new(NetConfig::default().with_root_certificate_der(pki.ca_der.clone())).unwrap();
     let clock = Arc::new(ManualClock::new(1.0e9, 5_000.0));
+    // Python's 30 s and 120 s, shortened so the test does not wait for them.
     let crawler = PawchiveCrawler::with_hosts(net, &server.url("/api/v1"), &server.url("/t"))
-        .with_clock(clock);
+        .with_clock(clock)
+        .with_timeouts(0.3, 0.3);
     let dir = tempfile::tempdir().unwrap();
     let started = std::time::Instant::now();
-    let fetched = tokio::time::timeout(
-        std::time::Duration::from_secs(10),
-        crawler.find_creators("a", true, &dir.path().join("c.json"), 50),
-    )
-    .await;
-    assert!(
-        fetched.is_ok(),
-        "the 120 s list timeout is not the test's wait"
+    let err = crawler
+        .find_creators("a", true, &dir.path().join("c.json"), 50)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::Net(net::ErrorKind::Timeout), "{err}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    assert!(err.user_message().contains("did not answer in time"));
+    let index = PawchiveIndex::new(dir.path().join("index.db"));
+    let mut progress = |_: &str, _: usize, _: usize| {};
+    let result = crawler
+        .index_creator(&index, "fanbox", "42", 1.0, &|| false, &mut progress)
+        .await
+        .unwrap();
+    assert_eq!(
+        result.error_kind,
+        Some(ErrorKind::Net(net::ErrorKind::Timeout))
     );
-    assert!(started.elapsed() >= std::time::Duration::from_secs(3));
+    assert_eq!(
+        server.request_count(),
+        5,
+        "one for the list, four tries at the profile"
+    );
 }
 
 // ---- find_creators ----

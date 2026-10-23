@@ -39,6 +39,8 @@ pub struct PawchiveCrawler {
     api_base: String,
     thumbnail_base: String,
     clock: Arc<dyn Clock>,
+    crawl_timeout: f64,
+    list_timeout: f64,
 }
 
 impl PawchiveCrawler {
@@ -56,12 +58,22 @@ impl PawchiveCrawler {
             api_base: api_base.to_owned(),
             thumbnail_base: thumbnail_base.to_owned(),
             clock: Arc::new(SystemClock::default()),
+            crawl_timeout: CRAWL_TIMEOUT,
+            list_timeout: LIST_TIMEOUT,
         }
     }
 
     /// The clock the pauses, `Retry-After` waits and the creator cache's age are read from.
     pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
         self.clock = clock;
+        self
+    }
+
+    /// Shorter per-request timeouts than Python's fixed 30 s (the crawl) and 120 s (the creator
+    /// list), so a test can see a timeout without waiting for one. Nothing in the binaries calls it.
+    pub fn with_timeouts(mut self, crawl: f64, list: f64) -> Self {
+        self.crawl_timeout = crawl;
+        self.list_timeout = list;
         self
     }
 
@@ -126,11 +138,11 @@ impl PawchiveCrawler {
             None => {
                 let url = format!("{}/creators", self.api_base);
                 let resp = self
-                    .fetch(&url, None, LIST_TIMEOUT)
+                    .fetch(&url, None, self.list_timeout)
                     .await
                     .map_err(|e| PawchiveError::net(&e))?;
                 raise_for_status(&resp)?;
-                let creators = resp.json().map_err(|e| json_error(&e))?;
+                let creators = json_of(&resp)?;
                 if let Some(parent) = cache.parent() {
                     let _ = std::fs::create_dir_all(parent);
                 }
@@ -224,7 +236,7 @@ impl PawchiveCrawler {
             if !self.pause(wait, state.should_stop).await {
                 return Ok(None);
             }
-            let resp = match self.fetch(url, offset, CRAWL_TIMEOUT).await {
+            let resp = match self.fetch(url, offset, self.crawl_timeout).await {
                 Ok(resp) => resp,
                 Err(err) => {
                     state.last = self.clock.monotonic();
@@ -321,8 +333,16 @@ impl PawchiveCrawler {
             return Ok(Flow::Early);
         };
         if profile.status == 200 {
-            let body = profile.json().map_err(|e| Abort::Caught(json_error(&e)))?;
-            result.name = name_of(&body)?;
+            let body = json_of(&profile).map_err(Abort::Caught)?;
+            match name_of(&body)? {
+                NameField::Absent => {}
+                NameField::Text(text) => result.name = Some(text),
+                NameField::Unbindable(kind) => {
+                    // `add_creator` is where sqlite3 refuses it, after `_connect` made the file.
+                    index.ensure_exists().map_err(Abort::Escaped)?;
+                    return Err(Abort::Escaped(binding_error(3, kind)));
+                }
+            }
         } else if profile.status == 404 {
             result.error = Some("pawchive has no such artist".to_owned());
             result.error_kind = Some(ErrorKind::NotFound);
@@ -358,7 +378,7 @@ impl PawchiveCrawler {
                 result.error_kind = Some(ErrorKind::HttpStatus);
                 return Ok(Flow::Early);
             }
-            let batch = resp.json().map_err(|e| Abort::Caught(json_error(&e)))?;
+            let batch = json_of(&resp).map_err(Abort::Caught)?;
             let len = match &batch {
                 v if !truthy(v) => 0,
                 Value::Array(items) => {
@@ -420,13 +440,13 @@ impl PawchiveCrawler {
             }
         }
 
-        let mut rows: Vec<ImageRow> = Vec::new();
+        let mut rows: Vec<Pending> = Vec::new();
         let outcome = self
             .fingerprint_all(index, result, state, progress, &todo, &mut rows, &shown)
             .await;
         // Whatever was fingerprinted is kept however this ends - a network failure halfway
         // through an artist costs nothing done.
-        index.add_images(&rows).map_err(Abort::Escaped)?;
+        flush(index, &rows)?;
         outcome?;
         if !result.stopped {
             index
@@ -449,7 +469,7 @@ impl PawchiveCrawler {
         state: &mut FetchState<'_>,
         progress: &mut (dyn FnMut(&str, usize, usize) + Send),
         todo: &[(String, i64, String, Option<Value>)],
-        rows: &mut Vec<ImageRow>,
+        rows: &mut Vec<Pending>,
         shown: &dyn Fn(&CrawlResult) -> String,
     ) -> Result<(), Abort> {
         let (service, user_id) = (result.service.clone(), result.user_id.clone());
@@ -476,25 +496,32 @@ impl PawchiveCrawler {
             if h16.is_none() {
                 result.unfingerprinted += 1;
             }
-            rows.push(ImageRow {
-                service: service.clone(),
-                user_id: user_id.clone(),
-                post_id: post_id.clone(),
-                page_index: *page_index,
-                sha256: sha256_in_path(path),
-                path: path.clone(),
-                title: title_of(title.as_ref())?,
-                dhash8: h8.map(|h| format!("{:016x}", h.0[3])),
-                dhash16: h16.map(|h| {
-                    format!(
-                        "{:016x}{:016x}{:016x}{:016x}",
-                        h.0[0], h.0[1], h.0[2], h.0[3]
-                    )
-                }),
+            let (title, unbindable_title) = match title_of(title.as_ref()) {
+                Title::Value(text) => (text, None),
+                Title::Unbindable(kind) => (None, Some(kind)),
+            };
+            rows.push(Pending {
+                row: ImageRow {
+                    service: service.clone(),
+                    user_id: user_id.clone(),
+                    post_id: post_id.clone(),
+                    page_index: *page_index,
+                    sha256: sha256_in_path(path),
+                    path: path.clone(),
+                    title,
+                    dhash8: h8.map(|h| format!("{:016x}", h.0[3])),
+                    dhash16: h16.map(|h| {
+                        format!(
+                            "{:016x}{:016x}{:016x}{:016x}",
+                            h.0[0], h.0[1], h.0[2], h.0[3]
+                        )
+                    }),
+                },
+                unbindable_title,
             });
             result.new += 1;
             if rows.len() >= FLUSH_EVERY {
-                index.add_images(rows).map_err(Abort::Escaped)?;
+                flush(index, rows)?;
                 rows.clear();
             }
         }
@@ -532,10 +559,19 @@ fn sha256_in_path(path: &str) -> String {
         .map_or_else(String::new, |c| c[1].to_owned())
 }
 
-/// `(profile.json() or {}).get("name")`.
-fn name_of(body: &Value) -> Result<Option<String>, Abort> {
+/// What the profile's `name` is, for the one place the crawl keeps it.
+enum NameField {
+    Absent,
+    Text(String),
+    /// A list or an object: `sqlite3` cannot bind it (`ProgrammingError`) when `add_creator` runs.
+    Unbindable(&'static str),
+}
+
+/// `(profile.json() or {}).get("name")`. A number or a boolean name Python carries along untyped
+/// (`CrawlResult.name` is then an `int`); here it is an error (`docs/pawchive-index.md`, C2).
+fn name_of(body: &Value) -> Result<NameField, Abort> {
     if !truthy(body) {
-        return Ok(None);
+        return Ok(NameField::Absent);
     }
     let Value::Object(map) = body else {
         return Err(Abort::Escaped(PawchiveError::unexpected(format!(
@@ -544,8 +580,10 @@ fn name_of(body: &Value) -> Result<Option<String>, Abort> {
         ))));
     };
     match map.get("name") {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(s)) => Ok(Some(s.clone())),
+        None | Some(Value::Null) => Ok(NameField::Absent),
+        Some(Value::String(s)) => Ok(NameField::Text(s.clone())),
+        Some(Value::Array(_)) => Ok(NameField::Unbindable("list")),
+        Some(Value::Object(_)) => Ok(NameField::Unbindable("dict")),
         Some(other) => Err(Abort::Escaped(PawchiveError::unexpected(format!(
             "'name' is a {} where a string is expected",
             type_name(other)
@@ -553,16 +591,91 @@ fn name_of(body: &Value) -> Result<Option<String>, Abort> {
     }
 }
 
-/// A post's `title` as the column holds it.
-fn title_of(title: Option<&Value>) -> Result<Option<String>, Abort> {
+/// `sqlite3.ProgrammingError: Error binding parameter 7: type 'list' is not supported`.
+fn binding_error(parameter: usize, kind: &str) -> PawchiveError {
+    PawchiveError::new(
+        ErrorKind::Database,
+        format!("Error binding parameter {parameter}: type '{kind}' is not supported"),
+    )
+}
+
+/// What a post's `title` becomes in the column. `sqlite3` binds a string or `None` as they are, a
+/// number or a boolean as a number that the TEXT column turns into text, and refuses a list or an
+/// object when the rows are written.
+enum Title {
+    Value(Option<String>),
+    Unbindable(&'static str),
+}
+
+fn title_of(title: Option<&Value>) -> Title {
     match title {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(s)) => Ok(Some(s.clone())),
-        Some(other) => Err(Abort::Escaped(PawchiveError::unexpected(format!(
-            "'title' is a {} where a string is expected",
-            type_name(other)
-        )))),
+        None | Some(Value::Null) => Title::Value(None),
+        Some(Value::String(s)) => Title::Value(Some(s.clone())),
+        Some(Value::Bool(b)) => Title::Value(Some(if *b { "1" } else { "0" }.to_owned())),
+        Some(Value::Number(n)) => Title::Value(Some(match n.as_i64() {
+            Some(i) => i.to_string(),
+            None => match n.as_u64() {
+                Some(u) => u.to_string(),
+                None => sqlite_real_text(n.as_f64().unwrap_or(0.0)),
+            },
+        })),
+        Some(Value::Array(_)) => Title::Unbindable("list"),
+        Some(Value::Object(_)) => Title::Unbindable("dict"),
     }
+}
+
+/// SQLite's text for a REAL (`%!.15g`): 15 significant digits, no trailing zeros, and a `.0`
+/// kept on a whole number.
+fn sqlite_real_text(x: f64) -> String {
+    if x.is_nan() {
+        return "NaN".to_owned();
+    }
+    if x.is_infinite() {
+        return if x > 0.0 { "Inf" } else { "-Inf" }.to_owned();
+    }
+    if x == 0.0 {
+        return if x.is_sign_negative() { "-0.0" } else { "0.0" }.to_owned();
+    }
+    let sci = format!("{x:.14e}");
+    let (mantissa, exp) = sci.split_once('e').unwrap_or((&sci, "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    let digits: String = mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
+    let digits = digits.trim_end_matches('0');
+    let digits = if digits.is_empty() { "0" } else { digits };
+    let sign = if x < 0.0 { "-" } else { "" };
+    if !(-4..15).contains(&exp) {
+        let (first, rest) = digits.split_at(1);
+        let rest = if rest.is_empty() { "0" } else { rest };
+        return format!(
+            "{sign}{first}.{rest}e{}{:02}",
+            if exp < 0 { '-' } else { '+' },
+            exp.abs()
+        );
+    }
+    if exp >= 0 {
+        let int_len = exp as usize + 1;
+        let padded = format!("{digits:0<int_len$}");
+        let (int, frac) = padded.split_at(int_len);
+        format!("{sign}{int}.{}", if frac.is_empty() { "0" } else { frac })
+    } else {
+        format!("{sign}0.{}{digits}", "0".repeat((-exp - 1) as usize))
+    }
+}
+
+/// A row waiting to be written, and the type of a title `sqlite3` would refuse.
+struct Pending {
+    row: ImageRow,
+    unbindable_title: Option<&'static str>,
+}
+
+/// `index.add_images(rows)`: all of it or none. `sqlite3` fails the whole batch at the first row
+/// it cannot bind.
+fn flush(index: &PawchiveIndex, rows: &[Pending]) -> Result<(), Abort> {
+    if let Some(kind) = rows.iter().find_map(|p| p.unbindable_title) {
+        return Err(Abort::Escaped(binding_error(7, kind)));
+    }
+    let plain: Vec<ImageRow> = rows.iter().map(|p| p.row.clone()).collect();
+    index.add_images(&plain).map_err(Abort::Escaped)
 }
 
 /// `-(c.get("favorited") or 0)` as a sort key.
@@ -616,9 +729,14 @@ fn raise_for_status(resp: &PyResponse) -> Result<(), PawchiveError> {
     ))
 }
 
-/// `resp.json()` failing: Python's `JSONDecodeError` is a `ValueError`.
-fn json_error(err: &serde_json::Error) -> PawchiveError {
-    PawchiveError::unexpected(err.to_string())
+/// `resp.json()`: a body that is not JSON is Python's `JSONDecodeError`, a `ValueError`, with
+/// CPython's words for what is wrong and where.
+fn json_of(resp: &PyResponse) -> Result<Value, PawchiveError> {
+    resp.json().map_err(|err| {
+        let text = resp.json_text();
+        let message = super::json_error::message_for(&text).unwrap_or_else(|| err.to_string());
+        PawchiveError::unexpected(message)
+    })
 }
 
 /// What the Qt `PawchiveIndexWorker.run` leaves behind: the results it emitted, and the failure

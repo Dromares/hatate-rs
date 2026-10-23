@@ -143,6 +143,12 @@ impl PawchiveIndex {
         Ok(out)
     }
 
+    /// Opens the database the way every call does (the folder made, the schema in place) and
+    /// closes it again: what Python's `_connect` leaves behind when the statement after it fails.
+    pub(crate) fn ensure_exists(&self) -> Result<(), PawchiveError> {
+        self.connect().map(drop)
+    }
+
     /// `creators()`: every indexed artist, by name.
     pub fn creators(&self) -> Result<Vec<Creator>, PawchiveError> {
         let conn = self.connect()?;
