@@ -32,6 +32,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use chromiumoxide::Browser;
+use chromiumoxide::error::CdpError;
 use chromiumoxide::handler::HandlerConfig;
 use futures::{FutureExt, StreamExt};
 use tokio::sync::{Notify, oneshot};
@@ -713,21 +714,24 @@ async fn launch_session(core: &Arc<Core>) -> Result<Session, RunFailure> {
         profile_dir: settings.profile_dir.clone(),
         extra_args: settings.extra_launch_args.clone(),
     };
-    let chrome = tokio::task::spawn_blocking(move || launch::launch(&spec, LAUNCH_TIMEOUT))
-        .await
-        .map_err(|join| RunFailure::Other(join.to_string()))?
-        .map_err(|failure| {
-            if in_use(failure.text()) {
-                profile_in_use()
-            } else {
-                RunFailure::Launch(failure)
-            }
-        })?;
+    // Started from this thread, not a pool thread: the browser is tied to the thread that spawned
+    // it (`PR_SET_PDEATHSIG`), and a pool thread exits when it has been idle for ten seconds.
+    // Nothing else runs on this runtime until the browser is up.
+    let chrome = launch::launch(&spec, LAUNCH_TIMEOUT).map_err(|failure| {
+        if in_use(failure.text()) {
+            profile_in_use()
+        } else {
+            RunFailure::Launch(failure)
+        }
+    })?;
 
     let config = HandlerConfig {
         // Never: the browser checks every certificate, and no setting turns that off.
         ignore_https_errors: false,
         viewport: None,
+        // The client evicts a command older than this. Every call here has its own deadline
+        // (`goto`'s timeout, the job's budget), so this one is only a backstop.
+        request_timeout: Duration::from_secs(600),
         ..HandlerConfig::default()
     };
     let (browser, mut handler) = Browser::connect_with_config(chrome.ws_url().to_owned(), config)
@@ -744,7 +748,14 @@ async fn launch_session(core: &Arc<Core>) -> Result<Session, RunFailure> {
     let flag = Arc::clone(&gone);
     let events = tokio::spawn(async move {
         while let Some(event) = handler.next().await {
-            if event.is_err() {
+            // A command that timed out or an event it could not read is not the end of the
+            // connection; a closed socket is.
+            if let Err(error) = event
+                && matches!(
+                    error,
+                    CdpError::Ws(_) | CdpError::Io(_) | CdpError::ChannelSendError(_)
+                )
+            {
                 break;
             }
         }

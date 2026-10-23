@@ -55,9 +55,9 @@ impl BrowserEnv {
             xdg_cache_home: std::env::var_os("XDG_CACHE_HOME"),
             home: std::env::var_os("HOME").map(PathBuf::from),
             path: std::env::var_os("PATH"),
-            // The AppImage's `AppRun` sets `APPIMAGE`; `paths.running_as_appimage` in Python reads
-            // the same variable. Phase 7 owns the AppImage itself.
-            appimage: std::env::var_os("APPIMAGE").is_some_and(|v| !v.is_empty()),
+            // `paths.running_as_appimage()`: the AppImage's `AppRun` sets `HATATE_APPIMAGE=1`.
+            // Phase 7 owns the AppImage itself.
+            appimage: std::env::var_os("HATATE_APPIMAGE").is_some_and(|v| v == "1"),
         }
     }
 }

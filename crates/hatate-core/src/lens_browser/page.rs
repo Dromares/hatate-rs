@@ -17,6 +17,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use chromiumoxide::cdp::browser_protocol::browser::{
+    Bounds, GetWindowForTargetParams, SetWindowBoundsParams,
+};
 use chromiumoxide::cdp::browser_protocol::emulation::{
     SetDeviceMetricsOverrideParams, SetFocusEmulationEnabledParams, SetLocaleOverrideParams,
     SetUserAgentOverrideParams,
@@ -154,11 +157,33 @@ impl LensPage {
     pub(super) async fn emulate(&self) -> Result<(), PageError> {
         let api = "BrowserType.launch_persistent_context";
         let cdp = |e: CdpError| PageError::from_cdp(api, &e);
+        // A headed window is sized so the viewport fits in it, with the fixed insets Playwright
+        // adds on Linux for a persistent context (8 wide; 85 for the browser's own chrome plus 46).
+        let window = self
+            .page
+            .execute(GetWindowForTargetParams::default())
+            .await
+            .map_err(cdp)?
+            .result
+            .window_id;
+        self.page
+            .execute(SetWindowBoundsParams::new(
+                window,
+                Bounds::builder()
+                    .width(i64::from(VIEWPORT.0) + 8)
+                    .height(i64::from(VIEWPORT.1) + 85 + 46)
+                    .build(),
+            ))
+            .await
+            .map_err(cdp)?;
         self.page
             .execute(
                 SetDeviceMetricsOverrideParams::builder()
-                    .width(VIEWPORT.0)
-                    .height(VIEWPORT.1)
+                    .width(i64::from(VIEWPORT.0))
+                    .height(i64::from(VIEWPORT.1))
+                    // No `screen` option: the screen is the viewport.
+                    .screen_width(i64::from(VIEWPORT.0))
+                    .screen_height(i64::from(VIEWPORT.1))
                     .device_scale_factor(1.0)
                     .mobile(false)
                     .build()
@@ -199,25 +224,26 @@ impl LensPage {
             .event_listener::<EventDomContentEventFired>()
             .await
             .map_err(cdp)?;
-        let started = self
-            .page
-            .execute(NavigateParams::new(url))
-            .await
-            .map_err(cdp)?;
-        if let Some(text) = &started.result.error_text {
-            return Err(PageError::other(API, format!("{text} at {url}")));
-        }
-        // Same-document navigations have no loader and fire no event.
-        if started.result.loader_id.is_none() {
-            return Ok(());
-        }
-        let wait = async {
+        let navigation = async {
+            let started = self
+                .page
+                .execute(NavigateParams::new(url))
+                .await
+                .map_err(cdp)?;
+            if let Some(text) = &started.result.error_text {
+                return Err(PageError::other(API, format!("{text} at {url}")));
+            }
+            // Same-document navigations have no loader and fire no event.
+            if started.result.loader_id.is_none() {
+                return Ok(());
+            }
             match loaded.next().await {
                 Some(_) => Ok(()),
                 None => Err(PageError::target_closed(API)),
             }
         };
-        match tokio::time::timeout(Duration::from_millis(timeout_ms), wait).await {
+        // One budget for the whole navigation, as Playwright's `timeout` is.
+        match tokio::time::timeout(Duration::from_millis(timeout_ms), navigation).await {
             Ok(result) => result,
             Err(_) => Err(PageError::other(
                 API,

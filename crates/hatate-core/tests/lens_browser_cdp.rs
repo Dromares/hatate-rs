@@ -523,3 +523,39 @@ async fn a_job_ahead_of_shutdown_still_runs_and_a_page_error_is_its_first_line()
     );
     assert_eq!(ran.load(Ordering::SeqCst), 1);
 }
+
+/// Regression: the browser was started from a blocking-pool thread, and `PR_SET_PDEATHSIG` kills
+/// it when the thread that spawned it exits, which a pool thread does after ten idle seconds. A
+/// search that waited ten seconds on a page lost its browser mid-navigation.
+#[tokio::test]
+#[ignore = "starts a real Chromium"]
+async fn the_browser_outlives_a_ten_second_wait() {
+    let rig = Rig::new(|_| Box::pin(async {})).await;
+    let url = rig.site.url("/");
+    let browser = LensBrowser::with_settings(rig.settings(step(move |ctx, job| {
+        let url = url.clone();
+        Box::pin(async move {
+            if job.filename == "slow.jpg" {
+                tokio::time::sleep(std::time::Duration::from_secs(12)).await;
+            }
+            ctx.page().goto(&url, 30_000).await?;
+            Ok(payload("ok"))
+        })
+    })));
+    let slow = browser
+        .fetch(b"image", "slow.jpg", 5.0, true)
+        .await
+        .unwrap();
+    assert_eq!(slow.payloads, ["ok"]);
+    let again = browser
+        .fetch(b"image", "again.jpg", 5.0, true)
+        .await
+        .unwrap();
+    assert_eq!(again.payloads, ["ok"]);
+    assert_eq!(
+        chrome_command_lines(&rig.profile()).len(),
+        1,
+        "the same browser throughout"
+    );
+    browser.shutdown();
+}
