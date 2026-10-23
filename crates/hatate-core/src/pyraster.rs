@@ -128,6 +128,69 @@ pub fn pillow_size(data: &[u8]) -> Result<Option<(u32, u32)>, pyimage::Decompres
 
 /// Everything that is not a JPEG: the `image` crate's decoders, mapped to Pillow's modes.
 fn open_other(data: &[u8]) -> Result<Image, OpenError> {
+    if let Some(entry) = ico_entry(data) {
+        // Pillow picks the largest picture of an icon (the lowest colour depth among equals);
+        // the `image` crate picks by colour depth first, and refuses a PNG that is not RGBA.
+        let end = entry.offset.saturating_add(entry.size).min(data.len());
+        let body = data
+            .get(entry.offset..)
+            .ok_or_else(|| os("cannot identify image file"))?;
+        if body.starts_with(b"\x89PNG\r\n\x1a\n") {
+            return open_other(body);
+        }
+        let mut one = Vec::with_capacity(22 + end.saturating_sub(entry.offset));
+        one.extend_from_slice(&[0, 0, 1, 0, 1, 0]);
+        one.extend_from_slice(&data[6 + 16 * entry.index..6 + 16 * entry.index + 12]);
+        one.extend_from_slice(&22u32.to_le_bytes());
+        one.extend_from_slice(&data[entry.offset..end]);
+        return open_other_crate(&one);
+    }
+    open_other_crate(data)
+}
+
+/// The directory entry of an icon that Pillow's `IcoFile` shows first.
+struct IcoEntry {
+    index: usize,
+    offset: usize,
+    size: usize,
+}
+
+/// `IcoFile`'s sort: biggest area first, among equal areas the lowest colour depth, then file order.
+fn ico_entry(data: &[u8]) -> Option<IcoEntry> {
+    if !data.starts_with(&[0, 0, 1, 0]) {
+        return None;
+    }
+    let n = usize::from(u16::from_le_bytes([*data.get(4)?, *data.get(5)?]));
+    let mut best: Option<(u64, u32, IcoEntry)> = None;
+    for i in 0..n {
+        let e = data.get(6 + 16 * i..6 + 16 * i + 16)?;
+        let dim = |b: u8| if b == 0 { 256 } else { u32::from(b) };
+        let (w, h) = (dim(e[0]), dim(e[1]));
+        let bpp = u32::from(u16::from_le_bytes([e[6], e[7]]));
+        let depth = if bpp != 0 {
+            bpp
+        } else if e[2] > 1 {
+            u32::from(e[2]).next_power_of_two().trailing_zeros()
+        } else {
+            256
+        };
+        let area = u64::from(w) * u64::from(h);
+        let entry = IcoEntry {
+            index: i,
+            offset: u32::from_le_bytes([e[12], e[13], e[14], e[15]]) as usize,
+            size: u32::from_le_bytes([e[8], e[9], e[10], e[11]]) as usize,
+        };
+        let better = best
+            .as_ref()
+            .is_none_or(|(a, d, _)| area > *a || (area == *a && depth < *d));
+        if better {
+            best = Some((area, depth, entry));
+        }
+    }
+    best.map(|(_, _, e)| e)
+}
+
+fn open_other_crate(data: &[u8]) -> Result<Image, OpenError> {
     use image::DynamicImage as D;
     // A PNG is decoded from the pixel stream as Pillow reads it, not as the file stands.
     let data = &*crate::pypng::canonical(data).map_err(os)?;
