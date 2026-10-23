@@ -129,6 +129,28 @@ fn the_confirmed_hash_is_read_from_the_first_resolved_status() {
     assert_eq!(extract_confirmed_hash(&json!({})).unwrap(), None);
 }
 
+#[test]
+fn a_hash_that_is_not_a_string_is_refused_not_passed_on() {
+    // DAN-2169 condition 2 (differential class D1): Python would hand `5`, a list or `true` on as
+    // the confirmed hash. A real Hydrus never sends one; here it fails closed.
+    for bad in [
+        json!(5),
+        json!([1]),
+        json!(true),
+        json!({"a": 1}),
+        json!(1.5),
+    ] {
+        let answer = json!({"url_file_statuses": [{"status": 2, "hash": bad}]});
+        let err = extract_confirmed_hash(&answer).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::UnexpectedResponse, "{bad}");
+    }
+    // A falsy non-string (0, an empty list) is "no hash yet", as in Python.
+    for quiet in [json!(0), json!([]), json!(false), json!("")] {
+        let answer = json!({"url_file_statuses": [{"status": 2, "hash": quiet}]});
+        assert_eq!(extract_confirmed_hash(&answer).unwrap(), None, "{quiet}");
+    }
+}
+
 // ---- poll_single_url_import ----
 
 #[tokio::test]
@@ -646,6 +668,54 @@ async fn a_confirmed_import_is_related_before_it_is_reported_and_off_costs_nothi
             .starts_with("Imported, but not marked as a duplicate"),
         "{warning:?}"
     );
+}
+
+#[tokio::test]
+async fn a_non_string_hash_in_the_worker_writes_nothing_and_reports_nothing() {
+    // DAN-2169 condition 2, through the worker: the error leaves `run_import_poll` before the
+    // relationship bookkeeping, the entry's signal or the finish signal, and Hydrus is asked
+    // nothing but the one status check.
+    let a = entry("a");
+    let items = [PollItem {
+        entry: &a,
+        url: "https://x.test/a".into(),
+    }];
+    let server = TestServer::http(|q| {
+        if q.target.starts_with("/add_urls/get_url_files") {
+            json_reply(json!({"url_file_statuses": [{"status": 2, "hash": 5}]}))
+        } else {
+            json_reply(json!({}))
+        }
+    })
+    .await;
+    let client = HydrusClient::new(&hydrus_settings(&server.url(""))).unwrap();
+    let on = settings_with(|s| s.set_hydrus_duplicate_relationships = true);
+    let mut events = Events::default();
+    let err = run_import_poll(
+        &client,
+        &items,
+        &PollWorkerOptions {
+            settings: Some(&on),
+            ..PollWorkerOptions::default()
+        },
+        &|| false,
+        &mut events,
+        &ManualClock::new(0.0, 0.0),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::UnexpectedResponse);
+    assert!(events.resolved.is_empty());
+    assert_eq!(events.finished, 0);
+    let targets: Vec<String> = server.recorded().iter().map(|q| q.target.clone()).collect();
+    assert_eq!(targets.len(), 1, "{targets:?}");
+    assert!(targets[0].starts_with("/add_urls/get_url_files"));
+    assert_eq!(
+        a.hydrus_hash,
+        Some("b".repeat(64)),
+        "the entry is untouched"
+    );
+    assert!(a.sent_to_hydrus);
 }
 
 #[tokio::test]

@@ -304,6 +304,25 @@ async fn an_answer_that_is_not_an_object_is_pythons_attribute_error() {
     assert_eq!(err.kind(), ErrorKind::UnexpectedResponse);
 }
 
+#[tokio::test]
+async fn an_address_python_cannot_parse_is_told_to_the_person_without_library_words() {
+    // DAN-2169 condition 3. Python's `urlparse` raises `ValueError("Invalid IPv6 URL")`; the Rust
+    // error carries the class, and what a person is shown is Hatate's own text (differential
+    // class D2: only the internal `message()` differs).
+    let net = NetClient::new(NetConfig::default()).unwrap();
+    let err = hi::forwarded_url(&net, "https://[::1/x").await.unwrap_err();
+    assert!(matches!(err, hi::UrlImportError::Url(_)), "{err:?}");
+    assert_eq!(err.kind(), ErrorKind::InvalidInput);
+    let shown = err.user_message();
+    assert_eq!(
+        shown,
+        "The address of this match is not one Hatate can read, so it was not sent."
+    );
+    for word in ["IPv6", "ValueError", "urlparse", "[::1", "Invalid"] {
+        assert!(!shown.contains(word), "{word} in {shown:?}");
+    }
+}
+
 // ---- send_url_to_importer ----
 
 #[tokio::test]
