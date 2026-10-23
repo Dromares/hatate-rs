@@ -120,7 +120,7 @@ servers with the same raw HTTP, and compare. Log: `worktrees/DAN-2166-differenti
 
 | Part | Cases | Differing |
 |---|---|---|
-| MCP wire, raw HTTP, seeds 1 to 3 (protocol, envelopes, parse errors, headers, methods, paths, all fourteen tools under six gate configurations with dry-run and live flips, 200 generated argument sets per tool per seed, audit files after each group including rotation at 900, 1 and 0 bytes) | 3 x 3,313 | 33 (11 distinct inputs: J1, J2) |
+| MCP wire, raw HTTP, seeds 1 to 3 (protocol, envelopes, parse errors, UTF-16 and UTF-32 bodies with and without a byte-order mark, headers, methods, paths, all fourteen tools under six gate configurations with dry-run and live flips, 200 generated argument sets per tool per seed, audit files after each group including rotation at 900, 1 and 0 bytes) | 3 x 3,337 | 39 (13 distinct inputs: J1, J2) |
 | Direct: `gate`, `refusal_message`, `is_dry_runnable`, registry, `mapped`/`unaccounted_review_action_ids` (also over mutated action sets), `_redact`, `to_content_blocks`, audit line, seeds 1 to 3 | 3 x 1,246 | 0 |
 | Controller: disabled, blank token, unencodable token, invalid ports, busy port (twice), start while running, restart, restart onto a busy port, stop twice | 21 | 0 |
 | Bridge transport against a scripted server (SSE and JSON bodies, charsets, session id, blank lines, redirects, server down for each id shape, read timeout, closed without reply) | 49 | 3 (H1) |
@@ -134,10 +134,19 @@ version). **T1** the pydantic `title` keys are reproduced, so the grant is not u
 
 Not matched, with the counts in the log:
 
-- **J1, JSON parser edge cases (4 inputs).** Python's `json.loads` accepts `NaN`, `Infinity` and
-  `-Infinity`, a lone surrogate escape (`"\ud800"`) and nesting past 128 levels; `serde_json`
-  does not. Python then answers `400 -32602` with pydantic's envelope text; Rust answers
-  `400 -32700 Parse error: ...`. Also not handled, and not probed: UTF-16 and UTF-32 bodies.
+- **J1, JSON text that Python accepts and this server cannot hold (6 inputs).** Python's
+  `json.loads` accepts `NaN`, `Infinity` and `-Infinity`, a lone surrogate escape (`"\ud800"`)
+  and nesting past 128 levels; `serde_json` does not. Python then answers `400 -32602` with
+  pydantic's envelope text; Rust answers `400 -32700 Parse error: ...`. The same holds for a
+  lone surrogate that arrives as text rather than as an escape: a UTF-16 body with an unpaired
+  surrogate, and UTF-8 bytes that encode one (`ED A0 80`, which `surrogatepass` lets through).
+  Python answers `200`; Rust answers `500 Error handling POST request`, because a Rust `str`
+  cannot hold the character. Ruled an accepted class by Cloud on DAN-2190.
+  UTF-16 and UTF-32 bodies are not in this class: `json.loads(bytes)` picks the encoding from
+  a byte-order mark or from where the NUL bytes of the first four bytes fall, and the server
+  does the same (`decode_json_bytes`). All 22 probe inputs (each of UTF-16 LE/BE and UTF-32
+  LE/BE with and without a mark, each with a plain ping and a tool call, a UTF-8 mark, odd lengths, a code point past U+10FFFF, two- and
+  three-byte bodies) match to the byte.
 - **J2, integers beyond 64 bits (7 inputs).** Python passes them to the handler; the Rust handler
   arguments are `i64`, so the call returns `Error executing tool x: argument out of range`.
   `9223372036854775807` and `-9223372036854775808` match.
