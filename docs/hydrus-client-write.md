@@ -105,8 +105,9 @@ type: 'list')`); a non-string `hash` row in `deletion_states` no longer stops a 
 
 ## 4. What is not matched, with counts
 
-C1, C2, C7, C8 and C9 are the 4.a classes of the same name (`docs/hydrus-client.md` section 4), seen
-again through the write calls; the 4.a text says why each is kept. W1 is new.
+C1, C2 and C7 are the 4.a classes of the same name (`docs/hydrus-client.md` section 4), seen again
+through the write calls; the 4.a text says why each is kept. W1 is new. C8 and C9 are retired (see the
+note after the table).
 
 | Class | What differs | Count | Why it is kept |
 |---|---|---|---|
@@ -114,8 +115,12 @@ again through the write calls; the 4.a text says why each is kept. W1 is new.
 | **C2** typed fields | Python carries a JSON value along untyped; the Rust fields are typed, so the same answer is `Err(UnexpectedResponse)` with a message that says which field. Here: a `page_key` that is not a string; and, in `import_url`, 4.a's `list_tag_services` refusing a service whose `name` is not a string, where Python only raises if its loop reaches that service (`name.strip()` on a number) and otherwise goes on to the POST | 55 operations (16 + 20 + 19); in 14 of them (1 + 7 + 6) Python goes on to make a request the Rust side never makes | a Hydrus never sends these. A typed error before a write is the safe reading; 4.a's code is not changed here |
 | **W1** extra dict key | `deletion_states` returns Python's dict, which also holds a key a row carried as its `hash` when that is a number or a bool; the Rust map holds string hashes only. `delete_files` is unaffected (it looks hashes up by the strings it was given) | 10 operations (2 + 6 + 2) | no caller can look a string hash up under a number. A row whose hash is a list or an object raises in both (`TypeError`, matched) |
 | **C7** control character in the key | an access key holding a control character other than tab: `requests` accepts it and `http.client` sends it; the HTTP stack here cannot form such a header, so no request is made | 53 scenarios (13 + 21 + 19) | a Hydrus access key is 64 hexadecimal digits. The failure names no key |
-| **C8** stale `Content-Type` after a redirect | after a 301, 302 or 303 to a POST, `requests` sends the follow-up GET without `Content-Type`; the Phase 1 net layer keeps it | 69 requests (17 + 21 + 31) | Phase 1 behaviour, not changed here; the header on a bodiless GET does nothing |
-| **C9** relative `Location` | a relative `Location` against a request path with empty segments resolves to `//d` here and `/d` in `urljoin` | 1 request | Phase 1 behaviour, not changed here |
+
+C8 and C9 are fixed, not kept: the first run of this differential, before DAN-2134, found a stale
+`Content-Type` on the follow-up GET after a 301, 302 or 303 answer to a POST (C8, 69 requests, 17 + 21 + 31
+over the three seeds) and a relative `Location` joined against a path with empty segments (C9, 1 request). DAN-2134
+fixed both in the net layer (`docs/net.md` section 8, `docs/hydrus-client.md` section 4), and the
+class numbers are not reused. The counts were measured before the fix; they are no longer differences.
 
 A key with a character past U+00FF is not in the differential: Python's `HTTPAdapter.send` sits above
 `http.client`, which is where the `UnicodeEncodeError` is raised, so the scripted transport cannot
