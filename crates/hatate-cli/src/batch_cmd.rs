@@ -165,7 +165,7 @@ async fn batch(opts: BatchOptions) -> i32 {
             return 1;
         }
     };
-    let live = Arc::new(LiveEngines::new(net.clone(), clock.clone()));
+    let live = Arc::new(LiveEngines::for_profile(net.clone(), clock.clone(), &paths));
     let runner = EngineRunner::new(live.clone(), clock.clone());
     let engine = SearchEngine::new(net, runner, paths.clone(), clock.clone());
 
