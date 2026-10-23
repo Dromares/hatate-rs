@@ -100,11 +100,12 @@ fn free_port() -> u16 {
 }
 
 fn settings(port: u16) -> McpSettings {
-    let mut s = McpSettings::default();
-    s.enabled = true;
-    s.port = i64::from(port);
-    s.token = TOKEN.into();
-    s
+    McpSettings {
+        enabled: true,
+        port: i64::from(port),
+        token: TOKEN.into(),
+        ..McpSettings::default()
+    }
 }
 
 struct Response {

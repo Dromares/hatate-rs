@@ -360,7 +360,12 @@ impl Core {
     fn validate_headers(&self, t: &Transport, req: &Request) -> Option<Reply> {
         match req.header("mcp-session-id") {
             None => {
-                return Some(self.error(t, 400, "Bad Request: Missing session ID", INVALID_REQUEST));
+                return Some(self.error(
+                    t,
+                    400,
+                    "Bad Request: Missing session ID",
+                    INVALID_REQUEST,
+                ));
             }
             Some(id) if id.is_empty() => {
                 return Some(self.error(

@@ -80,13 +80,13 @@ pub fn format_errors(model_name: &str, errors: &[FieldError]) -> String {
     out
 }
 
-fn err(loc: &[String], msg: &'static str, kind: &'static str, input: &Value) -> FieldError {
-    FieldError {
+fn err(loc: &[String], msg: &'static str, kind: &'static str, input: &Value) -> Box<FieldError> {
+    Box::new(FieldError {
         loc: loc.to_vec(),
         msg,
         kind,
         input: input.clone(),
-    }
+    })
 }
 
 /// Python's `str.strip()` set, which pydantic-core applies before parsing a number.
@@ -116,7 +116,7 @@ fn clean_int_digits(body: &str) -> Option<String> {
 }
 
 /// `int` in lax mode.
-pub fn coerce_int(v: &Value, loc: &[String]) -> Result<Value, FieldError> {
+pub fn coerce_int(v: &Value, loc: &[String]) -> Result<Value, Box<FieldError>> {
     match v {
         Value::Bool(b) => Ok(Value::from(i64::from(*b))),
         Value::Number(n) if !n.is_f64() => Ok(v.clone()),
@@ -154,7 +154,7 @@ fn float_to_int(x: f64) -> Option<Value> {
     }
 }
 
-fn parse_int_str(s: &str, input: &Value, loc: &[String]) -> Result<Value, FieldError> {
+fn parse_int_str(s: &str, input: &Value, loc: &[String]) -> Result<Value, Box<FieldError>> {
     let bad = || {
         err(
             loc,
@@ -193,7 +193,7 @@ fn parse_int_str(s: &str, input: &Value, loc: &[String]) -> Result<Value, FieldE
 }
 
 /// `bool` in lax mode.
-pub fn coerce_bool(v: &Value, loc: &[String]) -> Result<Value, FieldError> {
+pub fn coerce_bool(v: &Value, loc: &[String]) -> Result<Value, Box<FieldError>> {
     let bad = || {
         err(
             loc,
@@ -221,7 +221,7 @@ pub fn coerce_bool(v: &Value, loc: &[String]) -> Result<Value, FieldError> {
 }
 
 /// `Optional[str]` in lax mode: `None` or a `str`, nothing else.
-pub fn coerce_optional_str(v: &Value, loc: &[String]) -> Result<Value, FieldError> {
+pub fn coerce_optional_str(v: &Value, loc: &[String]) -> Result<Value, Box<FieldError>> {
     match v {
         Value::Null | Value::String(_) => Ok(v.clone()),
         _ => Err(err(loc, "Input should be a valid string", "string_type", v)),
@@ -235,7 +235,7 @@ pub fn coerce_list_of_int(
     errors: &mut Vec<FieldError>,
 ) -> Option<Value> {
     let Value::Array(items) = v else {
-        errors.push(err(loc, "Input should be a valid list", "list_type", v));
+        errors.push(*err(loc, "Input should be a valid list", "list_type", v));
         return None;
     };
     let mut out = Vec::with_capacity(items.len());
@@ -247,7 +247,7 @@ pub fn coerce_list_of_int(
             Ok(value) => out.push(value),
             Err(e) => {
                 ok = false;
-                errors.push(e);
+                errors.push(*e);
             }
         }
     }
@@ -362,13 +362,13 @@ mod tests {
     fn error_text_is_pydantics() {
         let e = coerce_int(&json!("x"), &loc()).unwrap_err();
         assert_eq!(
-            format_errors("get_entryArguments", &[e]),
+            format_errors("get_entryArguments", &[*e]),
             "1 validation error for get_entryArguments\nrow\n  Input should be a valid integer, unable to parse string \
              as an integer [type=int_parsing, input_value='x', input_type=str]\n    For further information visit \
              https://errors.pydantic.dev/2.13/v/int_parsing"
         );
         let long = coerce_int(&json!("a".repeat(60)), &loc()).unwrap_err();
-        let text = format_errors("m", &[long]);
+        let text = format_errors("m", &[*long]);
         assert!(
             text.contains(&format!(
                 "input_value='{}...{}'",

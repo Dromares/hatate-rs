@@ -6,6 +6,7 @@
 //! they implement.
 
 pub mod audit;
+pub mod bridge;
 pub mod content;
 pub mod handlers;
 pub mod protocol;
@@ -60,3 +61,20 @@ impl std::fmt::Display for McpError {
 }
 
 impl std::error::Error for McpError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_shape_has_a_stable_kind_and_no_raw_text_in_the_user_message() {
+        let e = McpError::unknown_tool("rm -rf /home/user/.config?token=synthetic");
+        assert_eq!(e.kind(), ErrorKind::McpUnknownTool);
+        let user = e.user_message();
+        assert!(
+            !user.contains("token") && !user.contains("/home") && !user.contains("os error"),
+            "{user}"
+        );
+        assert!(e.detail().contains("unknown tool"));
+    }
+}

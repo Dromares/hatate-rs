@@ -119,7 +119,7 @@ impl McpServerController {
         let Ok(port16) = u16::try_from(port) else {
             return self.fail(
                 ErrorKind::McpServerStart,
-                format!("Could not start the MCP server: bind(): port must be 0-65535."),
+                "Could not start the MCP server: bind(): port must be 0-65535.".to_owned(),
             );
         };
         let listener = match StdListener::bind((HOST, port16))

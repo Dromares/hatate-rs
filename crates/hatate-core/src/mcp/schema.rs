@@ -194,7 +194,7 @@ pub fn validate(tool: &str, raw: &Map<String, Value>) -> Result<Map<String, Valu
             Ok(v) => {
                 out.insert(p.name.to_owned(), v);
             }
-            Err(e) => errors.push(e),
+            Err(e) => errors.push(*e),
         }
     }
     if errors.is_empty() {
