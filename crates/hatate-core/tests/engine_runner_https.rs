@@ -31,10 +31,9 @@ fn net(pki: &TestPki) -> NetClient {
 }
 
 fn settings() -> Settings {
-    let paths = hatate_core::paths::Paths::from_lookup(|k| {
-        (k == "HOME").then(|| "/home/test".into())
-    })
-    .unwrap();
+    let paths =
+        hatate_core::paths::Paths::from_lookup(|k| (k == "HOME").then(|| "/home/test".into()))
+            .unwrap();
     let mut s = Settings::with_defaults(&paths);
     s.enable_pawchive = false;
     s
@@ -154,7 +153,11 @@ async fn the_runner_reaches_local_https_engines_through_the_binaries_constructor
         errors,
         vec!["Google Lens: not searched (it stood down earlier this run)"]
     );
-    assert_eq!(clock.slept(), 0.0, "a blocked Lens does not wait for its turn");
+    assert_eq!(
+        clock.slept(),
+        0.0,
+        "a blocked Lens does not wait for its turn"
+    );
 
     // A new search clears the stand-down; the pacing then asks the clock for the 45 s spacing.
     live.lens.reset_blocked_flag();
