@@ -53,6 +53,7 @@ pub mod tag_band_metrics;
 pub mod tag_borrowing;
 pub mod tag_rules;
 pub mod timeutil;
+pub mod upscale_detect;
 
 /// Crate name, used by the placeholder test below.
 pub const NAME: &str = "hatate-core";
