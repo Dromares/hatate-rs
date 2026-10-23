@@ -5,7 +5,6 @@
 //! marker (see [`crate::similarity_display`]); a missing fact is left out, not written as
 //! "unknown"; and with no match at all there is no note.
 
-use crate::engine_ids::reports_real_similarity;
 use crate::model::Entry;
 use crate::similarity_display::{MEASURED_NOTE, UNMEASURED_NOTE, similarity_label};
 
@@ -30,7 +29,8 @@ pub fn note_name(configured: &str) -> String {
 /// time (`%Y-%m-%d %H:%M`: to the minute, biggest unit first).
 ///
 /// The entry's `booru_name`, `similarity` and `similarity_measured` are the selected candidate's
-/// own (`ImageEntry.select_candidate` copies them), so they are read from it.
+/// own (`ImageEntry.select_candidate` copies them), so they are read from it, or from what a
+/// cached result's dead matches left behind (the `stale_*` fields, Phase 4.g).
 pub fn provenance_note(entry: &Entry, local_stamp: impl FnOnce() -> String) -> Option<String> {
     let selected = entry.selected_candidate();
     let engine = selected.map_or("", |c| c.engine.as_str());
@@ -43,15 +43,12 @@ pub fn provenance_note(entry: &Entry, local_stamp: impl FnOnce() -> String) -> O
     if !engine.is_empty() {
         lines.push(format!("Engine: {engine}"));
     }
-    if let Some(site) = selected
-        .and_then(|c| c.source_name.as_deref())
-        .filter(|s| !s.is_empty())
-    {
+    if let Some(site) = entry.booru_name().filter(|s| !s.is_empty()) {
         lines.push(format!("Site: {site}"));
     }
-    if let Some(c) = selected {
-        let measured = c.similarity_measured || reports_real_similarity(Some(&c.engine));
-        let label = similarity_label(Some(c.similarity), measured);
+    if let Some(similarity) = entry.similarity() {
+        let measured = entry.similarity_measured();
+        let label = similarity_label(Some(similarity), measured);
         let note = if measured {
             MEASURED_NOTE
         } else {
