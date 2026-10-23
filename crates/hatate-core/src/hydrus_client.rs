@@ -225,7 +225,7 @@ impl HydrusError {
                     .to_owned()
             }
             // The MCP kinds belong to `mcp`; a Hydrus call never builds one.
-            ErrorKind::McpUnknownTool => {
+            ErrorKind::McpUnknownTool | ErrorKind::McpServerStart | ErrorKind::McpPortBusy => {
                 "Hydrus failed in a way Hatate does not expect. Try again.".to_owned()
             }
         }

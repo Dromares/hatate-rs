@@ -8,8 +8,10 @@
 pub mod audit;
 pub mod content;
 pub mod handlers;
+pub mod protocol;
 pub mod pyvalidate;
 pub mod schema;
+pub mod server;
 pub mod tools;
 
 use crate::error::ErrorKind;

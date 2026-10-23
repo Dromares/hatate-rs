@@ -17,11 +17,16 @@ crc32fast = "1"
 # zlib inflate of PNG text and ICC chunks, for `pymeta`. Already in the lockfile through `png`.
 flate2 = "1"
 http = "1"
+http-body-util = "0.1"
+# The MCP server's HTTP/1 listener (loopback), the same hyper reqwest already builds.
+hyper = { version = "1", default-features = false, features = ["server", "http1"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 # NFKC for `pyurl`'s netloc check (`urllib.parse._checknetloc`). Already in the lockfile through
 # `url` -> `idna`, so no new crate is built.
 icu_normalizer = { version = "2.1", default-features = false, features = ["compiled_data"] }
 image = { version = "0.25.9", default-features = false, features = ["png", "jpeg", "gif", "bmp", "webp", "tiff", "ico", "pnm", "tga"] }
 jpeg-encoder = "0.6.1"
+getrandom = "0.4"
 libc = "0.2"
 # The WHATWG named-character-reference table, for `pycompat::html_unescape`. Already in the
 # lockfile through scraper's html5ever, so no new crate.
@@ -39,7 +44,7 @@ scraper = "0.29.0"
 sha2 = "0.10"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
-tokio = { version = "1", features = ["rt", "time", "sync", "macros"] }
+tokio = { version = "1", features = ["rt", "time", "sync", "macros", "net"] }
 tower = { version = "0.5", default-features = false, features = ["retry", "util"] }
 tracing = "0.1"
 url = "2"

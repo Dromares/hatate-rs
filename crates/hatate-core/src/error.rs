@@ -55,4 +55,8 @@ pub enum ErrorKind {
     HashMismatch,
     /// A name that is not in the MCP tool registry reached a registry lookup.
     McpUnknownTool,
+    /// The MCP server could not start (blank token, unusable settings).
+    McpServerStart,
+    /// The port the MCP server was asked to listen on is taken.
+    McpPortBusy,
 }
