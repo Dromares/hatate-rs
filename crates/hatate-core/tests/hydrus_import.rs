@@ -1057,3 +1057,168 @@ fn the_tag_filter_is_off_by_default_and_literal_when_on() {
         "on with nothing ticked sends nothing"
     );
 }
+
+// ---- the real-picture verdicts of test_hydrus_duplicate_relationships.TestVerdict ----
+
+/// `_pattern(size)`: a picture with enough structure to hash meaningfully.
+fn pattern(size: u32) -> impl Fn(u32, u32) -> [u8; 3] {
+    move |x, y| {
+        let _ = size;
+        [
+            ((x * 3 + y) % 256) as u8,
+            ((x * x + y * 7) % 256) as u8,
+            ((x + y * 5) % 256) as u8,
+        ]
+    }
+}
+
+#[test]
+fn an_edited_variant_is_an_alternate_and_its_measured_distances_are_the_ones_the_python_suite_states()
+ {
+    use hatate_core::image_compare::{Source, compare_to_local, local_prints};
+    let dir = scratch("alternate");
+    let local = dir.join("l.png");
+    std::fs::write(&local, png_bytes(240, 240, pattern(240))).unwrap();
+    // A third of the picture papered over.
+    let edited = png_bytes(240, 240, |x, y| {
+        if y >= 168 {
+            [250, 250, 250]
+        } else {
+            pattern(240)(x, y)
+        }
+    });
+
+    let measured = compare_to_local(
+        local_prints(Source::Path(&local)).as_ref(),
+        Source::Bytes(&edited),
+    );
+    assert_eq!(
+        (measured.distance, measured.fine_distance),
+        (Some(7), Some(21)),
+        "64-bit 7, 256-bit 21"
+    );
+    assert_eq!(
+        hi::duplicate_verdict(&local, &edited),
+        Some(hi::Verdict::Alternate)
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn an_alternate_is_filed_as_an_alternate_and_crowns_nobody() {
+    let dir = scratch("relate-alt");
+    let mut entry = entry_for(&dir, None);
+    std::fs::write(&entry.path, png_bytes(240, 240, pattern(240))).unwrap();
+    entry.hydrus_hash = Some(LOCAL.to_owned());
+    let edited = png_bytes(240, 240, |x, y| {
+        if y >= 168 {
+            [250, 250, 250]
+        } else {
+            pattern(240)(x, y)
+        }
+    });
+    let on = settings_with(|s| s.set_hydrus_duplicate_relationships = true);
+    let (server, client) = world(Fake::new()).await;
+
+    let got =
+        hi::record_duplicate_relationship(&entry, &client, Some(&on), Some(LOCAL), &edited, NEW)
+            .await
+            .unwrap();
+
+    assert_eq!(got, None);
+    assert_eq!(
+        targets(&server),
+        [
+            "/get_files/file_metadata",
+            "/verify_access_key",
+            "/manage_file_relationships/set_file_relationships"
+        ],
+        "no set_kings for an alternate"
+    );
+    let rel: Value = serde_json::from_slice(&server.recorded()[2].body).unwrap();
+    assert_eq!(rel["relationships"][0]["relationship"], 3);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn a_failure_crowning_the_new_file_is_reported_not_raised() {
+    let dir = scratch("relate-kings");
+    let entry = entry_for(&dir, None);
+    let pic = png_bytes(64, 64, noisy(1));
+    std::fs::write(&entry.path, &pic).unwrap();
+    let on = settings_with(|s| s.set_hydrus_duplicate_relationships = true);
+    let mut fake = Fake::new();
+    fake.fail = vec!["/manage_file_relationships/set_kings"];
+    let (_server, client) = world(fake).await;
+
+    let got = hi::record_duplicate_relationship(&entry, &client, Some(&on), Some(LOCAL), &pic, NEW)
+        .await
+        .unwrap();
+
+    assert!(
+        got.unwrap()
+            .starts_with("Imported, but not marked as a duplicate: ")
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// ---- the note, end to end through the upload (test_hydrus_provenance_note.TestFeatureOn/Degrades) ----
+
+#[tokio::test]
+async fn an_upload_writes_the_note_last_and_reports_a_failed_note_beside_its_own_warnings() {
+    let dir = scratch("upload-note");
+    let on = settings_with(|s| s.write_hydrus_provenance_note = true);
+
+    let (server, client) = world(Fake::new()).await;
+    let mut entry = entry_for(&dir, Some("https://e.example/p/1"));
+    let result = hi::send_file_upload(&mut entry, &client, Some(&on), &FixedClock)
+        .await
+        .unwrap();
+    assert_eq!(result, hi::ImportResult::ok());
+    assert_eq!(
+        targets(&server),
+        [
+            "/add_files/add_file",
+            "/add_urls/associate_url",
+            "/get_files/file_metadata",
+            "/verify_access_key",
+            "/add_notes/set_notes"
+        ]
+    );
+
+    let mut fake = Fake::new();
+    fake.fail = vec!["/add_urls/associate_url", "/add_notes/set_notes"];
+    let (_server, client) = world(fake).await;
+    let mut entry = entry_for(&dir, Some("https://e.example/p/1"));
+    let result = hi::send_file_upload(&mut entry, &client, Some(&on), &FixedClock)
+        .await
+        .unwrap();
+    let warning = result.warning.unwrap();
+    assert!(warning.starts_with("URL not added: "), "{warning}");
+    assert!(
+        warning.contains("; Imported, but no source note was written: "),
+        "{warning}"
+    );
+    assert!(result.success && entry.sent_to_hydrus);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn no_hash_writes_no_note_and_the_note_settings_default_to_off_and_blank() {
+    let (server, client) = world(Fake::new()).await;
+    let dir = scratch("note-nohash");
+    let entry = entry_for(&dir, Some("https://e.example/p/1"));
+    let on = settings_with(|s| s.write_hydrus_provenance_note = true);
+    assert_eq!(
+        hi::write_provenance_note(&entry, &client, Some(&on), "", &FixedClock)
+            .await
+            .unwrap(),
+        None
+    );
+    assert_eq!(server.request_count(), 0);
+
+    let defaults = settings_with(|_| {});
+    assert!(!defaults.write_hydrus_provenance_note && !defaults.set_hydrus_duplicate_relationships);
+    assert_eq!(defaults.hydrus_provenance_note_name, "");
+    let _ = std::fs::remove_dir_all(dir);
+}
