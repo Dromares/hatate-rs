@@ -549,7 +549,12 @@ fn jpeg(data: &[u8]) -> Option<(Info, Option<Vec<u8>>)> {
                         "APP" => jpeg_app(marker, seg, &mut info, &mut icclist, &mut exif),
                         "COM" => info.set("comment", Val::Bytes(seg.to_vec())),
                         "SOF" => {
-                            if seg.len() < 6 || seg[0] != 8 || ![1, 3, 4].contains(&seg[5]) {
+                            // The layer table is read three bytes at a time: a short last entry is an IndexError.
+                            if seg.len() < 6
+                                || seg[0] != 8
+                                || ![1, 3, 4].contains(&seg[5])
+                                || (seg.len() - 6) % 3 != 0
+                            {
                                 return None;
                             }
                             size_seen = true;
@@ -981,6 +986,8 @@ fn png_frame_count(data: &[u8]) -> Option<u64> {
 /// raises; both read as not animated.
 fn jpeg_frame_count(data: &[u8]) -> Option<u64> {
     let (info, _) = jpeg(data)?;
+    // `ImageFile.__init__`: a side of 0 is "not identified by this driver".
+    crate::pyimage::image_size(data)?;
     let Some(Val::Bytes(mp)) = info.get("mp") else {
         return Some(1);
     };
@@ -1014,9 +1021,12 @@ fn jpeg_frame_count(data: &[u8]) -> Option<u64> {
         };
         for i in 0..usize::from(entries) {
             let at = ifd + 2 + 12 * i;
-            let (Some(tag), Some(kind), Some(count), Some(slot)) =
-                (u16_at(at), u16_at(at + 2), u32_at(at + 4), mp.get(at + 8..at + 12))
-            else {
+            let (Some(tag), Some(kind), Some(count), Some(slot)) = (
+                u16_at(at),
+                u16_at(at + 2),
+                u32_at(at + 4),
+                mp.get(at + 8..at + 12),
+            ) else {
                 break 'load;
             };
             let count = count as usize;

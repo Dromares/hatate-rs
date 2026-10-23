@@ -362,6 +362,88 @@ mod tests {
         assert!(!is_animated(&anim[..anim.len() - 1]));
     }
 
+    const ANIMATED_WEBP: &str = "524946468400000057454250565038580a00000002000000010000010000414e494d06000000000000000000414e4d4628000000000000000000010000010000640000025650384c0f0000002f014000000710fd8ffe0722a2ff0100414e4d4628000000000000000000010000010000640000005650384c0f0000002f014000000710d1fffe0722a2ff0100";
+
+    fn unhex(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn libwebps_demuxer_reads_the_frame_size_from_the_bitstream_and_refuses_unknown_flags() {
+        let anim = unhex(ANIMATED_WEBP);
+        // The width in the first `ANMF` header says 6; the demuxer takes the bitstream's 2.
+        let mut wide = anim.clone();
+        wide[58] = 5;
+        assert!(is_animated(&wide));
+        // A reserved `VP8X` flag bit: the demuxer refuses the file, so Pillow does not open it.
+        let mut flagged = anim.clone();
+        flagged[20] |= 1;
+        assert!(!is_animated(&flagged));
+        // A frame that does not fit the canvas.
+        let mut off = anim.clone();
+        off[52] = 1;
+        assert!(!is_animated(&off));
+    }
+
+    fn mpo(count_of_first_tag: u32) -> Vec<u8> {
+        let mut jpeg = Vec::new();
+        image::RgbImage::new(24, 18)
+            .write_to(
+                &mut std::io::Cursor::new(&mut jpeg),
+                image::ImageFormat::Jpeg,
+            )
+            .unwrap();
+        // The MP index: version, number of images (3), the entry list (3 x 16 bytes) after it.
+        let mut mp = b"II*\0".to_vec();
+        mp.extend_from_slice(&8u32.to_le_bytes());
+        mp.extend_from_slice(&3u16.to_le_bytes());
+        for (tag, kind, count, value) in [
+            (
+                0xB000u16,
+                7u16,
+                count_of_first_tag,
+                u32::from_le_bytes(*b"0100"),
+            ),
+            (0xB001, 4, 1, 3),
+            (0xB002, 7, 48, 50),
+        ] {
+            mp.extend_from_slice(&tag.to_le_bytes());
+            mp.extend_from_slice(&kind.to_le_bytes());
+            mp.extend_from_slice(&count.to_le_bytes());
+            mp.extend_from_slice(&value.to_le_bytes());
+        }
+        mp.extend_from_slice(&[0; 4 + 48]);
+        let mut segment = b"MPF\0".to_vec();
+        segment.extend_from_slice(&mp);
+        let mut out = jpeg[..2].to_vec();
+        out.extend_from_slice(&[0xff, 0xe2]);
+        out.extend_from_slice(&u16::try_from(segment.len() + 2).unwrap().to_be_bytes());
+        out.extend_from_slice(&segment);
+        out.extend_from_slice(&jpeg[2..]);
+        out
+    }
+
+    #[test]
+    fn an_mpo_is_animated_and_a_directory_that_runs_out_before_the_image_count_is_not() {
+        assert!(is_animated(&mpo(4)));
+        // The first entry claims 0xff00 bytes of data past the end: Pillow's TIFF reader stops
+        // there with the tags it has, which is none of the two that matter.
+        assert!(!is_animated(&mpo(0xff00)));
+    }
+
+    #[test]
+    fn a_jpeg_whose_frame_header_ends_mid_component_is_not_opened() {
+        let mut jpeg = mpo(4);
+        let sof = jpeg.windows(2).position(|w| w == [0xff, 0xc0]).unwrap();
+        jpeg[sof + 3] += 1;
+        jpeg.push(0);
+        assert!(!is_animated(&jpeg));
+        assert_eq!(crate::pyimage::image_size(&jpeg), None);
+    }
+
     #[test]
     fn an_animated_png_is_animated_and_one_with_a_single_frame_is_not() {
         let mut apng = png(image::Rgba([1, 2, 3, 255]));
