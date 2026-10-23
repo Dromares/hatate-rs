@@ -909,3 +909,30 @@ pub async fn find_creators_for_ui(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::net::NetConfig;
+
+    /// `core/pawchive_index.py`: the crawl's `timeout=30`, `find_creators`' `timeout=120`. The
+    /// integration tests shorten both with `with_timeouts`, so this is the only test that sees
+    /// what the shipped constructor sets.
+    #[test]
+    fn default_timeouts_are_pythons_30_and_120_seconds() {
+        let net = NetClient::new(NetConfig::default()).unwrap();
+        let crawler = PawchiveCrawler::new(net);
+        assert_eq!(crawler.crawl_timeout, 30.0);
+        assert_eq!(crawler.list_timeout, 120.0);
+        let crawl = crawler
+            .request("https://pawchive.example/x", None, crawler.crawl_timeout)
+            .unwrap();
+        let list = crawler
+            .request("https://pawchive.example/x", None, crawler.list_timeout)
+            .unwrap();
+        assert_eq!(crawl.timeout, Duration::from_secs(30));
+        assert_eq!(list.timeout, Duration::from_secs(120));
+    }
+}
