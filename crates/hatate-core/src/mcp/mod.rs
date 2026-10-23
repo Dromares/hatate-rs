@@ -22,7 +22,7 @@ use crate::error::ErrorKind;
 /// that could be `0.0.0.0` is a setting that, for somebody, eventually will be.
 pub const HOST: &str = "127.0.0.1";
 
-/// An MCP-layer failure with the Phase 6 shape: a stable kind, a message for the user that
+/// An MCP-layer failure with the Phase 6 shape: a fixed kind, a message for the user that
 /// carries no path, token or OS text, and the raw detail for a log.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpError {
@@ -68,7 +68,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn error_shape_has_a_stable_kind_and_no_raw_text_in_the_user_message() {
+    fn error_shape_has_a_fixed_kind_and_no_raw_text_in_the_user_message() {
         let e = McpError::unknown_tool("rm -rf /home/user/.config?token=synthetic");
         assert_eq!(e.kind(), ErrorKind::McpUnknownTool);
         let user = e.user_message();

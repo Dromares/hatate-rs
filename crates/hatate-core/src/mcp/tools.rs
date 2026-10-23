@@ -212,7 +212,7 @@ pub fn mapped_review_action_ids() -> BTreeSet<&'static str> {
 }
 
 /// `unaccounted_review_action_ids()`: review action ids that are neither mapped to a tool nor in
-/// the documented exclusion list, sorted. Empty means parity holds.
+/// the documented exclusion list, sorted. Empty means the tool surface covers every action.
 pub fn unaccounted_review_action_ids() -> Vec<&'static str> {
     unaccounted_in(&REVIEW_ACTION_IDS)
 }
