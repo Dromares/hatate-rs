@@ -108,7 +108,7 @@ insertion, duplication and swapping), listing answers of every shape, Stop after
 stop callback (197 crawls stopped), refreshes over an index that already knows some pages, and
 service and user ids with spaces, `%`, `+`, `;`, `&`, `=`, `'` and non-ASCII characters. `find` covers
 the cache absent, fresh, one second short of a week, stale, corrupt, `null`, not UTF-8, a list of
-non-objects, an object, a number and a string; the remote list of every shape and 20 status codes;
+non-objects, an object, a number and a string; the remote list of every shape and 16 status codes;
 queries that are empty, blank, upper case, non-ASCII or substrings; `favorited` of every JSON type.
 
 **File differential.** For every case that wrote an index, each app's file was opened by the other
