@@ -138,6 +138,8 @@ struct PixelData {
     buf: Vec<u8>,
     /// Where each block (a payload, cut into [`BLOCK`] pieces) ends in `buf`.
     ends: Vec<usize>,
+    /// Where, in the file, the chunk each block came from ends its payload.
+    chunk_ends: Vec<usize>,
     /// The `OSError` or `SyntaxError` text for a decoder that needs more than there is.
     lacking: String,
 }
@@ -165,6 +167,7 @@ fn pixel_data(data: &[u8], first_idat: usize) -> PixelData {
     let mut px = PixelData {
         buf: Vec::new(),
         ends: Vec::new(),
+        chunk_ends: Vec::new(),
         lacking: NOT_PROCESSED.to_string(),
     };
     let mut at = first_idat;
@@ -175,13 +178,28 @@ fn pixel_data(data: &[u8], first_idat: usize) -> PixelData {
         let body = at + 8 + skip;
         let length = length.saturating_sub(skip);
         let end = body.saturating_add(length);
-        let payload = data.get(body.min(data.len())..end.min(data.len())).unwrap_or(&[]);
-        for piece in payload.chunks(BLOCK) {
-            px.buf.extend_from_slice(piece);
-            px.ends.push(px.buf.len());
-        }
-        if end > data.len() {
-            return px;
+        // `load_read` asks for `min(MAXBLOCK, bytes left in the chunk)` and counts what it asked
+        // for, not what it got.
+        let mut done = 0;
+        while done < length {
+            let asked = BLOCK.min(length - done);
+            let from = (body + done).min(data.len());
+            let got = &data[from..(body + done + asked).min(data.len())];
+            if !got.is_empty() {
+                px.buf.extend_from_slice(got);
+                px.ends.push(px.buf.len());
+                px.chunk_ends.push(end);
+            }
+            done += asked;
+            if got.len() < asked {
+                // The file ended inside the payload. An empty read is the end of the data; a
+                // short one is taken, and the next read finds the chunk spent (and no header
+                // after it) or still owed bytes it cannot get.
+                if !got.is_empty() && done == length {
+                    px.lacking = TRUNCATED.to_string();
+                }
+                return px;
+            }
         }
         // The CRC is skipped unread; then the next chunk header decides.
         let next = end + 4;
@@ -202,31 +220,52 @@ fn pixel_data(data: &[u8], first_idat: usize) -> PixelData {
     }
 }
 
+/// Why the pixel stream did not load.
+enum Fail {
+    /// Raised while loading: nothing else is looked at.
+    Now(String),
+    /// The decoder failed and stopped; Pillow still walks the chunks after the data (`load_end`)
+    /// and only then raises, so what that walk raises wins. Holds the file offset it starts from.
+    Later(String, usize),
+}
+
 /// The filtered rows Pillow ends up with, `Err` with its message where it raises.
-fn inflate_rows(px: &PixelData, header: &Header) -> Result<Vec<u8>, String> {
+fn inflate_rows(px: &PixelData, header: &Header) -> Result<(Vec<u8>, usize), Fail> {
     const BROKEN: &str = "broken data stream when reading image file";
+    const UNKNOWN: &str = "unrecognized data stream contents when reading image file";
     let mut inf = Inflate::new(&px.buf);
     let mut blocks = px.ends.iter();
+    let mut fetched = 0usize;
     let mut rows = header.row_lens();
     let Some(first) = rows.next() else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), 0));
     };
-    let mut row_end = first;
+    let (mut row_start, mut row_end) = (0, first);
     // `avail_in == 0`: the next block (or the lack of one) is wanted.
     let mut starved = true;
     loop {
         if starved {
             match blocks.next() {
-                Some(&end) => inf.set_limit(end),
-                None => return Err(px.lacking.clone()),
+                Some(&end) => {
+                    inf.set_limit(end);
+                    fetched += 1;
+                }
+                None => return Err(Fail::Now(px.lacking.clone())),
             }
             starved = !inf.has_input();
             continue;
         }
-        let stop = inf.run(row_end).map_err(|Broken| BROKEN.to_string())?;
+        let stop = inf
+            .run(row_end)
+            .map_err(|Broken| Fail::Later(BROKEN.to_string(), px.chunk_ends[fetched - 1]))?;
         if inf.out.len() == row_end {
+            // `ZipDecode` unfilters each row as it completes; a filter type past 4 stops it.
+            let chunk_end = px.chunk_ends[fetched - 1];
+            if inf.out[row_start] > 4 {
+                return Err(Fail::Later(UNKNOWN.to_string(), chunk_end));
+            }
             let Some(next) = rows.next() else {
-                return Ok(std::mem::take(&mut inf.out));
+                return Ok((std::mem::take(&mut inf.out), chunk_end));
             };
             if stop == Stop::End {
                 // A stream that ends on a row boundary: the rows after it stay zero.
@@ -235,16 +274,40 @@ fn inflate_rows(px: &PixelData, header: &Header) -> Result<Vec<u8>, String> {
                 for len in rows {
                     out.resize(out.len() + len, 0);
                 }
-                return Ok(out);
+                return Ok((out, chunk_end));
             }
+            row_start = row_end;
             row_end += next;
             starved = stop == Stop::Need || !inf.has_input();
         } else {
             match stop {
                 Stop::Need => starved = true,
-                Stop::End | Stop::NeedDict | Stop::Full => return Err(px.lacking.clone()),
+                Stop::End | Stop::NeedDict | Stop::Full => return Err(Fail::Now(px.lacking.clone())),
             }
         }
+    }
+}
+
+/// `PngImageFile.load_end` after the pixel data: every chunk that follows is read through to the
+/// end of its body, and a body the file cuts short is `OSError("Truncated File Read")`. Checksums
+/// are not looked at, and a header that does not parse ends the walk quietly.
+fn trailing_chunks_complete(data: &[u8], payload_end: usize) -> Result<(), String> {
+    let mut at = payload_end;
+    loop {
+        at = at.saturating_add(4);
+        let Some(header) = data.get(at..at.saturating_add(8)) else {
+            return Ok(());
+        };
+        if !is_cid(&header[4..]) || &header[4..] == b"IEND" {
+            return Ok(());
+        }
+        let length = be32(header, 0).map_or(0, |n| n as usize);
+        at += 8;
+        let end = at.saturating_add(length);
+        if end > data.len() {
+            return Err("Truncated File Read".to_string());
+        }
+        at = end;
     }
 }
 
@@ -281,6 +344,14 @@ pub(crate) fn canonical(data: &[u8]) -> Result<Cow<'_, [u8]>, String> {
     if !header.fits() {
         return Ok(Cow::Borrowed(data));
     }
-    let rows = inflate_rows(&pixel_data(data, first_idat), &header)?;
+    let (rows, payload_end) = match inflate_rows(&pixel_data(data, first_idat), &header) {
+        Ok(done) => done,
+        Err(Fail::Now(msg)) => return Err(msg),
+        Err(Fail::Later(msg, payload_end)) => {
+            trailing_chunks_complete(data, payload_end)?;
+            return Err(msg);
+        }
+    };
+    trailing_chunks_complete(data, payload_end)?;
     Ok(Cow::Owned(restate(data, first_idat, &rows)))
 }
