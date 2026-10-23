@@ -79,8 +79,15 @@ struct World {
 }
 
 async fn world(handler: impl Fn(&Recorded) -> Reply + Send + Sync + 'static) -> World {
-    let hosts = ["danbooru.donmai.us"];
-    let pki = TestPki::generate_for(&hosts);
+    world_for_hosts(&["danbooru.donmai.us"], handler).await
+}
+
+/// `world`, with more hosts routed to the local server (the CDN a post's file lives on).
+async fn world_for_hosts(
+    hosts: &[&str],
+    handler: impl Fn(&Recorded) -> Reply + Send + Sync + 'static,
+) -> World {
+    let pki = TestPki::generate_for(hosts);
     let server = TestServer::https(&pki, handler).await;
     let mut cfg = NetConfig::default().with_root_certificate_der(pki.ca_der.clone());
     for host in hosts {
@@ -249,8 +256,48 @@ async fn a_network_error_on_the_booru_page_leaves_the_match_without_tags() {
     w.search(&mut entry).await;
     assert_eq!(entry.candidates.len(), 1);
     assert!(entry.candidates[0].booru_tags.is_empty());
+    assert!(
+        !entry.candidates[0].booru_tags_fetched,
+        "a failed fetch says nothing about the post, so the page stays to be retried"
+    );
     assert_ne!(entry.status, MatchStatus::Good);
     assert_ne!(entry.status, MatchStatus::Searching);
+}
+
+/// The flag the test above pins is what makes a later selection of the same candidate retry: once
+/// the site answers, `fetch_candidate_details` reads the page it could not read the first time.
+#[tokio::test]
+async fn a_candidate_whose_booru_page_failed_is_retried_on_the_next_selection() {
+    let up = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let handler_up = up.clone();
+    let w = world(move |_| {
+        if handler_up.load(std::sync::atomic::Ordering::SeqCst) {
+            json_reply(POST)
+        } else {
+            Reply::aborted()
+        }
+    })
+    .await;
+    w.engines
+        .iqdb
+        .push(Step::Return(Ok(vec![iqdb_match(URL, 96.5)])));
+    let mut entry = w.entry();
+    w.search(&mut entry).await;
+    let mut candidate = entry.candidates[0].clone();
+    assert!(candidate.booru_tags.is_empty());
+    assert!(!candidate.booru_tags_fetched);
+
+    up.store(true, std::sync::atomic::Ordering::SeqCst);
+    w.engine
+        .fetch_candidate_details(&mut candidate, &w.settings, None, None)
+        .await
+        .unwrap();
+    assert!(candidate.booru_tags_fetched);
+    assert_eq!(
+        candidate.booru_tags.len(),
+        7,
+        "six general tags and the artist"
+    );
 }
 
 /// Deadline: a booru page that trickles in past the settings' timeout does not hang the search.
@@ -302,4 +349,70 @@ async fn every_engine_failing_is_an_error_entry_and_is_not_cached() {
     );
     assert!(w.home.cache_files().is_empty());
     assert_eq!(w.server.request_count(), 0);
+}
+
+const CDN: &str = "cdn.donmai.us";
+
+/// A post that states no file size, with a sample image: the match's format and size are not
+/// known from the page, so the top pick is HEADed, and its preview is downloaded.
+const POST_WITHOUT_SIZE: &str = r#"{"id": 5, "image_width": 800, "image_height": 600, "rating": "g",
+    "file_url": "https://cdn.donmai.us/f.png", "large_file_url": "https://cdn.donmai.us/sample.jpg",
+    "tag_string_general": "one two three four five six", "tag_string_artist": "someone"}"#;
+
+fn cdn_world_routes() -> impl Fn(&Recorded) -> Reply + Send + Sync {
+    |req| {
+        if req.target.contains("/posts/5.json") {
+            json_reply(POST_WITHOUT_SIZE)
+        } else if req.method == "HEAD" {
+            Reply::ok("")
+                .header("Content-Type", "image/png")
+                .content_length("4321")
+        } else {
+            Reply::ok(b"preview-bytes".to_vec()).header("Content-Type", "image/jpeg")
+        }
+    }
+}
+
+/// The format/size HEAD and the preview download go to hotlink-protected CDNs, so each carries
+/// the post page as its `Referer` (`referer_for_candidate`). The out-of-repo differential saw 36
+/// HEADs; nothing in the repo asserted either header until this.
+#[tokio::test]
+async fn the_format_head_and_the_preview_download_carry_the_post_page_as_referer() {
+    let w = world_for_hosts(&["danbooru.donmai.us", CDN], cdn_world_routes()).await;
+    w.engines
+        .iqdb
+        .push(Step::Return(Ok(vec![iqdb_match(URL, 96.5)])));
+    let mut entry = w.entry();
+    w.search(&mut entry).await;
+
+    let c = &entry.candidates[0];
+    assert_eq!(
+        c.direct_file_url.as_deref(),
+        Some("https://cdn.donmai.us/f.png")
+    );
+    assert_eq!(
+        c.preview_url.as_deref(),
+        Some("https://cdn.donmai.us/sample.jpg")
+    );
+    assert_eq!(
+        (c.remote_format.as_deref(), c.remote_size_bytes),
+        (Some("PNG"), Some(4321)),
+        "the HEAD's answer reached the candidate"
+    );
+    assert_eq!(c.thumb_bytes.as_deref(), Some(&b"preview-bytes"[..]));
+
+    let seen = w.seen();
+    assert_eq!(
+        seen,
+        [
+            "GET danbooru.donmai.us /posts/5.json",
+            "GET cdn.donmai.us /sample.jpg",
+            "HEAD cdn.donmai.us /f.png",
+        ]
+    );
+    let recorded = w.server.recorded();
+    let preview = &recorded[1];
+    let head = &recorded[2];
+    assert_eq!(preview.header("referer"), Some(URL), "the preview download");
+    assert_eq!(head.header("referer"), Some(URL), "the format HEAD");
 }
