@@ -258,6 +258,11 @@ pub struct Entry {
     /// ([`Entry::selected_candidate`]). Describes this run; not stored.
     #[serde(skip)]
     pub stale_matched_url: Option<String>,
+    /// The same quirk for `ImageEntry.similarity` (Phase 4.g): the score of the match that was
+    /// selected before a cached result's dead matches were dropped. The auto-import threshold
+    /// reads it. Describes this run; not stored.
+    #[serde(skip)]
+    pub stale_similarity: Option<f64>,
 }
 
 impl Entry {
@@ -282,6 +287,7 @@ impl Entry {
             interrupted_mid_search: false,
             last_searched: None,
             stale_matched_url: None,
+            stale_similarity: None,
         }
     }
 
@@ -301,6 +307,14 @@ impl Entry {
         self.selected_candidate()
             .map(|c| c.url.as_str())
             .or(self.stale_matched_url.as_deref())
+    }
+
+    /// `ImageEntry.similarity`: the selected match's score, or the one a cached result's dead
+    /// matches left behind ([`Entry::stale_similarity`]). `None` when the entry has no match.
+    pub fn similarity(&self) -> Option<f64> {
+        self.selected_candidate()
+            .map(|c| c.similarity)
+            .or(self.stale_similarity)
     }
 
     /// `ImageEntry.select_candidate` (`core/models.py:279-298`) as far as it touches stored

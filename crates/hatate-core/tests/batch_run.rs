@@ -187,6 +187,7 @@ impl World {
             reporter: self.reporter.clone(),
             unit_random: &random,
             reset_run_state: &reset,
+            hydrus_client: &|s| hatate_core::hydrus_client::HydrusClient::new(s),
         };
         let outcome = run_batch(&env, folder, entries).await;
         (outcome, sink)
@@ -714,6 +715,7 @@ async fn stop_wakes_a_wait_at_once() {
         reporter: Arc::new(StopOnCountdown(w.stop.clone())),
         unit_random: &random,
         reset_run_state: &reset,
+        hydrus_client: &|s| hatate_core::hydrus_client::HydrusClient::new(s),
     };
     let mut entries = Vec::new();
     let outcome = run_batch(&env, &dir, &mut entries).await;
@@ -969,29 +971,6 @@ async fn a_search_spends_the_interrupted_note() {
     );
     assert!(!entries[0].interrupted_mid_search);
     assert_eq!(entries[0].status, MatchStatus::Good);
-}
-
-#[tokio::test]
-async fn auto_import_on_says_it_is_not_in_this_build_and_carries_on() {
-    let w = world().await;
-    w.settings.lock().unwrap().auto_import_enabled = true;
-    let dir = w.pictures(&["a.png"]);
-    w.match_every_image(1);
-    let mut entries = Vec::new();
-    let (outcome, _) = w.run(&dir, &mut entries).await;
-    assert_eq!(outcome.searched, 1);
-    let lines = w.lines();
-    assert_eq!(
-        lines
-            .iter()
-            .filter(|l| l.contains("auto-import is not in this build yet"))
-            .count(),
-        1
-    );
-    assert!(
-        !w.paths.auto_import_staging_dir().exists(),
-        "no staging directory is made"
-    );
 }
 
 #[tokio::test]

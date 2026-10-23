@@ -13,6 +13,7 @@ use hatate_core::config::Settings;
 use hatate_core::crash_marker::CrashMarkers;
 use hatate_core::engine_backends::LiveEngines;
 use hatate_core::engine_runner::EngineRunner;
+use hatate_core::hydrus_client::HydrusClient;
 use hatate_core::net::{NetClient, NetConfig, install_crypto_provider};
 use hatate_core::paths::Paths;
 use hatate_core::quota_pause::QuotaPauseFile;
@@ -185,6 +186,7 @@ async fn batch(opts: BatchOptions) -> i32 {
     let reset_live = live.clone();
     let quota = move || quota_live.saucenao.is_daily_quota_exhausted();
     let reset = move || reset_live.reset_run_state();
+    let hydrus = |settings: &hatate_core::config::HydrusSettings| HydrusClient::new(settings);
     let env = BatchEnv {
         engine: &engine,
         settings: &settings,
@@ -195,6 +197,7 @@ async fn batch(opts: BatchOptions) -> i32 {
         reporter: reporter.clone(),
         unit_random: &random,
         reset_run_state: &reset,
+        hydrus_client: &hydrus,
     };
 
     let outcome = run_batch(&env, &opts.dir, &mut entries).await;
@@ -219,6 +222,13 @@ async fn batch(opts: BatchOptions) -> i32 {
     match outcome.ending {
         Ending::Finished => 0,
         Ending::PausedForQuota { .. } => 3,
+        Ending::Failed(fault) => {
+            eprintln!(
+                "hatate: the search run stopped on an error: {}",
+                fault.user_message()
+            );
+            1
+        }
         Ending::Stopped if signal == 15 => 143,
         Ending::Stopped => 130,
     }
@@ -242,6 +252,9 @@ fn spawn_signal_handler(stop: Arc<AtomicBool>) {
                 _ = term.recv() => 15,
             };
             if stop.swap(true, Ordering::SeqCst) {
+                // The staging directory of a run in progress goes too; the next run's sweep would
+                // find it otherwise.
+                hatate_core::batch::cleanup_current_staging();
                 eprintln!("hatate: stopping at once, the session was not saved");
                 std::process::exit(128 + which as i32);
             }
