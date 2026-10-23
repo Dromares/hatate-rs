@@ -1,7 +1,7 @@
 //! `core/hydrus_client.py`, the read half (Phase 4.a, DAN-2126): the connection, the services,
 //! search, metadata, tags, thumbnails, files and URL info. The write half (relationships, kings,
-//! notes, deletes, import, URL import, `add_tags`) is Phase 4.b to 4.d; `post_json` and
-//! `post_raw` (`_post`) are here because every write call is built on them.
+//! notes, deletes, import, URL import, `add_tags`) is Phase 4.b (DAN-2129), in `write.rs`; it is
+//! built on `post_json` and `post_raw` (`_post`) here.
 //!
 //! **Transport.** Python calls `requests.get`/`post` straight at the user's own `api_url`, not
 //! through `core/net.py`: no 429 retry, no host wait, no rate-limit bookkeeping. This client does
@@ -40,6 +40,10 @@ use crate::pyrepr::py_repr;
 use crate::pyresponse::PyResponse;
 use crate::pyurl::requote_uri;
 use crate::remote::secs;
+
+mod write;
+
+pub use write::{DUPLICATE_ALTERNATE, DUPLICATE_BETTER, DeletionState, DeletionStates};
 
 /// Hydrus's numeric permission ids, verbatim from `/request_new_permissions` in its Client API
 /// docs: the names on the checkboxes the user ticks.
@@ -190,6 +194,14 @@ impl HydrusError {
             ErrorKind::InvalidInput => "There was nothing to send to Hydrus.".to_owned(),
             ErrorKind::Io => {
                 "Could not save the file from Hydrus. Check that the destination folder exists and can be written to."
+                    .to_owned()
+            }
+            ErrorKind::FileUnreadable => {
+                "Could not read the file to send to Hydrus. Check that it still exists and can be read."
+                    .to_owned()
+            }
+            ErrorKind::ImportRejected => {
+                "Hydrus did not take the file. Look at Hydrus's own import log for the reason."
                     .to_owned()
             }
             // The image kinds belong to `image_diff`; a Hydrus call never builds one.
