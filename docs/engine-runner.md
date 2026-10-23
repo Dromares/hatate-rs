@@ -37,21 +37,24 @@ propagate: an exception that is not the engine's own error type (`YandexError::U
 `GoogleImagesError::Unexpected`, `PawchiveError::HardTimeout`, or a panic). `on_engine_finished` is
 told either way.
 
-## What a build without Google Lens answers
+## What a build without a Lens browser answers
 
-Google Lens is Phase 5. `LiveEngines` answers for it as Python does when the engine cannot run:
+The Google Lens engine half is `docs/google-lens.md` (Phase 5.a). Until 5.b/5.c supply the browser,
+`LiveEngines.lens` is a `LensClient` over `NoBrowser`, whose `LensFetch` answers
+`LensBrowserUnavailable`, so the engine answers as Python does when it cannot run:
 
-* **Google Lens** copies `google_lens.search`'s unavailable path. The pacing `wait_for_turn` runs
-  before every search that is not blocked (45 s between starts, requested of the injected clock). The
-  search reads the file first (`Could not read image: [Errno 2] ...` if it cannot) and then raises
+* The pacing `wait_for_turn` runs before every search that is not blocked (45 s between starts,
+  requested of the injected clock). The search reads the file first (`Could not read image: [Errno 2]
+  ...` if it cannot), runs `prepare_for_lens` (a file Python refuses as "not in a format Google Lens
+  accepts" is refused here with the same text, and does not latch), and then raises
   `GoogleLensUnavailableError`, which latches the engine. The first image gets
   `Google Lens: <message>`; later images, until `reset_blocked_flag`, get
   `Google Lens: not searched (it stood down earlier this run)`. The message is
   `LENS_UNAVAILABLE_MESSAGE`. In Python it is the text of the missing-dependency error for the
   interpreter, which has no counterpart here, so the differential scripts Python with the same
-  text. Not copied: `announce_unavailable` (the once-per-session GUI alert) and
-  `prepare_for_lens`'s format check, so a readable file that Python would refuse as "not in a
-  format Google Lens accepts" gets the unavailable answer instead.
+  text. `announce_unavailable` (the once-per-session GUI alert) goes to `engine_alerts`.
+* `LensError::Unexpected` is what Python lets propagate from `google_lens.search`; the runner returns
+  `Raised` for it, as for the other engines.
 
 The Pawchive index was in this list until Phase 4.h: `LiveEngines::for_profile` now searches the
 profile's `pawchive_index.db` (`docs/pawchive-index.md` section 7). A `LiveEngines::new` with no

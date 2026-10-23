@@ -258,7 +258,7 @@ fn is_placeholder_thumb(src: &str) -> bool {
 }
 
 /// `str(tile.get(key) or "")`.
-fn tile_text(tile: &serde_json::Map<String, Value>, key: &str) -> String {
+pub(super) fn tile_text(tile: &serde_json::Map<String, Value>, key: &str) -> String {
     match tile.get(key) {
         Some(v) if truthy(v) => py_str(v),
         _ => String::new(),
