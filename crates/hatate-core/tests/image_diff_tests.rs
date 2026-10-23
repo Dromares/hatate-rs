@@ -264,7 +264,8 @@ fn a_pixel_exactly_at_the_threshold_counts_as_changed() {
     let at = with_step(CHANGE_THRESHOLD);
     let centre = 100 * at.width + 100;
     assert_eq!(at.delta[centre], CHANGE_THRESHOLD);
-    assert_ne!(at.mask.as_ref().unwrap()[centre], 0);
+    // The patch is the strongest change there is, so it is the peak the mask is scaled to.
+    assert_eq!(at.mask.as_ref().unwrap()[centre], 255);
     assert!(at.changed_fraction > 0.0);
     assert!(at.local_rect.is_some());
 
