@@ -706,15 +706,62 @@ fn cache_is_fresh(cache: &Path, now: f64) -> bool {
     now - since_epoch.as_secs_f64() < CREATORS_CACHE_MAX_AGE
 }
 
+/// `http.HTTPStatus(code).phrase` of CPython 3.14: the reason `requests` prints in `raise_for_status`
+/// when the server's status line says the standard one.
+const REASONS: &[(u16, &str)] = &[
+    (400, "Bad Request"),
+    (401, "Unauthorized"),
+    (402, "Payment Required"),
+    (403, "Forbidden"),
+    (404, "Not Found"),
+    (405, "Method Not Allowed"),
+    (406, "Not Acceptable"),
+    (407, "Proxy Authentication Required"),
+    (408, "Request Timeout"),
+    (409, "Conflict"),
+    (410, "Gone"),
+    (411, "Length Required"),
+    (412, "Precondition Failed"),
+    (413, "Content Too Large"),
+    (414, "URI Too Long"),
+    (415, "Unsupported Media Type"),
+    (416, "Range Not Satisfiable"),
+    (417, "Expectation Failed"),
+    (418, "I'm a Teapot"),
+    (421, "Misdirected Request"),
+    (422, "Unprocessable Content"),
+    (423, "Locked"),
+    (424, "Failed Dependency"),
+    (425, "Too Early"),
+    (426, "Upgrade Required"),
+    (428, "Precondition Required"),
+    (429, "Too Many Requests"),
+    (431, "Request Header Fields Too Large"),
+    (451, "Unavailable For Legal Reasons"),
+    (500, "Internal Server Error"),
+    (501, "Not Implemented"),
+    (502, "Bad Gateway"),
+    (503, "Service Unavailable"),
+    (504, "Gateway Timeout"),
+    (505, "HTTP Version Not Supported"),
+    (506, "Variant Also Negotiates"),
+    (507, "Insufficient Storage"),
+    (508, "Loop Detected"),
+    (510, "Not Extended"),
+    (511, "Network Authentication Required"),
+];
+
 /// `resp.raise_for_status()`: `404 Client Error: Not Found for url: ...`.
 fn raise_for_status(resp: &PyResponse) -> Result<(), PawchiveError> {
     if resp.status < 400 {
         return Ok(());
     }
-    let reason = http::StatusCode::from_u16(resp.status)
-        .ok()
-        .and_then(|s| s.canonical_reason())
-        .unwrap_or("");
+    // `requests` prints the reason of the server's status line, which the net layer does not
+    // keep; the standard phrase for the status stands in for it.
+    let reason = REASONS
+        .iter()
+        .find(|(code, _)| *code == resp.status)
+        .map_or("", |(_, phrase)| *phrase);
     let class = if resp.status < 500 {
         "Client"
     } else {
