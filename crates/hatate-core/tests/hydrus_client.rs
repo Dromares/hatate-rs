@@ -183,6 +183,7 @@ async fn an_error_for_a_person_has_no_url_query_key_or_os_text() {
 #[tokio::test]
 async fn a_401_a_403_and_other_statuses_are_told_apart_by_status() {
     let (_s, client) = world(|r| match r.target.as_str() {
+        t if t.starts_with("/add_urls/get_url_files") => Reply::new(404, "missing"),
         "/get_services" => Reply::new(401, "no"),
         "/verify_access_key" => Reply::new(403, "x".repeat(300)),
         _ => Reply::new(500, "Q".repeat(400)),
@@ -213,6 +214,11 @@ async fn a_401_a_403_and_other_statuses_are_told_apart_by_status() {
         format!("Hydrus returned HTTP 500: {}", "Q".repeat(300))
     );
     assert!(!e500.user_message().contains('Q'));
+    let e404 = client.get_url_files("u").await.unwrap_err();
+    assert_eq!(
+        (e404.kind(), e404.status_code()),
+        (ErrorKind::HttpStatus, Some(404))
+    );
 }
 
 #[tokio::test]
@@ -395,6 +401,18 @@ async fn known_hashes_asks_for_identifiers_only_and_a_null_file_id_is_not_known(
         .unwrap();
     assert_eq!(known.into_iter().collect::<Vec<_>>(), vec![H1.to_owned()]);
     assert!(target(&server, 0).ends_with("&only_return_identifiers=true"));
+}
+
+#[tokio::test]
+async fn hashes_hydrus_never_saw_are_not_known_when_it_answers_no_rows() {
+    let (_s, client) = world(|_| json_reply(json!({"metadata": []}))).await;
+    assert!(
+        client
+            .filter_known_hashes(&[H1.to_owned()])
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -706,6 +724,23 @@ async fn a_raw_post_sends_bytes_as_they_are_with_the_callers_headers() {
 }
 
 #[tokio::test]
+async fn a_post_to_an_unreachable_hydrus_names_the_url_too() {
+    let (server, client) = world(|_| Reply::aborted()).await;
+    let body = json!({"a": 1});
+    let err = client.post_json("/x", Some(&body), &[]).await.unwrap_err();
+    assert!(
+        err.message()
+            .starts_with(&format!("Could not reach Hydrus at {}: ", server.url(""))),
+        "{err}"
+    );
+    let err = client
+        .post_raw("/x", bytes::Bytes::new(), &[])
+        .await
+        .unwrap_err();
+    assert!(matches!(err.kind(), ErrorKind::Net(_)));
+}
+
+#[tokio::test]
 async fn a_caller_header_replaces_the_default_one_of_the_same_name() {
     let (server, client) = world(|_| json_reply(json!({}))).await;
     let body = json!({"a": 1});
@@ -752,4 +787,51 @@ async fn metadata_rows_are_read_as_python_iterates_them() {
     let (_s, client) = world(|_| json_reply(json!({"metadata": [{"tags": [1]}]}))).await;
     let err = client.get_file_metadata(&[1]).await.unwrap_err();
     assert_eq!(err.message(), "'list' object has no attribute 'values'");
+}
+
+// ---- the access key as a header value ----
+
+#[tokio::test]
+async fn a_key_requests_would_refuse_is_a_could_not_reach_error_and_nothing_is_sent() {
+    for key in [" lead", "line\nbreak", "ret\rx"] {
+        let server = TestServer::http(|_| json_reply(json!({}))).await;
+        let mut s = settings(&server.url(""));
+        s.access_key = Secret::new(key);
+        let client = HydrusClient::new(&s).unwrap();
+        let err = client.test_connection().await.unwrap_err();
+        assert!(
+            err.message().starts_with("Could not reach Hydrus at "),
+            "{err}"
+        );
+        assert_eq!(err.kind(), ErrorKind::Net(net::ErrorKind::InvalidRequest));
+        assert!(!err.message().contains("lead") && !err.detail().contains("break"));
+        assert_eq!(server.request_count(), 0);
+    }
+}
+
+#[tokio::test]
+async fn a_key_with_a_character_past_latin_1_is_a_raw_error_the_handlers_pass_on() {
+    let server = TestServer::http(|_| json_reply(json!({}))).await;
+    let mut s = settings(&server.url(""));
+    s.access_key = Secret::new("k\u{3b1}");
+    let client = HydrusClient::new(&s).unwrap();
+    let err = client.test_connection().await.unwrap_err();
+    assert_eq!(err.kind(), ErrorKind::UnexpectedResponse);
+    assert_eq!(
+        err.message(),
+        "'latin-1' codec can't encode character '\\u03b1' in position 1: ordinal not in range(256)"
+    );
+    // `except HydrusError` does not catch a UnicodeEncodeError.
+    assert!(client.filter_known_hashes(&[H1.to_owned()]).await.is_err());
+    assert_eq!(server.request_count(), 0);
+}
+
+#[tokio::test]
+async fn a_latin_1_key_goes_out_as_one_byte_per_character() {
+    let server = TestServer::http(|_| json_reply(json!({}))).await;
+    let mut s = settings(&server.url(""));
+    s.access_key = Secret::new("k\u{fc}");
+    let client = HydrusClient::new(&s).unwrap();
+    client.test_connection().await.unwrap();
+    assert_eq!(server.request_count(), 1);
 }
