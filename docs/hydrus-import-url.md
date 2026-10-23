@@ -94,7 +94,7 @@ classes, not added to any standing grant).
 |---|---|---|---|---|
 | **C1** transport words | the library's own words after `Could not reach Hydrus at <url>: ` | `requests`' exception text | the net layer's text | 122 |
 | **C2** a non-string `hash` in an `add_file` answer | `download_and_send` uploads, Hydrus answers with a number, list or object as `hash` | carries it on or fails later | `Err(UnexpectedResponse)` before the entry changes | 7 (42 later requests of those cases are not compared) |
-| **C5** the decoder's words for a damaged image | the text after `Downloaded data does not decode as a valid image: ` | Pillow's exception text | the decoder's own | 31 |
+| **C5** the decoder's words for a damaged image | the text after `Downloaded data does not decode as a valid image: ` | Pillow's exception text | the decoder's own | 17 |
 | **D1** a non-string `hash` in a `get_url_files` row | the row is resolved (status 2 or 3) and its `hash` is truthy but is `5`, a list, `true` or an object | returned as the "confirmed hash" (a latent Python bug) | `Err(UnexpectedResponse)` before anything is recorded: `extract_confirmed_hash`, `poll_single_url_import` and `run_import_poll` all fail closed | 249 = 47 + 30 + 42 + 45 + 44 + 41 |
 | **D2** the text of `urlparse`'s `ValueError` | an address Python's `urlparse` refuses (`https://[::1/x`) | `ValueError: Invalid IPv6 URL` and similar | the class (`UrlImportError::Url`, `ErrorKind::InvalidInput`), the call site, the entry state and every request are equal; `message()` does not carry the library's word, `user_message()` is `The address of this match is not one Hatate can read, so it was not sent.` | 61 = 9 + 9 + 15 + 11 + 6 + 11 |
 
