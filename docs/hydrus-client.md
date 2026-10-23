@@ -116,13 +116,21 @@ message names the status, the exception holds none); the Python 3.14 text of the
 | **C5** download breaks mid-body | Python streams to disk: a body that breaks off leaves the part written so far and raises `requests`' `ChunkedEncodingError`, which is not a `HydrusError`. The net layer reads the whole body first, so Rust writes nothing and returns `HydrusError` (`Net`). With an unwritable destination as well, Python fails at `open` before it reads, Rust fails at the read | 49 (35 in the operation's result, 14 in the file left behind) | an incomplete download is a failed download either way. No partial file is the safer outcome. `a_failed_download_leaves_no_file_and_says_which_one` |
 | **C6** very large download | the net layer caps one response body at `DEFAULT_MAX_BODY_BYTES` (512 MiB), so a larger file is `Err(Net(BodyTooLarge))`; Python streams without a limit | not generated (a 512 MiB body) | `download_file` is used to read back an image to compare or hash; streaming to disk needs a streaming mode in the Phase 1 net layer, which this ticket does not change |
 | **C7** control character in the key | an access key holding a control character other than tab (`\x01`): `requests` accepts it and `http.client` sends it; the HTTP stack here cannot form such a header, so no request is made and the call fails as "could not reach Hydrus" | 64 scenarios (24 + 16 + 24) | a Hydrus access key is 64 hexadecimal digits. The failure names no key. The same limit as DAN-2060's V3 |
-| **C8** stale `Content-Type` after a redirect | after a 301, 302 or 303 answer to a POST, `requests` sends the follow-up GET without `Content-Type`; the Phase 1 net layer keeps the original one on the bodiless GET | 48 requests (15 + 19 + 14) | Phase 1 behaviour, not changed here. The header on a GET with no body does nothing. Hydrus does not redirect its API |
-| **C9** relative `Location` | a relative `Location` (`../d`) against a request path with empty segments (`///verify_access_key`, from an `api_url` ending in `/`) resolves to `//d` in the net layer's WHATWG join and to `/d` in `urljoin` | 6 requests (1 + 3 + 2) | Phase 1 behaviour, not changed here. Needs a redirect and a trailing slash in the URL |
 | **C10** unwritable destination | Python raises the `OSError` (`FileNotFoundError`, `IsADirectoryError`); Rust returns `HydrusError` of kind `Io` with the same text (`[Errno 2] No such file or directory: '...'`) | 139 operations (49 + 49 + 41) | the shared error shape (DAN-2116): a caller gets one error type with `user_message()` that names no path |
 
 C1 and C10 change only the type or the words of a failure that is the same failure. C2, C5, C6, C7
-and C3 change an outcome in a case no Hydrus produces. C8 and C9 are Phase 1 net-layer behaviour found by
-this differential; they go to Cloud on DAN-2126 with the others before the verify ticket opens.
+and C3 change an outcome in a case no Hydrus produces. The class numbers C8 and C9 are retired, not
+reused: the first run of this differential found two Phase 1 net-layer differences on redirects
+(a stale `Content-Type` on the follow-up GET after a 301, 302 or 303 answer to a POST, 48 requests; a
+relative `Location` joined against a path with empty segments, which `requests`' `urljoin` collapses
+and the WHATWG join keeps, 6 requests), and DAN-2134 fixed both in the net layer (`docs/net.md`
+section 8), so they are no longer differences. The `urljoin` difference is not limited to a path
+with one extra leading slash: any run of empty segments, in the base path or in the reference, is
+collapsed by `urljoin`.
+
+Re-run on the DAN-2134 head, seeds 1, 2, 3 and 9101, 9202, 9303 at 3,000 scenarios each: 0 differing
+requests and no unexplained difference in any seed, and no C8 or C9 case left. Logs
+`worktrees/DAN-2134-differential-<seed>.log`.
 
 ## 5. The tests
 
