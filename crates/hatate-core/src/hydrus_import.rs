@@ -146,7 +146,11 @@ pub async fn send_file_upload(
     // The file is in Hydrus at this point: the URL and the tags are attempted independently so
     // one failing doesn't throw away the successful import.
     let mut step_warnings: Vec<String> = Vec::new();
-    if let Some(url) = entry.matched_url().filter(|u| !u.is_empty()).map(str::to_owned) {
+    if let Some(url) = entry
+        .matched_url()
+        .filter(|u| !u.is_empty())
+        .map(str::to_owned)
+    {
         match client.associate_url(&url, Some(&file_hash)).await {
             Ok(_) => {}
             Err(e) if e.is_hydrus_error_in_python() => {
@@ -173,7 +177,8 @@ pub async fn send_file_upload(
     }
 
     // After the file is confirmed held. Off by default, and then it makes no request.
-    if let Some(warning) = write_provenance_note(entry, client, settings, &file_hash, clock).await? {
+    if let Some(warning) = write_provenance_note(entry, client, settings, &file_hash, clock).await?
+    {
         step_warnings.push(warning);
     }
 
@@ -387,8 +392,10 @@ pub fn validate_image_decodes(data: &[u8], expected_format: Option<&str>) -> Opt
     match pyraster::open(data, None) {
         Ok(_) => None,
         Err(pyraster::OpenError::Os(text)) => {
-            let text = if text == "cannot identify image file" {
-                format!("{text} {BYTESIO_REPR}")
+            // Pillow's `UnidentifiedImageError`: no plugin recognised the bytes.
+            let text = if text == "cannot identify image file" || image::guess_format(data).is_err()
+            {
+                format!("cannot identify image file {BYTESIO_REPR}")
             } else {
                 text
             };
@@ -530,7 +537,9 @@ pub async fn record_duplicate_relationship(
                 "Could not relate {} to the local copy in Hydrus: {e}",
                 entry.filename()
             );
-            return Ok(Some(format!("Imported, but not marked as a duplicate: {e}")));
+            return Ok(Some(format!(
+                "Imported, but not marked as a duplicate: {e}"
+            )));
         }
         Err(e) => return Err(e),
     }
@@ -591,7 +600,10 @@ pub async fn write_provenance_note(
         return Ok(None);
     }
 
-    if let Some(missing) = client.missing_permission(PERMISSION_EDIT_FILE_NOTES).await? {
+    if let Some(missing) = client
+        .missing_permission(PERMISSION_EDIT_FILE_NOTES)
+        .await?
+    {
         warn!(
             "Could not write a provenance note for {}: {missing}",
             entry.filename()
@@ -609,12 +621,17 @@ pub async fn write_provenance_note(
                 "Could not write a provenance note for {}: {e}",
                 entry.filename()
             );
-            return Ok(Some(format!("Imported, but no source note was written: {e}")));
+            return Ok(Some(format!(
+                "Imported, but no source note was written: {e}"
+            )));
         }
         Err(e) => return Err(e),
     }
 
-    info!("Wrote the {name:?} note onto {} in Hydrus", head(file_hash, 12));
+    info!(
+        "Wrote the {name:?} note onto {} in Hydrus",
+        head(file_hash, 12)
+    );
     Ok(None)
 }
 
@@ -622,7 +639,12 @@ pub async fn write_provenance_note(
 /// relationship and the note can fail independently, and one swallowing the other's message would
 /// report a partial success as a complete one.
 pub fn joined(warnings: &[Option<&str>]) -> Option<String> {
-    let present: Vec<&str> = warnings.iter().flatten().copied().filter(|w| !w.is_empty()).collect();
+    let present: Vec<&str> = warnings
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|w| !w.is_empty())
+        .collect();
     if present.is_empty() {
         None
     } else {

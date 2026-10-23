@@ -27,7 +27,11 @@ fn fixed0(value: f64) -> String {
 pub fn similarity_label(similarity: Option<f64>, measured: bool) -> String {
     match similarity {
         None => String::new(),
-        Some(s) => format!("{}{}%", if measured { "" } else { ESTIMATE_MARK }, fixed0(s)),
+        Some(s) => format!(
+            "{}{}%",
+            if measured { "" } else { ESTIMATE_MARK },
+            fixed0(s)
+        ),
     }
 }
 
@@ -38,7 +42,11 @@ pub fn similarity_tooltip(similarity: Option<f64>, measured: bool) -> String {
         Some(s) => format!(
             "{}% - {}",
             fixed0(s),
-            if measured { MEASURED_NOTE } else { UNMEASURED_NOTE }
+            if measured {
+                MEASURED_NOTE
+            } else {
+                UNMEASURED_NOTE
+            }
         ),
     }
 }
@@ -49,7 +57,14 @@ mod tests {
 
     #[test]
     fn halves_round_to_even_like_python() {
-        for (v, want) in [(0.5, "0"), (1.5, "2"), (2.5, "2"), (3.5, "4"), (84.5, "84"), (85.5, "86")] {
+        for (v, want) in [
+            (0.5, "0"),
+            (1.5, "2"),
+            (2.5, "2"),
+            (3.5, "4"),
+            (84.5, "84"),
+            (85.5, "86"),
+        ] {
             assert_eq!(fixed0(v), want, "{v}");
         }
     }

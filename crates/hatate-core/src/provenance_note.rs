@@ -52,7 +52,11 @@ pub fn provenance_note(entry: &Entry, local_stamp: impl FnOnce() -> String) -> O
     if let Some(c) = selected {
         let measured = c.similarity_measured || reports_real_similarity(Some(&c.engine));
         let label = similarity_label(Some(c.similarity), measured);
-        let note = if measured { MEASURED_NOTE } else { UNMEASURED_NOTE };
+        let note = if measured {
+            MEASURED_NOTE
+        } else {
+            UNMEASURED_NOTE
+        };
         lines.push(format!("Similarity: {label} - {note}"));
     }
     if let Some(url) = matched_url {
@@ -85,7 +89,10 @@ mod tests {
 
     #[test]
     fn no_match_means_no_note() {
-        assert_eq!(provenance_note(&Entry::new("/x/a.png"), || "t".into()), None);
+        assert_eq!(
+            provenance_note(&Entry::new("/x/a.png"), || "t".into()),
+            None
+        );
     }
 
     #[test]
@@ -97,10 +104,7 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[0], FIRST_LINE);
         assert_eq!(lines[1], "Engine: SauceNAO");
-        assert_eq!(
-            lines[2],
-            format!("Similarity: 92% - {MEASURED_NOTE}")
-        );
+        assert_eq!(lines[2], format!("Similarity: 92% - {MEASURED_NOTE}"));
         assert_eq!(lines[3], "Match: https://e.example/p/1");
         assert_eq!(lines[4], "Sent to Hydrus: 2026-10-23 12:34");
     }
