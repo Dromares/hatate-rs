@@ -224,7 +224,7 @@ impl HydrusError {
     /// Whether Python would have raised this as a `HydrusError`. The other kind
     /// ([`ErrorKind::UnexpectedResponse`]) is a raw `AttributeError`/`TypeError` there, which
     /// the `except HydrusError` handlers let through.
-    fn is_hydrus_error_in_python(&self) -> bool {
+    pub(crate) fn is_hydrus_error_in_python(&self) -> bool {
         self.kind != ErrorKind::UnexpectedResponse
     }
 }

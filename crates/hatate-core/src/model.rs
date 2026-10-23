@@ -9,6 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::Settings;
+
 /// `MatchStatus` (`core/models.py:27-33`). Anything else in a file means `NotSearched`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MatchStatus {
@@ -293,6 +295,14 @@ impl Entry {
         self.candidates.get(self.selected_candidate_index)
     }
 
+    /// `ImageEntry.matched_url`: the selected match's URL, or the one a cached result's dead
+    /// matches left behind ([`Entry::stale_matched_url`]). `None` when the entry has no match.
+    pub fn matched_url(&self) -> Option<&str> {
+        self.selected_candidate()
+            .map(|c| c.url.as_str())
+            .or(self.stale_matched_url.as_deref())
+    }
+
     /// `ImageEntry.select_candidate` (`core/models.py:279-298`) as far as it touches stored
     /// state: make `index` the active candidate and **replace** the search-engine and booru
     /// tags with that candidate's own, keeping the others. An index out of range changes
@@ -419,6 +429,30 @@ fn has_chapter_uuid(url: &str) -> bool {
         from = at + 1;
     }
     false
+}
+
+/// `enabled_tag_sources`: the sources named by `settings.enabled_tag_sources`, in `TagSource`
+/// order. A name that is no source (a stale config, a rename) is dropped.
+pub fn enabled_tag_sources(settings: &Settings) -> Vec<TagSource> {
+    TagSource::ALL
+        .into_iter()
+        .filter(|s| settings.enabled_tag_sources.iter().any(|n| n == s.as_str()))
+        .collect()
+}
+
+/// `tags_to_send`: the tags that leave the app for an entry (every Hydrus send and every export).
+/// Every tag, unless the user switched `filter_sent_tags_by_source` on; then only those whose
+/// source is ticked, which can be none at all.
+pub fn tags_to_send<'a>(entry: &'a Entry, settings: Option<&Settings>) -> Vec<&'a Tag> {
+    let Some(settings) = settings.filter(|s| s.filter_sent_tags_by_source) else {
+        return entry.tags.iter().collect();
+    };
+    let enabled = enabled_tag_sources(settings);
+    entry
+        .tags
+        .iter()
+        .filter(|t| enabled.contains(&t.source))
+        .collect()
 }
 
 #[cfg(test)]
