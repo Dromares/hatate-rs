@@ -245,6 +245,28 @@ fn os_error_text(error: &std::io::Error, path: &Path) -> String {
     }
 }
 
+/// The `OSError` text Pillow gives when a picture that opened cannot be decoded, for the failures
+/// whose wording does not depend on how many bytes its decoder had consumed. The decoders here
+/// are not Pillow's (the `image` crate's, and `pyjpeg`), so their own messages are translated;
+/// Pillow's "image file is truncated (N bytes not processed)" needs `N`, which only Pillow's
+/// decoder buffering knows, and is a documented difference (`docs/upscale-detect.md`).
+fn pillow_decode_message(message: &str) -> String {
+    let broken = "broken data stream when reading image file";
+    if message.starts_with("Format error decoding Png: Unknown filter method") {
+        "unrecognized data stream contents when reading image file".to_string()
+    } else if message.starts_with("Format error decoding Png:")
+        || message.starts_with("Format error decoding Gif: invalid code")
+    {
+        broken.to_string()
+    } else if message == "unexpected end of file" {
+        "image file is truncated".to_string()
+    } else if message.starts_with("Format error decoding WebP:") {
+        "failed to read next frame".to_string()
+    } else {
+        message.to_string()
+    }
+}
+
 /// `detect_naive_upscale`: tests whether downscaling and re-upscaling the picture reconstructs it
 /// closely, measured only where it has detail. `Err` is the `DecompressionBombError` Python lets
 /// through (it is neither an `OSError` nor a `ValueError`).
@@ -295,7 +317,7 @@ pub fn detect_naive_upscale(path: &Path) -> Result<SelfConsistencyResult, Decomp
         Err(OpenError::Bomb(b)) => return Err(b),
         Err(OpenError::Os(m)) => {
             tracing::warn!("Could not analyze {} for upscaling: {m}", path.display());
-            return Ok(could_not(m));
+            return Ok(could_not(pillow_decode_message(&m)));
         }
     };
     let mut im = opened.to_rgb();
@@ -409,21 +431,76 @@ pub fn check_upscaler_metadata(path: &Path) -> Result<Option<String>, Decompress
     Ok(None)
 }
 
+/// The four things `UpscaleCheckWorker.run` calls out to, so a test can stand in for them as
+/// Python's tests `patch` them. [`Real`] is the shipped behaviour.
+pub trait Checks {
+    /// `Image.open(path).size`; `None` for an `OSError` or `ValueError` (logged, not raised).
+    fn dimensions(&self, path: &Path) -> Result<Option<(i64, i64)>, DecompressionBomb>;
+    fn compare_to_source(
+        &self,
+        local_width: i64,
+        local_height: i64,
+        source_width: i64,
+        source_height: i64,
+    ) -> SourceComparisonResult;
+    fn check_upscaler_metadata(&self, path: &Path) -> Result<Option<String>, DecompressionBomb>;
+    fn detect_naive_upscale(&self, path: &Path)
+    -> Result<SelfConsistencyResult, DecompressionBomb>;
+}
+
+/// The real heuristics.
+pub struct Real;
+
+impl Checks for Real {
+    fn dimensions(&self, path: &Path) -> Result<Option<(i64, i64)>, DecompressionBomb> {
+        let Ok(data) = std::fs::read(path) else {
+            return Ok(None);
+        };
+        Ok(pyraster::pillow_size(&data)?.map(|(w, h)| (i64::from(w), i64::from(h))))
+    }
+
+    fn compare_to_source(
+        &self,
+        local_width: i64,
+        local_height: i64,
+        source_width: i64,
+        source_height: i64,
+    ) -> SourceComparisonResult {
+        compare_to_source(
+            local_width,
+            local_height,
+            source_width,
+            source_height,
+            SOURCE_COMPARISON_THRESHOLD_PERCENT,
+        )
+    }
+
+    fn check_upscaler_metadata(&self, path: &Path) -> Result<Option<String>, DecompressionBomb> {
+        check_upscaler_metadata(path)
+    }
+
+    fn detect_naive_upscale(
+        &self,
+        path: &Path,
+    ) -> Result<SelfConsistencyResult, DecompressionBomb> {
+        detect_naive_upscale(path)
+    }
+}
+
 /// What `UpscaleCheckWorker.run` does for one entry: fill in the local size if it is missing,
 /// compare to the selected candidate's size, and run the metadata and self-consistency checks.
 /// A `DecompressionBombError` (not an `OSError`) ends the batch in Python; here it is the `Err`.
-pub fn check_entry(entry: &mut Entry) -> Result<UpscaleCheckResult, DecompressionBomb> {
+pub fn check_entry(
+    entry: &mut Entry,
+    checks: &dyn Checks,
+) -> Result<UpscaleCheckResult, DecompressionBomb> {
     if entry.local_width.is_none() || entry.local_height.is_none() {
-        let read = std::fs::read(&entry.path)
-            .ok()
-            .map(|d| pyraster::pillow_size(&d))
-            .transpose()?
-            .flatten();
-        if let Some((w, h)) = read {
-            entry.local_width = Some(i64::from(w));
-            entry.local_height = Some(i64::from(h));
-        } else {
-            tracing::warn!("Could not read dimensions for {}", entry.filename());
+        match checks.dimensions(Path::new(&entry.path))? {
+            Some((w, h)) => {
+                entry.local_width = Some(w);
+                entry.local_height = Some(h);
+            }
+            None => tracing::warn!("Could not read dimensions for {}", entry.filename()),
         }
     }
 
@@ -435,19 +512,13 @@ pub fn check_entry(entry: &mut Entry) -> Result<UpscaleCheckResult, Decompressio
             entry.local_width.filter(|&v| v != 0),
             entry.local_height.filter(|&v| v != 0),
         ) {
-            source_comparison = Some(compare_to_source(
-                lw,
-                lh,
-                cw,
-                ch,
-                SOURCE_COMPARISON_THRESHOLD_PERCENT,
-            ));
+            source_comparison = Some(checks.compare_to_source(lw, lh, cw, ch));
         }
     }
 
     let path = Path::new(&entry.path);
-    let metadata_signature = check_upscaler_metadata(path)?;
-    let self_consistency = detect_naive_upscale(path)?;
+    let metadata_signature = checks.check_upscaler_metadata(path)?;
+    let self_consistency = checks.detect_naive_upscale(path)?;
     tracing::info!(
         "{}: source_flagged={:?} self_consistency={} metadata_signature={:?}",
         entry.filename(),
@@ -460,4 +531,19 @@ pub fn check_entry(entry: &mut Entry) -> Result<UpscaleCheckResult, Decompressio
         self_consistency: Some(self_consistency),
         metadata_signature,
     })
+}
+
+/// `UpscaleCheckWorker.run`: every entry in order, `entry_checked` (here `on_checked`) after each,
+/// and a return in place of `finished_all`.
+pub fn check_entries(
+    entries: &mut [Entry],
+    checks: &dyn Checks,
+    mut on_checked: impl FnMut(&Entry, &UpscaleCheckResult),
+) -> Result<(), DecompressionBomb> {
+    tracing::info!("Checking {} image(s) for signs of upscaling", entries.len());
+    for entry in entries.iter_mut() {
+        let result = check_entry(entry, checks)?;
+        on_checked(entry, &result);
+    }
+    Ok(())
 }
