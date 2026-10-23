@@ -16,7 +16,7 @@
 use std::fmt;
 use std::path::Path;
 
-use crate::error::Kind;
+use crate::error::ErrorKind;
 use crate::image_compare::Source;
 use crate::pynumpy::{median_f32, py_round};
 use crate::pyraster::{self, Filter, Image, Mode, OpenError};
@@ -109,16 +109,16 @@ impl Side {
 #[derive(Debug, Clone)]
 pub struct DiffError {
     side: Side,
-    kind: Kind,
+    kind: ErrorKind,
     detail: String,
 }
 
 impl DiffError {
     fn new(side: Side, error: &OpenError, from_disk: Option<&std::io::Error>) -> DiffError {
         let (kind, detail) = match (error, from_disk) {
-            (_, Some(io)) => (Kind::ImageUnreadable, io.to_string()),
-            (OpenError::Bomb(b), None) => (Kind::ImageTooLarge, b.to_string()),
-            (OpenError::Os(m), None) => (Kind::ImageUndecodable, m.clone()),
+            (_, Some(io)) => (ErrorKind::ImageUnreadable, io.to_string()),
+            (OpenError::Bomb(b), None) => (ErrorKind::ImageTooLarge, b.to_string()),
+            (OpenError::Os(m), None) => (ErrorKind::ImageUndecodable, m.clone()),
         };
         DiffError { side, kind, detail }
     }
@@ -128,7 +128,7 @@ impl DiffError {
         self.side
     }
 
-    pub fn kind(&self) -> Kind {
+    pub fn kind(&self) -> ErrorKind {
         self.kind
     }
 
@@ -136,11 +136,11 @@ impl DiffError {
     pub fn user_message(&self) -> String {
         let which = self.side.word();
         match self.kind {
-            Kind::ImageUnreadable => format!(
+            ErrorKind::ImageUnreadable => format!(
                 "The {which} image could not be read. Check that the file still exists and \
                  that Hatate may open it."
             ),
-            Kind::ImageTooLarge => {
+            ErrorKind::ImageTooLarge => {
                 format!("The {which} image is too large to compare, so it was skipped.")
             }
             _ => format!(

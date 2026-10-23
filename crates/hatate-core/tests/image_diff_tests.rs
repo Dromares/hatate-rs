@@ -10,7 +10,7 @@ mod common;
 use std::path::Path;
 
 use common::art::{Canvas, Color};
-use hatate_core::error::Kind;
+use hatate_core::error::ErrorKind;
 use hatate_core::image_compare::Source;
 use hatate_core::image_diff::{
     CHANGE_THRESHOLD, Diff, Rect, difference_map, difference_map_images, verdict,
@@ -354,7 +354,7 @@ fn a_missing_file_gives_a_message_with_no_path_and_no_os_text() {
     let gone = dir.path().join("secret-name-that-must-not-leak.png");
     let ok = Path::new(FIXTURES).join("crop_src.png");
     let err = difference_map(Source::Path(&gone), Source::Path(&ok)).unwrap_err();
-    assert_eq!(err.kind(), Kind::ImageUnreadable);
+    assert_eq!(err.kind(), ErrorKind::ImageUnreadable);
     let message = err.user_message();
     assert!(
         !message.contains("secret-name") && !message.contains("os error"),
@@ -373,7 +373,7 @@ fn a_file_that_is_not_a_picture_is_undecodable_not_unreadable() {
     let ok = Path::new(FIXTURES).join("crop_src.png");
     let text = Path::new(FIXTURES).join("not_an_image.txt");
     let err = difference_map(Source::Path(&ok), Source::Path(&text)).unwrap_err();
-    assert_eq!(err.kind(), Kind::ImageUndecodable);
+    assert_eq!(err.kind(), ErrorKind::ImageUndecodable);
     assert!(!err.user_message().contains("not_an_image"));
 }
 

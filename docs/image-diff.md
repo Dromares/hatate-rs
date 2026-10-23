@@ -18,8 +18,8 @@ Not here: the compare dialog and its wipe view (Phase 5), and where the dialog i
 
 ## 2. What is added to Python's output
 
-`difference_map(local, remote) -> Result<Diff, DiffError>` keeps every field of `DifferenceMap` at
-parity and returns, additively:
+`difference_map(local, remote) -> Result<Diff, DiffError>` keeps every field of `DifferenceMap` equal to
+Python's and returns, additively:
 
 * `delta: Vec<u8>`: one byte per pixel, row-major, at the working size (`width`, `height`): the
   blurred difference before the threshold. `mask` is zero exactly where `delta < CHANGE_THRESHOLD`.
@@ -36,9 +36,9 @@ parity and returns, additively:
 
 ## 3. Error shape (DAN-2116 item 1)
 
-`DiffError` has `kind() -> error::Kind`, `user_message()` and `detail()`. `crates/hatate-core/src/error.rs`
-is created here (`Kind` with `Kind::Net(net::ErrorKind)` and the image kinds `ImageUnreadable`,
-`ImageUndecodable`, `ImageTooLarge`; `ErrorKind` is an alias). `user_message` names which picture
+`DiffError` has `kind() -> error::ErrorKind`, `user_message()` and `detail()`. `crates/hatate-core/src/error.rs`
+is created here (`ErrorKind` with `ErrorKind::Net(net::ErrorKind)` and the image kinds `ImageUnreadable`,
+`ImageUndecodable`, `ImageTooLarge`; Phase 4.a adds its own variants to the same enum). `user_message` names which picture
 ("local" or "matched") and what to do, and never a path or operating-system text; `detail` has the
 raw text. Pinned by `image_diff_tests::a_missing_file_gives_a_message_with_no_path_and_no_os_text`.
 Nothing on disk changes (`Entry.error_message` and `MatchStatus` are untouched).
