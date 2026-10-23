@@ -8,8 +8,8 @@
 
 use std::collections::VecDeque;
 use std::path::Path;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use hatate_core::clock::BoxFuture;
@@ -69,6 +69,9 @@ pub struct ScriptedEngines {
     pub ascii2d: Queue<Result<Vec<Ascii2dMatch>, Ascii2dError>>,
     pub tracemoe: Queue<Result<Vec<TraceMoeMatch>, TraceMoeError>>,
     pub ascii2d_blocked: AtomicBool,
+    /// The engines to ask for the Pawchive index (DAN-2145: `LiveEngines` over a profile's real
+    /// index file). Unset, the index answers as an empty one.
+    pub index_backend: Mutex<Option<Arc<dyn Engines>>>,
     calls: Mutex<Vec<&'static str>>,
 }
 
@@ -273,9 +276,15 @@ impl Engines for ScriptedEngines {
 
     fn pawchive_index<'a>(
         &'a self,
-        _path: &'a Path,
-        _hydrus_hash: Option<&'a str>,
+        path: &'a Path,
+        hydrus_hash: Option<&'a str>,
     ) -> BoxFuture<'a, Result<IndexAnswer, IndexError>> {
-        Box::pin(async { Ok(IndexAnswer::Empty) })
+        let backend = self.index_backend.lock().unwrap().clone();
+        match backend {
+            Some(engines) => {
+                Box::pin(async move { engines.pawchive_index(path, hydrus_hash).await })
+            }
+            None => Box::pin(async { Ok(IndexAnswer::Empty) }),
+        }
     }
 }
