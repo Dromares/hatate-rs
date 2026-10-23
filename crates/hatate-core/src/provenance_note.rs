@@ -70,42 +70,102 @@ pub fn provenance_note(entry: &Entry, local_stamp: impl FnOnce() -> String) -> O
 mod tests {
     use super::*;
     use crate::model::{Candidate, Entry};
+    use crate::similarity_display::ESTIMATE_MARK;
 
-    fn entry(engine: &str, url: &str) -> Entry {
+    const STAMP: &str = "2026-03-04 17:08";
+
+    /// `_Fixture._entry`: one candidate, selected.
+    fn entry(
+        measured: bool,
+        similarity: f64,
+        engine: &str,
+        site: Option<&str>,
+        url: &str,
+    ) -> Entry {
         let mut e = Entry::new("/x/a.png");
         let mut c = Candidate::new(url);
         c.engine = engine.to_owned();
-        c.similarity = 92.0;
+        c.similarity = similarity;
+        c.similarity_measured = measured;
+        c.source_name = site.map(str::to_owned);
         e.candidates.push(c);
         e
     }
 
-    #[test]
-    fn blank_name_is_the_default() {
-        assert_eq!(note_name(""), DEFAULT_NOTE_NAME);
-        assert_eq!(note_name("  \t "), DEFAULT_NOTE_NAME);
-        assert_eq!(note_name("  mine "), "mine");
+    fn text(e: &Entry) -> Option<String> {
+        provenance_note(e, || STAMP.to_owned())
+    }
+
+    fn iqdb() -> Entry {
+        entry(
+            true,
+            92.0,
+            "IQDB",
+            Some("Danbooru"),
+            "https://danbooru.donmai.us/posts/123",
+        )
     }
 
     #[test]
-    fn no_match_means_no_note() {
-        assert_eq!(
-            provenance_note(&Entry::new("/x/a.png"), || "t".into()),
-            None
-        );
+    fn it_records_the_five_facts_and_says_which_program_wrote_it() {
+        let t = text(&iqdb()).unwrap();
+        for fact in [
+            "Engine: IQDB",
+            "Site: Danbooru",
+            "92%",
+            "https://danbooru.donmai.us/posts/123",
+            STAMP,
+        ] {
+            assert!(t.contains(fact), "{fact}: {t}");
+        }
+        assert!(t.starts_with("Match found by Hatate-Linux-Redux."));
     }
 
     #[test]
-    fn text_has_the_lines_in_order() {
-        let text = provenance_note(&entry("SauceNAO", "https://e.example/p/1"), || {
-            "2026-10-23 12:34".into()
-        })
+    fn a_measured_similarity_is_plain_and_an_unmeasured_one_is_marked_and_explained() {
+        let t = text(&iqdb()).unwrap();
+        assert!(t.contains(&format!("Similarity: 92% - {MEASURED_NOTE}")));
+        assert!(!t.contains(ESTIMATE_MARK));
+        let t = text(&entry(
+            false,
+            80.0,
+            "ascii2d",
+            Some("Danbooru"),
+            "https://e.example/1",
+        ))
         .unwrap();
-        let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines[0], FIRST_LINE);
-        assert_eq!(lines[1], "Engine: SauceNAO");
-        assert_eq!(lines[2], format!("Similarity: 92% - {MEASURED_NOTE}"));
-        assert_eq!(lines[3], "Match: https://e.example/p/1");
-        assert_eq!(lines[4], "Sent to Hydrus: 2026-10-23 12:34");
+        assert!(t.contains("~80%") && t.contains(UNMEASURED_NOTE), "{t}");
+    }
+
+    #[test]
+    fn a_missing_fact_is_left_out_rather_than_written_as_unknown() {
+        let t = text(&entry(true, 92.0, "IQDB", None, "https://e.example/1")).unwrap();
+        assert!(!t.contains("Site:") && !t.contains("None"), "{t}");
+        assert!(t.contains("Engine: IQDB"));
+    }
+
+    #[test]
+    fn either_half_of_a_match_on_its_own_is_still_worth_a_note() {
+        // A URL with no engine behind it, and an engine with the URL cleared.
+        let t = text(&entry(true, 50.0, "", None, "https://example.com/posts/1")).unwrap();
+        assert!(
+            t.contains("https://example.com/posts/1") && !t.contains("Engine:"),
+            "{t}"
+        );
+        let t = text(&entry(true, 92.0, "IQDB", None, "")).unwrap();
+        assert!(t.contains("Engine: IQDB") && !t.contains("Match:"), "{t}");
+    }
+
+    #[test]
+    fn no_match_means_no_note_at_all() {
+        assert_eq!(text(&Entry::new("/x/a.png")), None);
+    }
+
+    #[test]
+    fn the_note_name_falls_back_when_blank_and_the_default_says_whose_it_is() {
+        assert_eq!(note_name(""), DEFAULT_NOTE_NAME);
+        assert_eq!(note_name("   "), DEFAULT_NOTE_NAME);
+        assert_eq!(note_name(" my notes "), "my notes");
+        assert!(DEFAULT_NOTE_NAME.to_lowercase().contains("hatate"));
     }
 }

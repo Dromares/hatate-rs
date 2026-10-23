@@ -911,3 +911,149 @@ fn repointing_moves_the_selected_candidate_and_the_entry_together() {
     assert_eq!(bare.matched_url(), Some("https://e.example/1"));
     let _ = std::fs::remove_dir_all(dir);
 }
+
+// ---- the verdict decision table (test_hydrus_duplicate_relationships.TestVerdictDecisionTable) ----
+
+fn measured(
+    distance: Option<u32>,
+    mirrored: bool,
+    fine: Option<u32>,
+) -> hatate_core::image_compare::Comparison {
+    hatate_core::image_compare::Comparison {
+        distance,
+        mirrored,
+        fine_distance: fine,
+    }
+}
+
+#[test]
+fn the_verdict_table_says_nothing_without_a_distance_a_fine_hash_or_when_mirrored() {
+    use hatate_core::image_compare::{DHASH_SAME_MAX, DHASH_SIMILAR_MAX, FINE_CONFIRM_MAX};
+    assert_eq!(
+        hi::verdict_of(&measured(None, false, Some(0))),
+        None,
+        "no distance at all"
+    );
+    assert_eq!(
+        hi::verdict_of(&measured(Some(0), false, None)),
+        None,
+        "no fine distance"
+    );
+    assert_eq!(
+        hi::verdict_of(&measured(
+            Some(DHASH_SAME_MAX),
+            false,
+            Some(FINE_CONFIRM_MAX + 1)
+        )),
+        None,
+        "64 bits say identical and 256 do not: evidence that disagrees with itself"
+    );
+    assert_eq!(
+        hi::verdict_of(&measured(Some(0), true, Some(0))),
+        None,
+        "mirrored, however close"
+    );
+    // The boundaries are inclusive.
+    assert_eq!(
+        hi::verdict_of(&measured(
+            Some(DHASH_SAME_MAX),
+            false,
+            Some(FINE_CONFIRM_MAX)
+        )),
+        Some(hi::Verdict::SameImage)
+    );
+    assert_eq!(
+        hi::verdict_of(&measured(Some(DHASH_SIMILAR_MAX), false, Some(60))),
+        Some(hi::Verdict::Alternate)
+    );
+    assert_eq!(
+        hi::verdict_of(&measured(Some(DHASH_SIMILAR_MAX + 1), false, Some(60))),
+        None
+    );
+    assert_eq!(hi::Verdict::SameImage.as_str(), "same");
+    assert_eq!(hi::Verdict::Alternate.as_str(), "alternate");
+}
+
+#[test]
+fn the_verdict_reads_real_files_and_says_nothing_for_unreadable_ones() {
+    let dir = scratch("verdict-files");
+    let local = dir.join("l.png");
+    let pic = png_bytes(64, 64, noisy(1));
+    std::fs::write(&local, &pic).unwrap();
+    assert_eq!(
+        hi::duplicate_verdict(&local, &pic),
+        Some(hi::Verdict::SameImage)
+    );
+    // A bigger copy of the same picture is still the same picture.
+    let bigger = png_bytes(128, 128, |x, y| noisy(1)(x / 2, y / 2));
+    assert_eq!(
+        hi::duplicate_verdict(&local, &bigger),
+        Some(hi::Verdict::SameImage)
+    );
+    assert_eq!(
+        hi::duplicate_verdict(&local, &png_bytes(64, 64, noisy(2))),
+        None,
+        "a different picture"
+    );
+    assert_eq!(
+        hi::duplicate_verdict(&local, b"not a picture"),
+        None,
+        "unreadable bytes"
+    );
+    assert_eq!(
+        hi::duplicate_verdict(&dir.join("missing.png"), &pic),
+        None,
+        "an unreadable local file"
+    );
+    let mirrored = png_bytes(64, 64, |x, y| noisy(1)(63 - x, y));
+    assert_eq!(
+        hi::duplicate_verdict(&local, &mirrored),
+        None,
+        "a mirrored copy says nothing"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+// ---- which tags leave the app (test_sent_tag_filter.TestTheHelper) ----
+
+#[test]
+fn the_tag_filter_is_off_by_default_and_literal_when_on() {
+    use hatate_core::model::{enabled_tag_sources, tags_to_send};
+    let mut e = Entry::new("/x.png");
+    e.tags = vec![
+        tag(None, "u", TagSource::User),
+        tag(None, "b", TagSource::Booru),
+        tag(Some("ns"), "h", TagSource::Hydrus),
+    ];
+    let names = |s: Option<&Settings>| -> Vec<String> {
+        tags_to_send(&e, s).iter().map(|t| t.display()).collect()
+    };
+    assert_eq!(names(None), ["u", "b", "ns:h"], "no settings: no filtering");
+    let off = settings_with(|s| {
+        s.filter_sent_tags_by_source = false;
+        s.enabled_tag_sources = vec![];
+    });
+    assert_eq!(
+        names(Some(&off)),
+        ["u", "b", "ns:h"],
+        "off sends everything even with nothing ticked"
+    );
+    let on = settings_with(|s| {
+        s.filter_sent_tags_by_source = true;
+        s.enabled_tag_sources = vec!["Booru".into(), "Stale name".into()];
+    });
+    assert_eq!(
+        names(Some(&on)),
+        ["b"],
+        "a stale source name is ignored, not fatal"
+    );
+    assert_eq!(enabled_tag_sources(&on), [TagSource::Booru]);
+    let none = settings_with(|s| {
+        s.filter_sent_tags_by_source = true;
+        s.enabled_tag_sources = vec![];
+    });
+    assert!(
+        names(Some(&none)).is_empty(),
+        "on with nothing ticked sends nothing"
+    );
+}

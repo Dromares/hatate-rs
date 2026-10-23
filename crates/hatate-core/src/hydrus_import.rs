@@ -25,7 +25,8 @@ use crate::hydrus_client::{
     PERMISSION_EDIT_FILE_NOTES, PERMISSION_EDIT_FILE_RELATIONSHIPS,
 };
 use crate::image_compare::{
-    DHASH_SAME_MAX, DHASH_SIMILAR_MAX, FINE_CONFIRM_MAX, Source, compare_to_local, local_prints,
+    Comparison, DHASH_SAME_MAX, DHASH_SIMILAR_MAX, FINE_CONFIRM_MAX, Source, compare_to_local,
+    local_prints,
 };
 use crate::model::{Candidate, Entry, tag_version_for_url, tags_to_send};
 use crate::provenance_note::{note_name, provenance_note};
@@ -449,10 +450,15 @@ impl Verdict {
 /// means "do not touch Hydrus": no distance at all, the mirrored shape, no 256-bit distance, a
 /// 64-bit "same" that 256 bits does not confirm, or a distance past `DHASH_SIMILAR_MAX`.
 pub fn duplicate_verdict(local_path: &Path, downloaded: &[u8]) -> Option<Verdict> {
-    let comparison = compare_to_local(
+    verdict_of(&compare_to_local(
         local_prints(Source::Path(local_path)).as_ref(),
         Source::Bytes(downloaded),
-    );
+    ))
+}
+
+/// The decision table of [`duplicate_verdict`], on a measured [`Comparison`]. Python's tests reach
+/// it by patching `compare_to_local`; here it is a function of its own.
+pub fn verdict_of(comparison: &Comparison) -> Option<Verdict> {
     let (distance, fine) = match (comparison.distance, comparison.fine_distance) {
         (Some(d), Some(f)) if !comparison.mirrored => (d, f),
         _ => return None,
