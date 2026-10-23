@@ -1263,7 +1263,9 @@ async fn a_failure_mid_batch_ends_the_run_with_the_error_and_keeps_what_was_repo
     );
 }
 
-struct Finder(Box<dyn Fn(&str) -> Result<Vec<Value>, PawchiveError> + Send + Sync>);
+type FindScript = dyn Fn(&str) -> Result<Vec<Value>, PawchiveError> + Send + Sync;
+
+struct Finder(Box<FindScript>);
 
 impl CreatorFinder for Finder {
     fn find_creators<'a>(
