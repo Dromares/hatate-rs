@@ -382,11 +382,14 @@ pub async fn search_pending(
         if snapshot.log_matched_urls
             && matches!(entry_status, MatchStatus::Good | MatchStatus::Poor)
         {
-            if let Some(url) = entries[idx]
-                .matched_url
-                .as_deref()
-                .filter(|u| !u.is_empty())
-            {
+            // `entry.matched_url`: the selected match's URL, or the one a cached result's dead
+            // matches left behind.
+            let url = entries[idx]
+                .selected_candidate()
+                .map(|c| c.url.as_str())
+                .or(entries[idx].stale_matched_url.as_deref())
+                .filter(|u| !u.is_empty());
+            if let Some(url) = url {
                 log_matched_url(
                     &snapshot.log_file_path,
                     &clock.local_stamp(clock.wall()),

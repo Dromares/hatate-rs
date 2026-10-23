@@ -5,7 +5,7 @@ differs on purpose, and which Python tests map to which Rust ones. Python source
 `Dromares/Hatate-Linux-Redux` at `76c85c4`. The Phase 1 net, cache, quota-pause, crash-marker and
 session modules, the engine clients and runner (3.a to 3.f) and `search_image` (3.h,
 `docs/search-engine.md`) are reused as they are. The only change to earlier code is one transient
-field on `Entry` (section 5).
+field on `Entry` and the line that sets it (section 5).
 
 `hatate batch` is experimental: it is a work-in-progress command in a work-in-progress rewrite.
 
@@ -45,7 +45,7 @@ appended and everything not yet searched is searched.
    `batch`, and `app.log` is never touched (Phase 1 rule).
 4. **Dependency:** `tracing-subscriber` in `hatate-cli` for the stderr log (already a
    `hatate-core` dev-dependency).
-5. **`Entry.matched_url` is transient** (section 5).
+5. **`Entry.stale_matched_url`**, a transient field for one Python quirk (section 5).
 
 ## 3. How it was checked
 
@@ -118,20 +118,23 @@ contained per image, `a_panic_in_one_engine_marks_that_image_and_the_batch_goes_
 crash marker is Phase 1's), `test_workers_background.py` (the availability, upscale and pawchive
 workers are other tickets' scope).
 
-## 5. `Entry.matched_url`
+## 5. `Entry.stale_matched_url`
 
 Python's `ImageEntry.matched_url` is a stored field that `select_candidate` copies, not a value
-derived from the selected candidate. It outlives the candidate: when a cached result's matches
-have all died since, `search_image` calls `select_candidate(-1)`, which changes nothing, and the
-row is left `good`/`poor` with no candidates and the dead URL in `matched_url`. The worker's
-matched-URL log writes `entry.matched_url`, so Python logs a dead URL for that row. 3.h read the
-URL from the selected candidate instead, which logs nothing; the differential found the gap (1 of
-294 entries in the first pass).
+derived from the selected candidate. It outlives the candidate in one place: when a cached
+result's matches have all died since, `search_image` calls `select_candidate(-1)`, which changes
+nothing, and the row is left `good`/`poor` with no candidates and the dead URL in `matched_url`.
+The worker's matched-URL log writes `entry.matched_url`, so Python logs a dead URL for that row.
+3.h read the URL from the selected candidate instead, which logs nothing; the differential found
+the gap (1 of 294 entries in the first pass).
 
-`Entry.matched_url` is now a `#[serde(skip)]` field like `last_searched`: set by `select_candidate`,
-cleared on the "every match was dead" path of a fresh search (as Python does), never stored (a row
-loaded from a session gets it from `select_candidate`, as in Python). The batch log reads it. No
-session byte changes.
+`Entry.stale_matched_url` is a `#[serde(skip)]` field like `last_searched`: set only on that cache
+path (to the URL of the match that was selected before the drop), cleared when a fresh search
+starts, never stored. The batch log writes the selected candidate's URL, or this when there is no
+candidate. Nothing else reads it and no session byte changes. (A first version made `matched_url`
+a transient field set by `select_candidate`; it made a loaded entry differ from the one that was
+saved in `session_compat`'s hostile round-trip tests, which is the wrong place to pay for a log
+line, so only the one stale case is carried.)
 
 ## 6. Cost note: cache writes are fsynced
 
