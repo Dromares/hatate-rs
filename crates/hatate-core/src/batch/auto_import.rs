@@ -130,7 +130,7 @@ impl From<crate::hydrus_url::UrlValueError> for RunFault {
 /// `_maybe_auto_import`: sends a just-found match straight to Hydrus if it is confident enough.
 /// `Ok(None)` when nothing was attempted (the early returns); otherwise the result, which the
 /// caller hands to [`removes_row`] and the reporter.
-pub(super) async fn maybe_auto_import(
+pub async fn maybe_auto_import(
     env: &BatchEnv<'_>,
     entry: &mut Entry,
     client: &HydrusClient,
@@ -310,7 +310,7 @@ pub(super) async fn maybe_auto_import(
 /// The chosen match is often a comic-aggregator page Hydrus cannot read, sitting at the same
 /// measured 100% as a booru post it can. Only matches that clear the auto-import threshold on a
 /// MEASURED score are considered, so falling back never lowers the bar.
-async fn switch_to_importable_match(
+pub async fn switch_to_importable_match(
     entry: &mut Entry,
     client: &HydrusClient,
     settings: &Settings,
@@ -355,6 +355,6 @@ async fn switch_to_importable_match(
 /// `_on_auto_imported`, the part that changes the list: a row that went to Hydrus is dropped when
 /// `remove_after_import` is on, unless Hydrus never confirmed the import (the file may still be
 /// downloading).
-pub(super) fn removes_row(settings: &Settings, result: &ImportResult) -> bool {
+pub fn removes_row(settings: &Settings, result: &ImportResult) -> bool {
     result.success && result.confirmed != Some(false) && settings.remove_after_import
 }

@@ -13,7 +13,7 @@ pub mod matched_urls;
 pub mod run;
 pub mod staging;
 
-pub use auto_import::RunFault;
+pub use auto_import::{RunFault, maybe_auto_import, removes_row, switch_to_importable_match};
 pub use run::{
     Autosave, BatchEnv, Ending, Outcome, Reporter, SearchEnd, SessionSink, Silent, run_batch,
     search_pending,
