@@ -580,6 +580,7 @@ dependencies = [
 name = "hatate-core"
 version = "0.0.0"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
  "crc32fast",
  "flate2",

@@ -53,4 +53,6 @@ pub enum ErrorKind {
     DownloadInvalid,
     /// Hydrus stored a file whose hash is not the hash of the bytes Hatate sent.
     HashMismatch,
+    /// A name that is not in the MCP tool registry reached a registry lookup.
+    McpUnknownTool,
 }

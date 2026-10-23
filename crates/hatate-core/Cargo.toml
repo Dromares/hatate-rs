@@ -9,6 +9,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64 = "0.22"
 bytes = "1"
 # CRC-32 of PNG chunks, for `pymeta` (Pillow checks every chunk before the pixel data). Already in
 # the lockfile through `png`, so no new crate is built.

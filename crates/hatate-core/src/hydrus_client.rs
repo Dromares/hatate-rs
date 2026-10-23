@@ -224,6 +224,10 @@ impl HydrusError {
                 "Hydrus stored a different file from the one Hatate sent, so the link and tags were not attached. Try again."
                     .to_owned()
             }
+            // The MCP kinds belong to `mcp`; a Hydrus call never builds one.
+            ErrorKind::McpUnknownTool => {
+                "Hydrus failed in a way Hatate does not expect. Try again.".to_owned()
+            }
         }
     }
 
