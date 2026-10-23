@@ -379,10 +379,33 @@ pub fn detect_naive_upscale(path: &Path) -> Result<SelfConsistencyResult, Decomp
     Ok(best)
 }
 
-/// `check_upscaler_metadata`: a known AI upscaler name in the picture's own metadata, as the
-/// message to show; `None` when there is none (which proves nothing).
+/// `check_upscaler_metadata`: a known AI upscaler name in the picture's own metadata (PNG text
+/// chunks and every other string or bytes value of `Image.info`, plus the EXIF `ImageDescription`,
+/// `Software` and `Artist`), as the message to show; `None` when there is none (which proves
+/// nothing). A file Pillow cannot open gives `None`; only the `DecompressionBombError` passes
+/// through.
 pub fn check_upscaler_metadata(path: &Path) -> Result<Option<String>, DecompressionBomb> {
-    let _ = path;
+    let Ok(data) = std::fs::read(path) else {
+        tracing::warn!("Could not read metadata from {}", path.display());
+        return Ok(None);
+    };
+    if pyraster::pillow_size(&data)?.is_none() {
+        tracing::warn!("Could not read metadata from {}", path.display());
+        return Ok(None);
+    }
+    let Some(texts) = crate::pymeta::metadata_texts(&data) else {
+        tracing::warn!("Could not read metadata from {}", path.display());
+        return Ok(None);
+    };
+    let combined = texts.join(" ").to_lowercase();
+    for signature in KNOWN_AI_UPSCALER_SIGNATURES {
+        if combined.contains(signature) {
+            return Ok(Some(format!(
+                "Image metadata mentions \"{signature}\" - a known AI upscaling \
+                 tool/model name."
+            )));
+        }
+    }
     Ok(None)
 }
 

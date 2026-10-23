@@ -596,6 +596,7 @@ fn lanczos(x: f64) -> f64 {
 
 /// One pass of `ImagingResample` for 8-bit pixels: `precompute_coeffs` over the input range
 /// `(in0, in1)`, `normalize_coeffs_8bpc` and the 22-bit fixed-point sums.
+#[allow(clippy::too_many_arguments)]
 fn resample_axis(
     src: &[u8],
     width: usize,

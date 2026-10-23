@@ -35,6 +35,7 @@ mod pycsv;
 mod pyfnmatch;
 mod pyimage;
 pub mod pyjpeg;
+mod pymeta;
 mod pynumpy;
 pub mod pyraster;
 mod pyrepr;
