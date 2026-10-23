@@ -438,3 +438,33 @@ async fn hatate_batch_builds_its_engines_over_the_profiles_index() {
         "{answer:?}"
     );
 }
+
+/// Python's `sqlite3` says only "unable to open database file" when the index cannot be opened;
+/// `rusqlite` appends the file's path, which must not reach `Entry.error_message`.
+#[tokio::test]
+async fn an_index_that_cannot_be_opened_says_so_without_its_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let profile = Profile::new();
+    let bytes = png(&picture(111, 200, 200));
+    let local = profile.image("b.png", &bytes);
+    let expect = Err(IndexError("unable to open database file".to_owned()));
+
+    // A folder where the file should be.
+    std::fs::create_dir_all(profile.index_file()).unwrap();
+    let answer = profile
+        .engines()
+        .pawchive_index(Path::new(&local), None)
+        .await;
+    assert_eq!(answer, expect);
+    std::fs::remove_dir(profile.index_file()).unwrap();
+
+    // A file this user may not open.
+    std::fs::write(profile.index_file(), b"").unwrap();
+    std::fs::set_permissions(profile.index_file(), std::fs::Permissions::from_mode(0o000)).unwrap();
+    let answer = profile
+        .engines()
+        .pawchive_index(Path::new(&local), None)
+        .await;
+    assert_eq!(answer, expect);
+}

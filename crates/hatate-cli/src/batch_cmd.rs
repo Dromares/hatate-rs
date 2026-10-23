@@ -21,6 +21,12 @@ use hatate_core::session::{LoadOptions, SessionStore};
 
 use crate::args::BatchOptions;
 
+/// The engines `hatate batch` searches with: the shipped ones, and the profile's own Pawchive
+/// index behind `pawchive_index`. A function of its own so a test can pin that the index is wired.
+fn build_engines(net: NetClient, clock: Arc<dyn Clock>, paths: &Paths) -> LiveEngines {
+    LiveEngines::for_profile(net, clock, paths)
+}
+
 /// Progress on stderr: lines, and a countdown for the waits. On a terminal the countdown rewrites
 /// one line; otherwise it prints when a wait starts and every 15 seconds after.
 struct StderrReporter {
@@ -165,7 +171,7 @@ async fn batch(opts: BatchOptions) -> i32 {
             return 1;
         }
     };
-    let live = Arc::new(LiveEngines::for_profile(net.clone(), clock.clone(), &paths));
+    let live = Arc::new(build_engines(net.clone(), clock.clone(), &paths));
     let runner = EngineRunner::new(live.clone(), clock.clone());
     let engine = SearchEngine::new(net, runner, paths.clone(), clock.clone());
 
@@ -243,4 +249,68 @@ fn spawn_signal_handler(stop: Arc<AtomicBool>) {
             eprintln!("hatate: stopping; saving the session (signal again to quit at once)");
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    use hatate_core::clock::ManualClock;
+    use hatate_core::engine_runner::{Engines, IndexAnswer};
+    use hatate_core::image_compare::Source;
+    use hatate_core::pawchive_index::{ImageRow, PawchiveIndex, fingerprints};
+
+    fn picture() -> Vec<u8> {
+        let mut img = image::RgbImage::new(64, 64);
+        for (x, y, p) in img.enumerate_pixels_mut() {
+            *p = image::Rgb([(x * 4) as u8, (y * 4) as u8, ((x * y) % 251) as u8]);
+        }
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    }
+
+    /// `hatate batch` searches the Pawchive index in the profile, not an empty one: the engines
+    /// `build_engines` returns answer `Matches` for a picture the profile's index holds.
+    #[tokio::test]
+    async fn the_batch_engines_search_the_profiles_pawchive_index() {
+        install_crypto_provider();
+        let home = tempfile::tempdir().unwrap();
+        let home_os = home.path().as_os_str().to_owned();
+        let paths = Paths::from_lookup(|k| (k == "HOME").then(|| home_os.clone())).unwrap();
+
+        let bytes = picture();
+        let (dhash8, dhash16) = fingerprints(Source::Bytes(&bytes)).unwrap();
+        let hex = |h: hatate_core::image_compare::Hash| {
+            format!(
+                "{:016x}{:016x}{:016x}{:016x}",
+                h.0[0], h.0[1], h.0[2], h.0[3]
+            )
+        };
+        PawchiveIndex::new(paths.pawchive_index_db())
+            .add_images(&[ImageRow {
+                service: "fanbox".to_owned(),
+                user_id: "artist-7".to_owned(),
+                post_id: "120".to_owned(),
+                page_index: 0,
+                sha256: "0".repeat(64),
+                path: "/00/00/picture.png".to_owned(),
+                title: Some("a post".to_owned()),
+                dhash8: dhash8.map(|h| format!("{:016x}", h.0[3])),
+                dhash16: dhash16.map(hex),
+            }])
+            .unwrap();
+        let local = home.path().join("local.png");
+        std::fs::write(&local, &bytes).unwrap();
+
+        let net = NetClient::new(NetConfig::default()).unwrap();
+        let clock: Arc<dyn Clock> = Arc::new(ManualClock::new(1_700_000_000.0, 100.0));
+        let engines = build_engines(net, clock, &paths);
+        let answer = engines.pawchive_index(Path::new(&local), None).await;
+        assert!(
+            matches!(&answer, Ok(IndexAnswer::Matches(m)) if m.len() == 1),
+            "{answer:?}"
+        );
+    }
 }
