@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use common::{Recorded, Reply, ScriptedEngines, Step, TestPki, TestServer, iqdb_match};
 use hatate_core::batch::{BatchEnv, Ending, Outcome, Reporter, SessionSink, run_batch};
-use hatate_core::clock::ManualClock;
+use hatate_core::clock::{Clock, ManualClock};
 use hatate_core::config::Settings;
 use hatate_core::engine_runner::EngineRunner;
 use hatate_core::engines::iqdb::IqdbError;
@@ -47,6 +47,8 @@ struct World {
     reporter: Arc<Recording>,
     stop: Arc<AtomicBool>,
     quota_after_calls: AtomicUsize,
+    /// Seconds the manual clock moves on each time the booru page is served: non-engine work.
+    booru_cost: Arc<Mutex<f64>>,
 }
 
 /// A reporter that keeps what it is told and can raise the stop flag on a line.
@@ -90,8 +92,12 @@ impl SessionSink for CountingSink {
 async fn world() -> World {
     let hosts = ["danbooru.donmai.us"];
     let pki = TestPki::generate_for(&hosts);
-    let server = TestServer::https(&pki, |req: &Recorded| {
+    let clock = Arc::new(ManualClock::new(NOW, 0.0));
+    let booru_cost = Arc::new(Mutex::new(0.0));
+    let (handler_clock, handler_cost) = (clock.clone(), booru_cost.clone());
+    let server = TestServer::https(&pki, move |req: &Recorded| {
         if req.target.contains("/posts/5.json") {
+            handler_clock.advance(*handler_cost.lock().unwrap());
             Reply::ok(POST).header("Content-Type", "application/json")
         } else {
             Reply::new(404, "no route")
@@ -111,7 +117,6 @@ async fn world() -> World {
     let home: std::ffi::OsString = root.join("home").into();
     let paths = Paths::from_lookup(|k| (k == "HOME").then(|| home.clone())).unwrap();
     let engines = Arc::new(ScriptedEngines::default());
-    let clock = Arc::new(ManualClock::new(NOW, 0.0));
     let runner = EngineRunner::new(engines.clone(), clock.clone());
     let engine = SearchEngine::with_recorder(net, runner, paths.clone(), clock.clone(), None);
     let mut settings = Settings::with_defaults(&paths);
@@ -136,6 +141,7 @@ async fn world() -> World {
         reporter: Arc::new(Recording::default()),
         stop: Arc::new(AtomicBool::new(false)),
         quota_after_calls: AtomicUsize::new(usize::MAX),
+        booru_cost,
     }
 }
 
@@ -471,6 +477,137 @@ async fn an_image_served_from_the_cache_costs_no_gap() {
     let cached = second.iter().find(|e| e.filename() == "a2.png").unwrap();
     assert_eq!(cached.result_source.as_deref(), Some("cached"));
     assert_eq!(w.clock.slept(), before, "no gap after a cached image");
+}
+
+/// `gui_smoke::TestRateLimitIsMeasuredEngineToEngine`, the wiring half: time spent on the booru
+/// page after the engines answered counts toward the gap, and doing so never shortens the
+/// interval between two engine requests.
+#[tokio::test]
+async fn booru_time_counts_toward_the_gap_and_the_engine_to_engine_interval_stays_whole() {
+    let w = world().await;
+    {
+        let mut s = w.settings.lock().unwrap();
+        s.delay_min_seconds = 60.0;
+        s.delay_max_seconds = 60.0;
+    }
+    *w.booru_cost.lock().unwrap() = 20.0;
+    let dir = w.pictures(&["a.png", "b.png", "c.png"]);
+    w.match_every_image(3);
+    let start = w.clock.monotonic();
+    let mut entries = Vec::new();
+    w.run(&dir, &mut entries).await;
+    let fetches = w
+        .server
+        .recorded()
+        .iter()
+        .filter(|r| r.target.contains("/posts/5.json"))
+        .count();
+    assert_eq!(fetches, 3, "every image fetched its booru page");
+    // Each gap is 60 s from one engine answer to the next: 20 s of it the booru page, 40 s waited.
+    let slept = w.clock.slept();
+    assert!(
+        (slept - 80.0).abs() < 1.0,
+        "two waits of 40 s, not 60: slept {slept}"
+    );
+    // Engine answer 1 -> 2 -> 3 is 120 s however the time was spent, plus the last page's 20 s.
+    let elapsed = w.clock.monotonic() - start;
+    assert!(
+        (elapsed - 140.0).abs() < 1.0,
+        "the interval the engines see is not shortened: {elapsed}"
+    );
+}
+
+/// `gui_smoke::TestPerHostPacing`: each engine is paced on its own clock, from its own override,
+/// and an engine that is not queried imposes nothing.
+#[tokio::test]
+async fn a_hosts_own_interval_replaces_the_global_gap_for_that_host_only() {
+    let set = |w: &World, global: f64, iqdb: f64| {
+        let mut s = w.settings.lock().unwrap();
+        s.delay_min_seconds = global;
+        s.delay_max_seconds = global;
+        s.engine_delays =
+            hatate_core::config::OrderedMap(vec![("iqdb".to_owned(), vec![iqdb, iqdb])]);
+    };
+    // A laxer host is not held to the global delay (`test_a_skipped_host_imposes_no_wait`: only
+    // IQDB is queried, so SauceNAO's pace is never in it).
+    let w = world().await;
+    set(&w, 60.0, 5.0);
+    let dir = w.pictures(&["a.png", "b.png", "c.png"]);
+    w.match_every_image(3);
+    w.run(&dir, &mut Vec::new()).await;
+    assert!(
+        (w.clock.slept() - 10.0).abs() < 1.0,
+        "two gaps of 5 s: {}",
+        w.clock.slept()
+    );
+    assert!(!w.engines.calls().contains(&"saucenao"));
+
+    // A stricter host stretches the gap (`test_a_longer_override_extends_the_wait`).
+    let w = world().await;
+    set(&w, 10.0, 90.0);
+    let dir = w.pictures(&["a.png", "b.png", "c.png"]);
+    w.match_every_image(3);
+    w.run(&dir, &mut Vec::new()).await;
+    assert!(
+        (w.clock.slept() - 180.0).abs() < 1.0,
+        "two gaps of 90 s: {}",
+        w.clock.slept()
+    );
+}
+
+/// `test_a_stricter_host_paces_the_whole_wave`: engines of one wave are queried together, so the
+/// wave waits for the slowest of them.
+#[tokio::test]
+async fn a_stricter_host_paces_the_whole_wave() {
+    let w = world().await;
+    {
+        let mut s = w.settings.lock().unwrap();
+        s.secondary_engine_mode = "always".to_owned();
+        s.delay_min_seconds = 10.0;
+        s.delay_max_seconds = 10.0;
+        s.engine_delays =
+            hatate_core::config::OrderedMap(vec![("saucenao".to_owned(), vec![70.0, 70.0])]);
+    }
+    let dir = w.pictures(&["a.png", "b.png"]);
+    w.match_every_image(2);
+    w.run(&dir, &mut Vec::new()).await;
+    assert!(
+        w.engines.calls().contains(&"saucenao") && w.engines.calls().contains(&"iqdb"),
+        "{:?}",
+        w.engines.calls()
+    );
+    assert!(
+        (w.clock.slept() - 70.0).abs() < 1.0,
+        "IQDB waited for SauceNAO's 70 s: {}",
+        w.clock.slept()
+    );
+}
+
+/// `test_a_broken_engine_report_falls_back_instead_of_hammering`: when a fresh search ends with no
+/// engine having reported (SauceNAO is the only engine and has been left out because its quota is
+/// spent, so none is asked), the wait falls back to the global delay and not to zero.
+#[tokio::test]
+async fn no_engine_report_falls_back_to_the_global_delay() {
+    let w = world().await;
+    {
+        let mut s = w.settings.lock().unwrap();
+        s.primary_engine = "saucenao".to_owned();
+        s.continue_without_saucenao_on_quota = true;
+        s.delay_min_seconds = 60.0;
+        s.delay_max_seconds = 60.0;
+        s.engine_delays =
+            hatate_core::config::OrderedMap(vec![("saucenao".to_owned(), vec![1.0, 1.0])]);
+    }
+    w.quota_after_calls.store(0, Ordering::SeqCst);
+    let dir = w.pictures(&["a.png", "b.png"]);
+    let mut entries = Vec::new();
+    w.run(&dir, &mut entries).await;
+    assert!(w.engines.calls().is_empty(), "{:?}", w.engines.calls());
+    assert!(
+        (w.clock.slept() - 60.0).abs() < 1.0,
+        "the global 60 s, not SauceNAO's 1 s and not nothing: {}",
+        w.clock.slept()
+    );
 }
 
 /// Python logs `entry.matched_url`, a stored field, and a cached result whose matches have all
