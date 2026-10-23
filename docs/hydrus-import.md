@@ -69,7 +69,7 @@ comparison is exact.
 | `write_provenance_note` | 1 745 (1 745) | the warning, every request |
 | `_imported_bytes` | 519 (519) | the bytes or `None`, every request, the temp files left behind |
 | `_repoint`, `_is_exact_copy`, `_joined`, `similarity_label` / `_tooltip` (rounding halves, nan, inf, -0), `tags_to_send`, `provenance_note` text and date | 2 106 (4 357) | return values and entry state |
-| `_validate_magic_bytes` (generated pictures in 7 formats, container signatures, every fixture with 5 claimed formats) | 1 459 (3 929) | the message or `None` |
+| `_validate_magic_bytes` (generated pictures in 7 formats, container signatures, every fixture with 5 claimed formats) | 1 520 (3 929) | the message or `None` |
 | `_validate_image_decodes` (the same, damaged in 6 ways; every fixture whole and cut at 25, 50, 90 and 99 %) | 1 509 (3 417) | the message or `None` |
 | `_looks_like_a_web_page` | 568 (1 467) | the boolean |
 | Time zones for the note's date | 6 (New York, Kolkata, UTC, London, Auckland, Los Angeles), dates from 2000 to 2038 | the text of the note |
