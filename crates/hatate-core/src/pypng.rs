@@ -22,6 +22,9 @@ use flate2::write::ZlibEncoder;
 
 use crate::pyinflate::{Broken, Inflate, Stop};
 
+/// `ImageFile._safe_read` on a body the file cuts short.
+const READ_CUT: &str = "Truncated File Read";
+
 /// `ImageFile.MAXBLOCK`: Pillow feeds the decoder at most this many bytes at a time.
 const BLOCK: usize = 65536;
 
@@ -311,9 +314,52 @@ fn trailing_chunks_complete(data: &[u8], payload_end: usize) -> Result<(), Strin
         at += 8;
         let end = at.saturating_add(length);
         if end > data.len() {
-            return Err("Truncated File Read".to_string());
+            return Err(READ_CUT.to_string());
         }
         at = end;
+    }
+}
+
+/// `PngImageFile.verify()`, which `Image.verify()` runs: every chunk from the first `IDAT` to
+/// `IEND` read to the end of its body and its checksum compared, the pixel chunks included. `Err`
+/// is the exception's text. Chunks before the first `IDAT` were checked when the file was opened.
+pub(crate) fn verify(data: &[u8]) -> Result<(), String> {
+    let Some((_, mut at)) = scan(data) else {
+        return Ok(());
+    };
+    loop {
+        let header = data.get(at..(at + 8).min(data.len())).unwrap_or(&[]);
+        if header.len() < 4 {
+            return Err("truncated PNG file".to_string());
+        }
+        let cid = &header[4..];
+        if !is_cid(cid) {
+            return Err(format!("broken PNG file (chunk {})", bytes_repr(cid)));
+        }
+        if cid == b"IEND" {
+            return Ok(());
+        }
+        let body = at + 8;
+        let end = body.saturating_add(be32(header, 0).map_or(0, |n| n as usize));
+        let Some(content) = data.get(body..end) else {
+            return Err(READ_CUT.to_string());
+        };
+        let Some(stored) = data.get(end..end + 4) else {
+            return Err(format!(
+                "broken PNG file (incomplete checksum in {})",
+                bytes_repr(cid)
+            ));
+        };
+        let mut crc = crc32fast::Hasher::new();
+        crc.update(cid);
+        crc.update(content);
+        if crc.finalize().to_be_bytes() != stored {
+            return Err(format!(
+                "broken PNG file (bad header checksum in {})",
+                bytes_repr(cid)
+            ));
+        }
+        at = end + 4;
     }
 }
 

@@ -319,6 +319,88 @@ pub fn cases() -> Vec<(&'static str, Vec<u8>, Expect)> {
     v
 }
 
+const PREFIX: &str = "Downloaded data does not decode as a valid image: ";
+
+/// `_validate_image_decodes` opens, runs `verify()` (which checks every chunk's checksum, the
+/// pixel chunks too) and only then loads: the message Pillow's `verify()` raises, or `None`.
+pub fn validator_cases() -> Vec<(&'static str, Vec<u8>, Option<String>)> {
+    let stream = zlib(&rows(), Compression::default());
+    let msg = |m: &str| Some(format!("{PREFIX}{m}"));
+    let mut v = Vec::new();
+    v.push(("clean", file(0, &[idat(&stream)], true), None));
+    v.push((
+        "bad_idat_crc",
+        file(0, &[with_bad_crc(&idat(&stream))], true),
+        msg("broken PNG file (bad header checksum in b'IDAT')"),
+    ));
+    let mut second = file(0, &[idat(&stream[..10])], false);
+    second.extend(with_bad_crc(&idat(&stream[10..])));
+    second.extend(chunk(b"IEND", b""));
+    v.push((
+        "bad_crc_on_a_later_idat",
+        second,
+        msg("broken PNG file (bad header checksum in b'IDAT')"),
+    ));
+    let mut text = file(0, &[idat(&stream)], false);
+    text.extend(chunk_with(b"tEXt", b"Comment\0fine", Some([1, 2, 3, 4])));
+    text.extend(chunk(b"IEND", b""));
+    v.push((
+        "bad_crc_on_a_text_chunk_after_the_data",
+        text,
+        msg("broken PNG file (bad header checksum in b'tEXt')"),
+    ));
+    v.push((
+        "missing_iend",
+        file(0, &[idat(&stream)], false),
+        msg("truncated PNG file"),
+    ));
+    let mut iend_crc = file(0, &[idat(&stream)], false);
+    iend_crc.extend(chunk_with(b"IEND", b"", Some([0, 0, 0, 0])));
+    v.push(("bad_iend_crc_is_not_looked_at", iend_crc, None));
+    let mut cut_crc = file(0, &[idat(&stream)], false);
+    cut_crc.truncate(cut_crc.len() - 2);
+    v.push((
+        "file_ends_inside_the_idat_checksum",
+        cut_crc,
+        msg("broken PNG file (incomplete checksum in b'IDAT')"),
+    ));
+    let mut cut_body = file(0, &[idat(&stream)], false);
+    cut_body.extend_from_slice(&chunk(b"tEXt", b"Comment\0a long enough comment")[..14]);
+    v.push(("text_chunk_cut_short", cut_body, msg(READ_CUT)));
+    let mut junk = file(0, &[idat(&stream)], false);
+    junk.extend_from_slice(b"\0\0\0\x01\x01\x02\x03\x04");
+    v.push((
+        "junk_chunk_id",
+        junk,
+        msg("broken PNG file (chunk b'\\x01\\x02\\x03\\x04')"),
+    ));
+    // The checksum comes before the load: a stream that would not decode reads as a bad checksum.
+    let mut bad_header = stream.clone();
+    bad_header[0] ^= 1;
+    v.push((
+        "bad_checksum_and_a_broken_stream",
+        file(0, &[with_bad_crc(&idat(&bad_header))], true),
+        msg("broken PNG file (bad header checksum in b'IDAT')"),
+    ));
+    v.push((
+        "broken_stream_good_checksums",
+        file(0, &[idat(&bad_header)], true),
+        msg(BROKEN),
+    ));
+    v
+}
+
+#[test]
+fn the_validator_checks_every_chunk_checksum_before_it_loads() {
+    for (name, bytes, want) in validator_cases() {
+        assert_eq!(
+            hatate_core::hydrus_import::validate_image_decodes(&bytes, Some("PNG")),
+            want,
+            "{name}"
+        );
+    }
+}
+
 #[test]
 fn damaged_pngs_decode_or_are_refused_as_pillow_does() {
     for (name, bytes, expect) in cases() {
