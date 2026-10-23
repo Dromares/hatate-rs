@@ -21,6 +21,8 @@ use tokio::time::{Instant, timeout};
 use tower::Service;
 use url::Url;
 
+use crate::pyurl;
+
 use super::config::NetConfig;
 use super::error::{ErrorKind, NetError};
 use super::request::{Body, Method, NetRequest, NetResponse, is_credential_header};
@@ -155,57 +157,18 @@ fn is_redirect(status: StatusCode) -> bool {
     matches!(status.as_u16(), 301 | 302 | 303 | 307 | 308)
 }
 
-/// The URL a redirect's `Location` names, as `requests` resolves it: `urljoin(resp.url,
-/// location)` for a reference with no host (`requests/sessions.py` `resolve_redirects`).
-/// WHATWG resolution (`Url::join`) is the same except for a relative path, where
-/// `urljoin` drops the empty segments left in the base path and in the reference
-/// (`///verify_access_key` + `../d` is `/d`, not `//d`; `a//b` is `a/b`), so that case is
-/// resolved here the `urljoin` way.
+/// The URL a redirect's `Location` names, as `requests` resolves it
+/// (`resolve_redirects`): a reference with a host is used as it stands, anything else goes
+/// through `urljoin(resp.url, requote_uri(location))`. WHATWG resolution (`Url::join`) agrees
+/// except for a relative path, where `urljoin` drops the empty segments left in the base path
+/// and in the reference (`///verify_access_key` + `../d` is `/d`, not `//d`), so those go
+/// through the `pyurl` port of `urljoin`.
 fn resolve_location(base: &Url, location: &str) -> Option<Url> {
-    let relative_path = !location.is_empty()
-        && !location.starts_with(['/', '?', '#'])
-        && Url::parse(location).is_err();
-    if !relative_path {
+    if location.starts_with("//") || !pyurl::try_urlparse(location, "").ok()?.netloc.is_empty() {
         return base.join(location).ok();
     }
-    let (rest, fragment) = match location.split_once('#') {
-        Some((rest, fragment)) => (rest, Some(fragment)),
-        None => (location, None),
-    };
-    let (path, query) = match rest.split_once('?') {
-        Some((path, query)) => (path, Some(query)),
-        None => (rest, None),
-    };
-    let mut segments: Vec<&str> = base.path().split('/').collect();
-    if segments.last() != Some(&"") {
-        segments.pop();
-    }
-    segments.extend(path.split('/'));
-    let last = segments.len() - 1;
-    let mut resolved: Vec<&str> = Vec::new();
-    for (i, segment) in segments.iter().enumerate() {
-        match *segment {
-            ".." => {
-                resolved.pop();
-            }
-            "." => {}
-            "" if i != 0 && i != last => {}
-            segment => resolved.push(segment),
-        }
-    }
-    if matches!(segments[last], "." | "..") {
-        resolved.push("");
-    }
-    let joined = resolved.join("/");
-    let mut next = base.clone();
-    next.set_path(&if joined.starts_with('/') {
-        joined
-    } else {
-        format!("/{joined}")
-    });
-    next.set_query(query);
-    next.set_fragment(fragment);
-    Some(next)
+    let joined = pyurl::try_urljoin(base.as_str(), &pyurl::requote_uri(location)).ok()?;
+    Url::parse(&joined).ok()
 }
 
 async fn execute(
@@ -399,8 +362,7 @@ fn build_request(
 
     let mut headers = HeaderMap::new();
     for (name, value) in req.headers.iter() {
-        if body_headers_dropped
-            && [CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING].contains(name)
+        if body_headers_dropped && [CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING].contains(name)
         {
             continue;
         }

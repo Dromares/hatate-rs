@@ -479,14 +479,20 @@ async fn a_302_drops_the_body_headers_and_a_307_keeps_them() {
     let seen = server.recorded();
     let landed = |i: usize| (seen[i].header("content-type"), seen[i].header("x-keep"));
     // 302: the follow-up GET has no `Content-Type`, as `requests` sends it; other headers stay.
-    assert_eq!((seen[1].method.as_str(), landed(1)), ("GET", (None, Some("yes"))));
+    assert_eq!(
+        (seen[1].method.as_str(), landed(1)),
+        ("GET", (None, Some("yes")))
+    );
     // 307: the same POST again, header and body.
     assert_eq!(
         (seen[3].method.as_str(), landed(3), seen[3].body.as_slice()),
         ("POST", (Some("application/json"), Some("yes")), &b"{}"[..])
     );
     // 303 then 307: the header dropped at the first hop is not back at the second.
-    assert_eq!((seen[6].method.as_str(), landed(6)), ("GET", (None, Some("yes"))));
+    assert_eq!(
+        (seen[6].method.as_str(), landed(6)),
+        ("GET", (None, Some("yes")))
+    );
 }
 
 #[tokio::test]

@@ -231,7 +231,14 @@ differences that matter are kept as per-request options.
   HEAD callers in the tree pass it. The Rust layer has `Redirects::{Default, Follow,
   Stop}` per request: `Default` follows for GET and POST and stays put for HEAD. It
   follows up to 30 hops (`NetConfig::max_redirects`), turns a POST into a GET on 301,
-  302 and 303 (dropping the body) and repeats it on 307 and 308.
+  302 and 303 and repeats it on 307 and 308. Like `requests` (`resolve_redirects`), a 301,
+  302 or 303 drops the body and the `Content-Length`, `Content-Type` and `Transfer-Encoding`
+  headers for that hop and every later one, whatever the method; a 307 or 308 keeps them.
+  A `Location` with no host is joined to the URL it answered by `pyurl::urljoin` after
+  `requote_uri`, as `requests` does, not by the WHATWG join: `urljoin` drops the empty
+  segments in the base path and in the reference (`http://h///x` + `../d` is `/d`, WHATWG
+  gives `//d`; `a//b` is `a/b`). A `Location` with a host (`https://o/p`, `//o/p`) is
+  joined by the `url` crate.
 - **Credentials do not leave their host.** `Cookie` and any header marked secret
   (`Authorization`, `Proxy-Authorization`, `Hydrus-Client-API-Access-Key`, or one set with
   `NetRequest::secret_header`) are dropped from a redirect hop whose host differs from the
@@ -301,6 +308,7 @@ All local; no live site is contacted. TLS certificates (a throw-away CA and a le
 | Minimum gap, per host, concurrent | `src/net/stack_tests.rs::min_gap_*`; `tests/net_http_behaviour.rs::min_gap_spaces_requests_by_at_least_the_gap` |
 | Per-read timeout; deadline stops a trickling body | `tests/net_http_behaviour.rs::a_server_that_never_answers_times_out`, `::the_deadline_stops_a_body_that_trickles_in` |
 | Redirects: follow, HEAD, POST to GET, loop limit, credentials stay on their host | `tests/net_http_behaviour.rs` |
+| Redirects drop the body headers on 301 to 303 and keep them on 307; a relative `Location` joins like `urljoin` over empty segments | `tests/net_http_behaviour.rs::a_302_drops_the_body_headers_and_a_307_keeps_them`, `::a_relative_location_drops_the_empty_segments_of_the_path`; `src/net/transport.rs` tests (rows checked against CPython 3.14.8's `urljoin`) |
 | `between-search` arithmetic (`rate_limit.py`) | `src/net/pacing.rs` tests |
 | Site headers, cookies, host matching, rotation | `src/net/site.rs` tests |
 | Secrets are redacted in `Debug`, logs and errors | `tests/net_redaction.rs` (synthetic values, each with a positive control that the secret was really sent) |
