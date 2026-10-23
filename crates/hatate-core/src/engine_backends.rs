@@ -12,15 +12,20 @@
 //!   once-per-session GUI alert) and `prepare_for_lens`'s format check, so a readable file the
 //!   Python app would refuse as "not in a format Google Lens accepts" gets the unavailable answer
 //!   instead.
-//! * **The Pawchive index** (Phase 4) answers as an index with nothing in it: `index.is_empty()` is
-//!   true, so the collector returns False with no error and no file read.
+//! * **The Pawchive index** is the 4.f [`PawchiveIndex`] over `pawchive_index.db`, as
+//!   `_collect_pawchive_index` reads it: `is_empty` first (so an empty or missing index costs no
+//!   file read), then `fingerprints(path)`, then `search(hash16, hydrus_hash)`. It is local and
+//!   read-only here: the search opens the file the way Python's `_connect` does (the schema's
+//!   `IF NOT EXISTS` statements, which write nothing to an index that already has its tables) and
+//!   never adds a row. A [`LiveEngines`] built without [`LiveEngines::with_pawchive_index`] has no
+//!   index and answers as an empty one.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::clock::{BoxFuture, Clock};
 use crate::config::{SauceNaoSettings, Secret};
-use crate::engine_runner::{Engines, IndexAnswer, IndexError, LensError};
+use crate::engine_runner::{Engines, IndexAnswer, IndexError, IndexMatch, LensError};
 use crate::engines::ascii2d::{Ascii2dClient, Ascii2dError, Ascii2dMatch};
 use crate::engines::client::OnTick;
 use crate::engines::google_images::{GoogleImagesClient, GoogleImagesError, GoogleImagesMatch};
@@ -32,8 +37,11 @@ use crate::engines::pawchive_lookup::{
 use crate::engines::saucenao::{SauceNaoClient, SauceNaoError, SauceNaoMatch, ShouldStop};
 use crate::engines::tracemoe::{TraceMoeClient, TraceMoeError, TraceMoeMatch};
 use crate::engines::yandex::{YandexClient, YandexError, YandexMatch};
+use crate::image_compare::Source;
 use crate::image_prep::os_error_text;
 use crate::net::NetClient;
+use crate::paths::Paths;
+use crate::pawchive_index::{self, PawchiveIndex};
 
 /// What Google Lens says when it cannot run. See the module comment.
 pub const LENS_UNAVAILABLE_MESSAGE: &str =
@@ -132,6 +140,9 @@ pub struct LiveEngines {
     pub yandex: YandexClient,
     pub pawchive: PawchiveLookupClient,
     pub lens: LensStandIn,
+    /// `engine_runner._pawchive_index`: one index for every search, so its fingerprints are
+    /// loaded once and reloaded only after the index changes.
+    pawchive_index: Option<Arc<PawchiveIndex>>,
 }
 
 impl LiveEngines {
@@ -147,7 +158,20 @@ impl LiveEngines {
             yandex: YandexClient::new(net.clone()).with_clock(Arc::clone(&clock)),
             pawchive: PawchiveLookupClient::new(net),
             lens: LensStandIn::new(clock),
+            pawchive_index: None,
         }
+    }
+
+    /// What `hatate batch` builds: [`LiveEngines::new`] with the profile's own Pawchive index.
+    pub fn for_profile(net: NetClient, clock: Arc<dyn Clock>, paths: &Paths) -> Self {
+        Self::new(net, clock).with_pawchive_index(PawchiveIndex::new(paths.pawchive_index_db()))
+    }
+
+    /// Searches `index` for the Pawchive index engine.
+    #[must_use]
+    pub fn with_pawchive_index(mut self, index: PawchiveIndex) -> Self {
+        self.pawchive_index = Some(Arc::new(index));
+        self
     }
 }
 
@@ -320,9 +344,58 @@ impl Engines for LiveEngines {
 
     fn pawchive_index<'a>(
         &'a self,
-        _path: &'a Path,
-        _hydrus_hash: Option<&'a str>,
+        path: &'a Path,
+        hydrus_hash: Option<&'a str>,
     ) -> BoxFuture<'a, Result<IndexAnswer, IndexError>> {
-        Box::pin(std::future::ready(Ok(IndexAnswer::Empty)))
+        let Some(index) = self.pawchive_index.clone() else {
+            return Box::pin(std::future::ready(Ok(IndexAnswer::Empty)));
+        };
+        let path = path.to_owned();
+        let hydrus_hash = hydrus_hash.map(str::to_owned);
+        Box::pin(async move {
+            match tokio::task::spawn_blocking(move || {
+                search_index(&index, &path, hydrus_hash.as_deref())
+            })
+            .await
+            {
+                Ok(answer) => answer,
+                Err(join) => Err(IndexError(join.to_string())),
+            }
+        })
     }
+}
+
+/// The body of `_collect_pawchive_index` up to the candidates. Python catches only
+/// `sqlite3.Error`; here every failure of the index is an [`IndexError`] with its message (an
+/// unreadable folder or a malformed stored hash would escape as another exception there). A
+/// picture past Pillow's decompression-bomb limit cannot reach this point in a search: the entry's
+/// size is read first and that raises, so the message here is only a floor.
+fn search_index(
+    index: &PawchiveIndex,
+    path: &Path,
+    hydrus_hash: Option<&str>,
+) -> Result<IndexAnswer, IndexError> {
+    let failed = |e: pawchive_index::PawchiveError| IndexError(e.message().to_owned());
+    if index.is_empty().map_err(failed)? {
+        return Ok(IndexAnswer::Empty);
+    }
+    let (_, hash16) = pawchive_index::fingerprints(Source::Path(path))
+        .map_err(|bomb| IndexError(bomb.to_string()))?;
+    let Some(hash16) = hash16 else {
+        return Ok(IndexAnswer::Unreadable);
+    };
+    let matches = index
+        .search_default(Some(&hash16), hydrus_hash)
+        .map_err(failed)?;
+    Ok(IndexAnswer::Matches(
+        matches
+            .into_iter()
+            .map(|m| IndexMatch {
+                url: m.url,
+                thumb_url: Some(m.thumb_url),
+                similarity: m.similarity,
+                exact: m.exact,
+            })
+            .collect(),
+    ))
 }

@@ -201,10 +201,21 @@ impl PawchiveError {
     }
 
     pub(crate) fn database(err: &rusqlite::Error) -> Self {
+        // `rusqlite` ends the text of a failed open with `: <path of the file>`; `sqlite3` says
+        // only "unable to open database file", which is what Python's message carries. The path
+        // stays in `detail`.
+        let message = match err {
+            rusqlite::Error::SqliteFailure(failure, _)
+                if failure.code == rusqlite::ErrorCode::CannotOpen =>
+            {
+                "unable to open database file".to_owned()
+            }
+            _ => err.to_string(),
+        };
         PawchiveError {
             kind: ErrorKind::Database,
             status_code: None,
-            message: err.to_string(),
+            message,
             detail: format!("{err:?}"),
         }
     }

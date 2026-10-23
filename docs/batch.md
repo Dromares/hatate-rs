@@ -27,6 +27,9 @@ one line saying so and carries on. The GUI's one-shot "Continue with other engin
 (`force_continue_without_saucenao`) is a dialog button; the command line has the saved setting
 `continue_without_saucenao_on_quota` and exit status 3.
 
+The Pawchive index engine (`enable_pawchive_index`) searches the profile's `pawchive_index.db` in a
+batch (Phase 4.h, `docs/pawchive-index.md` section 7). The batch only reads that file.
+
 Exit status: 0 finished, 1 error, 2 usage, 3 paused (SauceNAO's daily allowance ran out), 130
 stopped by SIGINT, 143 stopped by SIGTERM.
 
