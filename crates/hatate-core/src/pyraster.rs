@@ -12,6 +12,7 @@
 use std::fmt;
 
 use crate::pyimage;
+pub use crate::pyimage::DecompressionBomb;
 use crate::pyjpeg;
 
 /// Pillow's mode, for the modes a decoded picture can have here.
