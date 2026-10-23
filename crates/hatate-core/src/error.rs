@@ -59,4 +59,18 @@ pub enum ErrorKind {
     McpServerStart,
     /// The port the MCP server was asked to listen on is taken.
     McpPortBusy,
+    /// A search engine cannot run in this build or on this machine (Google Lens with no browser).
+    /// Latched for the run: the next image would fail the same way.
+    EngineUnavailable,
+    /// A search engine stood down: the service challenged the request, or the engine failed on
+    /// several images in a row.
+    EngineBlocked,
+    /// A search engine failed on this image and may work on the next.
+    EngineFailed,
+    /// The picture is in a format the engine does not take and could not be converted to one
+    /// (a video, JPEG XL).
+    FormatRefused,
+    /// A failure that is not one the engine reports for itself: Python lets such an exception
+    /// escape the engine's `except` clauses.
+    Unexpected,
 }

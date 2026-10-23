@@ -168,6 +168,8 @@ struct PngState {
     seq_num: Option<u32>,
     size: (u32, u32),
     n_frames: Option<u32>,
+    /// `"bbox" in im_info`: an `fcTL` came before the pixel data.
+    bbox: bool,
 }
 
 enum Flow {
@@ -358,6 +360,7 @@ impl PngState {
                 {
                     return None;
                 }
+                self.bbox = true;
             }
             _ => {}
         }
@@ -374,6 +377,7 @@ fn png(data: &[u8]) -> Option<(Info, Option<Vec<u8>>)> {
         seq_num: None,
         size: (0, 0),
         n_frames: None,
+        bbox: false,
     };
     let mut pos = 8;
     // `PngImageFile._open`: chunks up to the first IDAT, each with its checksum verified.
@@ -545,7 +549,12 @@ fn jpeg(data: &[u8]) -> Option<(Info, Option<Vec<u8>>)> {
                         "APP" => jpeg_app(marker, seg, &mut info, &mut icclist, &mut exif),
                         "COM" => info.set("comment", Val::Bytes(seg.to_vec())),
                         "SOF" => {
-                            if seg.len() < 6 || seg[0] != 8 || ![1, 3, 4].contains(&seg[5]) {
+                            // The layer table is read three bytes at a time: a short last entry is an IndexError.
+                            if seg.len() < 6
+                                || seg[0] != 8
+                                || ![1, 3, 4].contains(&seg[5])
+                                || (seg.len() - 6) % 3 != 0
+                            {
                                 return None;
                             }
                             size_seen = true;
@@ -601,6 +610,9 @@ fn jpeg(data: &[u8]) -> Option<(Info, Option<Vec<u8>>)> {
     Some((info, exif))
 }
 
+/// What `jpeg_factory` looks for in an `APP1` to tell an Ultra HDR image from an MPO.
+const HDRGM: &[u8] = b" hdrgm:Version=\"";
+
 fn jpeg_app(
     marker: u16,
     s: &[u8],
@@ -608,6 +620,10 @@ fn jpeg_app(
     icclist: &mut Vec<Vec<u8>>,
     exif: &mut Option<Vec<u8>>,
 ) {
+    if marker == 0xffe1 && s.windows(HDRGM.len()).any(|w| w == HDRGM) {
+        // Not an `info` key of Pillow's: `jpeg_factory` looks for this in `applist`.
+        info.set("hdrgm", Val::Other);
+    }
     if marker == 0xffe0 && s.starts_with(b"JFIF") {
         info.set("jfif", Val::Other);
     } else if marker == 0xffe1 && s.starts_with(b"Exif\0\0") {
@@ -901,4 +917,359 @@ fn bytes_repr(b: &[u8]) -> String {
     }
     s.push(quote);
     s
+}
+
+// ---------------------------------------------------------------------------------------------
+// Frame count
+
+/// `getattr(Image.open(io.BytesIO(data)), "n_frames", 1)` for the formats whose signature
+/// `google_lens.media_type` hands on to `_is_animated` (JPEG, PNG, WebP; a BMP has one frame).
+/// `None` is `Image.open` or `n_frames` raising, which `_is_animated` reads as "not animated".
+pub(crate) fn frame_count(data: &[u8]) -> Option<u64> {
+    if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        png_frame_count(data)
+    } else if data.starts_with(b"\xff\xd8\xff") {
+        jpeg_frame_count(data)
+    } else if data.starts_with(b"RIFF") && data.get(8..12) == Some(b"WEBP") {
+        webp_frame_count(data)
+    } else {
+        Some(1)
+    }
+}
+
+/// `PngImageFile._open`: `n_frames` from `acTL`, one more when the `IDAT` holds a default image
+/// that is not the first animation frame.
+fn png_frame_count(data: &[u8]) -> Option<u64> {
+    let mut st = PngState {
+        info: Info::default(),
+        mode: "",
+        text_memory: 0,
+        seq_num: None,
+        size: (0, 0),
+        n_frames: None,
+        bbox: false,
+    };
+    let mut pos = 8;
+    loop {
+        let header = data.get(pos..pos + 8)?;
+        let cid = &header[4..];
+        if !is_cid(cid) {
+            return None;
+        }
+        let length = be32(header, 0)? as usize;
+        let body_at = pos + 8;
+        if matches!(cid, b"IDAT" | b"fdAT" | b"IEND") {
+            break;
+        }
+        let body = data.get(body_at..body_at.checked_add(length)?)?;
+        st.call(cid, body)?;
+        let crc = data.get(body_at + length..body_at + length + 4)?;
+        if !crc_ok(cid, body, crc) {
+            return None;
+        }
+        pos = body_at + length + 4;
+    }
+    if st.mode.is_empty() || st.size.0 == 0 || st.size.1 == 0 {
+        return None;
+    }
+    // `chunk_IDAT` (also called by `chunk_fdAT`) marks the default image when an `acTL` was seen
+    // and no `fcTL` put a box on the frame.
+    Some(match st.n_frames {
+        Some(n) if !st.bbox => u64::from(n) + 1,
+        Some(n) => u64::from(n),
+        None => 1,
+    })
+}
+
+/// `jpeg_factory`: an `APP2` MPF index naming more than one image makes the file an MPO, whose
+/// `n_frames` is that number. Anything the index gets wrong makes it a plain JPEG (one frame), or
+/// raises; both read as not animated.
+fn jpeg_frame_count(data: &[u8]) -> Option<u64> {
+    let (info, _) = jpeg(data)?;
+    // `ImageFile.__init__`: a side of 0 is "not identified by this driver".
+    crate::pyimage::image_size(data)?;
+    let Some(Val::Bytes(mp)) = info.get("mp") else {
+        return Some(1);
+    };
+    let big = mp.starts_with(b"MM\x00\x2a");
+    if !big && !mp.starts_with(b"II\x2a\x00") {
+        return Some(1);
+    }
+    let u16_at = |at: usize| -> Option<u16> {
+        let b: [u8; 2] = mp.get(at..at + 2)?.try_into().ok()?;
+        Some(if big {
+            u16::from_be_bytes(b)
+        } else {
+            u16::from_le_bytes(b)
+        })
+    };
+    let u32_at = |at: usize| -> Option<u32> {
+        let b: [u8; 4] = mp.get(at..at + 4)?.try_into().ok()?;
+        Some(if big {
+            u32::from_be_bytes(b)
+        } else {
+            u32::from_le_bytes(b)
+        })
+    };
+    // `ImageFileDirectory_v2.load`: tags are kept as they are read, and a directory that runs out of
+    // bytes (an entry, or the data an entry points to) ends the load with what it has.
+    let mut tags: Vec<(u16, u16, usize, &[u8])> = Vec::new();
+    let ifd = u32_at(4)? as usize;
+    'load: {
+        let Some(entries) = u16_at(ifd) else {
+            break 'load;
+        };
+        for i in 0..usize::from(entries) {
+            let at = ifd + 2 + 12 * i;
+            let (Some(tag), Some(kind), Some(count), Some(slot)) = (
+                u16_at(at),
+                u16_at(at + 2),
+                u32_at(at + 4),
+                mp.get(at + 8..at + 12),
+            ) else {
+                break 'load;
+            };
+            let count = count as usize;
+            // `_load_dispatch`: the size of one value of each type Pillow reads.
+            let unit = match kind {
+                1 | 2 | 6 | 7 => 1,
+                3 | 8 => 2,
+                4 | 9 | 11 | 13 => 4,
+                5 | 10 | 12 | 16 => 8,
+                _ => continue,
+            };
+            let size = count.saturating_mul(unit);
+            let data = if size > 4 {
+                let offset = u32_at(at + 8)? as usize;
+                match offset.checked_add(size).and_then(|end| mp.get(offset..end)) {
+                    Some(data) => data,
+                    None => break 'load,
+                }
+            } else {
+                &slot[..size]
+            };
+            if data.is_empty() {
+                continue;
+            }
+            tags.push((tag, kind, count, data));
+        }
+    }
+    let last = |wanted: u16| tags.iter().rev().find(|t| t.0 == wanted);
+    // `mpheader[45057] > 1`: a single whole number; anything else is a TypeError, a plain JPEG.
+    let Some(&(_, kind, 1, value)) = last(0xB001) else {
+        return Some(1);
+    };
+    let word = |data: &[u8]| -> Option<u64> {
+        let mut b = [0u8; 8];
+        let n = data.len();
+        if big {
+            b[8 - n..].copy_from_slice(data);
+        } else {
+            b[..n].copy_from_slice(data);
+        }
+        Some(if big {
+            u64::from_be_bytes(b)
+        } else {
+            u64::from_le_bytes(b)
+        })
+    };
+    let quant = match kind {
+        1 | 3 | 4 | 13 | 16 => word(value)?,
+        6 | 8 | 9 => {
+            let bits = value.len() as u32 * 8;
+            let raw = word(value)?;
+            if raw >> (bits - 1) & 1 == 1 {
+                return Some(1);
+            }
+            raw
+        }
+        _ => return Some(1),
+    };
+    // `struct.unpack_from` wants bytes: an `UNDEFINED` entry list.
+    let Some(&(_, 7, _, raw)) = last(0xB002) else {
+        return Some(1);
+    };
+    if quant <= 1 {
+        return Some(1);
+    }
+    for n in 0..usize::try_from(quant).ok()? {
+        let attribute = {
+            let b: [u8; 4] = raw.get(n * 16..n * 16 + 4)?.try_into().ok()?;
+            if big {
+                u32::from_be_bytes(b)
+            } else {
+                u32::from_le_bytes(b)
+            }
+        };
+        raw.get(n * 16..n * 16 + 16)?;
+        if (attribute >> 24) & 7 != 0 {
+            return Some(1);
+        }
+    }
+    if info.get("hdrgm").is_some() {
+        return Some(1);
+    }
+    Some(quant)
+}
+
+/// libwebp's demuxer (`WebPDemux`, no partial data), as `WebPAnimDecoder` uses it: the frames of an
+/// animation, `1` for a still picture. A file it refuses, or a canvas Pillow's size check refuses,
+/// is `None`. The rules are `demux.c`'s: a frame's own size is the bitstream's (the `ANMF` width and
+/// height only feed the area check), a sub-chunk it does not know ends the frame and the rest of the
+/// `ANMF` payload is read as top-level chunks, and a frame without a picture is skipped.
+fn webp_frame_count(data: &[u8]) -> Option<u64> {
+    let le32 = |at: usize| -> Option<usize> {
+        Some(u32::from_le_bytes(data.get(at..at + 4)?.try_into().ok()?) as usize)
+    };
+    let u24 = |at: usize| -> Option<usize> {
+        let b = data.get(at..at + 3)?;
+        Some(usize::from(b[0]) | usize::from(b[1]) << 8 | usize::from(b[2]) << 16)
+    };
+    let riff_size = le32(4)?;
+    if riff_size < 8 {
+        return None;
+    }
+    let end = riff_size.checked_add(8)?;
+    if data.len() < end {
+        return None;
+    }
+    let data = &data[..end];
+    if end < 20 {
+        return None;
+    }
+    if &data[12..16] != b"VP8X" {
+        // A still picture of the simple kind: one frame, or the decoder refuses it, and either
+        // way `_is_animated` answers no.
+        return Some(1);
+    }
+    let vp8x = le32(16)?;
+    if vp8x < 10 {
+        return None;
+    }
+    let vp8x = vp8x + (vp8x & 1);
+    if vp8x > end - 20 {
+        return None;
+    }
+    let flags = data[20];
+    let canvas = (1 + u24(24)?, 1 + u24(27)?);
+    if canvas.0 * canvas.1 >= 1 << 32 {
+        return None;
+    }
+    // `ALL_VALID_FLAGS`: alpha, animation, EXIF, ICC and XMP.
+    if flags & !0x3e != 0 {
+        return None;
+    }
+    if flags & 0x02 == 0 {
+        return Some(1);
+    }
+    if (canvas.0 * canvas.1) as u64 > crate::pyimage::DecompressionBomb::LIMIT {
+        return None;
+    }
+    let mut pos = 20 + vp8x;
+    if end - pos < 8 {
+        return None;
+    }
+    let (mut anim, mut frames) = (false, 0u64);
+    loop {
+        let tag = &data[pos..pos + 4];
+        let size = le32(pos + 4)?;
+        pos += 8;
+        let padded = size + (size & 1);
+        if padded > end - pos {
+            return None;
+        }
+        match tag {
+            b"VP8X" | b"ALPH" | b"VP8 " | b"VP8L" => return None,
+            b"ANIM" => {
+                if padded < 6 {
+                    return None;
+                }
+                anim = true;
+                pos += padded;
+            }
+            b"ANMF" => {
+                if !anim || padded < 16 {
+                    return None;
+                }
+                let (x, y) = (2 * u24(pos)?, 2 * u24(pos + 3)?);
+                let area = (1 + u24(pos + 6)?) as u64 * (1 + u24(pos + 9)?) as u64;
+                if area >= 1 << 32 {
+                    return None;
+                }
+                let payload = padded - 16;
+                let start = pos + 16;
+                let mut at = start;
+                if end - at < 8 {
+                    return None;
+                }
+                // `StoreFrame`: an optional `ALPH`, then the picture.
+                let (mut alpha, mut image) = (None, None);
+                let mut size_of_frame = None;
+                loop {
+                    let sub = le32(at + 4)?;
+                    let sub_padded = sub + (sub & 1);
+                    if sub_padded > end - (at + 8) {
+                        return None;
+                    }
+                    let next = at + 8 + sub_padded;
+                    match &data[at..at + 4] {
+                        b"ALPH" if alpha.is_none() => {
+                            alpha = Some(at);
+                            at = next;
+                        }
+                        b"VP8L" | b"VP8 " if image.is_none() => {
+                            if &data[at..at + 4] == b"VP8L" && alpha.is_some() {
+                                return None;
+                            }
+                            let mut still = b"RIFF\0\0\0\0WEBP".to_vec();
+                            still.extend_from_slice(&data[at..at + 8 + sub]);
+                            let riff = u32::try_from(still.len() - 8).ok()?;
+                            still[4..8].copy_from_slice(&riff.to_le_bytes());
+                            let (iw, ih) = crate::pyimage::image_size(&still)?;
+                            size_of_frame = Some((iw as usize, ih as usize));
+                            image = Some(at);
+                            at = next;
+                        }
+                        _ => {}
+                    }
+                    let consumed = at == next;
+                    if at == end {
+                        break;
+                    }
+                    if end - at < 8 {
+                        return None;
+                    }
+                    if !consumed {
+                        break;
+                    }
+                }
+                if at - start > payload {
+                    return None;
+                }
+                if alpha.is_some() || image.is_some() {
+                    // A frame holding only an `ALPH` is a partial frame in a complete file.
+                    let (image, (w, h)) = (image?, size_of_frame?);
+                    if alpha.is_some_and(|a| a > image) {
+                        return None;
+                    }
+                    if x + w > canvas.0 || y + h > canvas.1 {
+                        return None;
+                    }
+                    frames += 1;
+                }
+                pos = at;
+            }
+            _ => pos += padded,
+        }
+        if pos == end {
+            break;
+        }
+        if end - pos < 8 {
+            return None;
+        }
+    }
+    if frames == 0 {
+        return None;
+    }
+    Some(frames)
 }

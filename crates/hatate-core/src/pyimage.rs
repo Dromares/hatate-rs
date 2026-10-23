@@ -252,7 +252,9 @@ fn jpeg(d: &[u8]) -> Option<(u32, u32)> {
                 let s = d.get(at + 2..at + 2 + n)?;
                 size = Some((u16be(s, 3)?, u16be(s, 1)?));
                 // "cannot handle N-bit layers" / "cannot handle N-layer images"
-                if s[0] != 8 || !matches!(*s.get(5)?, 1 | 3 | 4) {
+                // ... and the layer table is read three bytes at a time: a short last entry is an
+                // IndexError.
+                if s[0] != 8 || !matches!(*s.get(5)?, 1 | 3 | 4) || (s.len() - 6) % 3 != 0 {
                     return None;
                 }
                 at += 2 + n;

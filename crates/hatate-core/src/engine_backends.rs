@@ -21,7 +21,7 @@
 //!   index and answers as an empty one.
 
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::clock::{BoxFuture, Clock};
 use crate::config::{SauceNaoSettings, Secret};
@@ -31,6 +31,8 @@ use crate::engines::client::OnTick;
 use crate::engines::google_images::{GoogleImagesClient, GoogleImagesError, GoogleImagesMatch};
 use crate::engines::google_lens::GoogleLensMatch;
 use crate::engines::iqdb::{IqdbClient, IqdbError, IqdbMatch};
+pub use crate::engines::lens_search::LENS_UNAVAILABLE_MESSAGE;
+use crate::engines::lens_search::LensClient;
 use crate::engines::pawchive_lookup::{
     PawchiveError, PawchiveLookupClient, PawchiveMatch, file_sha256,
 };
@@ -43,91 +45,6 @@ use crate::net::NetClient;
 use crate::paths::Paths;
 use crate::pawchive_index::{self, PawchiveIndex};
 
-/// What Google Lens says when it cannot run. See the module comment.
-pub const LENS_UNAVAILABLE_MESSAGE: &str =
-    "No browser engine is available to render the results page in this build.";
-
-/// `google_lens.MIN_SECONDS_BETWEEN_SEARCHES`.
-const LENS_MIN_SECONDS_BETWEEN_SEARCHES: f64 = 45.0;
-
-#[derive(Default)]
-struct LensState {
-    blocked: bool,
-    next_turn: Option<f64>,
-}
-
-/// Google Lens in a build that cannot run it: the state `google_lens.py` keeps in globals, and
-/// the unavailable path of `search`.
-pub struct LensStandIn {
-    clock: Arc<dyn Clock>,
-    state: Mutex<LensState>,
-}
-
-impl LensStandIn {
-    pub fn new(clock: Arc<dyn Clock>) -> Self {
-        LensStandIn {
-            clock,
-            state: Mutex::default(),
-        }
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, LensState> {
-        self.state.lock().unwrap_or_else(|p| p.into_inner())
-    }
-
-    /// `is_blocked` (it never rests: nothing here can be challenged).
-    pub fn is_blocked(&self) -> bool {
-        self.lock().blocked
-    }
-
-    /// `reset_blocked_flag`: called whenever a search starts.
-    pub fn reset_blocked_flag(&self) {
-        self.lock().blocked = false;
-    }
-
-    /// `wait_for_turn(on_tick)`: holds a search until 45 s have passed since the last one started.
-    pub async fn wait_for_turn(&self, on_tick: Option<OnTick>) {
-        let now = self.clock.monotonic();
-        let start_at = {
-            let mut state = self.lock();
-            let start_at = now.max(state.next_turn.filter(|t| *t != 0.0).unwrap_or(now));
-            state.next_turn = Some(start_at + LENS_MIN_SECONDS_BETWEEN_SEARCHES);
-            start_at
-        };
-        let wait = start_at - now;
-        if wait <= 0.0 {
-            return;
-        }
-        tracing::info!("Pacing Google Lens: waiting {wait:.0}s so Google isn't asked too often");
-        loop {
-            let left = start_at - self.clock.monotonic();
-            if left <= 0.0 {
-                return;
-            }
-            if let Some(tick) = &on_tick {
-                tick("Pacing Google Lens", left, wait);
-            }
-            self.clock.sleep(left.min(1.0)).await;
-        }
-    }
-
-    /// `search`, as far as it can go: reading the file, then the unavailable error and its latch.
-    pub fn search(&self, image_path: &Path) -> Result<Vec<GoogleLensMatch>, LensError> {
-        if let Err(exc) = std::fs::File::open(image_path) {
-            tracing::error!(
-                "Could not read {} for the Lens upload: {exc}",
-                image_path.display()
-            );
-            return Err(LensError::Failed(format!(
-                "Could not read image: {}",
-                os_error_text(&exc, image_path)
-            )));
-        }
-        self.lock().blocked = true;
-        Err(LensError::Unavailable(LENS_UNAVAILABLE_MESSAGE.to_owned()))
-    }
-}
-
 /// The shipped engines. The clients are public so a test can build them against a local https
 /// server (their `with_*` constructors) and the caller can reach their state (`reset_blocked_flag`
 /// and the like).
@@ -139,7 +56,7 @@ pub struct LiveEngines {
     pub google_images: GoogleImagesClient,
     pub yandex: YandexClient,
     pub pawchive: PawchiveLookupClient,
-    pub lens: LensStandIn,
+    pub lens: LensClient,
     /// `engine_runner._pawchive_index`: one index for every search, so its fingerprints are
     /// loaded once and reloaded only after the index changes.
     pawchive_index: Option<Arc<PawchiveIndex>>,
@@ -157,7 +74,7 @@ impl LiveEngines {
             google_images: GoogleImagesClient::new(net.clone()),
             yandex: YandexClient::new(net.clone()).with_clock(Arc::clone(&clock)),
             pawchive: PawchiveLookupClient::new(net),
-            lens: LensStandIn::new(clock),
+            lens: LensClient::new().with_clock(clock),
             pawchive_index: None,
         }
     }
@@ -273,25 +190,25 @@ impl Engines for LiveEngines {
     }
 
     fn google_lens_is_resting(&self) -> bool {
-        false
+        self.lens.is_resting()
     }
 
     fn google_lens_resting_until(&self) -> String {
-        String::new()
+        self.lens.resting_until()
     }
 
     fn google_lens_wait_for_turn<'a>(&'a self, on_tick: Option<OnTick>) -> BoxFuture<'a, ()> {
-        Box::pin(async move { self.lens.wait_for_turn(on_tick).await })
+        Box::pin(async move { self.lens.wait_for_turn(on_tick, None).await })
     }
 
     fn google_lens<'a>(
         &'a self,
         path: &'a Path,
-        _timeout: f64,
-        _on_tick: Option<OnTick>,
-        _whole_image: bool,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+        whole_image: bool,
     ) -> BoxFuture<'a, Result<Vec<GoogleLensMatch>, LensError>> {
-        Box::pin(std::future::ready(self.lens.search(path)))
+        Box::pin(async move { self.lens.search(path, timeout, on_tick, whole_image).await })
     }
 
     fn yandex_is_blocked(&self) -> bool {
