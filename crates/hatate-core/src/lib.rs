@@ -1,6 +1,7 @@
 //! Shared library for the Hatate Rust rewrite. Work in progress.
 
 pub mod availability;
+pub mod batch;
 pub mod boorus;
 pub mod cache;
 pub mod clock;

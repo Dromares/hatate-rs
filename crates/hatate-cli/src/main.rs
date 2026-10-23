@@ -1,12 +1,33 @@
-//! Placeholder binary for the Hatate Rust rewrite. Work in progress.
+//! The `hatate` command. Work in progress: `batch` is experimental.
 
-/// Message printed by the placeholder binary.
+mod args;
+mod batch_cmd;
+
+use args::{Command, parse};
+
+/// Message printed when no command is given.
 fn banner() -> &'static str {
     "hatate-cli: work-in-progress Rust rewrite, not yet a replacement for Hatate"
 }
 
 fn main() {
-    println!("{}", banner());
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    match parse(&argv) {
+        Ok(Command::Banner) => {
+            println!("{}", banner());
+            println!("{}", args::USAGE);
+        }
+        Ok(Command::Help) => {
+            println!("{}", banner());
+            println!("{}", args::USAGE);
+        }
+        Ok(Command::Batch(opts)) => std::process::exit(batch_cmd::run(opts)),
+        Err(message) => {
+            eprintln!("hatate: {message}");
+            eprintln!("{}", args::USAGE);
+            std::process::exit(2);
+        }
+    }
 }
 
 #[cfg(test)]

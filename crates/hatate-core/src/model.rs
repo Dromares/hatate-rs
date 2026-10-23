@@ -248,6 +248,14 @@ pub struct Entry {
     /// (3.4 has no such key); it describes this run.
     #[serde(skip)]
     pub last_searched: Option<f64>,
+    /// What Python's `ImageEntry.matched_url` still holds after a cached result's matches have all
+    /// died: the URL of the match that was selected before they were dropped. Python keeps
+    /// `matched_url` as a stored field and `select_candidate(-1)` changes nothing, so the row is
+    /// left `good`/`poor` with no candidates and the dead URL, and the batch's matched-URL log
+    /// writes it. Otherwise `matched_url` is the selected candidate's URL and is read from there
+    /// ([`Entry::selected_candidate`]). Describes this run; not stored.
+    #[serde(skip)]
+    pub stale_matched_url: Option<String>,
 }
 
 impl Entry {
@@ -271,6 +279,7 @@ impl Entry {
             tags: Vec::new(),
             interrupted_mid_search: false,
             last_searched: None,
+            stale_matched_url: None,
         }
     }
 

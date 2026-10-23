@@ -577,6 +577,7 @@ impl SearchEngine {
         entry.status = MatchStatus::Searching;
         entry.error_message = None;
         entry.candidates = Vec::new();
+        entry.stale_matched_url = None;
 
         let s = Arc::new(settings.lock().unwrap().clone());
         let path = entry.path.clone();
@@ -612,6 +613,7 @@ impl SearchEngine {
                     // Cheap to clean up here, and the alternative (throwing the whole cache away)
                     // would mean re-searching every image at 45-75s each.
                     let before = entry.candidates.len();
+                    let selected_url = entry.selected_candidate().map(|c| c.url.clone());
                     let mut cleaned =
                         drop_structurally_dead(std::mem::take(&mut entry.candidates), &filename);
                     if s.drop_dead_matches {
@@ -626,6 +628,10 @@ impl SearchEngine {
                     }
                     let changed = cleaned.len() != before;
                     let none_left = cleaned.is_empty();
+                    if changed && none_left {
+                        // Python's `matched_url` keeps the URL of the match that was selected.
+                        entry.stale_matched_url = selected_url;
+                    }
                     entry.candidates = cleaned;
                     if changed {
                         // `select_candidate(0 if cleaned else -1)`: -1 changes nothing.
