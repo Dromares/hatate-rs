@@ -697,6 +697,28 @@ async fn deletion_states_of_an_odd_answer_fail_the_way_python_does() {
 }
 
 #[tokio::test]
+async fn a_row_whose_hash_is_not_a_string_is_left_out_and_does_not_stop_a_delete() {
+    let (server, client) = world(|r| {
+        if r.method == "GET" {
+            json_reply(json!({"metadata": [
+                {"hash": 5, "file_id": 1, "is_local": true},
+                {"hash": 2.5, "file_id": 1, "is_local": true},
+                {"hash": true, "file_id": 1, "is_local": true},
+                {"hash": H1, "file_id": 2, "is_local": true},
+            ]}))
+        } else {
+            json_reply(json!({}))
+        }
+    })
+    .await;
+    let states = client.deletion_states(&strings(&[H1])).await.unwrap();
+    assert_eq!(states.len(), 1);
+    let gone = client.delete_files(&strings(&[H1]), None).await.unwrap();
+    assert_eq!(gone, vec![H1]);
+    assert_eq!(server.request_count(), 3);
+}
+
+#[tokio::test]
 async fn undelete_posts_the_hashes_and_an_empty_list_does_nothing() {
     let (server, client) = world(|_| json_reply(json!({}))).await;
     client.undelete_files(&[]).await.unwrap();

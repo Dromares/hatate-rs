@@ -373,12 +373,9 @@ impl HydrusClient {
                         "cannot use '{ty}' as a dict key (unhashable type: '{ty}')"
                     )));
                 }
-                other => {
-                    return Err(HydrusError::unexpected(format!(
-                        "'hash' is a {} where a string is expected",
-                        type_name(other)
-                    )));
-                }
+                // A number or a bool keys Python's dict too, but no caller can look a string hash
+                // up under it, so the row is left out (`docs/hydrus-client-write.md`, class W1).
+                _ => continue,
             };
             let state = if row.get("file_id").is_none_or(Value::is_null) {
                 DeletionState::Unknown
