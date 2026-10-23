@@ -34,6 +34,12 @@ pub enum ErrorKind {
     Database,
     /// The service answered 404: it has no such thing.
     NotFound,
+    /// A local file Hatate was about to hand to Hydrus could not be read (missing, unreadable,
+    /// not a file).
+    FileUnreadable,
+    /// Hydrus answered 200 to an import but its own `status` says it did not take the file
+    /// (failed, or vetoed by an import option).
+    ImportRejected,
     /// A picture could not be read from disk (missing, unreadable, not a file).
     ImageUnreadable,
     /// The bytes are not a picture this build can decode.

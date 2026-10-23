@@ -18,7 +18,7 @@ Ported here:
 
 Not here: every write call (`set_file_relationship`, `set_kings`, `set_note`, `delete_files`,
 `undelete_files`, `deletion_states`, `show_files_in_client`, `import_file`, `associate_url`,
-`import_url`, `add_tags`) is 4.b; import and reconcile are 4.c and 4.d. `post_json` and `post_raw`
+`import_url`, `add_tags`) is 4.b (`docs/hydrus-client-write.md`); import and reconcile are 4.c and 4.d. `post_json` and `post_raw`
 (`_post`) are here because the write half is built on them; nothing in this ticket calls them
 except the tests. The Qt `HydrusTagLookupWorker` class itself is Phase 6; its `run()` is
 `run_tag_lookup`, which a GUI calls off its UI thread.
