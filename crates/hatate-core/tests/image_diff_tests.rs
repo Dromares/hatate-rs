@@ -250,6 +250,33 @@ fn delta_is_the_mask_before_the_threshold() {
 }
 
 #[test]
+fn a_pixel_exactly_at_the_threshold_counts_as_changed() {
+    // A flat picture with a 40x40 patch `step` brighter in red. The patch is far smaller than half
+    // the picture, so the median level-match shifts nothing, and its middle is far enough from
+    // the edge that the blur leaves it at `step`. At `CHANGE_THRESHOLD` it is changed (`>=`); one
+    // below it is not.
+    let flat = Canvas::new(200, 200, [100, 100, 100]);
+    let with_step = |step: u8| {
+        let mut patched = flat.clone();
+        patched.rectangle([80.0, 80.0, 120.0, 120.0], [100 + step, 100, 100]);
+        diff(&flat, &patched)
+    };
+    let at = with_step(CHANGE_THRESHOLD);
+    let centre = 100 * at.width + 100;
+    assert_eq!(at.delta[centre], CHANGE_THRESHOLD);
+    // The patch is the strongest change there is, so it is the peak the mask is scaled to.
+    assert_eq!(at.mask.as_ref().unwrap()[centre], 255);
+    assert!(at.changed_fraction > 0.0);
+    assert!(at.local_rect.is_some());
+
+    let below = with_step(CHANGE_THRESHOLD - 1);
+    assert_eq!(below.delta[centre], CHANGE_THRESHOLD - 1);
+    assert!(below.mask.as_ref().unwrap().iter().all(|&m| m == 0));
+    assert_eq!(below.changed_fraction, 0.0);
+    assert_eq!(below.local_rect, None);
+}
+
+#[test]
 fn the_rectangle_covers_a_known_caption() {
     let base = scene((800, 600));
     let mut captioned = base.clone();

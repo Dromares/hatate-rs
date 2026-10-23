@@ -130,6 +130,19 @@ fn test_native_detail_is_not_flagged_as_likely() {
 }
 
 #[test]
+fn a_round_trip_diff_between_four_and_five_is_only_possible() {
+    // Pins `STRONG_MATCH_THRESHOLD` (4.0) from above: this picture's best round-trip diff is
+    // 4.76, inside (4, 5], so a cut-off at 5 would call it "likely".
+    let dir = tempfile::tempdir().unwrap();
+    let up = detailed(200, 200).resize_filtered(320, 320, Filter::Lanczos);
+    let r = analyse(&saved(&dir, "four_to_five.png", &up));
+    let diff = r.best_diff.unwrap();
+    assert!(diff > 4.0 && diff <= 5.0, "{diff}");
+    assert_eq!(r.confidence, "possible", "{r:?}");
+    assert!(r.message.starts_with("Possibly upscaled"), "{}", r.message);
+}
+
+#[test]
 fn test_flat_heavy_art_is_not_a_false_positive() {
     // REGRESSION (Python): measuring across the whole image let large flat regions dominate.
     let dir = tempfile::tempdir().unwrap();
