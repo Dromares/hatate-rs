@@ -195,6 +195,11 @@ impl HydrusError {
                 "Could not save the file from Hydrus. Check that the destination folder exists and can be written to."
                     .to_owned()
             }
+            // The image kinds belong to `image_diff`; a Hydrus call never builds one.
+            ErrorKind::ImageUnreadable | ErrorKind::ImageUndecodable | ErrorKind::ImageTooLarge => {
+                "Hydrus could not use that picture. Check that the file is a readable image."
+                    .to_owned()
+            }
         }
     }
 

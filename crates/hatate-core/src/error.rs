@@ -34,4 +34,10 @@ pub enum ErrorKind {
     Database,
     /// The service answered 404: it has no such thing.
     NotFound,
+    /// A picture could not be read from disk (missing, unreadable, not a file).
+    ImageUnreadable,
+    /// The bytes are not a picture this build can decode.
+    ImageUndecodable,
+    /// The picture is larger than the decoder will accept (Pillow's decompression-bomb guard).
+    ImageTooLarge,
 }

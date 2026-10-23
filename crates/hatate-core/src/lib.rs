@@ -18,6 +18,7 @@ pub mod hydrus_client;
 pub mod hydrus_tag_lookup;
 pub mod hydrus_url;
 pub mod image_compare;
+pub mod image_diff;
 pub mod image_prep;
 pub mod localtime;
 pub mod lru;
@@ -36,6 +37,8 @@ mod pycsv;
 mod pyfnmatch;
 mod pyimage;
 pub mod pyjpeg;
+mod pymeta;
+mod pynumpy;
 pub mod pyraster;
 mod pyrepr;
 pub mod pyresponse;
@@ -53,6 +56,7 @@ pub mod tag_band_metrics;
 pub mod tag_borrowing;
 pub mod tag_rules;
 pub mod timeutil;
+pub mod upscale_detect;
 
 /// Crate name, used by the placeholder test below.
 pub const NAME: &str = "hatate-core";
