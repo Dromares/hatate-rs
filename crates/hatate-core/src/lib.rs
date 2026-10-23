@@ -41,6 +41,7 @@ mod pyimage;
 pub mod pyjpeg;
 mod pymeta;
 mod pynumpy;
+mod pypng;
 pub mod pyraster;
 mod pyrepr;
 pub mod pyresponse;
