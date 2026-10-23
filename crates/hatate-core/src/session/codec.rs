@@ -334,6 +334,8 @@ fn candidate_from_value(v: &Value, now: f64, coerced: &mut Coerced) -> Result<Ca
         url,
         thumb_bytes: None,
         page_index: 0,
+        booru_tags_fetched: false,
+        remote_info_fetched: false,
     })
 }
 
