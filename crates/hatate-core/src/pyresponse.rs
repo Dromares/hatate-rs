@@ -62,16 +62,22 @@ impl PyResponse {
     /// `resp.json()`. An error is `ValueError` in Python (`JSONDecodeError`), which every caller
     /// here catches as "this is not JSON".
     pub fn json(&self) -> Result<Value, serde_json::Error> {
+        serde_json::from_str(&self.json_text())
+    }
+
+    /// The text `.json()` parses: the body decoded by `guess_json_utf` when no encoding was
+    /// declared and that decodes strictly, otherwise `.text`.
+    pub fn json_text(&self) -> String {
         if self.encoding.is_none() && self.content.len() > 3 {
             // `guess_json_utf`, then a strict decode; a body that does not decode falls through
             // to `.text`, and one that decodes but does not parse is the error.
             if let Some(text) =
                 guess_json_utf(&self.content).and_then(|enc| strict(&self.content, enc))
             {
-                return serde_json::from_str(&text);
+                return text;
             }
         }
-        serde_json::from_str(&self.text())
+        self.text()
     }
 }
 

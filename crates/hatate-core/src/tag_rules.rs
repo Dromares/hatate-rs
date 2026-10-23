@@ -3,8 +3,8 @@
 //!
 //! Only the part the engine runner and `search_image` call is here (DAN-2063): the remap, the
 //! blacklist, `with_rating_tag`, `countable_tags` and `apply_outcome_tags` with the helpers they
-//! use. `apply_inline_edit` and its result type stay in Phase 4 with the review table that calls
-//! them.
+//! use. `apply_inline_edit` and its result type were the last two functions here (Phase 4.f,
+//! DAN-2128).
 //!
 //! Order of operations is the caller's: remap first, then the blacklist, so a pattern is written
 //! against the tag in its final displayed form.
@@ -141,6 +141,92 @@ pub fn split_tag_text(text: &str) -> (Option<String>, String) {
             )
         }
         None => (None, pycompat::strip(text).to_owned()),
+    }
+}
+
+/// `InlineEditResult`: what `apply_inline_edit` reports.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InlineEditResult {
+    /// The entry's tag list after the edit. A renamed target is in it, edited in place.
+    pub tags: Vec<Tag>,
+    pub action: InlineEditAction,
+    /// An older tag the rename collided with went.
+    pub dropped_duplicate: bool,
+}
+
+/// `InlineEditResult.action`: `"removed"` or `"renamed"`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlineEditAction {
+    Removed,
+    Renamed,
+}
+
+impl InlineEditAction {
+    /// The text Python's result carries.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            InlineEditAction::Removed => "removed",
+            InlineEditAction::Renamed => "renamed",
+        }
+    }
+}
+
+/// `apply_inline_edit`: an inline edit of one tag, and what happened.
+///
+/// Clearing the text deletes the tag. Otherwise it is renamed in place, keeping its source, with
+/// the namespace remap that freshly searched tags get. A rename that collides with a tag the entry
+/// already has drops the OLDER duplicate instead of leaving two identical tags.
+///
+/// Python holds the target as an object and tells it apart from its twins by identity; here it is
+/// the index of the tag in `tags`. An index past the end is a target that is not in the list, which
+/// Python handles the same way: nothing to remove, and a rename whose result goes nowhere.
+pub fn apply_inline_edit(
+    mut tags: Vec<Tag>,
+    target: usize,
+    new_text: &str,
+    settings: &Settings,
+) -> InlineEditResult {
+    if pycompat::strip(new_text).is_empty() {
+        let kept = tags
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| *i != target)
+            .map(|(_, t)| t)
+            .collect();
+        return InlineEditResult {
+            tags: kept,
+            action: InlineEditAction::Removed,
+            dropped_duplicate: false,
+        };
+    }
+
+    let (namespace, name) = split_tag_text(new_text);
+    let source = tags.get(target).map_or(TagSource::User, |t| t.source);
+    let remapped = apply_namespace_remap(
+        &[Tag {
+            name,
+            namespace,
+            source,
+        }],
+        settings,
+    )
+    .remove(0);
+
+    let duplicate = tags.iter().enumerate().position(|(i, t)| {
+        i != target && t.namespace == remapped.namespace && t.name == remapped.name
+    });
+    if let Some(tag) = tags.get_mut(target) {
+        tag.namespace = remapped.namespace;
+        tag.name = remapped.name;
+    }
+    let dropped_duplicate = duplicate.is_some();
+    if let Some(at) = duplicate {
+        tags.remove(at);
+    }
+    InlineEditResult {
+        tags,
+        action: InlineEditAction::Renamed,
+        dropped_duplicate,
     }
 }
 
@@ -392,5 +478,99 @@ mod tests {
             tag("b", None, TagSource::User),
         ];
         assert_eq!(countable_tags(&tags).len(), 2);
+    }
+
+    // tests/test_parsers_and_tags.py::TestInlineTagEdit
+    #[test]
+    fn inline_edit_clearing_the_text_deletes_the_tag() {
+        let a = tag("keep", None, TagSource::User);
+        let b = tag("gone", None, TagSource::User);
+        let result = apply_inline_edit(vec![a.clone(), b], 1, "", &settings());
+        assert_eq!(result.action, InlineEditAction::Removed);
+        assert_eq!(result.action.as_str(), "removed");
+        assert_eq!(result.tags, vec![a]);
+        assert!(!result.dropped_duplicate);
+    }
+
+    #[test]
+    fn inline_edit_whitespace_only_counts_as_cleared() {
+        let a = tag("gone", None, TagSource::User);
+        let result = apply_inline_edit(vec![a], 0, "   ", &settings());
+        assert_eq!(result.action, InlineEditAction::Removed);
+        assert!(result.tags.is_empty());
+    }
+
+    #[test]
+    fn inline_edit_a_rename_keeps_the_original_source() {
+        let t = tag("someone", Some("artist"), TagSource::Booru);
+        let result = apply_inline_edit(vec![t], 0, "artist:somebody", &settings());
+        assert_eq!(result.action.as_str(), "renamed");
+        assert_eq!(result.tags[0].source, TagSource::Booru);
+        assert_eq!(result.tags[0].display(), "artist:somebody");
+    }
+
+    #[test]
+    fn inline_edit_a_bare_name_clears_the_namespace() {
+        let t = tag("someone", Some("artist"), TagSource::Booru);
+        let result = apply_inline_edit(vec![t], 0, "someone", &settings());
+        assert_eq!(result.tags[0].namespace, None);
+    }
+
+    #[test]
+    fn inline_edit_the_remap_rules_apply_to_hand_typed_edits() {
+        let mut s = settings();
+        s.enable_tag_namespace_remap = true;
+        s.tag_namespace_remap = OrderedMap(vec![("artist".to_owned(), "creator".to_owned())]);
+        let t = tag("x", Some("general"), TagSource::Booru);
+        let result = apply_inline_edit(vec![t], 0, "artist:someone", &s);
+        assert_eq!(result.tags[0].display(), "creator:someone");
+    }
+
+    #[test]
+    fn inline_edit_renaming_onto_an_existing_tag_drops_the_older_one() {
+        let older = tag("cat", None, TagSource::Booru);
+        let editing = tag("dog", None, TagSource::User);
+        let result = apply_inline_edit(vec![older, editing], 1, "cat", &settings());
+        assert!(result.dropped_duplicate);
+        assert_eq!(result.tags, vec![tag("cat", None, TagSource::User)]);
+    }
+
+    #[test]
+    fn inline_edit_a_duplicate_after_the_target_is_dropped_too() {
+        let editing = tag("dog", None, TagSource::User);
+        let other = tag("cat", None, TagSource::Booru);
+        let result = apply_inline_edit(vec![editing, other], 0, "cat", &settings());
+        assert!(result.dropped_duplicate);
+        assert_eq!(result.tags, vec![tag("cat", None, TagSource::User)]);
+    }
+
+    #[test]
+    fn inline_edit_an_ordinary_rename_drops_nothing() {
+        let a = tag("cat", None, TagSource::User);
+        let b = tag("dog", None, TagSource::User);
+        let result = apply_inline_edit(vec![a, b], 1, "wolf", &settings());
+        assert!(!result.dropped_duplicate);
+        assert_eq!(result.tags.len(), 2);
+    }
+
+    #[test]
+    fn inline_edit_the_edited_tag_keeps_its_slot() {
+        let result = apply_inline_edit(
+            vec![tag("before", None, TagSource::User)],
+            0,
+            "after",
+            &settings(),
+        );
+        assert_eq!(result.tags, vec![tag("after", None, TagSource::User)]);
+    }
+
+    #[test]
+    fn inline_edit_a_target_that_is_not_in_the_list_changes_nothing() {
+        let a = tag("cat", None, TagSource::User);
+        let removed = apply_inline_edit(vec![a.clone()], 5, "", &settings());
+        assert_eq!(removed.tags, vec![a.clone()]);
+        let renamed = apply_inline_edit(vec![a.clone()], 5, "cat", &settings());
+        assert!(renamed.dropped_duplicate);
+        assert!(renamed.tags.is_empty());
     }
 }

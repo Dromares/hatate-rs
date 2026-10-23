@@ -30,6 +30,10 @@ pub enum ErrorKind {
     InvalidInput,
     /// A local file could not be written.
     Io,
+    /// A local SQLite database (the Pawchive index) could not be opened, read or written.
+    Database,
+    /// The service answered 404: it has no such thing.
+    NotFound,
     /// A local file Hatate was about to hand to Hydrus could not be read (missing, unreadable,
     /// not a file).
     FileUnreadable,

@@ -28,6 +28,7 @@ pub mod multipage_resolve;
 pub mod net;
 pub mod parser_health;
 pub mod paths;
+pub mod pawchive_index;
 pub mod progress;
 mod pyalpha;
 mod pycase;

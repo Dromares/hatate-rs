@@ -35,6 +35,11 @@ impl Hash {
         self.0.iter().map(|w| w.count_ones()).sum()
     }
 
+    /// `(a ^ b).bit_count()`: how many bits differ.
+    pub fn xor_popcount(&self, other: &Hash) -> u32 {
+        self.xor(other).popcount()
+    }
+
     fn xor(&self, other: &Hash) -> Hash {
         Hash([
             self.0[0] ^ other.0[0],
@@ -42,6 +47,30 @@ impl Hash {
             self.0[2] ^ other.0[2],
             self.0[3] ^ other.0[3],
         ])
+    }
+
+    /// `int(text, 16)` for a hash written as hex (`core/pawchive_index.py` stores them that way):
+    /// surrounding whitespace, an optional `0x` and hex digits. `None` where Python raises
+    /// `ValueError`, or where the value is wider than 256 bits.
+    pub fn from_hex(text: &str) -> Option<Hash> {
+        let digits = crate::pycompat::strip(text);
+        let digits = digits
+            .strip_prefix("0x")
+            .or_else(|| digits.strip_prefix("0X"))
+            .unwrap_or(digits);
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return None;
+        }
+        let digits = digits.trim_start_matches('0');
+        if digits.len() > 64 {
+            return None;
+        }
+        let mut words = [0u64; 4];
+        for (i, b) in digits.bytes().rev().enumerate() {
+            let value = u64::from(char::from(b).to_digit(16)?);
+            words[3 - i / 16] |= value << (4 * (i % 16));
+        }
+        Some(Hash(words))
     }
 
     /// `hex(x)` without the `0x`, as Python writes the integer.
@@ -99,6 +128,18 @@ pub fn dhash(source: Source<'_>, hash_size: usize) -> Result<Option<Hash>, Decom
         Err(OpenError::Bomb(b)) => return Err(b),
     };
     Ok(Some(hash_of(&image, hash_size)))
+}
+
+/// `core/pawchive_index.fingerprints`: the 64-bit and the 256-bit hash of one source, decoded
+/// once. `Ok(None)` is Python's `(None, None)` (`OSError` or `ValueError` while reading); the `Err`
+/// is the `DecompressionBombError` Python lets through.
+pub fn dhash_pair(source: Source<'_>) -> Result<Option<(Hash, Hash)>, DecompressionBomb> {
+    let image = match load(source, None) {
+        Ok(i) => i,
+        Err(OpenError::Os(_)) => return Ok(None),
+        Err(OpenError::Bomb(b)) => return Err(b),
+    };
+    Ok(Some((hash_of(&image, 8), hash_of(&image, 16))))
 }
 
 /// The hash of a picture already in memory.
