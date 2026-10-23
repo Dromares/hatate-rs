@@ -2,8 +2,8 @@
 //! `guess_site_name` and `canonicalize_url`.
 //!
 //! Only the part the engine result parsers read is here. IQDB labels each match with the site its
-//! URL names; Yandex runs every post link through `canonicalize_url`. `classify_site` and the
-//! site lists come with the code that filters candidates.
+//! URL names; Yandex runs every post link through `canonicalize_url`. `classify_site` is here for
+//! the engine runner (DAN-2063); the site option lists come with the code that filters candidates.
 
 use std::sync::LazyLock;
 
@@ -80,6 +80,24 @@ pub fn guess_site_name(url: &str) -> Option<&'static str> {
         .map(|(_, name)| *name)
 }
 
+/// `OTHER_SITE`: the catch-all in `ALL_SITE_OPTIONS`.
+pub const OTHER_SITE: &str = "Other";
+
+/// `classify_site`: resolves a candidate match to one of `ALL_SITE_OPTIONS`. The URL's host first,
+/// then `source_name` if it is already one of the known names (`KNOWN_SITES` is the set of
+/// `HOST_MAP`'s values), else `"Other"`.
+pub fn classify_site(source_name: Option<&str>, url: &str) -> String {
+    if let Some(guessed) = guess_site_name(url) {
+        return guessed.to_owned();
+    }
+    if let Some(name) = source_name {
+        if HOST_MAP.iter().any(|(_, known)| *known == name) {
+            return name.to_owned();
+        }
+    }
+    OTHER_SITE.to_owned()
+}
+
 /// `SANKAKU_LEGACY_POST_RE`. Python compiles it with `re.IGNORECASE`; no letter in it has a case
 /// that Python adds and `(?i)` lacks (those are `i` and `ı`/`İ`), so `(?i)` is the same.
 static SANKAKU_LEGACY_POST_RE: LazyLock<Regex> = LazyLock::new(|| {
@@ -145,6 +163,23 @@ pub fn canonicalize_url(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn classify_prefers_the_host_then_a_known_name_then_other() {
+        assert_eq!(
+            classify_site(Some("Whatever"), "https://danbooru.donmai.us/posts/1"),
+            "Danbooru"
+        );
+        assert_eq!(
+            classify_site(Some("Gelbooru"), "https://example.invalid/x"),
+            "Gelbooru"
+        );
+        assert_eq!(
+            classify_site(Some("nope"), "https://example.invalid/x"),
+            "Other"
+        );
+        assert_eq!(classify_site(None, ""), "Other");
+    }
 
     #[test]
     fn a_host_and_its_subdomains_match() {
