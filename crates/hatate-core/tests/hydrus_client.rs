@@ -607,7 +607,9 @@ async fn a_failed_download_leaves_no_file_and_says_which_one() {
     let dir = tempfile::tempdir().unwrap();
     let dest = dir.path().join("out.bin");
     let err = client.download_file(5, &dest).await.unwrap_err();
-    assert_eq!(err.status_code(), Some(404));
+    // Python's message names the status; its exception carries none.
+    assert_eq!(err.status_code(), None);
+    assert_eq!(err.kind(), ErrorKind::HttpStatus);
     assert_eq!(err.message(), "Hydrus returned HTTP 404 for file 5");
     assert!(!dest.exists());
     let (_s, client) = world(|_| Reply::aborted()).await;

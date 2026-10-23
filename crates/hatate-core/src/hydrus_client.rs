@@ -34,7 +34,6 @@ use crate::error::ErrorKind;
 use crate::image_prep::os_error_text;
 use crate::net::{
     HYDRUS_KEY_HEADER, Method, NetClient, NetConfig, NetError, NetRequest, NetResponse, RetryMode,
-    Secret,
 };
 use crate::pycompat::{strip, truthy};
 use crate::pyrepr::py_repr;
@@ -368,7 +367,7 @@ fn extract_current_tags(entry: &Map<String, Value>) -> Result<Vec<String>, Hydru
                 }
                 Value::Array(_) | Value::Object(_) => {
                     return Err(HydrusError::unexpected(format!(
-                        "unhashable type: '{}'",
+                        "cannot use '{0}' as a set element (unhashable type: '{0}')",
                         type_name(&item)
                     )));
                 }
@@ -481,6 +480,30 @@ fn py_int(v: &Value) -> Result<i64, HydrusError> {
     }
 }
 
+/// `requests` refuses `http:///path` (urllib3 finds no host: `InvalidURL`); the `url` crate reads
+/// the first path segment as the host.
+fn require_host(url: &str) -> Result<(), NetError> {
+    let empty = url.split_once("://").is_some_and(|(scheme, rest)| {
+        matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https") && rest.starts_with('/')
+    });
+    if empty {
+        return Err(NetError::new(
+            crate::net::ErrorKind::InvalidRequest,
+            None,
+            "no host supplied",
+        ));
+    }
+    Ok(())
+}
+
+/// Why the access key could not become a header.
+enum KeyFault {
+    /// `requests` refuses the value: a `RequestException`.
+    Refused(NetError),
+    /// A raw exception `requests` lets escape (`UnicodeEncodeError`), with its text.
+    Raw(String),
+}
+
 /// `HydrusClient`: a thin wrapper around the Hydrus Client API.
 #[derive(Debug, Clone)]
 pub struct HydrusClient {
@@ -518,42 +541,74 @@ impl HydrusClient {
         secs(self.settings.timeout)
     }
 
-    /// `_headers()` applied to a request: the access key header when a key is set.
-    fn with_key(&self, req: NetRequest) -> Result<NetRequest, NetError> {
+    /// `_headers()` applied to a request: the access key header when a key is set. The value goes
+    /// out as Latin-1 like any header `http.client` sends. `requests` refuses one that starts
+    /// with whitespace or holds a line break, which is a `RequestException` in Python; a
+    /// character past U+00FF is a `UnicodeEncodeError` that escapes it.
+    fn with_key(&self, mut req: NetRequest) -> Result<NetRequest, KeyFault> {
         if self.settings.access_key.is_empty() {
             return Ok(req);
         }
-        let key = Secret::new(self.settings.access_key.expose());
-        req.secret_header(HYDRUS_KEY_HEADER, &key)
+        let value = self.settings.access_key.expose();
+        if !crate::remote::set_header(&mut req.headers, HYDRUS_KEY_HEADER, value) {
+            if let Some(crate::remote::Raised::UnicodeEncode(text)) =
+                crate::remote::encode_fault(value)
+            {
+                return Err(KeyFault::Raw(text));
+            }
+            return Err(KeyFault::Refused(NetError::new(
+                crate::net::ErrorKind::InvalidRequest,
+                None,
+                "invalid header value",
+            )));
+        }
+        if let Some(header) = req.headers.get_mut(HYDRUS_KEY_HEADER) {
+            header.set_sensitive(true);
+        }
+        Ok(req)
     }
 
     /// A request to the user's own Hydrus: not retried and not held back by the host gate, as
-    /// Python's direct `requests` calls are not.
+    /// Python's direct `requests` calls are not. `params` join the URL's own query, ahead of its
+    /// fragment, as `requests` places them.
     fn request(
         &self,
         method: Method,
         path: &str,
         params: &[(&str, String)],
-    ) -> Result<NetRequest, NetError> {
-        let mut url = format!("{}{path}", self.settings.api_url);
+    ) -> Result<NetRequest, HydrusError> {
+        let full = format!("{}{path}", self.settings.api_url);
+        let (mut url, fragment) = match full.split_once('#') {
+            Some((head, fragment)) => (head.to_owned(), Some(fragment.to_owned())),
+            None => (full, None),
+        };
         if !params.is_empty() {
             let pairs: Vec<(&str, &str)> = params.iter().map(|(k, v)| (*k, v.as_str())).collect();
             url.push(if url.contains('?') { '&' } else { '?' });
             url.push_str(&urlencode(&pairs));
         }
-        let req = NetRequest::new(method, &requote_uri(&url), self.timeout())?
+        if let Some(fragment) = fragment {
+            url.push('#');
+            url.push_str(&fragment);
+        }
+        let url = requote_uri(&url);
+        let req = require_host(&url)
+            .and_then(|()| NetRequest::new(method, &url, self.timeout()))
+            .map_err(|e| HydrusError::unreachable(&self.settings.api_url, &e))?
             .with_retry(RetryMode::Never)
             .without_host_gate();
-        self.with_key(req)
+        self.with_key(req).map_err(|fault| match fault {
+            KeyFault::Refused(e) => HydrusError::unreachable(&self.settings.api_url, &e),
+            KeyFault::Raw(text) => HydrusError::unexpected(text),
+        })
     }
 
     async fn exchange(
         &self,
-        req: Result<NetRequest, NetError>,
+        req: Result<NetRequest, HydrusError>,
     ) -> Result<NetResponse, HydrusError> {
-        let req = req.map_err(|e| HydrusError::unreachable(&self.settings.api_url, &e))?;
         self.net
-            .send(req)
+            .send(req?)
             .await
             .map_err(|e| HydrusError::unreachable(&self.settings.api_url, &e))
     }
@@ -622,9 +677,11 @@ impl HydrusClient {
             let req = if has_content_type {
                 req
             } else {
-                req.header("Content-Type", "application/json")?
+                req.header("Content-Type", "application/json")
+                    .map_err(|e| HydrusError::unreachable(&self.settings.api_url, &e))?
             };
-            Self::extra(req, extra_headers).map(|req| req.with_body(Bytes::from(text)))
+            self.extra(req, extra_headers)
+                .map(|req| req.with_body(Bytes::from(text)))
         });
         let resp = self.exchange(req).await?;
         Self::handle(path, resp)
@@ -640,7 +697,7 @@ impl HydrusClient {
         debug!("POST {path} ({} raw bytes)", raw_data.len());
         let req = self
             .request(Method::Post, path, &[])
-            .and_then(|req| Self::extra(req, extra_headers))
+            .and_then(|req| self.extra(req, extra_headers))
             .map(|req| req.with_body(raw_data));
         let resp = self.exchange(req).await?;
         Self::handle(path, resp)
@@ -648,9 +705,15 @@ impl HydrusClient {
 
     /// `{**self._headers(), **extra_headers}`: a later header replaces an earlier one of the
     /// same name.
-    fn extra(mut req: NetRequest, extra_headers: &[(&str, &str)]) -> Result<NetRequest, NetError> {
+    fn extra(
+        &self,
+        mut req: NetRequest,
+        extra_headers: &[(&str, &str)],
+    ) -> Result<NetRequest, HydrusError> {
         for (name, value) in extra_headers {
-            req = req.header(name, value)?;
+            req = req
+                .header(name, value)
+                .map_err(|e| HydrusError::unreachable(&self.settings.api_url, &e))?;
         }
         Ok(req)
     }
@@ -1005,17 +1068,18 @@ impl HydrusClient {
 
     /// `download_file`: the file's bytes, written to `dest_path`.
     pub async fn download_file(&self, file_id: i64, dest_path: &Path) -> Result<(), HydrusError> {
-        let req = NetRequest::get(
-            &requote_uri(&self.get_file_path_url(file_id)),
-            self.timeout(),
-        )
-        .map(|req| req.with_retry(RetryMode::Never).without_host_gate())
-        .and_then(|req| self.with_key(req));
-        let req = req.map_err(|e| {
-            HydrusError::local(
-                ErrorKind::Net(e.kind()),
-                format!("Could not download file {file_id}: {e}"),
-            )
+        let download_fault = |e: &NetError| {
+            HydrusError::net(e, format!("Could not download file {file_id}: {e}"), e)
+        };
+        let url = requote_uri(&self.get_file_path_url(file_id));
+        let req = require_host(&url)
+            .and_then(|()| NetRequest::get(&url, self.timeout()))
+            .map_err(|e| download_fault(&e))?
+            .with_retry(RetryMode::Never)
+            .without_host_gate();
+        let req = self.with_key(req).map_err(|fault| match fault {
+            KeyFault::Refused(e) => download_fault(&e),
+            KeyFault::Raw(text) => HydrusError::unexpected(text),
         })?;
         let resp = self.net.send(req).await.map_err(|e| {
             error!("download_file {file_id} failed: {e}");
@@ -1024,9 +1088,10 @@ impl HydrusClient {
         let status = resp.status.as_u16();
         if status != 200 {
             error!("download_file {file_id} -> HTTP {status}");
+            // Python's message names the status; its exception carries none.
             return Err(HydrusError::new(
                 ErrorKind::HttpStatus,
-                Some(status),
+                None,
                 format!("Hydrus returned HTTP {status} for file {file_id}"),
             ));
         }
@@ -1168,7 +1233,10 @@ mod tests {
         let err = tags(json!({"tags": {"a": {"display_tags": {"0": 5}}}})).unwrap_err();
         assert_eq!(err.message(), "'int' object is not iterable");
         let err = tags(json!({"tags": {"a": {"display_tags": {"0": [["x"]]}}}})).unwrap_err();
-        assert_eq!(err.message(), "unhashable type: 'list'");
+        assert_eq!(
+            err.message(),
+            "cannot use 'list' as a set element (unhashable type: 'list')"
+        );
         let err = tags(json!({"tags": {"a": {"display_tags": ["x"]}}})).unwrap_err();
         assert_eq!(err.message(), "'list' object has no attribute 'get'");
     }
