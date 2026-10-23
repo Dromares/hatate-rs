@@ -22,6 +22,17 @@ pub trait Clock: Send + Sync {
     fn monotonic(&self) -> f64;
     /// `time.sleep(seconds)`. A value no wait can express (negative, NaN) is no wait.
     fn sleep(&self, seconds: f64) -> BoxFuture<'_, ()>;
+    /// `time.strftime("%H:%M", time.localtime(epoch))`: the local clock time of an instant, for a
+    /// message that says when something ends. The default is UTC; [`SystemClock`] reads the
+    /// process's own zone.
+    fn local_hhmm(&self, epoch: f64) -> String {
+        let seconds_of_day = (epoch.floor() as i64).rem_euclid(86_400);
+        format!(
+            "{:02}:{:02}",
+            seconds_of_day / 3600,
+            seconds_of_day % 3600 / 60
+        )
+    }
 }
 
 /// The real clock.
@@ -54,6 +65,10 @@ impl Clock for SystemClock {
             Duration::try_from_secs_f64(seconds).unwrap_or(Duration::MAX)
         };
         Box::pin(tokio::time::sleep(wait))
+    }
+
+    fn local_hhmm(&self, epoch: f64) -> String {
+        crate::localtime::local_hhmm(epoch)
     }
 }
 

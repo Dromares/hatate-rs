@@ -505,3 +505,91 @@ no difference at all. Every difference falls in one of these classes (a case can
 | **C1** declared non-UTF-8 charset | section 12.2 handed it to this ticket: "if a real fixture declares a non-UTF-8 charset, 3.c matches it and adds `encoding_rs`". No fixture of ascii2d or SauceNAO in `corpus/` declares a charset (`grep -ic charset` is 0 on every `input.*`), so C1 is unchanged and `encoding_rs` is not added |
 | **L1** cookie shapes beyond 13.2 | `Set-Cookie2`, `Port`, dates in the other `http2time` forms, a negative `Version`, quoted values, cross-host cookies and redirects; the real site does not send them |
 | **G1** `X-RateLimit-*` on SauceNAO | SauceNAO goes through the host gate as it does through `core/net.py`. The gate sleeps on tokio's clock, not the injected one, so the differential does not send those headers to SauceNAO; the gate itself is tested in `net/stack_tests.rs` |
+
+## 14. Engine clients, third part (Phase 3.e, DAN-2061)
+
+Python source of truth: `Dromares/Hatate-Linux-Redux` at `76c85c4`. Sections 12 and 13 are the first two
+parts; what they say about the cut, the multipart body, `response_text`, the deadline and the session
+(`engines::session`) applies here too.
+
+### 14.1 The cut
+
+| Python | Rust | Notes |
+|---|---|---|
+| `yandex.search` | `engines::yandex::YandexClient::search` | the picture read and re-encoded, the upload POST, `upload_from_response`, the sites GET, `results_from_response`; both requests on one `requests.Session` (Yandex's cookies from the upload's answer go with the second request) |
+| `yandex._blocked`, `_consecutive_failures`, `_resting_until` | `YandexClient` (private `YandexState`, `YandexClient::state()`) | state per client, shared by its clones |
+| `is_blocked`, `is_resting`, `resting_until`, `reset_blocked_flag`, `end_rest` | the same names on `YandexClient` | `reset_blocked_flag` is the caller's, as in Python: `search` never calls it |
+| `wait_for_turn`, `_next_turn` | `YandexClient::wait_for_turn(on_tick, should_stop)` | ten seconds between starts; the turn is claimed before waiting; the loop sleeps `min(1.0, left)` through `Clock`, ticks `("Pacing Yandex", left, wait)`, and asks `should_stop` before every sleep |
+| `time.monotonic`, `time.time`, `time.sleep`, `time.strftime("%H:%M", time.localtime(t))` | `clock::Clock` (`monotonic`, `wall`, `sleep`, the new `local_hhmm`) | `SystemClock::local_hhmm` is `localtime::local_hhmm`; `ManualClock` answers UTC |
+| `prepare_upload` | `image_prep::reencode_jpeg(bytes, 1600, 90)` | first frame, `convert("RGB")`, `thumbnail((1600, 1600), LANCZOS)`, JPEG quality 90 with the standard Huffman tables (Pillow's `optimize=False`) |
+| `google_images.search`, `_search_public`, `_search_vision` | `engines::google_images::GoogleImagesClient::search(path, timeout, on_tick, &Secret)` | `vision_key` picks the route; the key is a `Secret` and goes in the query only |
+| `google_images._blocked`, `is_blocked`, `reset_blocked_flag`, `_latch` | `GoogleImagesClient::{is_blocked, reset_blocked_flag}` and the `latches()` of the pure half's error | set by any error that latches; clones share it |
+| `build_session` (`SOCS` cookie, three headers) | `Session::new(..).with_cookie("SOCS", CONSENT_COOKIE, ".google.com")` | the cookie goes to `*.google.com` hosts on every hop, to no other host |
+| `requests.post(VISION_URL, ...)` | a one-request `Session` with only the `User-Agent` | JSON body written as `json.dumps` writes it (`", "` and `": "` separators), `Content-Type: application/json` |
+
+Details that are not in a signature but are in what the code does:
+
+- **Hosts.** `YandexClient::new` and `GoogleImagesClient::new` use the real addresses; `with_search_url` /
+  `with_urls` take others (a local https server). The corpus replay does the other thing: it builds the
+  client with `new` and connects the real names to the local server (`NetConfig::with_host_override`, set
+  only by code that builds the client, never by the binaries), so a response whose recorded URL is the
+  landing of a redirect (`consent.google.com`, `lens.google.com`, `yandex.com/showcaptcha`) is served by a
+  303 from the request's URL, and the Host header the server sees is the real one.
+- **The rest message.** The message's "resting until HH:MM" is the local clock time `CHALLENGE_REST_SECONDS`
+  from now. The repo had no time-zone code; `localtime` reads `TZ` (a name under `/usr/share/zoneinfo`, a
+  path, or a POSIX rule) or `/etc/localtime`, the TZif transitions and the footer rule (`Mm.w.d`, `Jn`, `n`)
+  that "slim" files rely on, and falls back to UTC as glibc does. The differential runs with `TZ` UTC,
+  Europe/Berlin and Pacific/Auckland.
+- **A numeric `cbirId`.** Phase 2's `upload_from_response` returned `Unexpected` for any truthy id that is
+  not a string, because it had nowhere to put one. The client can: a number or `true` is carried as its
+  `str()` (`7`, `7.5`, `True`) into the second request, exactly as `f"{cbir_id}"` and `params=` write it.
+  This is the one change in a Phase 2 function; an array or object still returns `Unexpected` (I1 below).
+- **`Location` is read as UTF-8** (`requests`' `get_redirect_target`: the header's bytes, which
+  `http.client` hands over as Latin-1, are decoded as UTF-8), so a redirect to a path with non-ASCII
+  characters is followed. This is in `engines::session`, so ascii2d gets it too. A `Location` that is not
+  UTF-8 is a transport failure here; Python raises `UnicodeDecodeError`.
+- **The key never appears.** `requests`' error text carries the URL, and Vision's URL carries the key
+  (`?key=...`), so Python's `Google Vision request failed: ...` can show it to the user and the log. The
+  port's message never contains it (test `google_images_reports_a_network_error_and_a_missing_file_and_never_prints_the_key`).
+  Same deliberate divergence as SauceNAO's (13.3 D1).
+
+### 14.2 What is not matched, with counts
+
+The transport differential sends the same scripted answers through the Python at `76c85c4` (the real
+`requests`, with only `HTTPAdapter.send` scripted, so its session, cookie jar, redirect, URL and multipart
+code runs; `core.yandex`'s `time` is a fake clock whose sleeps are recorded) and through the Rust clients (a
+local https replay server with the real hostnames connected to it, a `ManualClock`). It compares, per
+operation: the return value or the error class and message; every request (method, the URL as sent with its
+query in order, `User-Agent`, `Referer`, `Accept-Language`, the `Cookie` header as sent, content type, each
+multipart part's disposition, type and length or SHA-256, the dimensions of a JPEG part, the exact JSON body
+of a Vision call); every sleep and countdown tick of `wait_for_turn`; and the state after it (`_blocked`,
+`_consecutive_failures`, `is_resting`, `is_blocked`, `resting_until()`). The harness is outside the repository
+(the tree is Rust only); its logs are `worktrees/DAN-2061-differential-s7.log`, `...-s4242.log` and
+`...-s9.log`.
+
+Per seed: 3000 cases = 1500 `yandex` (1 to 5 searches on one client, with `wait_for_turn`, `reset_blocked_flag`,
+`end_rest` and clock jumps between them: upload answers of every shape the 2.l oracle used plus UTF-16/32
+bodies, odd ids, 403/429/500/503 statuses, redirect chains of 1 to 31 hops to the same host, another host and
+relative, odd and non-ASCII `Location`s, `Set-Cookie` of every supported attribute on every answer, captcha
+markers in the URL and in the first 6000 characters, the corpus pages, 21 kinds of picture and non-picture from a 1x1 PNG to
+a 4000x100 one, a GIF, a WebP, a BMP, bytes no decoder reads, a missing file and a directory, scripted
+connection errors, bodies that trickle past a 1 s deadline) and 1500 `google_images` (public and Vision routes,
+keys with spaces, `&`, `=`, `/`, non-ASCII, blank keys, 32 kinds of Vision error and payload, the corpus
+payloads and pages, consent and `/sorry/` landings, a Lens landing, the same hops and cookies, overwritten and
+deleted `SOCS`). Seeds 7, 4242 and 9 ran with `TZ` UTC, Europe/Berlin and Pacific/Auckland. **0 unexplained
+differences in all three.** Every difference falls in one of these classes (a case can be in more than one):
+
+| Class | What differs | Why it stays | seed 7 | seed 4242 | seed 9 |
+|---|---|---|---|---|---|
+| **D1** transport failure text | `requests` raises a `RequestException`; Yandex and Google report `Yandex request failed: <text>` / `Google request failed: <text>` / `Google Vision request failed: <text>` in both, and the text after the prefix is `requests`' (`scripted abort` in the harness; a connection error, in life) in Python and the net layer's in the port. The prefix and the class are equal; so is everything else about the case | the text is `requests`' and cannot be matched (section 12.2 D1). For Vision there is a deliberate divergence on top: `requests`' text carries the URL, the URL carries `?key=...`, so Python's message can show the key to the user and the log; the port's never does | 156 | 170 | 182 |
+| **J1** the re-encoded JPEG's bytes | Yandex's `prepare_upload` output has the same dimensions and colour mode as Pillow's (compared on every case: 3000x2000 to 1600x1067, 4000x100 to 1600x40, a GIF's first frame, grey and RGBA to RGB) and not the same bytes | granted by name on DAN-2057 for `image_prep` (the DCT and the entropy coder are the `jpeg-encoder` crate's); nothing downstream reads the bytes, Yandex matches the picture | 1331 | 1331 | 1361 |
+| **I1** a `cbirId` that is a JSON array or object | Python carries it into the next request (`params=` writes a list as a repeated `cbir_id=` and the `url` parameter is `str(list)`), and Yandex's answer to that decides the case; the port returns `Unexpected` (the engine fails) | the service answers with a string; Phase 2.l made the same call and 3.e keeps it. A number or `true` is matched (14.1) | 31 | 29 | 39 |
+| **N1** a body of `NaN` | Python's `json` reads `NaN`, `Infinity` and `-Infinity` as floats and `serde_json` refuses them. For a whole Vision body of `NaN` Python then raises `AttributeError` out of `search` and the port reads `{}` and returns no matches; for Yandex's upload answer both count a failure | the API never sends these tokens | 7 | 12 | 5 |
+| total differing cases | | | 1422 | 1413 | 1466 |
+
+| Not a difference found, but a limit | |
+|---|---|
+| **C2** undeclared charset | section 12.2 and 13.3: an answer without a declared charset is decoded by `requests` with `charset_normalizer`, the port reads valid UTF-8 as UTF-8 and anything else as Windows-1252. The differential sent undeclared pages (ASCII and UTF-8) to both engines and found 0 cases where they differ, so C2 is unchanged and unmeasured for these two hosts. The live `Content-Type` of Yandex and Google is what 3.i's smoke can read |
+| **H1** header-wait timeout | section 12.2: a server that never answers is `requests`' `ReadTimeout` in Python and the net layer's `DeadlineExceeded` here. The harness's "hang" is a body that trickles after the headers, the case `run_with_hard_timeout` exists for, and that matches (`Timed out after 1s (...)`) |
+| **U1** a `Location` that is not UTF-8 | Python raises `UnicodeDecodeError` out of `search`; the port reports a transport failure. Not generated |
+| **L1** the local zone | `localtime` reads `TZif` (v2 and later) and the footer rules tzdata writes; a zone file in another form, or a `TZ` rule with no dates (`CET-1CEST`), is read as UTC, which is glibc's fallback for a name it cannot find, not for a rule it could. The harness covers three zones in three seeds |

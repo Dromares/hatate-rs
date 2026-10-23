@@ -827,6 +827,32 @@ fn a_grey_jpeg_carries_only_the_quantization_table_it_uses() {
     assert_eq!((decoded.width(), decoded.height()), (16, 16));
 }
 
+// ---- `yandex.prepare_upload` (DAN-2061): reencode_jpeg ---------------------------------------
+
+fn dims(jpeg: &[u8]) -> (u32, u32) {
+    let (format, im) = decoded(jpeg);
+    assert_eq!(format, image::ImageFormat::Jpeg);
+    (im.width(), im.height())
+}
+
+#[test]
+fn reencode_gives_a_jpeg_fitted_in_the_square_and_never_enlarged() {
+    for (from, to) in [
+        ((3000, 2000), (1600, 1067)),
+        ((2000, 3000), (1067, 1600)),
+        ((4000, 100), (1600, 40)),
+        ((100, 4000), (40, 1600)),
+        ((1601, 1600), (1600, 1599)),
+        ((1600, 1600), (1600, 1600)),
+        ((64, 48), (64, 48)),
+        ((1, 1), (1, 1)),
+    ] {
+        let png = noise_png(from.0, from.1, Mode::Rgb);
+        let jpeg = reencode_jpeg(&png, 1600, 90).unwrap();
+        assert_eq!(dims(&jpeg), to, "{from:?}");
+    }
+}
+
 // Pillow's `resize` does the across pass first, except on a picture more than 100 times taller
 // than it is wide, where it does the down pass first; each pass rounds to 8 bits, so the order
 // shows in the pixels. The expected values are what Pillow 12.3 gave for
@@ -911,6 +937,43 @@ fn a_picture_over_a_hundred_times_taller_than_wide_is_resampled_down_first() {
         assert_eq!((px.width, px.height), out, "{w}x{h}");
         assert_eq!(digest(&px), expected, "{w}x{h}");
     }
+}
+
+#[test]
+fn reencode_converts_every_mode_to_three_channels() {
+    for mode in [Mode::Rgb, Mode::Grey, Mode::Rgba] {
+        let jpeg = reencode_jpeg(&noise_png(40, 30, mode), 1600, 90).unwrap();
+        // `convert("RGB")`: a grey picture is widened, unlike the cap-driven downscale.
+        let (_, im) = decoded(&jpeg);
+        assert_eq!(im.color(), image::ColorType::Rgb8, "{}", mode as u8);
+    }
+}
+
+#[test]
+fn reencode_refuses_what_pillow_cannot_open() {
+    for bytes in [
+        &b""[..],
+        b"not an image",
+        b"\x00\x00\x00\x18ftypmp42",
+        b"\x89PNG\r\n\x1a\n",
+    ] {
+        assert!(reencode_jpeg(bytes, 1600, 90).is_err(), "{bytes:?}");
+    }
+    // A truncated picture: the header is fine, the data is not.
+    let png = noise_png(64, 48, Mode::Rgb);
+    assert!(reencode_jpeg(&png[..png.len() / 2], 1600, 90).is_err());
+}
+
+#[test]
+fn reencode_uses_standard_tables_and_the_quality_it_is_given() {
+    let png = noise_png(200, 150, Mode::Rgb);
+    let high = reencode_jpeg(&png, 1600, 90).unwrap();
+    let low = reencode_jpeg(&png, 1600, 40).unwrap();
+    assert!(low.len() < high.len());
+    // Pillow's default is `optimize=False`: the standard Huffman tables (a `DHT` of the standard
+    // luminance DC table starts `00 01 05 01 01 01 01 01 01`), not tables fitted to the picture.
+    let standard_dc: [u8; 9] = [0x00, 0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01];
+    assert!(high.windows(9).any(|w| w == standard_dc));
 }
 
 #[test]

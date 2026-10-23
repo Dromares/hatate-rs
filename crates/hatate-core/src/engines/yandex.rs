@@ -14,18 +14,31 @@
 //! (`_blocked`, `_consecutive_failures`, `_resting_until`) is [`YandexState`], an argument.
 //! The request half (reading and re-encoding the picture, the two requests and their headers,
 //! the deadline, the network errors, `reset_blocked_flag` at the start of a search, the pacing
-//! between searches) is Phase 3.
+//! between searches) is [`YandexClient`] (Phase 3.e, DAN-2061).
 
 use std::collections::HashSet;
-use std::sync::LazyLock;
+use std::path::Path;
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::Instant;
 
 use regex::Regex;
 use serde::Serialize;
 use serde_json::Value;
 
+use tracing::{debug, error};
+
+use super::client::{
+    Failure, OnTick, multipart_upload_as, read_upload, response_text, ticking, urlencode,
+};
+use super::session::{Session, SessionRequest};
 use super::{Response, UnexpectedInput};
 use crate::boorus;
+use crate::clock::{Clock, SystemClock};
+use crate::hard_timeout::HardTimeoutError;
+use crate::image_prep;
+use crate::net::{Method, NetClient};
 use crate::pycompat;
+use crate::pyresponse::PyResponse;
 use crate::pyurl;
 use crate::sites::canonicalize_url;
 
@@ -42,6 +55,17 @@ pub const SEARCH_URL: &str = "https://yandex.com/images/search";
 /// What the upload endpoint is asked for. Without it the answer is a full HTML page rather than
 /// the small JSON that carries the `cbirId`.
 pub const UPLOAD_REQUEST: &str = r#"{"blocks":[{"block":"b-page_type_search-by-image__link"}]}"#;
+
+/// `USER_AGENT`.
+pub const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+/// The `Referer` every request carries.
+pub const REFERER: &str = "https://yandex.com/images/";
+/// Yandex matches a downscaled picture as well as the original, and a 40MB PNG off a network
+/// share is a long upload for nothing.
+pub const UPLOAD_MAX_SIDE: u32 = 1600;
+pub const UPLOAD_JPEG_QUALITY: u8 = 90;
+/// The least time between the starts of two Yandex searches, however they were started.
+pub const MIN_SECONDS_BETWEEN_SEARCHES: f64 = 10.0;
 
 /// Failures in a row before the engine stands down for the run. A page layout change fails every
 /// image the same way, and one bad answer is not evidence of anything.
@@ -362,8 +386,10 @@ fn count_failure(state: &mut YandexState, message: String) -> YandexError {
 /// `_cbir_id`: the search id in the upload's JSON answer. `json` is `resp.json()`, `None` when
 /// it would not decode. `Ok(None)` where Python's `except (ValueError, AttributeError,
 /// IndexError, TypeError)` catches. `Err` where it does not: `blocks` a non-empty object
-/// (`KeyError`), or an id that is truthy and not a string (Python would carry it into the next
-/// request; a string id cannot hold it).
+/// (`KeyError`), or an id that is a non-empty array or object (Python would carry it into the
+/// next request as a repeated query parameter; a string id cannot hold it). A number or `true`
+/// is carried as its `str()`, which is what the next request's `f"{cbir_id}"` and `params=` write
+/// (DAN-2061: before the clients existed it was an error here).
 fn cbir_id(json: Option<&Value>) -> Result<Option<String>, UnexpectedInput> {
     let Some(Value::Object(answer)) = json else {
         return Ok(None);
@@ -383,6 +409,9 @@ fn cbir_id(json: Option<&Value>) -> Result<Option<String>, UnexpectedInput> {
     };
     match params.get("cbirId") {
         Some(Value::String(id)) if !id.is_empty() => Ok(Some(id.clone())),
+        Some(id @ (Value::Number(_) | Value::Bool(_))) if pycompat::truthy(id) => {
+            Ok(Some(crate::pyrepr::py_str(id)))
+        }
         Some(id) if pycompat::truthy(id) => Err(UnexpectedInput),
         _ => Ok(None),
     }
@@ -440,6 +469,319 @@ pub fn results_from_response(
     };
     state.consecutive_failures = 0;
     Ok(keep_post_pages(&sites)?)
+}
+
+// ----------------------------------------------------------------------
+// The request half (Phase 3.e)
+// ----------------------------------------------------------------------
+
+/// The module state of `core/yandex.py`: [`YandexState`] and the time the next search may start
+/// (`_next_turn`, on the clock's monotonic reading).
+#[derive(Debug, Default)]
+struct Inner {
+    state: YandexState,
+    next_turn: Option<f64>,
+}
+
+/// The request half of `core/yandex.py`: `search`, `is_blocked`, `is_resting`, `resting_until`,
+/// `reset_blocked_flag`, `end_rest` and `wait_for_turn`.
+///
+/// Two requests per image on one `requests.Session` (so its cookies, which Yandex sets with the
+/// upload's answer, go with the second): the picture, re-encoded and fitted in a 1600 px square
+/// ([`image_prep::reencode_jpeg`]), POSTed to [`SEARCH_URL`], then a GET of the "sites" tab for
+/// the `cbirId` it answers with. What the answers mean is [`upload_from_response`] and
+/// [`results_from_response`].
+///
+/// The module state Python keeps in globals is the client's; clones share it. The address comes
+/// from the constructor, so a test serves it from a local server; `new` uses the real one.
+#[derive(Clone)]
+pub struct YandexClient {
+    net: NetClient,
+    search_url: String,
+    clock: Arc<dyn Clock>,
+    inner: Arc<Mutex<Inner>>,
+}
+
+impl YandexClient {
+    /// The real yandex.com.
+    pub fn new(net: NetClient) -> Self {
+        Self::with_search_url(net, SEARCH_URL)
+    }
+
+    /// The same client against another address (a local https server in tests). Not reachable
+    /// from `config.json`, the environment or a flag.
+    pub fn with_search_url(net: NetClient, search_url: &str) -> Self {
+        YandexClient {
+            net,
+            search_url: search_url.to_owned(),
+            clock: Arc::new(SystemClock::default()),
+            inner: Arc::default(),
+        }
+    }
+
+    /// The clock the rest and the pacing are measured on.
+    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// `is_blocked`: stood down, or resting after a captcha.
+    pub fn is_blocked(&self) -> bool {
+        self.lock().state.is_blocked(self.clock.monotonic())
+    }
+
+    /// The state Python keeps in `_blocked`, `_consecutive_failures` and `_resting_until`.
+    pub fn state(&self) -> YandexState {
+        self.lock().state
+    }
+
+    /// `is_resting`.
+    pub fn is_resting(&self) -> bool {
+        self.lock().state.is_resting(self.clock.monotonic())
+    }
+
+    /// `resting_until`: when the rest ends, as a local clock time, e.g. "21:41". Empty when it
+    /// is not resting.
+    pub fn resting_until(&self) -> String {
+        let monotonic = self.clock.monotonic();
+        let until = {
+            let inner = self.lock();
+            match inner.state.resting_until {
+                Some(until) if inner.state.is_resting(monotonic) => until,
+                _ => return String::new(),
+            }
+        };
+        self.clock
+            .local_hhmm(self.clock.wall() + (until - monotonic))
+    }
+
+    /// `reset_blocked_flag`: called whenever a search starts. Clears a stand-down, but not the
+    /// rest after a challenge.
+    pub fn reset_blocked_flag(&self) {
+        self.lock().state.reset_blocked_flag();
+    }
+
+    /// `end_rest`: lets Yandex be asked again now.
+    pub fn end_rest(&self) {
+        let mut inner = self.lock();
+        inner.state.end_rest();
+        inner.next_turn = None;
+    }
+
+    /// `wait_for_turn`: holds a search until [`MIN_SECONDS_BETWEEN_SEARCHES`] have passed since
+    /// the last one started. The turn is claimed before waiting, so two searches arriving
+    /// together are spaced out rather than both let go. `should_stop` is polled every second.
+    pub async fn wait_for_turn(
+        &self,
+        on_tick: Option<OnTick>,
+        should_stop: Option<super::saucenao::ShouldStop>,
+    ) {
+        let now = self.clock.monotonic();
+        let start_at = {
+            let mut inner = self.lock();
+            // `max(now, _next_turn or now)`
+            let start_at = now.max(inner.next_turn.filter(|t| *t != 0.0).unwrap_or(now));
+            inner.next_turn = Some(start_at + MIN_SECONDS_BETWEEN_SEARCHES);
+            start_at
+        };
+        let wait = start_at - now;
+        if wait <= 0.0 {
+            return;
+        }
+        loop {
+            let left = start_at - self.clock.monotonic();
+            if left <= 0.0 || should_stop.as_ref().is_some_and(|stop| stop()) {
+                return;
+            }
+            if let Some(tick) = &on_tick {
+                tick("Pacing Yandex", left, wait);
+            }
+            self.clock.sleep(left.min(1.0)).await;
+        }
+    }
+
+    /// The `RestClock` the pure half's messages need.
+    fn rest_clock<'a>(&self, rest_ends_at: &'a str) -> RestClock<'a> {
+        RestClock {
+            now: self.clock.monotonic(),
+            rest_ends_at,
+        }
+    }
+
+    /// `prepare_upload`: the picture as a JPEG no larger than [`UPLOAD_MAX_SIDE`]. Always
+    /// re-encoded; an animation gives its first frame.
+    async fn prepare_upload(&self, image_path: &Path) -> Result<Vec<u8>, YandexError> {
+        let (data, _) = read_upload(image_path)
+            .await
+            .map_err(|e| YandexError::Failed(format!("Could not read image: {}", e.0)))?;
+        let encoded = tokio::task::spawn_blocking(move || {
+            // Python's `except (OSError, ValueError, ...)`; a decoder that panics is the same
+            // refusal, not a crash.
+            std::panic::catch_unwind(|| {
+                image_prep::reencode_jpeg(&data, UPLOAD_MAX_SIDE, UPLOAD_JPEG_QUALITY)
+            })
+            .unwrap_or_else(|_| Err("the image decoder panicked".to_owned()))
+        })
+        .await
+        .unwrap_or_else(|join| Err(join.to_string()));
+        encoded.map_err(|why| {
+            debug!("Yandex could not re-encode the picture: {why}");
+            YandexError::Failed(
+                "not in a format that can be sent to Yandex (video and JPEG XL are the usual \
+                 reasons); the other engines can still search it"
+                    .to_owned(),
+            )
+        })
+    }
+
+    /// `search`: upload to Yandex and return the results on post pages of sites the app can read
+    /// tags from, in Yandex's order.
+    ///
+    /// `timeout` is both the per-read timeout and a deadline over each of the two exchanges, as
+    /// `run_with_hard_timeout(..., timeout)` is around each in Python. `on_tick` is the UI
+    /// countdown, see [`OnTick`].
+    pub async fn search(
+        &self,
+        image_path: &Path,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+    ) -> Result<Vec<YandexMatch>, YandexError> {
+        let jpeg = self.prepare_upload(image_path).await?;
+        let mut session = Session::new(
+            self.net.clone(),
+            vec![
+                ("User-Agent", USER_AGENT.to_owned()),
+                ("Referer", REFERER.to_owned()),
+            ],
+        );
+        let page = ticking(
+            "Waiting on Yandex",
+            timeout,
+            on_tick,
+            self.exchange(&mut session, jpeg, timeout),
+        )
+        .await?;
+
+        let page_text = response_text(&page);
+        let page_url = page.url.as_str().to_owned();
+        let sites_page = Response {
+            status: page.status.as_u16(),
+            url: &page_url,
+            text: &page_text,
+        };
+        let ends_at = self.rest_ends_at();
+        let matches = {
+            let mut inner = self.lock();
+            results_from_response(&mut inner.state, self.rest_clock(&ends_at), &sites_page)?
+        };
+        debug!(
+            "Yandex: {} on a post page the app can read for {}",
+            matches.len(),
+            image_path.display()
+        );
+        Ok(matches)
+    }
+
+    /// The local clock time a rest that starts now ends.
+    fn rest_ends_at(&self) -> String {
+        self.clock
+            .local_hhmm(self.clock.wall() + CHALLENGE_REST_SECONDS)
+    }
+
+    /// Everything `search` does inside its `ProgressTicker`: the upload, what its answer means,
+    /// and the "sites" page.
+    async fn exchange(
+        &self,
+        session: &mut Session,
+        jpeg: Vec<u8>,
+        timeout: f64,
+    ) -> Result<crate::net::NetResponse, YandexError> {
+        let upload_url = format!(
+            "{}?{}",
+            self.search_url,
+            urlencode(&[
+                ("rpt", "imageview"),
+                ("format", "json"),
+                ("request", UPLOAD_REQUEST),
+            ])
+        );
+        let upload = multipart_upload_as("upfile", "image.jpg", "image/jpeg", &jpeg);
+        let uploaded = session
+            .send(
+                SessionRequest {
+                    method: Method::Post,
+                    url: &upload_url,
+                    upload: Some(&upload),
+                },
+                timeout,
+                Instant::now(),
+            )
+            .await
+            .map_err(transport_error)?;
+
+        let text = response_text(&uploaded);
+        let url = uploaded.url.as_str().to_owned();
+        let answer = Response {
+            status: uploaded.status.as_u16(),
+            url: &url,
+            text: &text,
+        };
+        let json = PyResponse::from_net(uploaded.clone()).json().ok();
+        let ends_at = self.rest_ends_at();
+        let cbir_id = {
+            let mut inner = self.lock();
+            upload_from_response(
+                &mut inner.state,
+                self.rest_clock(&ends_at),
+                &answer,
+                json.as_ref(),
+            )?
+        };
+
+        let page_url = format!(
+            "{}?{}",
+            self.search_url,
+            urlencode(&[
+                ("cbir_id", &cbir_id),
+                ("rpt", "imageview"),
+                ("cbir_page", "sites"),
+                (
+                    "url",
+                    &format!("https://avatars.mds.yandex.net/get-images-cbir/{cbir_id}/orig"),
+                ),
+            ])
+        );
+        session
+            .send(
+                SessionRequest {
+                    method: Method::Get,
+                    url: &page_url,
+                    upload: None,
+                },
+                timeout,
+                Instant::now(),
+            )
+            .await
+            .map_err(transport_error)
+    }
+}
+
+/// `except HardTimeoutError` and `except requests.RequestException` around the two requests.
+fn transport_error(failure: Failure) -> YandexError {
+    match failure {
+        Failure::Deadline(HardTimeoutError(why)) => {
+            error!("Yandex request exceeded the hard deadline");
+            YandexError::Failed(format!("Yandex request timed out: {why}"))
+        }
+        Failure::Transport(why) => {
+            error!("Yandex request failed");
+            YandexError::Failed(format!("Yandex request failed: {why}"))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -856,10 +1198,37 @@ mod tests {
     }
 
     #[test]
+    fn a_number_or_true_for_an_id_is_carried_as_its_str() {
+        for (id, text) in [
+            (json!(7), "7"),
+            (json!(7.5), "7.5"),
+            (json!(7.0), "7.0"),
+            (json!(-3), "-3"),
+            (json!(true), "True"),
+        ] {
+            let json = json!({"blocks": [{"params": {"cbirId": id}}]});
+            let mut state = YandexState::default();
+            let got = upload_from_response(&mut state, CLOCK, &answer(UPLOAD_URL, ""), Some(&json));
+            assert_eq!(got, Ok(text.to_owned()), "{json}");
+        }
+        // Falsy ones are no id, as before.
+        for id in [json!(0), json!(0.0), json!(false)] {
+            let json = json!({"blocks": [{"params": {"cbirId": id}}]});
+            let mut state = YandexState::default();
+            assert!(
+                upload_from_response(&mut state, CLOCK, &answer(UPLOAD_URL, ""), Some(&json))
+                    .is_err()
+            );
+            assert_eq!(state.consecutive_failures, 1);
+        }
+    }
+
+    #[test]
     fn an_answer_python_raises_on_is_an_error_that_counts_nothing() {
         for json in [
             json!({"blocks": {"a": 1}}),
-            json!({"blocks": [{"params": {"cbirId": 7}}]}),
+            json!({"blocks": [{"params": {"cbirId": ["a"]}}]}),
+            json!({"blocks": [{"params": {"cbirId": {"a": 1}}}]}),
         ] {
             let mut state = YandexState::default();
             let error =

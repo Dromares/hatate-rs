@@ -65,6 +65,11 @@ impl ReplayServer {
         state.overflow = 0;
     }
 
+    /// Where the server listens.
+    pub fn addr(&self) -> std::net::SocketAddr {
+        self.server.addr
+    }
+
     /// `https://127.0.0.1:<port><path>`
     pub fn url(&self, path: &str) -> String {
         self.server.url(path)
@@ -248,6 +253,15 @@ fn split_on<'a>(haystack: &'a [u8], needle: &[u8]) -> Vec<&'a [u8]> {
 
 // ---- corpus `mocked_transport` items -----------------------------------------------------
 
+/// [`MockedItem::script_following_redirects`]'s answer.
+pub struct Redirected {
+    pub replies: Vec<Reply>,
+    /// `(method, host, path)` of every request the server should see, in order.
+    pub expected: Vec<(String, String, String)>,
+    /// The indexes in `expected` of the item's recorded requests (the others are redirect hops).
+    pub recorded_at: Vec<usize>,
+}
+
 /// One `mocked_transport` item of the corpus: the recorded exchange and what Python returned.
 pub struct MockedItem {
     pub id: String,
@@ -271,10 +285,13 @@ impl MockedItem {
                 let status = u16::try_from(r["status"].as_u64().expect("status")).unwrap();
                 let body: Vec<u8> = if r["body"] == "input" || i + 1 == responses.len() {
                     self.input.clone()
-                } else if let Some(text) = r["text"].as_str() {
+                } else if let Some(text) = r["text"].as_str().filter(|t| !t.is_empty()) {
                     text.as_bytes().to_vec()
                 } else if let Some(json) = r.get("json") {
+                    // A recorded `resp.json()` (with an empty `.text`): the body is that JSON.
                     json.to_string().into_bytes()
+                } else if let Some(text) = r["text"].as_str() {
+                    text.as_bytes().to_vec()
                 } else {
                     Vec::new()
                 };
@@ -287,6 +304,52 @@ impl MockedItem {
                 reply
             })
             .collect()
+    }
+
+    /// [`MockedItem::script`] for a client that reaches the real hosts through host overrides
+    /// (`NetConfig::with_host_override`): a response whose recorded `url` is not the URL its
+    /// request was made to is the *final* URL of a redirect, so the request is answered with a
+    /// 303 to that URL and the next scripted reply is served there. Returns the script and the
+    /// requests the server should see, `(method, host, path)`, redirect hops included, and which of
+    /// those are the recorded requests (the rest are hops). A recorded
+    /// request's query is not in the path (the corpus keeps it in `params`, as a sorted object).
+    pub fn script_following_redirects(&self) -> Redirected {
+        let scripted = self.script();
+        let requests = self.call["request"].as_array().expect("request");
+        let responses = self.call["responses"].as_array().expect("responses");
+        let mut replies = Vec::new();
+        let mut expected = Vec::new();
+        let mut recorded_at = Vec::new();
+        for ((reply, request), response) in scripted.into_iter().zip(requests).zip(responses) {
+            let from = url::Url::parse(request["url"].as_str().expect("url")).expect("url parses");
+            recorded_at.push(expected.len());
+            expected.push((
+                request["method"].as_str().expect("method").to_owned(),
+                from.host_str().expect("host").to_owned(),
+                from.path().to_owned(),
+            ));
+            let landed = response["url"]
+                .as_str()
+                .and_then(|u| url::Url::parse(u).ok())
+                .filter(|to| (to.host_str(), to.path()) != (from.host_str(), from.path()));
+            match landed {
+                Some(to) => {
+                    replies.push(Reply::new(303, "").header("Location", to.as_str()));
+                    expected.push((
+                        "GET".to_owned(),
+                        to.host_str().expect("host").to_owned(),
+                        to.path().to_owned(),
+                    ));
+                    replies.push(reply);
+                }
+                None => replies.push(reply),
+            }
+        }
+        Redirected {
+            replies,
+            expected,
+            recorded_at,
+        }
     }
 
     /// The recorded requests' method and path-with-query, in order, with the host dropped (the
