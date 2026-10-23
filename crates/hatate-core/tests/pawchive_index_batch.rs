@@ -218,6 +218,7 @@ pub async fn run_scenario(
         reporter: Arc::new(Silent),
         unit_random: &random,
         reset_run_state: &reset,
+        hydrus_client: &|s| hatate_core::hydrus_client::HydrusClient::new(s),
     };
     let mut entries = Vec::new();
     let outcome = run_batch(&env, &pics, &mut entries).await;

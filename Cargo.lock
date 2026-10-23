@@ -587,6 +587,7 @@ dependencies = [
  "icu_normalizer",
  "image",
  "jpeg-encoder",
+ "libc",
  "markup5ever",
  "md-5",
  "rcgen",

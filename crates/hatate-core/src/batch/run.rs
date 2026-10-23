@@ -6,9 +6,9 @@
 //! countdown) and a stop flag. What it does with a timer is [`Autosave`]. The search itself is
 //! `SearchEngine::search_image` (Phase 3.h); the waits between images are `net::pacing` (Phase 1).
 //!
-//! **Not in this build:** Hydrus auto-import (`_maybe_auto_import`, the staging directory and its
-//! `owner.pid`, `_switch_to_importable_match`). Phase 4 owns it. A batch with `auto_import_enabled`
-//! on says so once and carries on without it.
+//! Hydrus auto-import (Phase 4.g) is [`super::auto_import`] (`_maybe_auto_import`,
+//! `_switch_to_importable_match`) and [`super::staging`] (the staging directory and its
+//! `owner.pid`); this loop calls them where `SearchWorker._run` does.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -16,10 +16,14 @@ use std::sync::{Arc, Mutex};
 
 use tracing::{debug, info, warn};
 
+use super::auto_import::{RunFault, maybe_auto_import, removes_row};
 use super::hashing::hash_files;
 use super::intake::{filter_duplicate_paths, scan_folder};
 use super::matched_urls::log_matched_url;
-use crate::config::Settings;
+use super::staging::{StagingDir, cleanup_stale};
+use crate::config::{HydrusSettings, Settings};
+use crate::hydrus_client::{HydrusClient, HydrusError};
+use crate::hydrus_import::ImportResult;
 use crate::model::{Entry, MatchStatus};
 use crate::net::pacing::{EngineRateLimiter, engine_interval_for, remaining_delay, uniform};
 use crate::quota_pause::{QuotaPause, QuotaPauseFile};
@@ -38,6 +42,9 @@ pub trait Reporter: Send + Sync {
     fn line(&self, text: &str);
     /// `wait_countdown(label, remaining, total)`: a wait is under way. `("", 0.0, 0.0)` clears it.
     fn countdown(&self, label: &str, remaining: f64, total: f64);
+    /// `SearchWorker.auto_imported`: auto-import sent, refused or failed one image. A row that
+    /// `remove_after_import` drops from the list is still the one named here.
+    fn auto_imported(&self, _entry: &Entry, _result: &ImportResult) {}
 }
 
 /// A reporter that says nothing.
@@ -78,10 +85,15 @@ pub struct BatchEnv<'a> {
     /// exhaustion, and every engine that stood down on an earlier run (ascii2d, Google, Lens,
     /// Yandex).
     pub reset_run_state: &'a (dyn Fn() + Send + Sync),
+    /// `HydrusClient(self.settings.hydrus)`: how the auto-import builds its Hydrus client. The
+    /// binary passes [`HydrusClient::new`] (rustls with the explicit provider, `verify_ssl` from
+    /// the settings); a test passes one that trusts its local server's certificate.
+    pub hydrus_client:
+        &'a (dyn Fn(&HydrusSettings) -> Result<HydrusClient, HydrusError> + Send + Sync),
 }
 
 /// How a run ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ending {
     /// Every image in the queue was searched.
     Finished,
@@ -89,6 +101,10 @@ pub enum Ending {
     Stopped,
     /// SauceNAO's daily allowance ran out and the run paused (recorded in the pause file).
     PausedForQuota { searched: i64, remaining: i64 },
+    /// The worker died on an exception Python does not catch (a staging directory that cannot be
+    /// made, a Hydrus answer of the wrong shape during auto-import). The rest of the queue was
+    /// not searched; the list and the session are as they stood.
+    Failed(RunFault),
 }
 
 /// What a batch did.
@@ -107,6 +123,10 @@ pub struct Outcome {
     pub save_failed: bool,
     /// The scan found nothing to add, or a stop arrived while hashing.
     pub nothing_to_search: bool,
+    /// Images auto-import sent to Hydrus (`ImportResult.success`).
+    pub auto_imported: usize,
+    /// Rows `remove_after_import` dropped from the list after an auto-import.
+    pub removed: usize,
 }
 
 /// `SessionAutosaver`'s clock: saves the whole list when the interval has passed.
@@ -129,13 +149,34 @@ impl<'a> Autosave<'a> {
 
     /// Saves if autosave is on and the interval (at least ten seconds) has passed.
     pub fn tick(&mut self, settings: &Settings, entries: &[Entry], now: f64) {
-        if !settings.autosave_session || entries.is_empty() {
-            return;
-        }
+        self.tick_kept(settings, entries, &[], now);
+    }
+
+    /// As [`Autosave::tick`] for a list some of whose rows `remove_after_import` has dropped
+    /// (`removed[i]` for `entries[i]`; a shorter slice means the rest are kept). The window saves
+    /// its own list, which no longer holds them.
+    pub fn tick_kept(
+        &mut self,
+        settings: &Settings,
+        entries: &[Entry],
+        removed: &[bool],
+        now: f64,
+    ) {
         let interval = settings
             .autosave_interval_seconds
             .max(MIN_AUTOSAVE_INTERVAL_SECONDS);
-        if now - self.last >= interval as f64 {
+        if !settings.autosave_session || entries.is_empty() || now - self.last < interval as f64 {
+            return;
+        }
+        if removed.iter().any(|&r| r) {
+            let kept: Vec<Entry> = entries
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !removed.get(*i).copied().unwrap_or(false))
+                .map(|(_, e)| e.clone())
+                .collect();
+            self.save(&kept, now);
+        } else {
             self.save(entries, now);
         }
     }
@@ -176,13 +217,11 @@ pub async fn run_batch(env: &BatchEnv<'_>, folder: &Path, entries: &mut Vec<Entr
         searched: 0,
         save_failed: false,
         nothing_to_search: false,
+        auto_imported: 0,
+        removed: 0,
     };
 
     let settings = env.settings.lock().unwrap().clone();
-    if settings.auto_import_enabled {
-        env.reporter
-            .line("auto-import is not in this build yet; carrying on without it");
-    }
 
     let files = scan_folder(folder);
     outcome.found = files.len();
@@ -269,9 +308,32 @@ pub async fn run_batch(env: &BatchEnv<'_>, folder: &Path, entries: &mut Vec<Entr
         if let Err(e) = env.quota_file.clear() {
             warn!("Could not clear the SauceNAO quota pause: {e}");
         }
-        let (ending, searched) = search_pending(env, entries, pending, &mut autosave).await;
-        outcome.ending = ending;
-        outcome.searched = searched;
+        let end = search_pending(env, entries, pending, &mut autosave).await;
+        outcome.ending = end.ending;
+        outcome.searched = end.searched;
+        outcome.auto_imported = end.auto_imported;
+        outcome.removed = end.removed.iter().filter(|&&r| r).count();
+        if outcome.removed > 0 {
+            // The window drops these rows as the imports finish; here they go at the end, and
+            // the list and the session lose them the same way.
+            info!(
+                "Removed {} auto-imported file(s) from the list",
+                outcome.removed
+            );
+            let mut index = 0usize;
+            entries.retain(|_| {
+                let drop_it = end.removed.get(index).copied().unwrap_or(false);
+                index += 1;
+                !drop_it
+            });
+        }
+        if let Ending::Failed(fault) = &outcome.ending {
+            warn!("The search run stopped on an error: {}", fault.detail());
+            env.reporter.line(&format!(
+                "the search run stopped on an error: {}",
+                fault.user_message()
+            ));
+        }
     }
 
     if env.stop.load(Ordering::SeqCst) && outcome.ending == Ending::Finished {
@@ -290,18 +352,86 @@ pub async fn search_pending(
     entries: &mut [Entry],
     pending: Vec<usize>,
     autosave: &mut Autosave<'_>,
-) -> (Ending, usize) {
+) -> SearchEnd {
+    let removed = vec![false; entries.len()];
+    let mut end = SearchEnd {
+        ending: Ending::Finished,
+        searched: 0,
+        auto_imported: 0,
+        removed,
+    };
+    match search_queue(env, entries, pending, autosave, &mut end).await {
+        Ok(()) => {}
+        Err(fault) => end.ending = Ending::Failed(fault),
+    }
+    end
+}
+
+/// What [`search_pending`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SearchEnd {
+    pub ending: Ending,
+    /// How many searches ran (a retry counts again).
+    pub searched: usize,
+    /// Images auto-import sent to Hydrus.
+    pub auto_imported: usize,
+    /// `removed[i]`: `entries[i]` was dropped by `remove_after_import`. The slice itself is not
+    /// shortened, so the indexes in the queue stay valid.
+    pub removed: Vec<bool>,
+}
+
+/// `SearchWorker._run`. An `Err` is an exception the Python worker does not catch; `end` holds
+/// what had happened by then.
+async fn search_queue(
+    env: &BatchEnv<'_>,
+    entries: &mut [Entry],
+    pending: Vec<usize>,
+    autosave: &mut Autosave<'_>,
+    end: &mut SearchEnd,
+) -> Result<(), RunFault> {
     let clock = env.engine.clock.clone();
+    let staging_root = env.engine.paths.auto_import_staging_dir();
+    // Clean up any stale staging directories from previous runs.
+    cleanup_stale(&staging_root)?;
     let limiter = EngineRateLimiter::new();
     let mut announced_quota_continue = false;
     let mut retries_queued = false;
     let mut queue = pending;
-    let mut searched = 0usize;
-    let mut ending = Ending::Finished;
     info!(
         "Search worker starting: {} image(s) to process",
         queue.len()
     );
+
+    // The Hydrus client, and a staging directory for the methods that download the file
+    // themselves. The directory is removed when this function returns however it does.
+    let first_snapshot = env.settings.lock().unwrap().clone();
+    let mut auto_import_client: Option<HydrusClient> = None;
+    let mut staging: Option<StagingDir> = None;
+    if first_snapshot.auto_import_enabled {
+        if first_snapshot.hydrus.access_key.is_empty() {
+            env.reporter.line(
+                "auto-import is on but no Hydrus access key is set; nothing will be imported",
+            );
+        } else {
+            auto_import_client = Some(
+                (env.hydrus_client)(&first_snapshot.hydrus)
+                    .map_err(|e| RunFault::Client(e.message().to_owned()))?,
+            );
+            if matches!(
+                first_snapshot.auto_import_method.as_str(),
+                "download_send" | "url_importer"
+            ) {
+                // url_importer too: when Hydrus can't take a URL, Hatate downloads the file
+                // itself (`download_instead`).
+                staging = Some(StagingDir::create(&staging_root)?);
+            }
+            info!(
+                "Auto-import is on: matches at or above {:.0}% similarity will be sent to Hydrus \
+                 (method={}) as each one is found",
+                first_snapshot.auto_import_min_similarity, first_snapshot.auto_import_method
+            );
+        }
+    }
 
     let mut i = 0usize;
     while i < queue.len() {
@@ -309,7 +439,7 @@ pub async fn search_pending(
         let total = queue.len();
         if env.stop.load(Ordering::SeqCst) {
             info!("Search worker stopping early at {i}/{total} (user requested)");
-            ending = Ending::Stopped;
+            end.ending = Ending::Stopped;
             break;
         }
 
@@ -357,7 +487,7 @@ pub async fn search_pending(
                 },
             )
             .await;
-        searched += 1;
+        end.searched += 1;
         if let Err(exc) = result {
             // A bug or an unexpected condition must not end the whole batch: mark this one image
             // and keep going.
@@ -398,7 +528,24 @@ pub async fn search_pending(
                 );
             }
         }
-        autosave.tick(&snapshot, entries, clock.wall());
+
+        if let Some(client) = auto_import_client.as_ref() {
+            let staging_path = staging.as_ref().map(StagingDir::path);
+            if let Some(result) =
+                maybe_auto_import(env, &mut entries[idx], client, staging_path).await?
+            {
+                if result.success {
+                    end.auto_imported += 1;
+                }
+                env.reporter.auto_imported(&entries[idx], &result);
+                // `_on_auto_imported`: the row goes when the setting says so.
+                let now = env.settings.lock().unwrap().clone();
+                if removes_row(&now, &result) {
+                    end.removed[idx] = true;
+                }
+            }
+        }
+        autosave.tick_kept(&snapshot, entries, &end.removed, clock.wall());
 
         let remaining = (total - (i + 1)) as i64;
         if remaining > 0 && skip_saucenao_now(env) {
@@ -433,7 +580,7 @@ pub async fn search_pending(
                 "SauceNAO's daily quota is exhausted: paused after {done} image(s), \
                  {remaining} left unsearched"
             ));
-            ending = Ending::PausedForQuota {
+            end.ending = Ending::PausedForQuota {
                 searched: done,
                 remaining,
             };
@@ -503,12 +650,12 @@ pub async fn search_pending(
             debug!("Waiting {wait:.1}s before next search (rate limiting)");
         }
         if wait > 0.0 {
-            wait_with_countdown(env, wait, entries, autosave).await;
+            wait_with_countdown(env, wait, entries, &end.removed, autosave).await;
         }
         i += 1;
     }
-    info!("Search worker finished ({searched} search(es))");
-    (ending, searched)
+    info!("Search worker finished ({} search(es))", end.searched);
+    Ok(())
 }
 
 /// `_queue_retries`: the images worth one more attempt after the first pass.
@@ -594,6 +741,7 @@ async fn wait_with_countdown(
     env: &BatchEnv<'_>,
     delay: f64,
     entries: &[Entry],
+    removed: &[bool],
     autosave: &mut Autosave<'_>,
 ) {
     if delay <= 0.0 {
@@ -607,13 +755,14 @@ async fn wait_with_countdown(
         if remaining <= 0.0 {
             break;
         }
-        let shown = remaining.round() as i64;
+        // Python's `round()`: halves go to the even number, so 28.5 shows as 28 and 29.5 as 30.
+        let shown = remaining.round_ties_even() as i64;
         if last_shown != Some(shown) {
             env.reporter.countdown("Rate limit", remaining, delay);
             last_shown = Some(shown);
         }
         let snapshot = env.settings.lock().unwrap().clone();
-        autosave.tick(&snapshot, entries, clock.wall());
+        autosave.tick_kept(&snapshot, entries, removed, clock.wall());
         // Never sleep past the deadline: crediting non-engine work routinely leaves a wait shorter
         // than one step.
         clock.sleep(remaining.min(WAIT_STEP)).await;

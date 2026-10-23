@@ -187,6 +187,7 @@ impl World {
             reporter: self.reporter.clone(),
             unit_random: &random,
             reset_run_state: &reset,
+            hydrus_client: &|s| hatate_core::hydrus_client::HydrusClient::new(s),
         };
         let outcome = run_batch(&env, folder, entries).await;
         (outcome, sink)
@@ -453,6 +454,33 @@ async fn the_gap_between_images_is_waited_out_with_a_countdown_and_not_after_the
     );
 }
 
+/// Python's `round()` sends halves to the even number: a 2.25 s wait shows at 2.25, 1.25 and 0.5
+/// (`round(0.5)` is 0, which is a change from 1), where rounding halves away from zero showed
+/// 2.25, 1.25 and 0.25. Found by the DAN-2132 differential against the real worker.
+#[tokio::test]
+async fn the_countdown_reports_when_the_displayed_second_changes_with_halves_to_even() {
+    let w = world().await;
+    {
+        let mut s = w.settings.lock().unwrap();
+        s.delay_min_seconds = 2.25;
+        s.delay_max_seconds = 2.25;
+    }
+    let dir = w.pictures(&["a.png", "b.png"]);
+    w.match_every_image(2);
+    let mut entries = Vec::new();
+    w.run(&dir, &mut entries).await;
+    let shown: Vec<f64> = w
+        .reporter
+        .countdowns
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(label, _, _)| label == "Rate limit")
+        .map(|(_, remaining, _)| *remaining)
+        .collect();
+    assert_eq!(shown, [2.25, 1.25, 0.5]);
+}
+
 #[tokio::test]
 async fn an_image_served_from_the_cache_costs_no_gap() {
     let w = world().await;
@@ -714,6 +742,7 @@ async fn stop_wakes_a_wait_at_once() {
         reporter: Arc::new(StopOnCountdown(w.stop.clone())),
         unit_random: &random,
         reset_run_state: &reset,
+        hydrus_client: &|s| hatate_core::hydrus_client::HydrusClient::new(s),
     };
     let mut entries = Vec::new();
     let outcome = run_batch(&env, &dir, &mut entries).await;
@@ -969,29 +998,6 @@ async fn a_search_spends_the_interrupted_note() {
     );
     assert!(!entries[0].interrupted_mid_search);
     assert_eq!(entries[0].status, MatchStatus::Good);
-}
-
-#[tokio::test]
-async fn auto_import_on_says_it_is_not_in_this_build_and_carries_on() {
-    let w = world().await;
-    w.settings.lock().unwrap().auto_import_enabled = true;
-    let dir = w.pictures(&["a.png"]);
-    w.match_every_image(1);
-    let mut entries = Vec::new();
-    let (outcome, _) = w.run(&dir, &mut entries).await;
-    assert_eq!(outcome.searched, 1);
-    let lines = w.lines();
-    assert_eq!(
-        lines
-            .iter()
-            .filter(|l| l.contains("auto-import is not in this build yet"))
-            .count(),
-        1
-    );
-    assert!(
-        !w.paths.auto_import_staging_dir().exists(),
-        "no staging directory is made"
-    );
 }
 
 #[tokio::test]

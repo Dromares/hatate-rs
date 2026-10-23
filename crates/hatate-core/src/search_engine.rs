@@ -578,6 +578,9 @@ impl SearchEngine {
         entry.error_message = None;
         entry.candidates = Vec::new();
         entry.stale_matched_url = None;
+        entry.stale_similarity = None;
+        entry.stale_similarity_measured = false;
+        entry.stale_source_name = None;
 
         let s = Arc::new(settings.lock().unwrap().clone());
         let path = entry.path.clone();
@@ -614,6 +617,9 @@ impl SearchEngine {
                     // would mean re-searching every image at 45-75s each.
                     let before = entry.candidates.len();
                     let selected_url = entry.selected_candidate().map(|c| c.url.clone());
+                    let selected_similarity = entry.selected_candidate().map(|c| c.similarity);
+                    let selected_measured = entry.similarity_measured();
+                    let selected_site = entry.booru_name().map(str::to_owned);
                     let mut cleaned =
                         drop_structurally_dead(std::mem::take(&mut entry.candidates), &filename);
                     if s.drop_dead_matches {
@@ -631,6 +637,9 @@ impl SearchEngine {
                     if changed && none_left {
                         // Python's `matched_url` keeps the URL of the match that was selected.
                         entry.stale_matched_url = selected_url;
+                        entry.stale_similarity = selected_similarity;
+                        entry.stale_similarity_measured = selected_measured;
+                        entry.stale_source_name = selected_site;
                     }
                     entry.candidates = cleaned;
                     if changed {
