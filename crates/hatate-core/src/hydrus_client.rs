@@ -188,6 +188,9 @@ impl HydrusError {
                     .to_owned()
             }
             ErrorKind::InvalidInput => "There was nothing to send to Hydrus.".to_owned(),
+            ErrorKind::Database | ErrorKind::NotFound => {
+                "Hydrus failed in a way Hatate does not expect. Try again.".to_owned()
+            }
             ErrorKind::Io => {
                 "Could not save the file from Hydrus. Check that the destination folder exists and can be written to."
                     .to_owned()
@@ -288,7 +291,7 @@ impl HashMap2 {
 }
 
 /// The name of a JSON value's Python type, for the text of the exception Python raises on it.
-fn type_name(v: &Value) -> &'static str {
+pub(crate) fn type_name(v: &Value) -> &'static str {
     match v {
         Value::Null => "NoneType",
         Value::Bool(_) => "bool",
@@ -482,7 +485,7 @@ fn py_int(v: &Value) -> Result<i64, HydrusError> {
 
 /// `requests` refuses `http:///path` (urllib3 finds no host: `InvalidURL`); the `url` crate reads
 /// the first path segment as the host.
-fn require_host(url: &str) -> Result<(), NetError> {
+pub(crate) fn require_host(url: &str) -> Result<(), NetError> {
     let empty = url.split_once("://").is_some_and(|(scheme, rest)| {
         matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https") && rest.starts_with('/')
     });

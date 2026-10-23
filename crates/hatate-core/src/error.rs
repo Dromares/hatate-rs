@@ -30,4 +30,8 @@ pub enum ErrorKind {
     InvalidInput,
     /// A local file could not be written.
     Io,
+    /// A local SQLite database (the Pawchive index) could not be opened, read or written.
+    Database,
+    /// The service answered 404: it has no such thing.
+    NotFound,
 }

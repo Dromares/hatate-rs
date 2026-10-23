@@ -218,7 +218,7 @@ pub fn lookup_from_response(
 /// `files_of`: a post's files in the site's own order, "file" first. "file" is normally
 /// `attachments[0]` repeated, so paths are de-duplicated. Only an entry with a path starting `/`
 /// counts.
-fn files_of(post: &Map<String, Value>) -> Vec<&str> {
+pub(crate) fn files_of(post: &Map<String, Value>) -> Vec<&str> {
     let attachments = post
         .get("attachments")
         .and_then(Value::as_array)
