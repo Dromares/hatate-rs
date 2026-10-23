@@ -224,10 +224,11 @@ fn file_name(path: &str) -> &str {
 mod tests {
     use super::*;
     use crate::config::OrderedMap;
-    use crate::paths::Paths;
 
     fn settings() -> Settings {
-        Settings::with_defaults(&Paths::for_tests_default())
+        let paths = crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| "/home/test".into()))
+            .unwrap();
+        Settings::with_defaults(&paths)
     }
 
     fn tag(name: &str, namespace: Option<&str>, source: TagSource) -> Tag {

@@ -26,6 +26,7 @@ mod pyalpha;
 mod pycase;
 mod pycompat;
 mod pycsv;
+mod pyfnmatch;
 mod pyimage;
 pub mod pyjpeg;
 pub mod pyraster;
@@ -39,6 +40,7 @@ pub mod rotating_log;
 pub mod session;
 pub mod similarity_check;
 pub mod sites;
+pub mod tag_rules;
 pub mod timeutil;
 
 /// Crate name, used by the placeholder test below.
