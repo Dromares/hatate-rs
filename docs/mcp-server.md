@@ -59,9 +59,9 @@ config, one tool-less handler, loopback) answered a raw-HTTP probe on 2026-10-23
 | Request | rmcp 3.5.0 | FastMCP (mcp 1.30.0) |
 |---|---|---|
 | `initialize` | `200`, SSE starting with a priming event `data: \nid: 0\nretry: 3000`, then `data: {...}` and an `id:` line; `serverInfo.name` is `rmcp` | `200`, one `event: message` / `data: {...}` event |
-| a method nobody serves | `-32601` with the message `bogus` | `-32602` `Invalid request parameters`, `data: ""` |
+| a method nobody serves | `-32601` with the message `bogus` | `200`, `-32602` `Invalid request parameters`, `data: ""` |
 | a body that is not JSON | `415` `fail to deserialize request body expected ident at line 1 column 2` | `400` `-32700` `Parse error: ...` |
-| a `tools/call` for a tool it does not have | `-32601` with the message `tools/call` | `200` with the tool's `isError` result, pydantic text for bad arguments |
+| a `tools/call` for a tool it does not have | `-32601` with the message `tools/call` | `200` with an `isError` result, `Unknown tool: nope` |
 
 The probe (a 90-line `main.rs`, outside the tree) and its output are kept in
 `worktrees/DAN-2166-tools/rmcp-probe/` and `worktrees/DAN-2166-tools/rmcp-probe.out`.
