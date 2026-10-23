@@ -19,6 +19,67 @@ pub struct ImageValue {
     pub bytes: Option<Vec<u8>>,
     /// Every other entry of the dict, in order (`mime_type` among them).
     pub entries: Vec<(String, Value)>,
+    /// Where `bytes` sits among the dict's entries (an index into the full dict). Only matters
+    /// when the value is printed whole, under a key that does not end in `_image`.
+    pub bytes_at: usize,
+}
+
+impl ImageValue {
+    /// A value whose `bytes` entry comes first, as the handlers build it.
+    pub fn new(bytes: Option<Vec<u8>>, entries: Vec<(String, Value)>) -> Self {
+        Self {
+            bytes,
+            entries,
+            bytes_at: 0,
+        }
+    }
+
+    /// The dict as `json.dumps(default=str)` prints it when it is not turned into an image:
+    /// `bytes` becomes `str(bytes)` (or `null` for `None`), in its place.
+    fn as_printed(&self) -> Map<String, Value> {
+        let mut out = Map::new();
+        let mut rest = self.entries.iter();
+        for i in 0..=self.entries.len() {
+            if i == self.bytes_at.min(self.entries.len()) {
+                out.insert(
+                    "bytes".to_owned(),
+                    self.bytes
+                        .as_deref()
+                        .map_or(Value::Null, |b| Value::String(py_bytes_repr(b))),
+                );
+            } else if let Some((k, v)) = rest.next() {
+                out.insert(k.clone(), v.clone());
+            }
+        }
+        out
+    }
+}
+
+/// `repr(b)` / `str(b)` of a `bytes` object.
+pub fn py_bytes_repr(bytes: &[u8]) -> String {
+    let quote = if bytes.contains(&b'\'') && !bytes.contains(&b'"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut out = String::from("b");
+    out.push(quote);
+    for &b in bytes {
+        match b {
+            b'\\' => out.push_str("\\\\"),
+            b'\t' => out.push_str("\\t"),
+            b'\n' => out.push_str("\\n"),
+            b'\r' => out.push_str("\\r"),
+            c if c == quote as u8 => {
+                out.push('\\');
+                out.push(char::from(c));
+            }
+            0x20..=0x7e => out.push(char::from(b)),
+            _ => out.push_str(&format!("\\x{b:02x}")),
+        }
+    }
+    out.push(quote);
+    out
 }
 
 /// One value of a handler's result dict.
@@ -110,10 +171,7 @@ pub fn to_content_blocks(result: &ToolOutput) -> Vec<Value> {
                 metadata.insert(key.clone(), Value::Object(remaining));
             }
             ResultValue::Image(img) => {
-                metadata.insert(
-                    key.clone(),
-                    Value::Object(img.entries.iter().cloned().collect()),
-                );
+                metadata.insert(key.clone(), Value::Object(img.as_printed()));
             }
             ResultValue::Json(v) => {
                 metadata.insert(key.clone(), v.clone());
@@ -145,6 +203,7 @@ mod tests {
         let out = ToolOutput::new().push("row", json!(3)).push_image(
             "match_image",
             ImageValue {
+                bytes_at: 0,
                 bytes: Some(b"abc".to_vec()),
                 entries: vec![
                     ("mime_type".into(), json!("image/png")),
@@ -172,6 +231,7 @@ mod tests {
             let out = ToolOutput::new().push_image(
                 "local_image",
                 ImageValue {
+                    bytes_at: 0,
                     bytes,
                     entries: vec![("reason".into(), json!("gone"))],
                 },
@@ -190,6 +250,7 @@ mod tests {
         let out = ToolOutput::new().push_image(
             "x_image",
             ImageValue {
+                bytes_at: 0,
                 bytes: Some(vec![1]),
                 entries: vec![("mime_type".into(), Value::Null)],
             },

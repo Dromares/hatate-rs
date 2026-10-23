@@ -219,8 +219,8 @@ pub fn coerce_bool(v: &Value, loc: &[String]) -> Result<Value, Box<FieldError>> 
             _ => Err(bad()),
         },
         Value::Number(n) => match n.as_f64() {
-            Some(x) if x == 0.0 => Ok(Value::Bool(false)),
-            Some(x) if x == 1.0 => Ok(Value::Bool(true)),
+            Some(0.0) => Ok(Value::Bool(false)),
+            Some(1.0) => Ok(Value::Bool(true)),
             Some(x) if x.fract() == 0.0 => Err(bad()),
             _ => Err(err(loc, "Input should be a valid boolean", "bool_type", v)),
         },

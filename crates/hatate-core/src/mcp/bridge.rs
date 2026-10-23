@@ -56,10 +56,12 @@ pub fn py_int_str(s: &str) -> Option<i64> {
     if body.is_empty() || body.starts_with('_') || body.ends_with('_') || body.contains("__") {
         return None;
     }
-    let digits: String = body.chars().filter(|c| *c != '_').collect();
-    if !digits.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
+    // `int()` takes a decimal digit of any script.
+    let digits: String = body
+        .chars()
+        .filter(|c| *c != '_')
+        .map(|c| crate::batch::staging::decimal_value(c).and_then(|d| char::from_digit(d, 10)))
+        .collect::<Option<String>>()?;
     let n: i64 = digits.parse().ok()?;
     Some(if neg { -n } else { n })
 }
@@ -101,10 +103,12 @@ pub fn parse_args<F: Fn(&str) -> Option<String>>(
             continue;
         }
         if arg == "--" {
+            // argparse keeps the `--` among the arguments nothing consumed.
             only_positionals = true;
+            extras.push(arg.clone());
             continue;
         }
-        if arg == "-h" || arg == "--help" {
+        if arg == "-h" || arg == "--help" || (arg.starts_with("-h") && !arg.starts_with("--")) {
             return Err(ArgsOutcome::Help(help()));
         }
         let (name, inline) = match arg.split_once('=') {
@@ -328,6 +332,34 @@ pub fn run<R: BufRead, W: Write, E: Write>(
         Ok(c) => c,
         Err(_) => return 1,
     };
+    // http.client writes header values as latin-1, one byte per character; a character beyond
+    // U+00FF is a UnicodeEncodeError out of `requests.post`, which Python does not catch.
+    let bearer = format!("Bearer {token}");
+    let latin1: Option<Vec<u8>> = bearer
+        .chars()
+        .map(|c| u8::try_from(u32::from(c)).ok())
+        .collect();
+    let Some(latin1) = latin1 else {
+        let (index, c) = bearer
+            .chars()
+            .enumerate()
+            .find(|(_, c)| u32::from(*c) > 0xff)
+            .unwrap_or((0, ' '));
+        let shown = if u32::from(c) > 0xffff {
+            format!("\\U{:08x}", u32::from(c))
+        } else {
+            format!("\\u{:04x}", u32::from(c))
+        };
+        let _ = writeln!(
+            err,
+            "UnicodeEncodeError: 'latin-1' codec can't encode character '{shown}' in position {index}: ordinal not in range(256)"
+        );
+        return 1;
+    };
+    let authorization = match reqwest::header::HeaderValue::from_bytes(&latin1) {
+        Ok(v) => v,
+        Err(_) => return 1,
+    };
     let mut session_id: Option<String> = None;
     for line in input.lines() {
         let Ok(line) = line else { break };
@@ -337,7 +369,7 @@ pub fn run<R: BufRead, W: Write, E: Write>(
         }
         let mut request = client
             .post(&url)
-            .header("Authorization", format!("Bearer {token}"))
+            .header(reqwest::header::AUTHORIZATION, authorization.clone())
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream")
             .body(line.clone());

@@ -34,6 +34,7 @@ impl Scripted {
             return Ok(ToolOutput::new().push("row", json!(1)).push_image(
                 "match_image",
                 ImageValue {
+                    bytes_at: 0,
                     bytes: Some(b"png".to_vec()),
                     entries: vec![("mime_type".into(), json!("image/png"))],
                 },
