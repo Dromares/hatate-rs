@@ -3,7 +3,8 @@
 //! of bookkeeping that follow an import (the duplicate relationship and the provenance note).
 //!
 //! The URL-import half (`url_import_refusal`, `send_url_or_download`, `download_and_send`, ...) is
-//! Phase 4.d; `normalize_url_for_hydrus` is [`crate::hydrus_url`].
+//! Phase 4.d (DAN-2131), the child module `url`; `normalize_url_for_hydrus` is
+//! [`crate::hydrus_url`].
 //!
 //! **Errors.** Python's functions catch `HydrusError` and turn it into a result or a warning
 //! string; anything else propagates. A call here returns `Err` only for what Python would let
@@ -32,6 +33,15 @@ use crate::model::{Candidate, Entry, tag_version_for_url, tags_to_send};
 use crate::provenance_note::{note_name, provenance_note};
 use crate::pycompat::truthy;
 use crate::pyraster;
+
+mod url;
+
+pub use url::{
+    FORWARD_CHECK_TIMEOUT, MEDIA_EXTENSIONS, URL_TYPE_FILE, URL_TYPE_GALLERY, URL_TYPE_POST,
+    URL_TYPE_UNKNOWN, URL_TYPE_WATCHABLE, UrlImportError, download_and_send, download_instead,
+    finish_url_import, forwarded_url, relate_confirmed_url_import, send_url_or_download,
+    send_url_to_importer, url_import_refusal,
+};
 
 /// `ImportResult`: what one import attempt came to.
 #[derive(Debug, Clone, Default)]

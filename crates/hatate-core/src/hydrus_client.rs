@@ -137,7 +137,7 @@ impl HydrusError {
 
     /// An answer whose body is not shaped the way the code reads it: Python's `AttributeError`
     /// or `TypeError`, with its text.
-    fn unexpected(message: impl Into<String>) -> Self {
+    pub(crate) fn unexpected(message: impl Into<String>) -> Self {
         Self::new(ErrorKind::UnexpectedResponse, None, message)
     }
 
@@ -210,6 +210,18 @@ impl HydrusError {
             // The image kinds belong to `image_diff`; a Hydrus call never builds one.
             ErrorKind::ImageUnreadable | ErrorKind::ImageUndecodable | ErrorKind::ImageTooLarge => {
                 "Hydrus could not use that picture. Check that the file is a readable image."
+                    .to_owned()
+            }
+            ErrorKind::DownloadFailed => {
+                "Hatate could not download the matched image. Try again, or use Send (upload) to send your own copy."
+                    .to_owned()
+            }
+            ErrorKind::DownloadInvalid => {
+                "What Hatate downloaded did not pass its checks, so nothing was sent to Hydrus. Try again, or use Send (upload) to send your own copy."
+                    .to_owned()
+            }
+            ErrorKind::HashMismatch => {
+                "Hydrus stored a different file from the one Hatate sent, so the link and tags were not attached. Try again."
                     .to_owned()
             }
         }
@@ -321,7 +333,7 @@ pub(crate) fn type_name(v: &Value) -> &'static str {
 }
 
 /// `AttributeError: 'list' object has no attribute 'get'`.
-fn no_attribute(v: &Value, attr: &str) -> HydrusError {
+pub(crate) fn no_attribute(v: &Value, attr: &str) -> HydrusError {
     HydrusError::unexpected(format!(
         "'{}' object has no attribute '{attr}'",
         type_name(v)
@@ -329,12 +341,12 @@ fn no_attribute(v: &Value, attr: &str) -> HydrusError {
 }
 
 /// `v.get(...)`, `v.items()` or `v.values()`: `v` has to be a dict.
-fn dict<'a>(v: &'a Value, attr: &str) -> Result<&'a Map<String, Value>, HydrusError> {
+pub(crate) fn dict<'a>(v: &'a Value, attr: &str) -> Result<&'a Map<String, Value>, HydrusError> {
     v.as_object().ok_or_else(|| no_attribute(v, attr))
 }
 
 /// `for item in v`: a list's items, a dict's keys, a string's characters.
-fn iterate(v: &Value) -> Result<Vec<Value>, HydrusError> {
+pub(crate) fn iterate(v: &Value) -> Result<Vec<Value>, HydrusError> {
     match v {
         Value::Array(items) => Ok(items.clone()),
         Value::Object(map) => Ok(map.keys().map(|k| Value::String(k.clone())).collect()),
