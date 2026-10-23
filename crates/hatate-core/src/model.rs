@@ -330,7 +330,9 @@ impl Entry {
     /// (`MatchCandidate.score_is_measured` of the selected match, or of the stale one).
     pub fn similarity_measured(&self) -> bool {
         match self.selected_candidate() {
-            Some(c) => c.similarity_measured || crate::engine_ids::reports_real_similarity(Some(&c.engine)),
+            Some(c) => {
+                c.similarity_measured || crate::engine_ids::reports_real_similarity(Some(&c.engine))
+            }
             None => self.stale_similarity_measured,
         }
     }

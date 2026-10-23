@@ -652,7 +652,10 @@ async fn auto_import_falls_back_to_a_match_hydrus_can_take() {
     e.candidates.push(candidate(OTHER_URL, 100.0));
     let result = w.import(&mut e, None).await.unwrap().unwrap();
     assert!(result.success, "{result:?}");
-    assert_eq!(e.selected_candidate_index, 1, "the importable one is selected now");
+    assert_eq!(
+        e.selected_candidate_index, 1,
+        "the importable one is selected now"
+    );
     assert_eq!(e.matched_url(), Some(OTHER_URL));
     assert_eq!(e.error_message, None);
     assert!(e.sent_to_hydrus);
@@ -666,7 +669,14 @@ async fn auto_import_falls_back_to_a_match_hydrus_can_take() {
         .collect();
     assert_eq!(added.len(), 1, "import_url ran once");
     assert!(added[0].contains(OTHER_URL), "{}", added[0]);
-    let asked: Vec<String> = w.hydrus.server.recorded().iter().filter(|q| path_of(q) == "/add_urls/get_url_info").map(url_param).collect();
+    let asked: Vec<String> = w
+        .hydrus
+        .server
+        .recorded()
+        .iter()
+        .filter(|q| path_of(q) == "/add_urls/get_url_info")
+        .map(url_param)
+        .collect();
     assert_eq!(asked[0], PAGE_URL, "the chosen match was asked first");
 }
 
@@ -680,7 +690,11 @@ async fn the_fallback_never_goes_below_the_threshold() {
     e.candidates.push(candidate(OTHER_URL, 60.0));
     let result = w.import(&mut e, None).await.unwrap().unwrap();
     assert!(!result.success && result.refused);
-    assert_eq!(w.hydrus.count("/add_urls/add_url"), 0, "import_url never ran");
+    assert_eq!(
+        w.hydrus.count("/add_urls/add_url"),
+        0,
+        "import_url never ran"
+    );
     assert_eq!(e.selected_candidate_index, 0);
     assert!(!e.sent_to_hydrus);
 }
@@ -744,11 +758,23 @@ async fn auto_import_downloads_when_no_match_hydrus_can_take() {
     std::fs::create_dir_all(&tmp).unwrap();
     let result = w.import(&mut e, Some(&tmp)).await.unwrap().unwrap();
     assert!(result.success, "{result:?}");
-    assert_eq!(result.confirmed, Some(true), "the upload path is confirmed as it goes");
+    assert_eq!(
+        result.confirmed,
+        Some(true),
+        "the upload path is confirmed as it goes"
+    );
     assert!(result.note.is_some());
     assert_eq!(w.hydrus.count("/add_files/add_file"), 1);
-    assert_eq!(w.hydrus.count("/add_urls/add_url"), 0, "Hydrus's importer was refused");
-    assert_eq!(w.hydrus.count("/add_urls/get_url_files"), 0, "no poll: the download path needs none");
+    assert_eq!(
+        w.hydrus.count("/add_urls/add_url"),
+        0,
+        "Hydrus's importer was refused"
+    );
+    assert_eq!(
+        w.hydrus.count("/add_urls/get_url_files"),
+        0,
+        "no poll: the download path needs none"
+    );
 }
 
 #[tokio::test]
