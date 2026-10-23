@@ -755,7 +755,8 @@ async fn wait_with_countdown(
         if remaining <= 0.0 {
             break;
         }
-        let shown = remaining.round() as i64;
+        // Python's `round()`: halves go to the even number, so 28.5 shows as 28 and 29.5 as 30.
+        let shown = remaining.round_ties_even() as i64;
         if last_shown != Some(shown) {
             env.reporter.countdown("Rate limit", remaining, delay);
             last_shown = Some(shown);
