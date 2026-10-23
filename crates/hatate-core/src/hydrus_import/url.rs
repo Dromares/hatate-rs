@@ -228,6 +228,9 @@ pub async fn url_import_refusal(
 /// somewhere else; `None` when it does not move or can't be reached. One HEAD, and only ever
 /// asked for a URL Hydrus has refused.
 pub async fn forwarded_url(net: &NetClient, url: &str) -> Result<Option<String>, UrlImportError> {
+    // `net.request` reads `urlparse(url).netloc` before it sends anything, and a `ValueError` is not
+    // a `requests.RequestException`.
+    pyurl::try_urlparse(url, "")?;
     let request =
         NetRequest::head(&pyurl::requote_uri(url), secs(FORWARD_CHECK_TIMEOUT)).map(|mut req| {
             req.headers = remote::ua_headers();
