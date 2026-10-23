@@ -126,7 +126,10 @@ Integration tests, all against a scripted local Hydrus and a synthetic key:
   server with its own throw-away CA.
 - **One timeout and one network error** per client:
   `a_timeout_and_a_dropped_connection_fail_the_send_with_a_user_message_that_leaks_nothing`,
-  `the_redirect_probe_that_hits_its_deadline_leaves_the_function_like_hard_timeout_error`,
+  `a_probe_with_no_time_left_leaves_the_function_like_hard_timeout_error` (the hard-deadline branch,
+  reached through `forwarded_url_within` with a spent deadline),
+  `a_server_that_does_not_answer_the_probe_in_time_is_a_timeout_not_a_hard_deadline`,
+  `a_dropped_connection_in_the_redirect_probe_is_not_a_redirect_and_not_an_error`,
   `a_poll_that_times_out_or_loses_the_connection_is_retried_like_any_hydrus_error`,
   `a_hydrus_that_times_out_or_drops_the_connection_leaves_everything_as_it_was`.
   The first also asserts the error's `user_message()` has no URL query, no key and no OS text.
