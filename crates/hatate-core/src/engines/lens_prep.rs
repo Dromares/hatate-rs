@@ -349,6 +349,20 @@ mod tests {
     }
 
     #[test]
+    fn an_animated_webp_is_animated_so_it_is_converted_where_a_still_one_is_not() {
+        // Pillow's two-frame lossless 2x2 animation (red, then blue).
+        let hex = "524946468400000057454250565038580a00000002000000010000010000414e494d06000000000000000000414e4d4628000000000000000000010000010000640000025650384c0f0000002f014000000710fd8ffe0722a2ff0100414e4d4628000000000000000000010000010000640000005650384c0f0000002f014000000710d1fffe0722a2ff0100";
+        let anim: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
+        assert_eq!(media_type(&anim), Some("image/webp"));
+        assert!(is_animated(&anim));
+        // The first frame alone is a still picture.
+        assert!(!is_animated(&anim[..anim.len() - 1]));
+    }
+
+    #[test]
     fn an_animated_png_is_animated_and_one_with_a_single_frame_is_not() {
         let mut apng = png(image::Rgba([1, 2, 3, 255]));
         // acTL (2 frames, loop 0) straight after IHDR, then IDAT as the default image.

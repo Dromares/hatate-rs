@@ -1118,6 +1118,9 @@ fn webp_frame_count(data: &[u8]) -> Option<u64> {
                         let mut still = b"RIFF\0\0\0\0WEBP".to_vec();
                         still.extend_from_slice(&body[at..at + 8]);
                         still.extend_from_slice(payload);
+                        // The RIFF size, which the still-picture check reads (`WebPGetInfo`).
+                        let riff = u32::try_from(still.len() - 8).ok()?;
+                        still[4..8].copy_from_slice(&riff.to_le_bytes());
                         let (iw, ih) = crate::pyimage::image_size(&still)?;
                         if (iw as usize, ih as usize) != (w, h) {
                             return None;
