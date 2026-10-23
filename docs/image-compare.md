@@ -14,7 +14,7 @@ Phase 2 pure halves (`docs/parsers.md`) are reused as they are.
 | `core/multipage.py` (page picking by thumbnail hash, `check_page`, `MAX_PAGES_TO_COMPARE`) | `multipage` |
 | `core/multipage_resolve.py` (the network half: the page list, the thumbnails, the pick) | `multipage_resolve` (built on `remote::fetch_text` / `download_bytes` and the parsers' `pages_api_url` / `parse_pages`) |
 | `core/similarity_check.py` (`measure_ordinal_similarities`, the borrowed-measurement recheck) | `similarity_check` |
-| Pillow, as far as these modules use it: `Image.open` + `load`, `draft`, `convert("L")`, `crop`, `ImageOps.mirror`, `resize` / `thumbnail` / `reduce` with `LANCZOS` | `pyraster` (raster) and `pyjpeg` (the JPEG decoder) |
+| Pillow, as far as these modules use it: `Image.open` + `load`, `draft`, `convert("L")`, `crop`, `ImageOps.mirror`, `resize` / `thumbnail` / `reduce` with `LANCZOS` | `pyraster` (raster), `pyjpeg` (the JPEG decoder), and `pypng` / `pyinflate` (the pixel stream of a PNG as Pillow reads it) |
 
 Why a port of Pillow and not the `image` crate: a perceptual hash compares neighbouring pixels, and
 one bit decides a page choice. Measured on generated JPEGs, the `image` crate's decoder differs
@@ -63,6 +63,53 @@ section 4. Each match was a hash difference on a real file: the standard Huffman
 JPEG frame, an EOI that is not there, the SIMD IDCT saturating where C code wraps, `reduce` rounding
 with `floor` in `f32`, the f32 box in `resize`.
 
+### 3.1 PNG pixel streams (DAN-2160)
+
+`pyraster::open` used to hand a PNG to the `png` crate, which differs from Pillow's `PngImageFile`
+wherever a file is damaged: it checks the CRC of every `IDAT`, ignores the adler32, and gives a
+different answer for a stream that ends early. Found by the Phase 4.c differential
+(`hydrus-import.md` section 4, class C8: Pillow hashes a PNG whose pixel chunk has a bad CRC,
+`pyraster` refused it, so no duplicate verdict was written). Pillow does this, and `pypng` /
+`pyinflate` now do the same before the `image` crate sees the file:
+
+| Pillow | Where |
+|---|---|
+| the CRC of a pixel chunk is skipped unread | `pypng::pixel_data` |
+| the payloads of the consecutive `IDAT` (and `fdAT`) chunks are one zlib stream, fed 65 536 bytes at a time | `pypng::pixel_data` |
+| `ZipDecode` calls zlib's `inflate` once per row, and only while input is left: a stream whose input is used up before the last row is `OSError: image file is truncated (0 bytes not processed)` even if zlib could still produce the rest | `pyinflate` (an exact port of zlib's `inflate`: input taken one byte at a time, the next symbol decoded before the room is looked at, a pending match carried to the next row; `miniz_oxide` and `fdeflate` read ahead and cannot tell) |
+| the adler32 is checked only when it is in the block that completes the last row | `pyinflate::St::Check` |
+| a stream that ends exactly on a row boundary is a picture whose remaining rows are zero; one that ends inside a row is `image file is truncated` | `pypng::inflate_rows` |
+| a filter type past 4 is `unrecognized data stream contents when reading image file`; any zlib error is `broken data stream when reading image file` | `pypng::inflate_rows` |
+| `load_end` walks the chunks after the pixels, reads each body to its end and raises `Truncated File Read` for one the file cuts short, before the decoder's own error is raised; checksums there are not looked at | `pypng::trailing_chunks_complete` |
+| what `load_read` says when it is asked for more and there is none: `image file is truncated` (no header left), `(0 bytes not processed)` (a non-pixel chunk follows), `broken PNG file (chunk b'...')` (no chunk id) | `pypng::pixel_data` |
+
+`pyraster::open_other` re-states what Pillow got (the chunks before the first `IDAT` verbatim, one
+`IDAT` with exactly the rows, `IEND`) and the `image` crate decodes that, so every colour type, bit
+depth and Adam7 mapping is unchanged. `hydrus_import::validate_image_decodes` also runs
+`Image.verify()` for a PNG, between the open and the load as Python does (`pypng::verify`: every
+chunk from the first `IDAT` to `IEND`, checksums included), because Python's validator does.
+
+Checked against Pillow 12.3.0 on files damaged in the ways above (a bad CRC on one or every
+`IDAT`, bit flips in the pixel data with the CRC stale or recomputed, a damaged zlib header or
+adler32, a stream cut at 20 / 50 / 80 / 95 %, a stream re-encoded to end early on or inside a row,
+a pixel stream re-chunked into 1 to 40 pieces with empty ones, bytes after `IEND`, a missing
+`IEND`, a text chunk with a bad CRC or cut short after the pixels, Adam7 files, every colour type
+and bit depth): **20 020 files** (1 020 from the eleven `tests/data` PNGs, and 19 000 random over
+five seeds), `worktrees/DAN-2160-pillow-probe.log`. Pillow decodes or raises the same way for every
+one, and every decoded file has the same size and the same grey and RGB bytes. Before: of the 1 020,
+174 decoded in Pillow and were refused here, 102 raised in Pillow and decoded here. The words of the
+exception agree except where the damage is before the pixel data (`cannot identify image file`,
+`Truncated IHDR chunk`, a PNG with no `IDAT`: 448 files, the text of the `image` crate or of the
+header reader, never a different decision). Tests: `pyraster_png_damage.rs` (3 tests; 25 damaged
+files and 11 validator files, each expected value checked against Pillow, red before the fix).
+
+Not matched, because Python itself does not raise an `OSError` there: an exception that is not
+an `OSError` (`SyntaxError: broken PNG file (chunk ...)` when a truncated stream is followed by
+bytes that are not a chunk id, a `struct.error` from a short `pHYs` after the pixels) escapes
+Python's `except (OSError, ValueError)`; here the file is refused with an `OpenError::Os`. The
+chunk handlers after the pixel data (text, ICC, EXIF) are not run for their errors; `pymeta`
+reads them.
+
 ## 4. Differences that are not matched
 
 Each is counted over the runs above and is brought to Cloud on DAN-2062 before the verify opens.
@@ -106,7 +153,7 @@ Every test in `tests/` at `76c85c4` that names a function in scope (an AST scan 
 above in each test's body, 98 tests): 93 map to a Rust test of the same name, 5 have a reason below.
 Rust test files: `image_compare_tests.rs` (45), `image_compare_golden.rs` (5, Pillow's own output
 pinned as fixtures under `tests/data/image_compare/`), `multipage_tests.rs` (78),
-`similarity_check_tests.rs` (24). The `multipage_resolve` tests are in `multipage_tests.rs` and run over a local https server (the net layer's own constructor).
+`similarity_check_tests.rs` (24), and `pyraster_png_damage.rs` (3, section 3.1; no Python test). The `multipage_resolve` tests are in `multipage_tests.rs` and run over a local https server (the net layer's own constructor).
 
 | Python test | Rust test, or why not |
 |---|---|
