@@ -174,7 +174,7 @@ pub fn validate(tool: &str, raw: &Map<String, Value>) -> Result<Map<String, Valu
                 }
                 None => errors.push(FieldError {
                     loc,
-                    msg: "Field required",
+                    msg: "Field required".to_owned(),
                     kind: "missing",
                     input: Value::Object(data.clone()),
                 }),

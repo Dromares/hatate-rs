@@ -8,6 +8,7 @@
 pub mod audit;
 pub mod bridge;
 pub mod content;
+pub mod envelope;
 pub mod handlers;
 pub mod protocol;
 pub mod pyvalidate;

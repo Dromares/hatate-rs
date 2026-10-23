@@ -282,6 +282,7 @@ async fn respond(
                     body: ReplyBody::Bytes(b"Request Entity Too Large".to_vec()),
                 },
                 shutdown,
+                Arc::clone(&core),
             );
         }
     };
@@ -292,17 +293,25 @@ async fn respond(
         headers,
         body,
     };
-    build(core.handle(request).await, shutdown)
+    let reply = core.handle(request).await;
+    build(reply, shutdown, Arc::clone(&core))
 }
 
-fn build(reply: Reply, shutdown: watch::Receiver<bool>) -> hyper::Response<ServerBody> {
+fn build(
+    reply: Reply,
+    shutdown: watch::Receiver<bool>,
+    core: Arc<Core>,
+) -> hyper::Response<ServerBody> {
     let mut builder = hyper::Response::builder().status(reply.status);
     for (name, value) in &reply.headers {
         builder = builder.header(name.as_str(), value.as_str());
     }
     let body = match reply.body {
         ReplyBody::Bytes(bytes) => ServerBody::Full(Full::new(Bytes::from(bytes))),
-        ReplyBody::HeldOpen => ServerBody::HeldOpen(Box::pin(wait_for_shutdown(shutdown))),
+        ReplyBody::HeldOpen(session) => ServerBody::HeldOpen(
+            Box::pin(wait_for_shutdown(shutdown)),
+            StreamSlot { core, session },
+        ),
     };
     builder
         .body(body)
@@ -317,7 +326,7 @@ async fn wait_for_shutdown(mut shutdown: watch::Receiver<bool>) {
 /// server stops.
 pub enum ServerBody {
     Full(Full<Bytes>),
-    HeldOpen(Pin<Box<dyn Future<Output = ()> + Send>>),
+    HeldOpen(Pin<Box<dyn Future<Output = ()> + Send>>, StreamSlot),
 }
 
 impl Body for ServerBody {
@@ -330,10 +339,23 @@ impl Body for ServerBody {
     ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
         match self.get_mut() {
             ServerBody::Full(full) => Pin::new(full).poll_frame(cx),
-            ServerBody::HeldOpen(wait) => match wait.as_mut().poll(cx) {
+            ServerBody::HeldOpen(wait, _) => match wait.as_mut().poll(cx) {
                 Poll::Ready(()) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
             },
         }
+    }
+}
+
+/// Held by a `GET` stream's body; dropping the body (the client hung up, or the server is
+/// stopping) frees the session's one stream slot.
+pub struct StreamSlot {
+    core: Arc<Core>,
+    session: String,
+}
+
+impl Drop for StreamSlot {
+    fn drop(&mut self) {
+        self.core.release_get_stream(&self.session);
     }
 }

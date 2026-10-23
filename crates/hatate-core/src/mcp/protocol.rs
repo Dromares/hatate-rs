@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Map, Value, json};
 
 use super::content::to_content_blocks;
+use super::envelope::{Message, classify};
 use super::handlers::{McpHandlers, dispatch};
 use super::schema::{ToolCall, description, input_schema, validate};
 use super::tools::TOOLS;
@@ -64,8 +65,9 @@ impl Request {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReplyBody {
     Bytes(Vec<u8>),
-    /// A `GET` event stream: headers now, no events, held open until the server stops.
-    HeldOpen,
+    /// A `GET` event stream (of this session): headers now, no events, held open until the
+    /// server stops or the client goes away, which frees the session's one stream slot.
+    HeldOpen(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,7 +94,7 @@ impl Reply {
     pub fn text(&self) -> String {
         match &self.body {
             ReplyBody::Bytes(b) => String::from_utf8_lossy(b).into_owned(),
-            ReplyBody::HeldOpen => String::new(),
+            ReplyBody::HeldOpen(_) => String::new(),
         }
     }
 
@@ -242,6 +244,16 @@ impl Core {
         }
     }
 
+    /// A `GET` stream ended (the client closed it, or the server stopped): the session may open
+    /// another (`GET_STREAM_KEY` is removed from `_request_streams`).
+    pub fn release_get_stream(&self, session_id: &str) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            if let Some(session) = sessions.get_mut(session_id) {
+                session.get_stream = false;
+            }
+        }
+    }
+
     /// Open sessions, for tests.
     pub fn session_count(&self) -> usize {
         self.sessions.lock().map_or(0, |s| s.len())
@@ -261,7 +273,7 @@ impl Core {
         {
             return unauthorized();
         }
-        if req.path == "/mcp/" {
+        if req.path.ends_with('/') && req.path.trim_end_matches('/') == "/mcp" {
             // Starlette's `redirect_slashes`.
             let host = req.header("host").unwrap_or_default();
             let query = req
@@ -438,7 +450,7 @@ impl Core {
                 ("mcp-session-id".into(), id.clone()),
                 ("x-accel-buffering".into(), "no".into()),
             ],
-            body: ReplyBody::HeldOpen,
+            body: ReplyBody::HeldOpen(id.clone()),
         }
     }
 
@@ -487,7 +499,12 @@ impl Core {
                 false,
             );
         }
-        let Ok(text) = std::str::from_utf8(&req.body) else {
+        // `json.loads(bytes)` reads a UTF-8 BOM as encoding `utf-8-sig` and drops it.
+        let body = req
+            .body
+            .strip_prefix(&[0xef, 0xbb, 0xbf][..])
+            .unwrap_or(&req.body);
+        let Ok(text) = std::str::from_utf8(body) else {
             // `json.loads(bytes)` raises UnicodeDecodeError, which is not a JSONDecodeError: it
             // reaches the transport's catch-all.
             return (
@@ -507,17 +524,7 @@ impl Core {
         };
         let message = match classify(&raw) {
             Ok(m) => m,
-            Err(()) => {
-                return (
-                    self.error(
-                        t,
-                        400,
-                        "Validation error: invalid JSON-RPC message",
-                        INVALID_PARAMS,
-                    ),
-                    false,
-                );
-            }
+            Err(text) => return (self.error(t, 400, &text, INVALID_PARAMS), false),
         };
         let is_initialize =
             matches!(&message, Message::Request { method, .. } if method == "initialize");
@@ -674,7 +681,13 @@ fn initialize(params: Option<&Map<String, Value>>) -> Outcome {
     let Some(p) = params else {
         return Outcome::invalid_params();
     };
-    let version = p.get("protocolVersion").and_then(Value::as_str);
+    // `protocolVersion: str | int`: an int is accepted and then, being no supported version
+    // string, negotiated down to the latest.
+    let version = match p.get("protocolVersion") {
+        Some(Value::String(s)) => Some(s.as_str()),
+        Some(Value::Number(n)) if !n.is_f64() => Some(""),
+        _ => None,
+    };
     let client_ok = p.get("capabilities").is_some_and(Value::is_object)
         && p.get("clientInfo")
             .and_then(Value::as_object)
@@ -722,51 +735,6 @@ fn requires(params: Option<&Map<String, Value>>, keys: &[&str]) -> Outcome {
         }
         _ => Outcome::invalid_params(),
     }
-}
-
-/// A JSON-RPC message: a request (has a `method` and an `id`), a notification (a `method` and
-/// no usable `id`), or a response or error from the client.
-enum Message {
-    Request {
-        id: Value,
-        method: String,
-        params: Option<Map<String, Value>>,
-    },
-    Notification,
-    Response,
-}
-
-/// `JSONRPCMessage.model_validate`, for the shapes a client sends. `Err` for a shape pydantic
-/// rejects (the text of its complaint is not reproduced; see `docs/mcp-server.md`).
-fn classify(raw: &Value) -> Result<Message, ()> {
-    let Value::Object(map) = raw else {
-        return Err(());
-    };
-    if map.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
-        return Err(());
-    }
-    if let Some(method) = map.get("method").and_then(Value::as_str) {
-        let params = match map.get("params") {
-            None | Some(Value::Null) => None,
-            Some(Value::Object(m)) => Some(m.clone()),
-            Some(_) => return Err(()),
-        };
-        let id = map
-            .get("id")
-            .filter(|id| id.is_string() || (id.is_number() && !id.is_f64()));
-        return Ok(match id {
-            Some(id) => Message::Request {
-                id: id.clone(),
-                method: method.to_owned(),
-                params,
-            },
-            None => Message::Notification,
-        });
-    }
-    if map.contains_key("result") || map.contains_key("error") {
-        return Ok(Message::Response);
-    }
-    Err(())
 }
 
 /// `TransportSecurityMiddleware.validate_request` with the settings FastMCP turns on for a

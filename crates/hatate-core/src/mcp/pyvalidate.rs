@@ -27,7 +27,7 @@ pub enum Annotation {
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldError {
     pub loc: Vec<String>,
-    pub msg: &'static str,
+    pub msg: String,
     pub kind: &'static str,
     pub input: Value,
 }
@@ -59,6 +59,11 @@ fn truncated_repr(v: &Value) -> String {
 }
 
 /// `str(ValidationError)` for `model_name` (`get_entryArguments`).
+pub fn input_type_name(v: &Value) -> &'static str {
+    input_type(v)
+}
+
+/// `str(ValidationError)` for `model_name` (`get_entryArguments`).
 pub fn format_errors(model_name: &str, errors: &[FieldError]) -> String {
     let n = errors.len();
     let mut out = format!(
@@ -80,10 +85,10 @@ pub fn format_errors(model_name: &str, errors: &[FieldError]) -> String {
     out
 }
 
-fn err(loc: &[String], msg: &'static str, kind: &'static str, input: &Value) -> Box<FieldError> {
+pub(crate) fn err(loc: &[String], msg: &str, kind: &'static str, input: &Value) -> Box<FieldError> {
     Box::new(FieldError {
         loc: loc.to_vec(),
-        msg,
+        msg: msg.to_owned(),
         kind,
         input: input.clone(),
     })
@@ -181,10 +186,12 @@ fn parse_int_str(s: &str, input: &Value, loc: &[String]) -> Result<Value, Box<Fi
                 .ok_or_else(bad),
         };
     }
-    // A decimal that is a whole number ("1.0") is accepted; anything with a fraction is not.
-    if body.contains('.') && !body.contains(['e', 'E', '_']) {
-        if let Ok(x) = t.parse::<f64>() {
-            if x.is_finite() && x.fract() == 0.0 {
+    // A decimal that is a whole number ("1.0") is accepted; one with a fraction is not, and
+    // neither is "1." or ".5".
+    if let Some((whole, frac)) = body.split_once('.') {
+        let digits = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
+        if digits(whole) && digits(frac) && frac.bytes().all(|b| b == b'0') {
+            if let Ok(x) = t.parse::<f64>() {
                 return float_to_int(x).ok_or_else(bad);
             }
         }
@@ -204,12 +211,18 @@ pub fn coerce_bool(v: &Value, loc: &[String]) -> Result<Value, Box<FieldError>> 
     };
     match v {
         Value::Bool(_) => Ok(v.clone()),
-        Value::Number(n) => match (n.as_i64(), n.as_f64()) {
-            (Some(0), _) => Ok(Value::Bool(false)),
-            (Some(1), _) => Ok(Value::Bool(true)),
-            (None, Some(x)) if n.is_f64() && x == 0.0 => Ok(Value::Bool(false)),
-            (None, Some(x)) if n.is_f64() && x == 1.0 => Ok(Value::Bool(true)),
+        // A whole number other than 0 and 1 (int or float) is "unable to interpret"; a float with
+        // a fraction is simply not a boolean.
+        Value::Number(n) if !n.is_f64() => match n.as_i64() {
+            Some(0) => Ok(Value::Bool(false)),
+            Some(1) => Ok(Value::Bool(true)),
             _ => Err(bad()),
+        },
+        Value::Number(n) => match n.as_f64() {
+            Some(x) if x == 0.0 => Ok(Value::Bool(false)),
+            Some(x) if x == 1.0 => Ok(Value::Bool(true)),
+            Some(x) if x.fract() == 0.0 => Err(bad()),
+            _ => Err(err(loc, "Input should be a valid boolean", "bool_type", v)),
         },
         Value::String(s) => match s.to_lowercase().as_str() {
             "0" | "off" | "f" | "false" | "n" | "no" => Ok(Value::Bool(false)),
