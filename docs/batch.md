@@ -166,3 +166,63 @@ searched image (1,000 images: 13.7 s of waiting, 0.7 s of CPU); on tmpfs it cost
 (0.27 s for the same 1,000 images, against 1.7 s for the Python worker). Against the 45 to 75 s
 rate-limit gap between real searches it is under 0.03%, so nothing here changes it; it is noted so
 the speed figures are not misread.
+
+## 7. Hydrus auto-import (Phase 4.g, DAN-2132)
+
+**What is ported.** `SearchWorker._maybe_auto_import` and `_switch_to_importable_match`
+(`batch::auto_import`), the staging directory, its `owner.pid`, the sweep of directories an earlier
+run left behind and the cleanup however the run ends (`batch::staging`), and the loop wiring in
+`batch::run::search_queue` where `SearchWorker._run` calls them. The refusal check
+(`url_import_refusal`) and the import functions are the 4.d ones, called as they are. The window's
+`_on_auto_imported` has one effect on the list that a headless run can reproduce: with
+`remove_after_import` on, an imported row is dropped. The batch drops it when the run ends (the
+window drops it as each import finishes); the session the run saves does not hold it.
+
+The Hydrus client is built once per run from the settings the run starts with (`HydrusClient::new`:
+rustls with the explicit provider, `verify_ssl` from the settings), as `SearchWorker` builds one.
+With `auto_import_enabled` on and an empty access key the run says so and imports nothing.
+
+**Differences from Python, on purpose.**
+
+1. **An exception the Python worker does not catch ends the run as `Ending::Failed`**: exit status
+   1, the rest of the queue unsearched, the list and the session kept as they stand. In Python such
+   an exception ends the worker thread silently (nothing reaches the user; the window sits on
+   "Searching"). Three things can escape: the staging directory cannot be made (`OSError`), an
+   `owner.pid` holds a number larger than a C `int` (`OverflowError` out of `os.kill`, which the
+   sweep's `except OSError` does not catch), and a Hydrus answer of the wrong shape during
+   auto-import (`AttributeError`/`TypeError`, `docs/hydrus-import.md`). The differential compares
+   the class of each and what was done up to that point.
+2. **Dependency:** `libc` in `hatate-core` for `kill(pid, 0)`. Already in `Cargo.lock` (tokio).
+3. **`Entry.stale_similarity_measured` and `Entry.stale_source_name`**, two more transient fields
+   in the style of section 5. A cached result whose matches have all died leaves `ImageEntry`
+   with the dead match's `similarity`, `similarity_measured` and `booru_name` (`select_candidate(-1)`
+   changes nothing); 3.i carried the URL, and the provenance note writes the other two. The
+   first differential run found 16 scenarios (of 1,500) whose notes lacked the `Site:` line or the
+   measured wording for such a row. `provenance_note` reads them through `Entry::booru_name` and
+   `Entry::similarity_measured`, which fall back to the stale fields; no stored byte changes.
+4. **The countdown rounds halves to even** as Python's `round()` does (found by the differential;
+   `the_countdown_reports_when_the_displayed_second_changes_with_halves_to_even`).
+
+**How it was checked.** The 3.i differential, rebuilt (the driver lives outside the repo; the
+log is `worktrees/DAN-2132-differential-run3.log`), with auto-import on against a scripted
+Hydrus. The Python side runs the real `SearchWorker.run()` of `76c85c4` with the HTTP transport and
+the engines scripted and a fake clock; the Rust side runs `run_batch` through the binary's own
+constructors against a local https server. Per scenario it compares: files found, duplicates and
+added; every Hydrus request (method, URL with query, headers Python sets, JSON body, form field
+names and non-file values) and, for each, whether a staging directory sat beside it; every site
+request; every sleep; the search-cache files; the countdown and import events; the staging
+directory's contents before and after, with `owner.pid` set up stale (dead pid, no pid file,
+garbage in it) and live (a running process); the exception class when the worker dies; and the
+session read back with the Python app's own `session_db.load_entries`, entry by entry.
+
+Result at `205893b`: **1,500 scenarios** (3 seeds × 500), 4,222 entries,
+5,702 Hydrus requests, 4,354 site requests, 60,125 sleeps, 1,862 auto-imports (1,101 sent), 2,763
+stale staging directories set up, the three methods (`url_importer` 854, `download_send` 498,
+`upload` 218) and a bogus one (292), remove-after-import (236 rows removed), refusals (243),
+stops mid-run (279), and 192 runs that ended on an exception (`OSError` 47, `OverflowError` 41,
+`AttributeError` 104; the class and the state at that point match in each). **0 differing.** The one class the harness cuts is the already-documented **C1/C5**
+(the transport library's words after `Could not reach Hydrus at <url>: `, the image decoder's
+words), 57 messages; they change a word, never a decision (`docs/hydrus-client.md`,
+`docs/hydrus-import-url.md`).
+
+Not compared: the stderr text and the exact order of two log lines.
