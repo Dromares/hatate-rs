@@ -13,7 +13,9 @@ use std::sync::{Arc, RwLock};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use http::header::{COOKIE, HeaderValue, LOCATION, USER_AGENT};
+use http::header::{
+    CONTENT_LENGTH, CONTENT_TYPE, COOKIE, HeaderValue, LOCATION, TRANSFER_ENCODING, USER_AGENT,
+};
 use http::{HeaderMap, StatusCode};
 use tokio::time::{Instant, timeout};
 use tower::Service;
@@ -153,6 +155,59 @@ fn is_redirect(status: StatusCode) -> bool {
     matches!(status.as_u16(), 301 | 302 | 303 | 307 | 308)
 }
 
+/// The URL a redirect's `Location` names, as `requests` resolves it: `urljoin(resp.url,
+/// location)` for a reference with no host (`requests/sessions.py` `resolve_redirects`).
+/// WHATWG resolution (`Url::join`) is the same except for a relative path, where
+/// `urljoin` drops the empty segments left in the base path and in the reference
+/// (`///verify_access_key` + `../d` is `/d`, not `//d`; `a//b` is `a/b`), so that case is
+/// resolved here the `urljoin` way.
+fn resolve_location(base: &Url, location: &str) -> Option<Url> {
+    let relative_path = !location.is_empty()
+        && !location.starts_with(['/', '?', '#'])
+        && Url::parse(location).is_err();
+    if !relative_path {
+        return base.join(location).ok();
+    }
+    let (rest, fragment) = match location.split_once('#') {
+        Some((rest, fragment)) => (rest, Some(fragment)),
+        None => (location, None),
+    };
+    let (path, query) = match rest.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (rest, None),
+    };
+    let mut segments: Vec<&str> = base.path().split('/').collect();
+    if segments.last() != Some(&"") {
+        segments.pop();
+    }
+    segments.extend(path.split('/'));
+    let last = segments.len() - 1;
+    let mut resolved: Vec<&str> = Vec::new();
+    for (i, segment) in segments.iter().enumerate() {
+        match *segment {
+            ".." => {
+                resolved.pop();
+            }
+            "." => {}
+            "" if i != 0 && i != last => {}
+            segment => resolved.push(segment),
+        }
+    }
+    if matches!(segments[last], "." | "..") {
+        resolved.push("");
+    }
+    let joined = resolved.join("/");
+    let mut next = base.clone();
+    next.set_path(&if joined.starts_with('/') {
+        joined
+    } else {
+        format!("/{joined}")
+    });
+    next.set_query(query);
+    next.set_fragment(fragment);
+    Some(next)
+}
+
 async fn execute(
     client: reqwest::Client,
     cfg: Arc<NetConfig>,
@@ -167,6 +222,8 @@ async fn execute(
     let mut method = req.method;
     let mut body = req.body.clone();
     let mut hops = 0usize;
+    // Once a redirect has dropped the body, its headers stay dropped for the hops after it.
+    let mut body_headers_dropped = false;
 
     loop {
         let Some((wait, _)) = slice(req.timeout, deadline_at) else {
@@ -181,6 +238,7 @@ async fn execute(
             &body,
             &origin_host,
             origin_https,
+            body_headers_dropped,
         )?;
         let mut resp = match timeout(wait, builder.send()).await {
             Ok(Ok(resp)) => resp,
@@ -203,9 +261,7 @@ async fn execute(
                         format!("more than {} redirects", cfg.max_redirects),
                     ));
                 }
-                let next = url
-                    .join(location)
-                    .ok()
+                let next = resolve_location(&url, location)
                     .filter(|u| matches!(u.scheme(), "http" | "https") && u.host_str().is_some())
                     .ok_or_else(|| {
                         NetError::new(
@@ -214,11 +270,16 @@ async fn execute(
                             "redirect to an unusable location",
                         )
                     })?;
-                // 301, 302 and 303 turn a POST into a GET and drop its body; 307
-                // and 308 repeat the request as it was.
-                if matches!(status.as_u16(), 301..=303) && method == Method::Post {
-                    method = Method::Get;
+                // 301, 302 and 303 turn a POST into a GET and drop the body, and with it
+                // `Content-Length`, `Content-Type` and `Transfer-Encoding`, whatever the
+                // method (`requests`' `resolve_redirects`); 307 and 308 repeat the request
+                // as it was.
+                if matches!(status.as_u16(), 301..=303) {
+                    if method == Method::Post {
+                        method = Method::Get;
+                    }
                     body = Body::Empty;
+                    body_headers_dropped = true;
                 }
                 url = next;
                 continue;
@@ -329,6 +390,7 @@ fn build_request(
     body: &Body,
     origin_host: &str,
     origin_https: bool,
+    body_headers_dropped: bool,
 ) -> Result<reqwest::RequestBuilder, NetError> {
     let host = url.host_str().unwrap_or("").to_ascii_lowercase();
     // Credentials stay on the host they were attached for, and never go from
@@ -337,6 +399,11 @@ fn build_request(
 
     let mut headers = HeaderMap::new();
     for (name, value) in req.headers.iter() {
+        if body_headers_dropped
+            && [CONTENT_LENGTH, CONTENT_TYPE, TRANSFER_ENCODING].contains(name)
+        {
+            continue;
+        }
         if same_site || !is_credential_header(name, value) {
             headers.append(name.clone(), value.clone());
         }
@@ -395,4 +462,43 @@ fn build_request(
         }
     }
     Ok(builder)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn join(base: &str, location: &str) -> String {
+        resolve_location(&Url::parse(base).unwrap(), location)
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn a_relative_path_drops_the_empty_segments_as_urljoin_does() {
+        // Python 3.14, `urljoin(base, location)` for each row.
+        let rows = [
+            ("http://h///verify_access_key", "../d", "http://h/d"),
+            ("http://h/////verify_access_key", "../d", "http://h/d"),
+            ("http://h//a//b", "c", "http://h/a/c"),
+            ("http://h/a/b", "x//y", "http://h/a/x/y"),
+            ("http://h/a/b", "x//", "http://h/a/x/"),
+            ("http://h/a/b/", "..", "http://h/a/"),
+            ("http://h/a/b", "../../../x", "http://h/x"),
+            ("http://h/a/b", "./c?q=1#f", "http://h/a/c?q=1#f"),
+            ("http://h/a/b?old=1", "c", "http://h/a/c"),
+            ("http://h", "x", "http://h/x"),
+        ];
+        for (base, location, want) in rows {
+            assert_eq!(join(base, location), want, "{base} + {location}");
+        }
+    }
+
+    #[test]
+    fn the_other_references_keep_the_whatwg_result() {
+        assert_eq!(join("http://h//a/b", "/x//y"), "http://h/x//y");
+        assert_eq!(join("http://h//a/b", "?q=1"), "http://h//a/b?q=1");
+        assert_eq!(join("http://h/a/b", "//other/x"), "http://other/x");
+        assert_eq!(join("http://h/a/b", "https://o/p"), "https://o/p");
+    }
 }

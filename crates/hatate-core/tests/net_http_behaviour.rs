@@ -454,6 +454,59 @@ async fn post_becomes_get_on_302_and_stays_post_on_307() {
 }
 
 #[tokio::test]
+async fn a_302_drops_the_body_headers_and_a_307_keeps_them() {
+    let server = TestServer::http(|rec| match rec.target.as_str() {
+        "/a" => Reply::new(302, "").header("Location", "/landed"),
+        "/b" => Reply::new(307, "").header("Location", "/landed"),
+        "/c" => Reply::new(303, "").header("Location", "/d"),
+        "/d" => Reply::new(307, "").header("Location", "/landed"),
+        _ => Reply::ok(""),
+    })
+    .await;
+    let c = client();
+    let post = |path: &str| {
+        NetRequest::post(&server.url(path), T)
+            .unwrap()
+            .header("Content-Type", "application/json")
+            .unwrap()
+            .header("X-Keep", "yes")
+            .unwrap()
+            .with_body(Bytes::from_static(b"{}"))
+    };
+    c.send(post("/a")).await.unwrap();
+    c.send(post("/b")).await.unwrap();
+    c.send(post("/c")).await.unwrap();
+    let seen = server.recorded();
+    let landed = |i: usize| (seen[i].header("content-type"), seen[i].header("x-keep"));
+    // 302: the follow-up GET has no `Content-Type`, as `requests` sends it; other headers stay.
+    assert_eq!((seen[1].method.as_str(), landed(1)), ("GET", (None, Some("yes"))));
+    // 307: the same POST again, header and body.
+    assert_eq!(
+        (seen[3].method.as_str(), landed(3), seen[3].body.as_slice()),
+        ("POST", (Some("application/json"), Some("yes")), &b"{}"[..])
+    );
+    // 303 then 307: the header dropped at the first hop is not back at the second.
+    assert_eq!((seen[6].method.as_str(), landed(6)), ("GET", (None, Some("yes"))));
+}
+
+#[tokio::test]
+async fn a_relative_location_drops_the_empty_segments_of_the_path() {
+    // An `api_url` ending in `/` makes the request path `///x`; `requests` joins `../d` onto it
+    // with `urljoin`, which gives `/d`, where WHATWG gives `//d`.
+    let server = TestServer::http(|rec| match rec.target.as_str() {
+        "///x" | "////x" => Reply::new(302, "").header("Location", "../d"),
+        _ => Reply::ok(rec.target.clone()),
+    })
+    .await;
+    let c = client();
+    for path in ["///x", "////x"] {
+        let resp = c.send(get(&server, path)).await.unwrap();
+        assert_eq!(resp.text(), "/d", "{path}");
+        assert_eq!(resp.url.path(), "/d", "{path}");
+    }
+}
+
+#[tokio::test]
 async fn a_redirect_loop_stops_at_the_limit() {
     let server = TestServer::http(|_| Reply::new(302, "").header("Location", "/loop")).await;
     let cfg = NetConfig {
