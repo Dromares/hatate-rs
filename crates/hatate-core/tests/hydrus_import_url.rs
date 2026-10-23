@@ -568,17 +568,13 @@ async fn a_dropped_connection_in_the_redirect_probe_is_not_a_redirect_and_not_an
 }
 
 #[tokio::test]
-async fn the_redirect_probe_that_hits_its_hard_deadline_leaves_the_function_like_hard_timeout_error()
- {
+async fn a_probe_with_no_time_left_leaves_the_function_like_hard_timeout_error() {
     // `HardTimeoutError` is not a `requests.RequestException`, so Python's `_forwarded_url` lets it
-    // propagate. A server that takes far longer than the probe's deadline to answer reaches that
-    // branch; the shipped 15 s is shortened through `forwarded_url_within`.
-    let sites = Sites::new(&["slow.example.test"], |_| {
-        Reply::ok("").delayed(Duration::from_secs(5))
-    })
-    .await;
-    let started = Instant::now();
-    let err = hi::forwarded_url_within(&sites.engine.net, "https://slow.example.test/x", 0.3)
+    // propagate. The net layer raises it when no time is left before a request starts (waiting for
+    // the response to begin is a plain timeout instead, below), so a probe given a spent deadline
+    // reaches that branch without waiting the shipped 15 s, and without asking the server.
+    let sites = Sites::new(&["slow.example.test"], |_| Reply::ok("")).await;
+    let err = hi::forwarded_url_within(&sites.engine.net, "https://slow.example.test/x", 0.0)
         .await
         .unwrap_err();
     assert!(
@@ -589,6 +585,24 @@ async fn the_redirect_probe_that_hits_its_hard_deadline_leaves_the_function_like
         "{err:?}"
     );
     assert_eq!(err.kind(), ErrorKind::Net(net::ErrorKind::DeadlineExceeded));
+    assert_eq!(sites.server.request_count(), 0);
+}
+
+#[tokio::test]
+async fn a_server_that_does_not_answer_the_probe_in_time_is_a_timeout_not_a_hard_deadline() {
+    // Waiting for the response to begin ends as a plain `requests` timeout, which `_forwarded_url`
+    // catches: "nowhere else", no error.
+    let sites = Sites::new(&["slow.example.test"], |_| {
+        Reply::ok("").delayed(Duration::from_secs(5))
+    })
+    .await;
+    let started = Instant::now();
+    assert_eq!(
+        hi::forwarded_url_within(&sites.engine.net, "https://slow.example.test/x", 0.3)
+            .await
+            .unwrap(),
+        None
+    );
     assert!(
         started.elapsed() < Duration::from_secs(3),
         "{:?}",
