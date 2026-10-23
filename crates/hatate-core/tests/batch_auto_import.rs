@@ -642,24 +642,47 @@ async fn a_raised_stop_flag_ends_the_poll_without_a_confirmation() {
 
 // ---- a refused URL: another match, then Hatate's own download ----
 
+/// `test_search_quality::TestHydrusUrlImporterGuard::test_auto_import_falls_back_to_a_match_hydrus_can_take`
 #[tokio::test]
-async fn a_refused_match_is_swapped_for_another_one_hydrus_can_take() {
-    let fake = knows_post(Fake::new(), OTHER_URL);
-    let w = world(fake).await;
+async fn auto_import_falls_back_to_a_match_hydrus_can_take() {
+    let w = world(knows_post(Fake::new(), OTHER_URL)).await;
     url_importer(&w, false, false, false);
-    let mut e = w.entry(97.0);
+    let mut e = w.entry(100.0);
     e.candidates[0].url = PAGE_URL.to_owned();
-    e.candidates.push(candidate(OTHER_URL, 96.0));
+    e.candidates.push(candidate(OTHER_URL, 100.0));
     let result = w.import(&mut e, None).await.unwrap().unwrap();
     assert!(result.success, "{result:?}");
-    assert_eq!(
-        e.selected_candidate_index, 1,
-        "the importable one is selected now"
-    );
+    assert_eq!(e.selected_candidate_index, 1, "the importable one is selected now");
     assert_eq!(e.matched_url(), Some(OTHER_URL));
     assert_eq!(e.error_message, None);
-    let asked: Vec<String> = w.hydrus.server.recorded().iter().map(url_param).collect();
+    assert!(e.sent_to_hydrus);
+    let added: Vec<String> = w
+        .hydrus
+        .server
+        .recorded()
+        .iter()
+        .filter(|q| path_of(q) == "/add_urls/add_url")
+        .map(|q| String::from_utf8_lossy(&q.body).into_owned())
+        .collect();
+    assert_eq!(added.len(), 1, "import_url ran once");
+    assert!(added[0].contains(OTHER_URL), "{}", added[0]);
+    let asked: Vec<String> = w.hydrus.server.recorded().iter().filter(|q| path_of(q) == "/add_urls/get_url_info").map(url_param).collect();
     assert_eq!(asked[0], PAGE_URL, "the chosen match was asked first");
+}
+
+/// `...::test_the_fallback_never_goes_below_the_threshold`
+#[tokio::test]
+async fn the_fallback_never_goes_below_the_threshold() {
+    let w = world(knows_post(Fake::new(), OTHER_URL)).await;
+    url_importer(&w, false, false, false);
+    let mut e = w.entry(100.0);
+    e.candidates[0].url = PAGE_URL.to_owned();
+    e.candidates.push(candidate(OTHER_URL, 60.0));
+    let result = w.import(&mut e, None).await.unwrap().unwrap();
+    assert!(!result.success && result.refused);
+    assert_eq!(w.hydrus.count("/add_urls/add_url"), 0, "import_url never ran");
+    assert_eq!(e.selected_candidate_index, 0);
+    assert!(!e.sent_to_hydrus);
 }
 
 #[tokio::test]
@@ -708,10 +731,11 @@ async fn at_most_five_alternatives_are_asked_about() {
     assert_eq!(w.hydrus.count("/add_urls/get_url_info"), 5);
 }
 
+/// `test_search_quality::TestSendUrlFallsBackToHatatesDownload::test_auto_import_downloads_when_no_match_hydrus_can_take`
 #[tokio::test]
-async fn when_no_match_is_importable_hatate_downloads_the_file_itself() {
+async fn auto_import_downloads_when_no_match_hydrus_can_take() {
     let w = world(Fake::new()).await;
-    url_importer(&w, false, false, false);
+    url_importer(&w, false, false, true);
     let mut e = w.entry(97.0);
     e.candidates[0].url = PAGE_URL.to_owned();
     e.candidates[0].direct_file_url = Some("https://cdn.donmai.us/f.png".to_owned());
@@ -720,13 +744,11 @@ async fn when_no_match_is_importable_hatate_downloads_the_file_itself() {
     std::fs::create_dir_all(&tmp).unwrap();
     let result = w.import(&mut e, Some(&tmp)).await.unwrap().unwrap();
     assert!(result.success, "{result:?}");
+    assert_eq!(result.confirmed, Some(true), "the upload path is confirmed as it goes");
     assert!(result.note.is_some());
     assert_eq!(w.hydrus.count("/add_files/add_file"), 1);
-    assert_eq!(
-        w.hydrus.count("/add_urls/add_url"),
-        0,
-        "Hydrus's importer was refused"
-    );
+    assert_eq!(w.hydrus.count("/add_urls/add_url"), 0, "Hydrus's importer was refused");
+    assert_eq!(w.hydrus.count("/add_urls/get_url_files"), 0, "no poll: the download path needs none");
 }
 
 #[tokio::test]

@@ -263,6 +263,13 @@ pub struct Entry {
     /// reads it. Describes this run; not stored.
     #[serde(skip)]
     pub stale_similarity: Option<f64>,
+    /// ... and for `ImageEntry.similarity_measured` (`score_is_measured` of that match).
+    #[serde(skip)]
+    pub stale_similarity_measured: bool,
+    /// ... and for `ImageEntry.booru_name` (the stale match's `source_name`). The provenance note
+    /// writes it as the site.
+    #[serde(skip)]
+    pub stale_source_name: Option<String>,
 }
 
 impl Entry {
@@ -288,6 +295,8 @@ impl Entry {
             last_searched: None,
             stale_matched_url: None,
             stale_similarity: None,
+            stale_similarity_measured: false,
+            stale_source_name: None,
         }
     }
 
@@ -315,6 +324,23 @@ impl Entry {
         self.selected_candidate()
             .map(|c| c.similarity)
             .or(self.stale_similarity)
+    }
+
+    /// `ImageEntry.similarity_measured`: whether [`Entry::similarity`] is a real comparison
+    /// (`MatchCandidate.score_is_measured` of the selected match, or of the stale one).
+    pub fn similarity_measured(&self) -> bool {
+        match self.selected_candidate() {
+            Some(c) => c.similarity_measured || crate::engine_ids::reports_real_similarity(Some(&c.engine)),
+            None => self.stale_similarity_measured,
+        }
+    }
+
+    /// `ImageEntry.booru_name`: the selected match's `source_name`, or the stale one's.
+    pub fn booru_name(&self) -> Option<&str> {
+        match self.selected_candidate() {
+            Some(c) => c.source_name.as_deref(),
+            None => self.stale_source_name.as_deref(),
+        }
     }
 
     /// `ImageEntry.select_candidate` (`core/models.py:279-298`) as far as it touches stored

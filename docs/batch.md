@@ -1,11 +1,12 @@
-# `hatate batch <dir>`: the headless search run (Phase 3.i, DAN-2065)
+# `hatate batch <dir>`: the headless search run (Phase 3.i, DAN-2065; auto-import Phase 4.g, DAN-2132)
 
 What this ticket ports, where the cut is, how it was checked against the real Python, what
 differs on purpose, and which Python tests map to which Rust ones. Python source of truth:
 `Dromares/Hatate-Linux-Redux` at `76c85c4`. The Phase 1 net, cache, quota-pause, crash-marker and
 session modules, the engine clients and runner (3.a to 3.f) and `search_image` (3.h,
-`docs/search-engine.md`) are reused as they are. The only change to earlier code is one transient
-field on `Entry` and the line that sets it (section 5).
+`docs/search-engine.md`) are reused as they are. The only change to earlier code in 3.i is one
+transient field on `Entry` and the line that sets it (section 5). Hydrus auto-import (4.g) is
+section 7.
 
 `hatate batch` is experimental: it is a work-in-progress command in a work-in-progress rewrite.
 
@@ -19,19 +20,21 @@ field on `Entry` and the line that sets it (section 5).
 | `workers/search_worker.py`: `_run`, `_queue_retries`, `_skip_saucenao_now`, `_saucenao_quota_should_pause`, `_wait_with_countdown` | `batch::run::{search_pending, queue_retries, skip_saucenao_now, saucenao_quota_should_pause, wait_with_countdown}` |
 | `workers/session_autosave_worker.py` / `gui/session_autosave.py` (the interval, the floor, the empty-list rule) | `batch::run::Autosave` |
 | `core/logger.log_matched_url` | `batch::matched_urls::log_matched_url` |
+| `workers/search_worker.py`: `_maybe_auto_import`, `_switch_to_importable_match`, `url_import_refusal` in it (4.g) | `batch::auto_import::{maybe_auto_import, switch_to_importable_match}`; the refusal is `hydrus_import::url_import_refusal` (4.d) |
+| `workers/search_worker.py`: `_write_pid_file`, `_read_pid_file`, `_pid_is_alive`, `_cleanup_stale_staging_dirs`, the `mkdtemp` + pid step of `_run`, `_cleanup_auto_import_tmp`, `register_cleanup_handlers`' `cleanup()` (4.g) | `batch::staging::{write_pid_file, read_pid_file, pid_is_alive, cleanup_stale, StagingDir, cleanup_current}` |
+| `gui/main_window._on_auto_imported` (what it does to the list: drop the row when `remove_after_import`) (4.g) | `batch::auto_import::removes_row` and the removal at the end of `run_batch` |
 | `main.py` signal handlers, crash markers | `hatate-cli`: `batch_cmd` (SIGINT/SIGTERM raise the stop flag, the loop saves the session and exits 130/143; a second signal quits at once), Phase 1 `crash_marker` |
 
-Not here, and who owns it: Hydrus auto-import (`_maybe_auto_import`, the staging directory and its
-`owner.pid`, `_switch_to_importable_match`) is Phase 4. A batch with `auto_import_enabled` on prints
-one line saying so and carries on. The GUI's one-shot "Continue with other engines" override
+Not here, and who owns it: the GUI's one-shot "Continue with other engines" override
 (`force_continue_without_saucenao`) is a dialog button; the command line has the saved setting
-`continue_without_saucenao_on_quota` and exit status 3.
+`continue_without_saucenao_on_quota` and exit status 3. Hydrus auto-import is section 7.
 
 The Pawchive index engine (`enable_pawchive_index`) searches the profile's `pawchive_index.db` in a
 batch (Phase 4.h, `docs/pawchive-index.md` section 7). The batch only reads that file.
 
-Exit status: 0 finished, 1 error, 2 usage, 3 paused (SauceNAO's daily allowance ran out), 130
-stopped by SIGINT, 143 stopped by SIGTERM.
+Exit status: 0 finished, 1 error (including a run that ended on an exception the Python worker does
+not catch, section 7), 2 usage, 3 paused (SauceNAO's daily allowance ran out), 130 stopped by
+SIGINT, 143 stopped by SIGTERM.
 
 The session goes to `session.db` at the XDG path through the Phase 1 `SessionWriter`, after the
 existing session has been restored, so a profile with rows in it is never wiped: new files are
@@ -108,7 +111,15 @@ that covers each, or why none does. `core_utils` = `test_core_utils.py`, `gui_sm
 | `gui_smoke::TestSessionAutosaverOnItsOwn` (8) | empty list never written: `batch_run::an_empty_folder_says_so_and_saves_nothing`; interval and floor: `the_session_is_autosaved_on_its_interval_during_a_long_wait`, `an_interval_under_ten_seconds_is_ten`; off: `autosave_off_saves_when_files_are_added_and_at_the_end_only`. The revision-map tests (failed save, successful save, non-dict map) and the timer tests (runs at the interval, off stops it, shutdown stops it) do not apply: there is no incremental revision map (difference 2) and no timer, the interval is read in the loop |
 | `interrupted_banner::TestRowMarker::test_the_search_worker_spends_the_flag` | `batch_run::a_search_spends_the_interrupted_note` |
 | `gui_smoke::TestFilteredRowsAreNeverActedOnByAccident::test_a_filter_does_not_limit_what_start_search_processes` | `batch_run::files_already_in_the_session_that_are_not_searched_are_searched_too` |
-| `gui_smoke::TestAutoImportStagingIsCleanedUp` (3), `test_search_worker_staging.py`, `search_quality::TestSendUrlFallsBackToHatatesDownload`, `hydrus_import_poll`, `url_importer_duplicate_relationships::TestAutoImportWiring`, `hydrus_provenance_note::TestAutoImportWiring` | do not apply: Hydrus auto-import and its staging directory are Phase 4; `batch_run::auto_import_on_says_it_is_not_in_this_build_and_carries_on` and the `no staging directory is made` assertion in it |
+| `gui_smoke::TestAutoImportStagingIsCleanedUp` (3) | `batch_auto_import::the_staging_directory_exists_during_the_run_with_this_pid_and_is_gone_after` (removed after a batch), `the_staging_directory_is_removed_when_the_run_is_stopped` (stopped), `the_staging_directory_is_removed_when_the_run_ends_on_an_error` (a worker that dies midway) |
+| `test_search_worker_staging.py::TestSearchWorkerStagingPaths` (3) | `paths::tests` (Phase 1: `auto_import_staging_dir` is `CACHE_DIR/auto_import_staging`); `batch_auto_import::the_staging_directory_exists_during_the_run_with_this_pid_and_is_gone_after` (a directory in the cache folder, not in `/tmp`) |
+| `test_search_worker_staging.py::TestSearchWorkerStagingCleanup` (9, plus the pid-file ones) | `staging::tests::create_makes_a_private_directory_with_this_pid_and_drop_removes_it` (`test_staging_dir_created_in_cache_not_tmp`, `test_write_and_read_pid_file`), `batch_auto_import::a_run_sweeps_the_directories_earlier_runs_left_and_spares_a_live_owner` (`test_cleanup_stale_dirs_on_startup`, `test_cleanup_ignores_non_hatate_dirs`, `test_cleanup_skips_live_pid`, `test_cleanup_removes_dead_pid`, `test_cleanup_removes_dir_without_pid`), `staging::tests::the_pid_file_is_trimmed_and_anything_else_is_unknown`, `zero_is_not_alive_this_process_is_and_a_huge_number_is_an_error`, `a_dead_pid_is_not_alive`; `batch_staging_signal::the_signal_path_cleanup_removes_the_directory_of_a_run_in_progress` (the atexit/signal `cleanup()`); `test_current_staging_dir_tracked` is the same test. `test_register_cleanup_handlers_idempotent` and `test_sigint_handler_exits_via_systemexit` do not apply: they test Python's `signal.signal` registration from the GUI's main thread; the command's own handlers are `batch_cmd::spawn_signal_handler` and `batch_cli` (3.i) |
+| `search_quality::TestSendUrlFallsBackToHatatesDownload::test_auto_import_downloads_when_no_match_hydrus_can_take`; the rest of the class is 4.d (`docs/hydrus-import-url.md`) | `batch_auto_import::auto_import_downloads_when_no_match_hydrus_can_take` |
+| `search_quality::TestHydrusUrlImporterGuard::test_auto_import_falls_back_to_a_match_hydrus_can_take`, `test_the_fallback_never_goes_below_the_threshold` (the only two tests of the class that build a `SearchWorker`) | `batch_auto_import::auto_import_falls_back_to_a_match_hydrus_can_take`, `the_fallback_never_goes_below_the_threshold`, `only_matches_that_clear_the_bar_on_a_measured_score_and_are_web_links_are_tried`, `at_most_five_alternatives_are_asked_about` |
+| `search_quality::TestHydrusUrlImporterGuard`, the other five tests | `hydrus_import_url::hydrus_s_own_answers_decide_which_urls_the_importer_is_not_handed`, `hydrus_not_answering_does_not_block_imports`, `a_refused_url_is_not_sent_or_marked_sent` (4.d). They call `url_import_refusal` and `send_url_to_importer` directly and build no `SearchWorker`, so the 3.i note that said the class "builds a `SearchWorker` only to call `url_import_refusal`" was wrong |
+| `test_hydrus_import_poll.py` (`TestConfirmation`, `TestTimeout`, `TestProgress`, `TestStopAndErrors`) | `hydrus_import_poll` (4.d). The batch's use of it: `batch_auto_import::a_raised_stop_flag_ends_the_poll_without_a_confirmation`, `with_every_setting_that_needs_a_hash_off_the_import_is_not_confirmed` |
+| `url_importer_duplicate_relationships::TestAutoImportWiring` (6) | `batch_auto_import::each_of_the_three_settings_alone_is_enough_to_confirm_the_import` (`test_the_relationship_setting_alone_is_enough_to_confirm_and_pair`, `test_removal_still_confirms_on_its_own_with_relationships_off`, and the paired hashes: the confirmed hash replaces the local one), `with_every_setting_that_needs_a_hash_off_the_import_is_not_confirmed` (`test_nothing_is_confirmed_or_related_when_both_settings_are_off`), `an_unconfirmed_import_relates_nothing_and_writes_no_note` (`test_an_unconfirmed_import_relates_nothing`); `test_the_pairing_uses_the_hash_the_local_copy_had` and `test_a_read_back_failure_becomes_a_warning_not_a_failed_import` are the `finish_url_import` tests of 4.d (`docs/hydrus-import-url.md`) |
+| `hydrus_provenance_note::TestAutoImportWiring` (4) | `batch_auto_import::each_of_the_three_settings_alone_is_enough_to_confirm_the_import` (the note setting alone), `with_every_setting_that_needs_a_hash_off_the_import_is_not_confirmed`, `an_unconfirmed_import_relates_nothing_and_writes_no_note` (`test_an_unconfirmed_import_gets_no_note`) |
 
 Do not apply, with the reason (all of them test Qt widgets, signals or dialogs, which the
 headless command has no counterpart for): `gui_smoke::TestEngineAlertsReachTheUser` (alert channel

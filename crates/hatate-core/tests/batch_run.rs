@@ -454,6 +454,33 @@ async fn the_gap_between_images_is_waited_out_with_a_countdown_and_not_after_the
     );
 }
 
+/// Python's `round()` sends halves to the even number: a 2.25 s wait shows at 2.25, 1.25 and 0.5
+/// (`round(0.5)` is 0, which is a change from 1), where rounding halves away from zero showed
+/// 2.25, 1.25 and 0.25. Found by the DAN-2132 differential against the real worker.
+#[tokio::test]
+async fn the_countdown_reports_when_the_displayed_second_changes_with_halves_to_even() {
+    let w = world().await;
+    {
+        let mut s = w.settings.lock().unwrap();
+        s.delay_min_seconds = 2.25;
+        s.delay_max_seconds = 2.25;
+    }
+    let dir = w.pictures(&["a.png", "b.png"]);
+    w.match_every_image(2);
+    let mut entries = Vec::new();
+    w.run(&dir, &mut entries).await;
+    let shown: Vec<f64> = w
+        .reporter
+        .countdowns
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|(label, _, _)| label == "Rate limit")
+        .map(|(_, remaining, _)| *remaining)
+        .collect();
+    assert_eq!(shown, [2.25, 1.25, 0.5]);
+}
+
 #[tokio::test]
 async fn an_image_served_from_the_cache_costs_no_gap() {
     let w = world().await;
