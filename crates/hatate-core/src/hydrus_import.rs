@@ -384,17 +384,21 @@ pub fn validate_image_decodes(data: &[u8], expected_format: Option<&str>) -> Opt
     if !PIL_FORMATS.contains(&upper.as_str()) {
         return None;
     }
-    // This build has no AVIF decoder (class C4): a file that says it is AVIF is not decoded, which
-    // is what a format Python does not decode gets too, and the magic bytes were already checked.
+    // Not decoded by this build (class C4): AVIF, and what the decoders report as a feature they
+    // do not have. Python's Pillow decodes these, so rejecting them would turn a good file into a
+    // failed import; they are passed, as a format Python does not decode is.
     if is_isobmff(data) && &data[8..12] == b"avif" {
         return None;
     }
     match pyraster::open(data, None) {
         Ok(_) => None,
         Err(pyraster::OpenError::Os(text)) => {
+            let known = image::guess_format(data).is_ok();
+            if known && (text.starts_with("unsupported JPEG") || is_unsupported_feature(data)) {
+                return None;
+            }
             // Pillow's `UnidentifiedImageError`: no plugin recognised the bytes.
-            let text = if text == "cannot identify image file" || image::guess_format(data).is_err()
-            {
+            let text = if !known || text == "cannot identify image file" {
                 format!("cannot identify image file {BYTESIO_REPR}")
             } else {
                 text
@@ -407,6 +411,15 @@ pub fn validate_image_decodes(data: &[u8], expected_format: Option<&str>) -> Opt
             "Downloaded data does not decode as a valid image: {bomb}"
         )),
     }
+}
+
+/// Whether the `image` crate refuses these bytes as a feature it does not have (a palette TIFF,
+/// say) rather than as damaged.
+fn is_unsupported_feature(data: &[u8]) -> bool {
+    matches!(
+        image::load_from_memory(data),
+        Err(image::ImageError::Unsupported(_))
+    )
 }
 
 /// What the two files turned out to be, when that can be said at all.
