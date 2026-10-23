@@ -1053,91 +1053,161 @@ fn jpeg_frame_count(data: &[u8]) -> Option<u64> {
     Some(quant)
 }
 
-/// libwebp's demuxer, as `WebPAnimDecoder` uses it: the frames of an animation, `1` for a still
-/// picture. A file it refuses is `None`.
+/// libwebp's demuxer (`WebPDemux`, no partial data), as `WebPAnimDecoder` uses it: the frames of an
+/// animation, `1` for a still picture. A file it refuses, or a canvas Pillow's size check refuses,
+/// is `None`. The rules are `demux.c`'s: a frame's own size is the bitstream's (the `ANMF` width and
+/// height only feed the area check), a sub-chunk it does not know ends the frame and the rest of the
+/// `ANMF` payload is read as top-level chunks, and a frame without a picture is skipped.
 fn webp_frame_count(data: &[u8]) -> Option<u64> {
     let le32 = |at: usize| -> Option<usize> {
         Some(u32::from_le_bytes(data.get(at..at + 4)?.try_into().ok()?) as usize)
     };
-    let riff_end = le32(4)?.checked_add(8)?;
-    if riff_end < 12 + 8 || data.len() < riff_end {
+    let u24 = |at: usize| -> Option<usize> {
+        let b = data.get(at..at + 3)?;
+        Some(usize::from(b[0]) | usize::from(b[1]) << 8 | usize::from(b[2]) << 16)
+    };
+    let riff_size = le32(4)?;
+    if riff_size < 8 {
         return None;
     }
-    let data = &data[..riff_end];
-    let first = data.get(12..16)?;
-    if first != b"VP8X" {
+    let end = riff_size.checked_add(8)?;
+    if data.len() < end {
+        return None;
+    }
+    let data = &data[..end];
+    if end < 20 {
+        return None;
+    }
+    if &data[12..16] != b"VP8X" {
         // A still picture of the simple kind: one frame, or the decoder refuses it, and either
         // way `_is_animated` answers no.
         return Some(1);
     }
-    if le32(16)? != 10 {
+    let vp8x = le32(16)?;
+    if vp8x < 10 {
         return None;
     }
-    let flags = *data.get(20)?;
-    let animated = flags & 0x02 != 0;
-    let canvas = (
-        1 + usize::from_le_bytes([data[24], data[25], data[26], 0, 0, 0, 0, 0]),
-        1 + usize::from_le_bytes([data[27], data[28], data[29], 0, 0, 0, 0, 0]),
-    );
-    if canvas.0.checked_mul(canvas.1)? >= 1 << 32 {
+    let vp8x = vp8x + (vp8x & 1);
+    if vp8x > end - 20 {
         return None;
     }
-    if !animated {
+    let flags = data[20];
+    let canvas = (1 + u24(24)?, 1 + u24(27)?);
+    if canvas.0 * canvas.1 >= 1 << 32 {
+        return None;
+    }
+    // `ALL_VALID_FLAGS`: alpha, animation, EXIF, ICC and XMP.
+    if flags & !0x3e != 0 {
+        return None;
+    }
+    if flags & 0x02 == 0 {
         return Some(1);
     }
-    let (mut pos, mut frames, mut anim) = (30usize, 0u64, false);
-    while pos + 8 <= data.len() {
+    if (canvas.0 * canvas.1) as u64 > crate::pyimage::DecompressionBomb::LIMIT {
+        return None;
+    }
+    let mut pos = 20 + vp8x;
+    if end - pos < 8 {
+        return None;
+    }
+    let (mut anim, mut frames) = (false, 0u64);
+    loop {
+        let tag = &data[pos..pos + 4];
         let size = le32(pos + 4)?;
-        let body = data.get(pos + 8..(pos + 8).checked_add(size)?)?;
-        match &data[pos..pos + 4] {
+        pos += 8;
+        let padded = size + (size & 1);
+        if padded > end - pos {
+            return None;
+        }
+        match tag {
+            b"VP8X" | b"ALPH" | b"VP8 " | b"VP8L" => return None,
             b"ANIM" => {
-                if size < 6 {
+                if padded < 6 {
                     return None;
                 }
                 anim = true;
+                pos += padded;
             }
             b"ANMF" => {
-                if !anim || size < 16 {
+                if !anim || padded < 16 {
                     return None;
                 }
-                let u24 = |at: usize| {
-                    usize::from_le_bytes([body[at], body[at + 1], body[at + 2], 0, 0, 0, 0, 0])
-                };
-                let (x, y) = (2 * u24(0), 2 * u24(3));
-                let (w, h) = (1 + u24(6), 1 + u24(9));
-                if x + w > canvas.0 || y + h > canvas.1 {
+                let (x, y) = (2 * u24(pos)?, 2 * u24(pos + 3)?);
+                let area = (1 + u24(pos + 6)?) as u64 * (1 + u24(pos + 9)?) as u64;
+                if area >= 1 << 32 {
                     return None;
                 }
-                // The frame's own picture: a `VP8 `/`VP8L` chunk (with an optional `ALPH`).
-                let mut at = 16;
-                let mut seen = false;
-                while at + 8 <= body.len() {
-                    let sub = u32::from_le_bytes(body[at + 4..at + 8].try_into().ok()?) as usize;
-                    let payload = body.get(at + 8..at + 8 + sub)?;
-                    if matches!(&body[at..at + 4], b"VP8 " | b"VP8L") {
-                        let mut still = b"RIFF\0\0\0\0WEBP".to_vec();
-                        still.extend_from_slice(&body[at..at + 8]);
-                        still.extend_from_slice(payload);
-                        // The RIFF size, which the still-picture check reads (`WebPGetInfo`).
-                        let riff = u32::try_from(still.len() - 8).ok()?;
-                        still[4..8].copy_from_slice(&riff.to_le_bytes());
-                        let (iw, ih) = crate::pyimage::image_size(&still)?;
-                        if (iw as usize, ih as usize) != (w, h) {
-                            return None;
+                let payload = padded - 16;
+                let start = pos + 16;
+                let mut at = start;
+                if end - at < 8 {
+                    return None;
+                }
+                // `StoreFrame`: an optional `ALPH`, then the picture.
+                let (mut alpha, mut image) = (None, None);
+                let mut size_of_frame = None;
+                loop {
+                    let sub = le32(at + 4)?;
+                    let sub_padded = sub + (sub & 1);
+                    if sub_padded > end - (at + 8) {
+                        return None;
+                    }
+                    let next = at + 8 + sub_padded;
+                    match &data[at..at + 4] {
+                        b"ALPH" if alpha.is_none() => {
+                            alpha = Some(at);
+                            at = next;
                         }
-                        seen = true;
+                        b"VP8L" | b"VP8 " if image.is_none() => {
+                            if &data[at..at + 4] == b"VP8L" && alpha.is_some() {
+                                return None;
+                            }
+                            let mut still = b"RIFF\0\0\0\0WEBP".to_vec();
+                            still.extend_from_slice(&data[at..at + 8 + sub]);
+                            let riff = u32::try_from(still.len() - 8).ok()?;
+                            still[4..8].copy_from_slice(&riff.to_le_bytes());
+                            let (iw, ih) = crate::pyimage::image_size(&still)?;
+                            size_of_frame = Some((iw as usize, ih as usize));
+                            image = Some(at);
+                            at = next;
+                        }
+                        _ => {}
+                    }
+                    let consumed = at == next;
+                    if at == end {
                         break;
                     }
-                    at += 8 + sub + (sub & 1);
+                    if end - at < 8 {
+                        return None;
+                    }
+                    if !consumed {
+                        break;
+                    }
                 }
-                if !seen {
+                if at - start > payload {
                     return None;
                 }
-                frames += 1;
+                if alpha.is_some() || image.is_some() {
+                    // A frame holding only an `ALPH` is a partial frame in a complete file.
+                    let (image, (w, h)) = (image?, size_of_frame?);
+                    if alpha.is_some_and(|a| a > image) {
+                        return None;
+                    }
+                    if x + w > canvas.0 || y + h > canvas.1 {
+                        return None;
+                    }
+                    frames += 1;
+                }
+                pos = at;
             }
-            _ => {}
+            _ => pos += padded,
         }
-        pos += 8 + size + (size & 1);
+        if pos == end {
+            break;
+        }
+        if end - pos < 8 {
+            return None;
+        }
     }
     if frames == 0 {
         return None;
