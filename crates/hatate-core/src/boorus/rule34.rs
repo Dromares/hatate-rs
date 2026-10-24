@@ -114,7 +114,9 @@ type Scored = (i64, String, String);
 /// `local_hash` is a dhash at [`LISTING_HASH_SIZE`]. Only the first page is read, one request and
 /// a page of small thumbnails, which covers the precise searches (`parent:`, `id:`) this exists
 /// for. The thumbnails are fetched five at a time; every one is asked for even when an earlier one
-/// turns out to be a decompression bomb, which Python raises only once its pool has finished.
+/// turns out to be a decompression bomb. Python's pool cancels the thumbnails it has not started
+/// when the bomb is raised, so how many go out there depends on timing; all of them is one of the
+/// things it does.
 pub async fn find_post_by_search(
     net: &NetClient,
     tags: &str,

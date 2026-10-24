@@ -284,7 +284,7 @@ async fn a_thumbnail_that_cannot_be_read_is_left_out_not_fatal() {
 }
 
 #[tokio::test]
-async fn a_decompression_bomb_fails_the_lookup_after_every_thumbnail_was_asked_for() {
+async fn a_decompression_bomb_fails_the_lookup_and_the_other_thumbnails_were_still_asked_for() {
     // A PNG that states 30000 x 30000.
     let mut bomb = b"\x89PNG\r\n\x1a\n".to_vec();
     let mut ihdr = 30000u32.to_be_bytes().to_vec();

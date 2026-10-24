@@ -473,9 +473,10 @@ async fn an_upload_that_never_answers_times_out_inside_the_job_budget() {
         .fetch(b"\xff\xd8\xff\xe0 image", "a.jpg", 2.0, true)
         .await
         .unwrap_err();
+    let took = started.elapsed();
     browser.shutdown();
     assert!(matches!(err, LensFetchError::Browser(_)), "{err:?}");
-    assert!(started.elapsed() < std::time::Duration::from_secs(25));
+    assert!(took < std::time::Duration::from_secs(25), "{took:?}");
 }
 
 #[tokio::test]
@@ -661,7 +662,12 @@ async fn a_slow_response_is_still_waited_for() {
     let browser = rig.browser();
     let found = search(&browser, true).await.unwrap();
     browser.shutdown();
-    assert!(has(&found.payloads, &ASYNC_URLS));
+    assert!(
+        has(&found.payloads, &ASYNC_URLS),
+        "{:?} {:?}",
+        found.payloads.iter().map(String::len).collect::<Vec<_>>(),
+        rig.requests()
+    );
 }
 
 #[tokio::test]
