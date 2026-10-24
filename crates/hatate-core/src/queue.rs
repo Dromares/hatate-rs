@@ -321,6 +321,8 @@ pub fn reset_entry(entry: &mut Entry) {
     entry.stale_similarity = None;
     entry.stale_similarity_measured = false;
     entry.stale_source_name = None;
+    entry.stale_match_width = None;
+    entry.stale_match_height = None;
     entry.error_message = None;
     entry.last_searched = None;
     entry.result_source = None;

@@ -1,5 +1,6 @@
 //! Shared library for the Hatate Rust rewrite. Work in progress.
 
+pub mod applog;
 pub mod availability;
 pub mod batch;
 pub mod boorus;
@@ -12,7 +13,10 @@ pub mod engine_backends;
 pub mod engine_ids;
 pub mod engine_runner;
 pub mod engines;
+pub mod entry_filter;
 pub mod error;
+pub mod eta;
+pub mod export;
 mod fsutil;
 pub mod hard_timeout;
 pub mod hydrus_client;
@@ -29,6 +33,7 @@ pub mod localtime;
 pub mod lru;
 pub mod mcp;
 pub mod mcp_images;
+pub mod missing_files;
 pub mod model;
 pub mod multipage;
 pub mod multipage_resolve;
@@ -36,6 +41,7 @@ pub mod net;
 pub mod parser_health;
 pub mod paths;
 pub mod pawchive_index;
+pub mod preview_text;
 pub mod progress;
 pub mod provenance_note;
 mod pyalpha;
@@ -61,14 +67,19 @@ pub mod remote;
 pub mod rotating_log;
 pub mod search_engine;
 pub mod session;
+pub mod settings_search;
+pub mod shortcuts;
+pub mod sidecar;
 pub mod similarity_check;
 pub mod similarity_display;
 pub mod sites;
 pub mod tag_band_metrics;
 pub mod tag_borrowing;
+pub mod tag_colors;
 pub mod tag_rules;
 pub mod timeutil;
 pub mod upscale_detect;
+pub mod viewport;
 
 /// Crate name, used by the placeholder test below.
 pub const NAME: &str = "hatate-core";
