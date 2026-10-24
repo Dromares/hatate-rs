@@ -19,6 +19,20 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # The window crate builds against GTK 4.14 / libadwaita 1.5 (the toolkit this image ships) and
+      # its scenarios run under a virtual display.
+      - name: GTK build dependencies and a virtual display
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb fontconfig
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      # `HATATE_GTK_SMOKE=1` turns the window scenarios on. With `CI` set (it always is here) a
+      # missing flag or a missing display fails the test instead of skipping it.
+      - name: cargo test --workspace (under Xvfb)
+        env:
+          HATATE_GTK_SMOKE: "1"
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          NO_AT_BRIDGE: "1"
+        run: xvfb-run -a -s "-screen 0 1440x900x24" cargo test --workspace
