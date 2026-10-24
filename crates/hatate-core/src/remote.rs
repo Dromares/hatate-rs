@@ -56,6 +56,42 @@ impl std::fmt::Display for Raised {
 
 impl std::error::Error for Raised {}
 
+impl Raised {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        use crate::error::ErrorKind;
+        match self {
+            Raised::HardTimeout(_) => ErrorKind::Timeout,
+            Raised::ValueError(_) | Raised::UnicodeEncode(_) => ErrorKind::InvalidUrl,
+            Raised::BodyRead { .. } => ErrorKind::DownloadFailed,
+        }
+    }
+
+    /// What failed and what to do. The text of a download error can carry the address it asked
+    /// for, so none of it is shown.
+    pub fn user_message(&self) -> String {
+        match self {
+            Raised::HardTimeout(_) => {
+                "A download took too long and was given up. Try the search again."
+            }
+            Raised::ValueError(_) | Raised::UnicodeEncode(_) => {
+                "A match has an address Hatate cannot read, so it was skipped."
+            }
+            Raised::BodyRead { .. } => {
+                "A download broke off before it finished. Try the search again."
+            }
+        }
+        .to_owned()
+    }
+
+    /// The exception's text, for a log.
+    pub fn detail(&self) -> String {
+        match self {
+            Raised::BodyRead { class, message } => format!("{class}: {message}"),
+            _ => self.to_string(),
+        }
+    }
+}
+
 /// A timeout in seconds as a `Duration`: negative and NaN are zero, and an absurd value is capped
 /// at what a `Duration` can add to an `Instant`.
 pub fn secs(value: f64) -> Duration {

@@ -43,6 +43,7 @@ use crate::engines::pawchive_lookup::{PawchiveError, PawchiveMatch};
 use crate::engines::saucenao::{SauceNaoError, SauceNaoMatch, ShouldStop};
 use crate::engines::tracemoe::{TraceMoeError, TraceMoeMatch};
 use crate::engines::yandex::{YandexError, YandexMatch};
+use crate::error::ErrorKind;
 use crate::model::{Candidate, CandidateTag, Entry, MatchStatus, Tag};
 use crate::pycompat;
 use crate::pyurl;
@@ -66,6 +67,22 @@ impl std::fmt::Display for Raised {
 }
 
 impl std::error::Error for Raised {}
+
+impl Raised {
+    pub fn kind(&self) -> ErrorKind {
+        ErrorKind::Unexpected
+    }
+
+    /// What failed and what to do; the text of the exception is not shown.
+    pub fn user_message(&self) -> String {
+        "A search engine hit an unexpected error. Try again, or use the other engines.".to_owned()
+    }
+
+    /// The exception's text, for a log.
+    pub fn detail(&self) -> String {
+        self.0.clone()
+    }
+}
 
 /// `GoogleLensError` and its two subclasses.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,6 +123,24 @@ pub enum IndexAnswer {
 /// `sqlite3.Error` from the index, as `str(exc)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IndexError(pub String);
+
+impl IndexError {
+    pub fn kind(&self) -> ErrorKind {
+        ErrorKind::Database
+    }
+
+    /// What failed and what to do; SQLite's text can name the file, so none of it is shown.
+    pub fn user_message(&self) -> String {
+        "The local Pawchive index could not be read. Rebuild it in Settings, or turn the lookup \
+         off."
+            .to_owned()
+    }
+
+    /// SQLite's text, for a log.
+    pub fn detail(&self) -> String {
+        self.0.clone()
+    }
+}
 
 /// The engines the runner calls, and the state it reads from them. Every method is what Python's
 /// collector calls on the engine module of the same name. The futures are `Send` so a wave's

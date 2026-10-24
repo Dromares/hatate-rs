@@ -65,6 +65,7 @@ pub mod ranking;
 pub mod reddit;
 pub mod remote;
 pub mod rotating_log;
+pub mod run_state;
 pub mod search_engine;
 pub mod session;
 pub mod settings_search;
@@ -73,13 +74,19 @@ pub mod sidecar;
 pub mod similarity_check;
 pub mod similarity_display;
 pub mod sites;
+pub mod status_tier;
+pub mod stop_record;
 pub mod tag_band_metrics;
 pub mod tag_borrowing;
 pub mod tag_colors;
 pub mod tag_rules;
+pub mod thumb;
 pub mod timeutil;
 pub mod upscale_detect;
 pub mod viewport;
+
+#[cfg(test)]
+mod error_shape_tests;
 
 /// Crate name, used by the placeholder test below.
 pub const NAME: &str = "hatate-core";

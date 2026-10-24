@@ -65,6 +65,30 @@ impl fmt::Display for OpenError {
 
 impl std::error::Error for OpenError {}
 
+impl OpenError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        match self {
+            OpenError::Os(_) => crate::error::ErrorKind::ImageUndecodable,
+            OpenError::Bomb(_) => crate::error::ErrorKind::ImageTooLarge,
+        }
+    }
+
+    /// What failed and what to do. Pillow's text names the file, so none of it is shown.
+    pub fn user_message(&self) -> String {
+        match self {
+            OpenError::Os(_) => "This image could not be read. It may be damaged or in a format \
+                                 Hatate cannot open."
+                .to_owned(),
+            OpenError::Bomb(b) => b.user_message(),
+        }
+    }
+
+    /// The decoder's own text.
+    pub fn detail(&self) -> String {
+        self.to_string()
+    }
+}
+
 fn os(msg: impl Into<String>) -> OpenError {
     OpenError::Os(msg.into())
 }

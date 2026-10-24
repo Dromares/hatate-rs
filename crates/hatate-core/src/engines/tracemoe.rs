@@ -57,6 +57,23 @@ impl std::fmt::Display for TraceMoeError {
 
 impl std::error::Error for TraceMoeError {}
 
+impl TraceMoeError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        crate::error::ErrorKind::EngineFailed
+    }
+
+    /// What failed and what to do; the engine's own text can carry an address, so none of it is
+    /// shown.
+    pub fn user_message(&self) -> String {
+        "trace.moe could not search this image. Try again, or use the other engines.".to_owned()
+    }
+
+    /// The engine's text, for a log.
+    pub fn detail(&self) -> String {
+        self.0.clone()
+    }
+}
+
 /// The request half of `core/tracemoe.py`'s `search`.
 ///
 /// A multipart POST of the (prepared) image to `<api>?cutBorders=1&anilistInfo=1`, with a

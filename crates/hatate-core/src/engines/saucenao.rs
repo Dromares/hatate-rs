@@ -88,6 +88,23 @@ impl std::fmt::Display for SauceNaoError {
 
 impl std::error::Error for SauceNaoError {}
 
+impl SauceNaoError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        crate::error::ErrorKind::EngineFailed
+    }
+
+    /// What failed and what to do; the engine's own text can carry an address, so none of it is
+    /// shown.
+    pub fn user_message(&self) -> String {
+        "SauceNAO could not search this image. Try again, or use the other engines.".to_owned()
+    }
+
+    /// The engine's text, for a log.
+    pub fn detail(&self) -> String {
+        self.0.clone()
+    }
+}
+
 /// What `_search_json` makes of an answer: the quota it read, whether it spent the daily
 /// allowance, and the matches or the error.
 #[derive(Debug, Clone, PartialEq)]

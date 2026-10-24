@@ -71,6 +71,31 @@ impl fmt::Display for SimilarityError {
 
 impl std::error::Error for SimilarityError {}
 
+impl SimilarityError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        match self {
+            SimilarityError::Raised(r) => r.kind(),
+            SimilarityError::Bomb(b) => b.kind(),
+        }
+    }
+
+    /// What failed and what to do; no path or address.
+    pub fn user_message(&self) -> String {
+        match self {
+            SimilarityError::Raised(r) => r.user_message(),
+            SimilarityError::Bomb(b) => b.user_message(),
+        }
+    }
+
+    /// The exception's text, for a log.
+    pub fn detail(&self) -> String {
+        match self {
+            SimilarityError::Raised(r) => r.detail(),
+            SimilarityError::Bomb(b) => b.detail(),
+        }
+    }
+}
+
 impl From<Raised> for SimilarityError {
     fn from(r: Raised) -> Self {
         SimilarityError::Raised(r)

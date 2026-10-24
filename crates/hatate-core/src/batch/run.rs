@@ -45,6 +45,17 @@ pub trait Reporter: Send + Sync {
     /// `SearchWorker.auto_imported`: auto-import sent, refused or failed one image. A row that
     /// `remove_after_import` drops from the list is still the one named here.
     fn auto_imported(&self, _entry: &Entry, _result: &ImportResult) {}
+    /// `SearchWorker.image_updated` as the loop emits it before a search: `entry` is now
+    /// `Searching`. `done` images are behind it and `total` is the queue's length (it grows once,
+    /// when the retries are queued). The `RunState` channel reads the current file from it.
+    fn searching(&self, _entry: &Entry, _done: usize, _total: usize) {}
+    /// `SearchWorker.progress(done, total)`: one image is searched.
+    fn progress(&self, _done: usize, _total: usize) {}
+    /// `SearchWorker.paused_out_of_quota(searched, remaining)`.
+    fn paused_for_quota(&self, _searched: i64, _remaining: i64) {}
+    /// `SearchWorker.finished_all`: the loop is over, however it ended. A stop that arrived during
+    /// the last image reads as `Stopped`, as [`run_batch`] reports it.
+    fn finished(&self, _ending: &Ending) {}
 }
 
 /// A reporter that says nothing.
@@ -364,6 +375,12 @@ pub async fn search_pending(
         Ok(()) => {}
         Err(fault) => end.ending = Ending::Failed(fault),
     }
+    let ended = if end.ending == Ending::Finished && env.stop.load(Ordering::SeqCst) {
+        Ending::Stopped
+    } else {
+        end.ending.clone()
+    };
+    env.reporter.finished(&ended);
     end
 }
 
@@ -449,6 +466,7 @@ async fn search_queue(
             entry.status = MatchStatus::Searching;
             entry.result_source = None;
         }
+        env.reporter.searching(&entries[idx], i, total);
         let engines_finished_at: Mutex<Option<f64>> = Mutex::new(None);
         let engines_reported = AtomicUsize::new(0);
         let note_done = || {
@@ -499,6 +517,7 @@ async fn search_queue(
             entry.status = MatchStatus::Error;
             entry.error_message = Some(format!("Unexpected error: {exc}"));
         }
+        env.reporter.progress(i + 1, total);
 
         let entry_status = entries[idx].status;
         env.reporter.line(&format!(
@@ -580,6 +599,7 @@ async fn search_queue(
                 "SauceNAO's daily quota is exhausted: paused after {done} image(s), \
                  {remaining} left unsearched"
             ));
+            env.reporter.paused_for_quota(done, remaining);
             end.ending = Ending::PausedForQuota {
                 searched: done,
                 remaining,

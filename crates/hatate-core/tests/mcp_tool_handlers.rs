@@ -348,6 +348,63 @@ async fn get_entry_reports_the_requested_row() {
     assert_eq!(r["status"], "not_searched");
 }
 
+/// The 5.e verifier's P2 note: the keys of a `list_queue` row and of `get_entry`, pinned, in
+/// `gui/mcp_bridge.py` `_queue_row` / `_entry_detail`'s order (lines 596 and 608 at `76c85c4`).
+/// A key added, dropped or renamed turns this red.
+#[tokio::test(flavor = "multi_thread")]
+async fn list_queue_and_get_entry_rows_have_exactly_pythons_keys() {
+    let w = world(|_| vec![entry("a.jpg")]).await;
+    let list = j(w.call(|h| h.list_queue(0, 50, None)).await);
+    let row = list["rows"][0].as_object().unwrap();
+    assert_eq!(
+        row.keys().map(String::as_str).collect::<Vec<_>>(),
+        [
+            "row",
+            "filename",
+            "status",
+            "reviewed",
+            "sent_to_hydrus",
+            "similarity",
+            "candidate_count",
+        ]
+    );
+    let detail = j(w.call(|h| h.get_entry(0)).await);
+    // The envelope `_run_tool` wraps a read tool's payload in; the rest is `_entry_detail`.
+    let envelope = ["allowed", "row", "dry_run"];
+    let all: Vec<&str> = detail
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert!(envelope.iter().all(|k| all.contains(k)), "{all:?}");
+    let keys: Vec<&str> = all.into_iter().filter(|k| !envelope.contains(k)).collect();
+    assert_eq!(
+        keys,
+        [
+            "filename",
+            "path",
+            "status",
+            "reviewed",
+            "sent_to_hydrus",
+            "matched_url",
+            "booru_name",
+            "similarity",
+            "similarity_measured",
+            "candidate_count",
+            "selected_candidate_index",
+            "local_width",
+            "local_height",
+            "match_width",
+            "match_height",
+            "upscale_verdict",
+            "upscale_check_detail",
+            "error_message",
+            "tags",
+        ]
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn get_entry_out_of_range_reports_an_error_not_a_crash() {
     let w = world(|_| vec![entry("a.jpg")]).await;
