@@ -4,7 +4,7 @@ Every `.py` file in `core/`, `core/boorus/`, `workers/` and `tools/` at `Hatate-
 
 113 files: 86 ported, 12 partly ported, 13 not ported, 2 package markers. The table is generated from the listing of the tree at the pin by a script that fails if a file is missing or extra (script and listing are outside the repo; the check is `ls core core/boorus workers tools`).
 
-**How to read the PR column.** A row that says *ported* names the merged PR that added the Rust home (`Dromares/hatate-rs`). *Partly* names the PR of what is ported and the phase that owns the rest. *Not ported* names the phase and says why. `gui/` is not in this table; it is Phase 6 as a whole, apart from `gui/mcp_bridge.py`, which is ported by this ticket (`docs/mcp-handlers.md`). `ops/` is not ported by decision. PR #54 is the number this PR is expected to take; it is corrected when the PR is opened.
+**How to read the PR column.** A row that says *ported* names the merged PR that added the Rust home (`Dromares/hatate-rs`). *Partly* names the PR of what is ported and the phase that owns the rest. *Not ported* names the phase and says why. `gui/` is not in this table; it is Phase 6 as a whole, apart from `gui/mcp_bridge.py`, which is ported by this ticket (`docs/mcp-handlers.md`). `ops/` is not ported by decision. PR #55 is the number this PR is expected to take; it is corrected when the PR is opened.
 
 **Phases.** *Phase 6* is the GTK application: the window, the list and review screens, the settings pages, the threads the window runs work on, and what is only presentation. *Phase 7* is packaging and the maintenance tools around the app (version stamping, the crash reporter, developer probes, the Plasma window hint).
 
@@ -42,7 +42,7 @@ Every `.py` file in `core/`, `core/boorus/`, `workers/` and `tools/` at `Hatate-
 | `core/lru_cache.py` | `lru.rs` | ported | #24 |  |
 | `core/mcp_audit.py` | `mcp/audit.rs` | ported | #50 |  |
 | `core/mcp_content.py` | `mcp/content.rs` | ported | #50 |  |
-| `core/mcp_images.py` | `mcp_images.rs` | ported | #54 | This ticket (DAN-2167); the PR number is filled in when it is opened. |
+| `core/mcp_images.py` | `mcp_images.rs` | ported | #55 | This ticket (DAN-2167); the PR number is filled in when it is opened. |
 | `core/mcp_server.py` | `mcp/protocol.rs`, `mcp/server.rs`, `mcp/schema.rs`, `mcp/envelope.rs`, `mcp/pyvalidate.rs` | ported | #50 | FastMCP's wire, ported on hyper (`docs/mcp-server.md`). |
 | `core/mcp_tools.py` | `mcp/tools.rs` | ported | #50 |  |
 | `core/missing_files.py` | - | not ported | Phase 6 | Finds entries whose file is gone. Run at session restore by the GUI (with `workers/missing_file_worker.py`). |
@@ -116,7 +116,7 @@ Every `.py` file in `core/`, `core/boorus/`, `workers/` and `tools/` at `Hatate-
 | `workers/hydrus_reconcile_worker.py` | `hydrus_reconcile.rs` | partly | #45; Phase 6 |  |
 | `workers/missing_file_worker.py` | - | not ported | Phase 6 | Runs `core/missing_files.py` at session restore. |
 | `workers/pawchive_index_worker.py` | `pawchive_index/crawl.rs` | partly | #38; Phase 6 | The crawl is ported; the Pawchive Index window's thread shell is the GUI's. |
-| `workers/search_worker.py` | `batch/run.rs`, `batch/auto_import.rs`, `batch/staging.rs`, `batch/research.rs` | ported | #35, #47, #54 | The loop (#35), auto-import and staging (#47), the queue's re-search launcher (this ticket). |
+| `workers/search_worker.py` | `batch/run.rs`, `batch/auto_import.rs`, `batch/staging.rs`, `batch/research.rs` | ported | #35, #47, #55 | The loop (#35), auto-import and staging (#47), the queue's re-search launcher (this ticket). |
 | `workers/session_autosave_worker.py` | `batch/run.rs` (`Autosave`), `session/*` | partly | #35, #7; Phase 6 | The interval and the write are ported; the off-GUI-thread shell is the GUI's. |
 | `workers/thumbnail_worker.py` | - | not ported | Phase 6 | Decodes row thumbnails for the list view. |
 | `workers/upscale_check_worker.py` | `upscale_detect.rs` | partly | #37; Phase 6 | The check is ported; the thread shell is the GUI's. |
