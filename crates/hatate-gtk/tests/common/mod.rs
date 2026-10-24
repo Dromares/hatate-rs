@@ -132,6 +132,11 @@ impl Prompter for Script {
     }
 }
 
+/// Changes the settings before the window reads them.
+pub type Tweak = Box<dyn Fn(&mut Settings)>;
+/// Prepares the profile before the window starts.
+pub type Setup = Box<dyn Fn(&Paths)>;
+
 /// How a fixture is built.
 #[derive(Default)]
 pub struct Opts {
@@ -140,10 +145,10 @@ pub struct Opts {
     pub seed: Vec<Entry>,
     /// A `session.db` with no rows, so a session "exists but came back empty".
     pub empty_session_file: bool,
-    pub tweak: Option<Box<dyn Fn(&mut Settings)>>,
+    pub tweak: Option<Tweak>,
     pub missing: Option<MissingFiles>,
     /// Runs after the profile directory exists and before the window starts.
-    pub setup: Option<Box<dyn Fn(&Paths)>>,
+    pub setup: Option<Setup>,
 }
 
 /// A real window over a temp profile.

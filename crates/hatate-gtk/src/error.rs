@@ -72,7 +72,7 @@ impl SessionError {
 
 impl fmt::Display for SessionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.user_message)
+        f.write_str(self.user_message)
     }
 }
 
