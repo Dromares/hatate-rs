@@ -20,6 +20,9 @@ use std::time::Duration;
 use chromiumoxide::cdp::browser_protocol::browser::{
     Bounds, GetWindowForTargetParams, SetWindowBoundsParams,
 };
+use chromiumoxide::cdp::browser_protocol::dom::{
+    GetContentQuadsParams, ScrollIntoViewIfNeededParams,
+};
 use chromiumoxide::cdp::browser_protocol::emulation::{
     SetDeviceMetricsOverrideParams, SetFocusEmulationEnabledParams, SetLocaleOverrideParams,
     SetUserAgentOverrideParams,
@@ -27,7 +30,9 @@ use chromiumoxide::cdp::browser_protocol::emulation::{
 use chromiumoxide::cdp::browser_protocol::input::{
     DispatchMouseEventParams, DispatchMouseEventType, MouseButton,
 };
+use chromiumoxide::cdp::browser_protocol::page::GetLayoutMetricsParams;
 use chromiumoxide::cdp::browser_protocol::page::{EventDomContentEventFired, NavigateParams};
+use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
 use chromiumoxide::error::CdpError;
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
@@ -70,6 +75,15 @@ impl PageError {
         }
     }
 
+    /// An exception whose text Playwright gives without the call's name in front of it (the
+    /// `TimeoutError` of `wait_for_url`, which comes from `expect_navigation`).
+    pub fn bare(message: impl std::fmt::Display) -> Self {
+        PageError {
+            message: message.to_string(),
+            gone: false,
+        }
+    }
+
     /// `type(exc).__name__ == "TargetClosedError"`.
     pub fn is_target_closed(&self) -> bool {
         self.gone
@@ -80,7 +94,7 @@ impl PageError {
         &self.message
     }
 
-    fn from_cdp(api: &str, error: &CdpError) -> Self {
+    pub(super) fn from_cdp(api: &str, error: &CdpError) -> Self {
         let text = error.to_string();
         let gone = match error {
             CdpError::Ws(_)
@@ -115,11 +129,13 @@ impl std::error::Error for PageError {}
 /// A Playwright `Page`.
 #[derive(Clone)]
 pub struct LensPage {
-    page: chromiumoxide::Page,
+    pub(super) page: chromiumoxide::Page,
     /// Set when the connection to the browser has closed.
-    gone: Arc<AtomicBool>,
+    pub(super) gone: Arc<AtomicBool>,
     /// `page.wait_for_timeout(ms)` sleeps on this, so a test sees every wait that was asked for.
     waits: Arc<dyn Clock>,
+    /// `page.mouse`: where the pointer is and whether the left button is down.
+    pub(super) mouse: Arc<std::sync::Mutex<super::elements::MouseState>>,
 }
 
 impl LensPage {
@@ -128,7 +144,12 @@ impl LensPage {
         gone: Arc<AtomicBool>,
         waits: Arc<dyn Clock>,
     ) -> Self {
-        LensPage { page, gone, waits }
+        LensPage {
+            page,
+            gone,
+            waits,
+            mouse: Arc::default(),
+        }
     }
 
     /// The CDP page, for the steps that need more than this wrapper offers.
@@ -136,7 +157,7 @@ impl LensPage {
         &self.page
     }
 
-    fn check(&self, api: &str) -> Result<(), PageError> {
+    pub(super) fn check(&self, api: &str) -> Result<(), PageError> {
         if self.gone.load(Ordering::SeqCst) {
             Err(PageError::target_closed(api))
         } else {
@@ -291,9 +312,10 @@ impl LensPage {
 
     /// `page.locator(selector)`.
     pub fn locator(&self, selector: &str) -> Locator {
+        let quoted = serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_owned());
         Locator {
             page: self.clone(),
-            selector: selector.to_owned(),
+            all: format!("{QUERY_ALL}({quoted})"),
             index: None,
         }
     }
@@ -302,37 +324,27 @@ impl LensPage {
 /// A Playwright `Locator`: a CSS selector, optionally narrowed to one match.
 #[derive(Clone)]
 pub struct Locator {
-    page: LensPage,
-    selector: String,
-    index: Option<usize>,
+    pub(super) page: LensPage,
+    /// A JavaScript expression that yields every match as an array.
+    pub(super) all: String,
+    pub(super) index: Option<usize>,
 }
 
 /// Every match of the selector, descending into open shadow roots as Playwright's CSS engine does.
-const QUERY_ALL: &str = "((sel) => { const out = []; const walk = (root) => { \
+pub(super) const QUERY_ALL: &str = "((sel) => { const out = []; const walk = (root) => { \
     out.push(...root.querySelectorAll(sel)); \
     for (const el of root.querySelectorAll('*')) { if (el.shadowRoot) walk(el.shadowRoot); } }; \
     walk(document); return out; })";
 
 impl Locator {
-    fn quoted(&self) -> String {
-        serde_json::to_string(&self.selector).unwrap_or_else(|_| "\"\"".to_owned())
-    }
-
     fn target(&self) -> String {
-        format!(
-            "{QUERY_ALL}({})[{}]",
-            self.quoted(),
-            self.index.unwrap_or(0)
-        )
+        format!("{}[{}]", self.all, self.index.unwrap_or(0))
     }
 
     /// `locator.count()`.
     pub async fn count(&self) -> Result<usize, PageError> {
         self.page
-            .evaluate(
-                "Locator.count",
-                &format!("{QUERY_ALL}({}).length", self.quoted()),
-            )
+            .evaluate("Locator.count", &format!("{}.length", self.all))
             .await
     }
 
@@ -364,6 +376,71 @@ impl Locator {
         })
     }
 
+    /// The point `_clickablePoint` picks, or `None` while the element has no box on the page.
+    async fn clickable_point(&self) -> Result<Option<(f64, f64)>, PageError> {
+        const API: &str = "Locator.click";
+        let cdp = |e: CdpError| PageError::from_cdp(API, &e);
+        let reply = self
+            .page
+            .page
+            .execute(
+                EvaluateParams::builder()
+                    .expression(format!("({})", self.target()))
+                    .return_by_value(false)
+                    .build()
+                    .map_err(|e| PageError::other(API, e))?,
+            )
+            .await
+            .map_err(cdp)?;
+        let Some(object_id) = reply.result.result.object_id.clone() else {
+            return Ok(None);
+        };
+        let scroll = ScrollIntoViewIfNeededParams {
+            object_id: Some(object_id.clone()),
+            ..Default::default()
+        };
+        let _ = self.page.page.execute(scroll).await;
+        let quads = GetContentQuadsParams {
+            object_id: Some(object_id),
+            ..Default::default()
+        };
+        let Ok(quads) = self.page.page.execute(quads).await else {
+            return Ok(None);
+        };
+        let metrics = self
+            .page
+            .page
+            .execute(GetLayoutMetricsParams::default())
+            .await
+            .map_err(|e| PageError::from_cdp(API, &e))?;
+        let (width, height) = (
+            metrics.result.css_layout_viewport.client_width as f64,
+            metrics.result.css_layout_viewport.client_height as f64,
+        );
+        for quad in &quads.result.quads {
+            let raw = quad.inner();
+            if raw.len() != 8 {
+                continue;
+            }
+            // Each corner clipped to the viewport.
+            let points: Vec<(f64, f64)> = raw
+                .chunks(2)
+                .map(|p| (p[0].clamp(0.0, width), p[1].clamp(0.0, height)))
+                .collect();
+            let mut area = 0.0;
+            for i in 0..4 {
+                let (a, b) = (points[i], points[(i + 1) % 4]);
+                area += a.0 * b.1 - b.0 * a.1;
+            }
+            if (area / 2.0).abs() > 0.99 {
+                let x = points.iter().map(|p| p.0).sum::<f64>() / 4.0;
+                let y = points.iter().map(|p| p.1).sum::<f64>() / 4.0;
+                return Ok(Some((x, y)));
+            }
+        }
+        Ok(None)
+    }
+
     /// `locator.get_attribute(name)`.
     pub async fn get_attribute(&self, name: &str) -> Result<Option<String>, PageError> {
         let name = serde_json::to_string(name).unwrap_or_default();
@@ -378,21 +455,17 @@ impl Locator {
             .await
     }
 
-    /// `locator.click(timeout=timeout_ms)`.
+    /// `locator.click(timeout=timeout_ms)`: scrolls the element into view as the protocol does,
+    /// waits until it has a content quad of some size, and presses at the centre of the first one
+    /// that is on the page, as Playwright's `_clickablePoint` does (an inline link that wraps, or
+    /// holds several boxes, is clicked in its first box, not at the centre of all of them).
     pub async fn click(&self, timeout_ms: u64) -> Result<(), PageError> {
         const API: &str = "Locator.click";
         let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
-        let centre = format!(
-            "(() => {{ const e = {}; if (!e) return null; \
-             if (e.scrollIntoViewIfNeeded) e.scrollIntoViewIfNeeded(true); \
-             const r = e.getBoundingClientRect(); \
-             if (r.width <= 0 || r.height <= 0) return null; \
-             return [r.left + r.width / 2, r.top + r.height / 2]; }})()",
-            self.target()
-        );
+        let cdp = |e: CdpError| PageError::from_cdp(API, &e);
         let (x, y) = loop {
-            let found: Option<(f64, f64)> = self.page.evaluate(API, &centre).await?;
-            if let Some(point) = found {
+            self.page.check(API)?;
+            if let Some(point) = self.clickable_point().await? {
                 break point;
             }
             if tokio::time::Instant::now() >= deadline {
@@ -403,7 +476,6 @@ impl Locator {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         };
-        let cdp = |e: CdpError| PageError::from_cdp(API, &e);
         let mouse =
             |kind: DispatchMouseEventType, button: MouseButton, buttons: i64, clicks: i64| {
                 DispatchMouseEventParams::builder()

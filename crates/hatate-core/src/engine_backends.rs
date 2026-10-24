@@ -2,16 +2,14 @@
 //! the two engines that are not ported yet, which answer as Python does when the engine cannot run
 //! (DAN-2063).
 //!
-//! * **Google Lens** (Phase 5) copies `google_lens.search`'s unavailable path: it reads the file
-//!   (`Could not read image: ...` if it cannot), then raises `GoogleLensUnavailableError`, which
-//!   latches the engine (`_latch`). The next image finds it blocked and the row says "not searched
-//!   (it stood down earlier this run)". The pacing `wait_for_turn` runs before every search that
-//!   is not blocked, as in Python, so the 45 s spacing is requested of the clock. The message is
-//!   [`LENS_UNAVAILABLE_MESSAGE`]: in Python it is the text of the missing-dependency error for
-//!   the interpreter, which has no counterpart here. Not copied: `announce_unavailable` (the
-//!   once-per-session GUI alert) and `prepare_for_lens`'s format check, so a readable file the
-//!   Python app would refuse as "not in a format Google Lens accepts" gets the unavailable answer
-//!   instead.
+//! * **Google Lens** is the 5.a client over a [`LensBrowser`] ([`LiveEngines::for_profile`], which
+//!   `hatate batch` builds: Lens's own profile under the config directory, the real Google, the
+//!   rule34.xxx and Reddit lookups on the net layer). With Lens off in the config the engine is
+//!   never asked. With no Chromium to start, the browser answers "unavailable" before any page is
+//!   touched, and the engine latches for the run as in Python (`_latch`): the next image finds it
+//!   blocked and the row says "not searched (it stood down earlier this run)". A
+//!   [`LiveEngines::new`] has no browser at all ([`LENS_UNAVAILABLE_MESSAGE`]), which is what every
+//!   test that does not mean to start one gets.
 //! * **The Pawchive index** is the 4.f [`PawchiveIndex`] over `pawchive_index.db`, as
 //!   `_collect_pawchive_index` reads it: `is_empty` first (so an empty or missing index costs no
 //!   file read), then `fingerprints(path)`, then `search(hash16, hydrus_hash)`. It is local and
@@ -31,8 +29,10 @@ use crate::engines::client::OnTick;
 use crate::engines::google_images::{GoogleImagesClient, GoogleImagesError, GoogleImagesMatch};
 use crate::engines::google_lens::GoogleLensMatch;
 use crate::engines::iqdb::{IqdbClient, IqdbError, IqdbMatch};
+use crate::engines::lens_rank::LensSites;
 pub use crate::engines::lens_search::LENS_UNAVAILABLE_MESSAGE;
 use crate::engines::lens_search::LensClient;
+use crate::engines::lens_sites::OnlineSites;
 use crate::engines::pawchive_lookup::{
     PawchiveError, PawchiveLookupClient, PawchiveMatch, file_sha256,
 };
@@ -41,6 +41,7 @@ use crate::engines::tracemoe::{TraceMoeClient, TraceMoeError, TraceMoeMatch};
 use crate::engines::yandex::{YandexClient, YandexError, YandexMatch};
 use crate::image_compare::Source;
 use crate::image_prep::os_error_text;
+use crate::lens_browser::LensBrowser;
 use crate::net::NetClient;
 use crate::paths::Paths;
 use crate::pawchive_index::{self, PawchiveIndex};
@@ -57,6 +58,8 @@ pub struct LiveEngines {
     pub yandex: YandexClient,
     pub pawchive: PawchiveLookupClient,
     pub lens: LensClient,
+    /// The browser behind `lens`, when it has one: stopped by [`LiveEngines::shutdown`].
+    lens_browser: Option<LensBrowser>,
     /// `engine_runner._pawchive_index`: one index for every search, so its fingerprints are
     /// loaded once and reloaded only after the index changes.
     pawchive_index: Option<Arc<PawchiveIndex>>,
@@ -75,13 +78,45 @@ impl LiveEngines {
             yandex: YandexClient::new(net.clone()).with_clock(Arc::clone(&clock)),
             pawchive: PawchiveLookupClient::new(net),
             lens: LensClient::new().with_clock(clock),
+            lens_browser: None,
             pawchive_index: None,
         }
     }
 
     /// What `hatate batch` builds: [`LiveEngines::new`] with the profile's own Pawchive index.
     pub fn for_profile(net: NetClient, clock: Arc<dyn Clock>, paths: &Paths) -> Self {
-        Self::new(net, clock).with_pawchive_index(PawchiveIndex::new(paths.pawchive_index_db()))
+        let sites = Arc::new(OnlineSites::new(net.clone()));
+        Self::new(net, clock)
+            .with_lens_browser(LensBrowser::new(paths.lens_profile_dir()), sites)
+            .with_pawchive_index(PawchiveIndex::new(paths.pawchive_index_db()))
+    }
+
+    /// Lens over `browser`, with `sites` for its recovery lookups.
+    #[must_use]
+    pub fn with_lens_browser(mut self, browser: LensBrowser, sites: Arc<dyn LensSites>) -> Self {
+        self.lens = LensClient::with_fetch(Arc::new(browser.clone()))
+            .with_clock(self.lens_clock())
+            .with_sites(sites);
+        self.lens_browser = Some(browser);
+        self
+    }
+
+    /// The browser behind Lens, when this build has one (`for_profile` gives it one).
+    pub fn lens_browser(&self) -> Option<&LensBrowser> {
+        self.lens_browser.as_ref()
+    }
+
+    /// The clock the Lens client was built on.
+    fn lens_clock(&self) -> Arc<dyn Clock> {
+        self.lens.clock()
+    }
+
+    /// Stops the Lens browser, if there is one (`lens_browser.shutdown()`, which the GUI calls on
+    /// the way out). The browser dies with the process anyway; this lets it close its window.
+    pub fn shutdown(&self) {
+        if let Some(browser) = &self.lens_browser {
+            browser.shutdown();
+        }
     }
 
     /// Searches `index` for the Pawchive index engine.

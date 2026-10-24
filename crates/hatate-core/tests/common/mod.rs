@@ -4,6 +4,7 @@
 #![allow(dead_code)]
 
 pub mod art;
+pub mod lens_results;
 mod lens_site;
 #[allow(unused_imports)]
 pub use lens_site::*;

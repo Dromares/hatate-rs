@@ -228,6 +228,11 @@ impl LensClient {
         self
     }
 
+    /// The clock the client was built on.
+    pub fn clock(&self) -> Arc<dyn Clock> {
+        Arc::clone(&self.clock)
+    }
+
     pub fn alerts(&self) -> &Arc<EngineAlerts> {
         &self.alerts
     }
@@ -534,7 +539,7 @@ pub fn rank(
     }
 
     visual.retain(|m| exact.iter().all(|e| e.url != m.url));
-    let (exact, visual) = resolve_subreddits(exact, visual, sites);
+    let (exact, visual) = resolve_subreddits(exact, visual, sites)?;
     let visual_start = exact.len();
     let mut matches = taggable_first(exact)?;
     matches.extend(taggable_first(visual)?);

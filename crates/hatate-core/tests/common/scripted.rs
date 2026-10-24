@@ -72,6 +72,9 @@ pub struct ScriptedEngines {
     /// The engines to ask for the Pawchive index (DAN-2145: `LiveEngines` over a profile's real
     /// index file). Unset, the index answers as an empty one.
     pub index_backend: Mutex<Option<Arc<dyn Engines>>>,
+    /// The engines to ask for Google Lens (DAN-2165: `LiveEngines` over a scripted `LensFetch`).
+    /// Unset, a test that enables Lens gets a panic.
+    pub lens_backend: Mutex<Option<Arc<dyn Engines>>>,
     calls: Mutex<Vec<&'static str>>,
 }
 
@@ -208,29 +211,56 @@ impl Engines for ScriptedEngines {
     }
 
     fn google_lens_is_blocked(&self) -> bool {
-        false
+        self.lens_backend
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|e| e.google_lens_is_blocked())
     }
 
     fn google_lens_is_resting(&self) -> bool {
-        false
+        self.lens_backend
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|e| e.google_lens_is_resting())
     }
 
     fn google_lens_resting_until(&self) -> String {
-        String::new()
+        self.lens_backend
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|e| e.google_lens_resting_until())
+            .unwrap_or_default()
     }
 
-    fn google_lens_wait_for_turn<'a>(&'a self, _on_tick: Option<OnTick>) -> BoxFuture<'a, ()> {
-        panic!("Google Lens is not scripted")
+    fn google_lens_wait_for_turn<'a>(&'a self, on_tick: Option<OnTick>) -> BoxFuture<'a, ()> {
+        let backend = self.lens_backend.lock().unwrap().clone();
+        match backend {
+            Some(engines) => {
+                Box::pin(async move { engines.google_lens_wait_for_turn(on_tick).await })
+            }
+            None => panic!("Google Lens is not scripted"),
+        }
     }
 
     fn google_lens<'a>(
         &'a self,
-        _path: &'a Path,
-        _timeout: f64,
-        _on_tick: Option<OnTick>,
-        _whole_image: bool,
+        path: &'a Path,
+        timeout: f64,
+        on_tick: Option<OnTick>,
+        whole_image: bool,
     ) -> BoxFuture<'a, Result<Vec<GoogleLensMatch>, LensError>> {
-        panic!("Google Lens is not scripted")
+        let backend = self.lens_backend.lock().unwrap().clone();
+        match backend {
+            Some(engines) => Box::pin(async move {
+                engines
+                    .google_lens(path, timeout, on_tick, whole_image)
+                    .await
+            }),
+            None => panic!("Google Lens is not scripted"),
+        }
     }
 
     fn yandex_is_blocked(&self) -> bool {

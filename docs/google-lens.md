@@ -18,13 +18,14 @@ are listed in section 2.
 
 Not here, and who owns it:
 
-* `core/lens_browser.py`, the Chromium driver, is 5.b (CDP) and 5.c. The shipped `LensFetch` is
-  `NoBrowser`, which answers `LensBrowserUnavailable` exactly as the stand-in this replaces did, so
-  `hatate batch` prints the same text as before.
-* `boorus.rule34.find_post_by_search` and `reddit.find_post` are network code and have no ticket yet.
-  `search` reaches them through the `LensSites` seam; the shipped `NoSites` finds nothing, which is
-  also what Python gets when its own request fails. The shipped build never reaches the seam
-  (`NoBrowser` answers first). The differential scripts the seam on both sides.
+* `core/lens_browser.py`, the Chromium driver, is 5.b (CDP, `docs/lens-browser.md`) and 5.c (the
+  per-search half, `docs/lens-search.md`). Here the `LensFetch` is `NoBrowser`, which answers
+  `LensBrowserUnavailable` exactly as the stand-in this replaces did; 5.c wires the real browser
+  into `LiveEngines::for_profile`.
+* `boorus.rule34.find_post_by_search` and `reddit.find_post` are network code, ported in 5.c
+  (`engines/lens_sites.rs`, `OnlineSites`). `search` reaches them through the `LensSites` seam; `NoSites`
+  stays as the test double and finds nothing, which is also what Python gets when its own request
+  fails. The differential scripts the seam on both sides.
 * The parsers `parse_exact_matches`, `parse_exact_tiles`, `parse_lens_payload`, `owner_of_image` were
   ported in 2.j and are called, not copied.
 

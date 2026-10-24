@@ -39,9 +39,11 @@ told either way.
 
 ## What a build without a Lens browser answers
 
-The Google Lens engine half is `docs/google-lens.md` (Phase 5.a). Until 5.b/5.c supply the browser,
-`LiveEngines.lens` is a `LensClient` over `NoBrowser`, whose `LensFetch` answers
-`LensBrowserUnavailable`, so the engine answers as Python does when it cannot run:
+The Google Lens engine half is `docs/google-lens.md` (Phase 5.a), the browser `docs/lens-browser.md`
+(5.b) and `docs/lens-search.md` (5.c). `LiveEngines::new` has a `LensClient` over `NoBrowser`, whose
+`LensFetch` answers `LensBrowserUnavailable`; `LiveEngines::for_profile` (what `hatate batch` builds)
+puts the real browser there. A build without a browser (and a machine without a Chromium) answers
+as Python does when the engine cannot run:
 
 * The pacing `wait_for_turn` runs before every search that is not blocked (45 s between starts,
   requested of the injected clock). The search reads the file first (`Could not read image: [Errno 2]

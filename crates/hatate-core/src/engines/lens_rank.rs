@@ -3,10 +3,10 @@
 //! `taggable_first`, `keep_taggable_first`, `effective_timeout`).
 //!
 //! Two of these reach the network in Python (`boorus.rule34.find_post_by_search` and
-//! `reddit.find_post`). Neither is ported yet, so they are behind [`LensSites`]: a test hands in
-//! scripted answers, and the shipped [`NoSites`] finds nothing, which is the answer Python gets
-//! when its own request fails. The shipped build never reaches them anyway: its browser answers
-//! "unavailable" before any page is parsed.
+//! `reddit.find_post`). They are behind [`LensSites`]: the shipped build uses
+//! [`super::lens_sites::OnlineSites`], which runs the two lookups over the net layer, and a test
+//! hands in scripted answers or [`NoSites`], which finds nothing, the answer Python gets when its
+//! own request fails.
 
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -43,29 +43,37 @@ pub const LISTING_HASH_SIZE: usize = 16;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unexpected(pub String);
 
-/// The two lookups of `search` that go to the network and are not ported yet.
+/// What `boorus.rule34.find_post_by_search` returns: `(url, thumb_url, distance)`.
+pub type Rule34Hit = (String, Option<String>, i64);
+
+/// The two lookups of `search` that go to the network. An `Err` is an exception Python lets out of
+/// the lookup (a decompression bomb in a thumbnail, a hard deadline), which ends the search.
 pub trait LensSites: Send + Sync + 'static {
-    /// `boorus.rule34.find_post_by_search(tags, local_hash)`: `(url, thumb_url, distance)`.
+    /// `boorus.rule34.find_post_by_search(tags, local_hash)`.
     fn find_rule34_post(
         &self,
         tags: &str,
         local_hash: Option<&Hash>,
-    ) -> Option<(String, Option<String>, i64)>;
+    ) -> Result<Option<Rule34Hit>, Unexpected>;
 
     /// `reddit.find_post(subreddit, media_id)`.
-    fn find_reddit_post(&self, subreddit: &str, media_id: &str) -> Option<String>;
+    fn find_reddit_post(
+        &self,
+        subreddit: &str,
+        media_id: &str,
+    ) -> Result<Option<String>, Unexpected>;
 }
 
-/// The shipped answer: neither lookup finds anything.
+/// A lookup that finds nothing: the test double (and what Python gets when its request fails).
 pub struct NoSites;
 
 impl LensSites for NoSites {
-    fn find_rule34_post(&self, _: &str, _: Option<&Hash>) -> Option<(String, Option<String>, i64)> {
-        None
+    fn find_rule34_post(&self, _: &str, _: Option<&Hash>) -> Result<Option<Rule34Hit>, Unexpected> {
+        Ok(None)
     }
 
-    fn find_reddit_post(&self, _: &str, _: &str) -> Option<String> {
-        None
+    fn find_reddit_post(&self, _: &str, _: &str) -> Result<Option<String>, Unexpected> {
+        Ok(None)
     }
 }
 
@@ -136,7 +144,7 @@ pub fn recover_rule34_searches(
     )
     .map_err(|bomb| Unexpected(bomb.to_string()))?;
     for tags in searches {
-        if let Some((url, thumb, distance)) = sites.find_rule34_post(&tags, local_hash.as_ref()) {
+        if let Some((url, thumb, distance)) = sites.find_rule34_post(&tags, local_hash.as_ref())? {
             tracing::info!(
                 "Recovered {url} from Lens's \"Rule 34 / {tags}\" exact match (distance {distance})"
             );
@@ -161,16 +169,22 @@ pub fn resolve_subreddits(
     exact: Vec<GoogleLensMatch>,
     visual: Vec<GoogleLensMatch>,
     sites: &dyn LensSites,
-) -> (Vec<GoogleLensMatch>, Vec<GoogleLensMatch>) {
+) -> Result<(Vec<GoogleLensMatch>, Vec<GoogleLensMatch>), Unexpected> {
     let mut seen: HashSet<String> = HashSet::new();
-    let mut resolve = |group: Vec<GoogleLensMatch>| {
+    let mut resolve = |group: Vec<GoogleLensMatch>| -> Result<Vec<GoogleLensMatch>, Unexpected> {
         let mut kept = Vec::new();
         for mut m in group {
-            let Some(url) =
-                reddit::resolve_listing(&m.url, m.thumb_url.as_deref(), |sub, media| {
-                    sites.find_reddit_post(sub, media)
+            let mut raised = None;
+            let resolved = reddit::resolve_listing(&m.url, m.thumb_url.as_deref(), |sub, media| {
+                sites.find_reddit_post(sub, media).unwrap_or_else(|e| {
+                    raised = Some(e);
+                    None
                 })
-            else {
+            });
+            if let Some(error) = raised {
+                return Err(error);
+            }
+            let Some(url) = resolved else {
                 continue;
             };
             if seen.contains(&url) {
@@ -180,11 +194,11 @@ pub fn resolve_subreddits(
             seen.insert(url);
             kept.push(m);
         }
-        kept
+        Ok(kept)
     };
-    let exact = resolve(exact);
-    let visual = resolve(visual);
-    (exact, visual)
+    let exact = resolve(exact)?;
+    let visual = resolve(visual)?;
+    Ok((exact, visual))
 }
 
 /// `_is_taggable`: `boorus.find_parser(url) is not None`. `Err` where `find_parser` raises
@@ -370,20 +384,24 @@ mod tests {
             &self,
             tags: &str,
             _: Option<&Hash>,
-        ) -> Option<(String, Option<String>, i64)> {
-            (tags == "parent:1").then(|| {
+        ) -> Result<Option<Rule34Hit>, Unexpected> {
+            Ok((tags == "parent:1").then(|| {
                 (
                     "https://rule34.xxx/index.php?page=post&s=view&id=1".to_owned(),
                     Some("https://thumb/1.jpg".to_owned()),
                     3,
                 )
-            })
+            }))
         }
 
-        fn find_reddit_post(&self, subreddit: &str, media_id: &str) -> Option<String> {
-            Some(format!(
+        fn find_reddit_post(
+            &self,
+            subreddit: &str,
+            media_id: &str,
+        ) -> Result<Option<String>, Unexpected> {
+            Ok(Some(format!(
                 "https://www.reddit.com/r/{subreddit}/comments/{media_id}/"
-            ))
+            )))
         }
     }
 
@@ -396,7 +414,8 @@ mod tests {
             vec![with_image.clone(), listing.clone()],
             vec![with_image, m(&format!("{PLAIN}1"))],
             &FindsReddit,
-        );
+        )
+        .unwrap();
         // The one with an image resolves; the listing with none is dropped; the second copy of
         // the resolved URL (in the other group) is not listed again.
         assert_eq!(
@@ -407,7 +426,7 @@ mod tests {
         // A lookup that finds nothing falls back to the image link itself.
         let mut lone = listing;
         lone.thumb_url = Some("https://preview.redd.it/abc123.jpg".to_owned());
-        let (exact, _) = resolve_subreddits(vec![lone], vec![], &NoSites);
+        let (exact, _) = resolve_subreddits(vec![lone], vec![], &NoSites).unwrap();
         assert_eq!(urls(&exact), vec!["https://i.redd.it/abc123.jpg"]);
     }
 
