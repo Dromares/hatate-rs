@@ -69,6 +69,10 @@ const SCENARIOS: &[Scenario] = &[
         close_saves_and_marks_a_clean_exit,
     ),
     (
+        "close_writes_an_empty_list_over_the_old_rows",
+        close_writes_an_empty_list_over_the_old_rows,
+    ),
+    (
         "autosave_writes_the_list_off_the_main_thread",
         autosave_writes_the_list_off_the_main_thread,
     ),
@@ -159,8 +163,46 @@ fn window_menus_and_deferred_actions(app: &adw::Application) {
     f.close();
 }
 
+/// Every label and button text under `root`, in tree order: what the screen says, as the user
+/// reads it (the CSS `caps` class changes the paint, not the text).
+fn texts_under(root: &gtk4::Widget) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.clone()];
+    while let Some(w) = stack.pop() {
+        if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+            out.push(l.text().to_string());
+        } else if let Some(b) = w.downcast_ref::<gtk4::Button>() {
+            if let Some(t) = b.label() {
+                out.push(t.to_string());
+            }
+        }
+        let mut child = w.last_child();
+        while let Some(c) = child {
+            child = c.prev_sibling();
+            stack.push(c);
+        }
+    }
+    out
+}
+
 fn empty_state_and_idle_strip(app: &adw::Application) {
     let f = fx(app);
+    // The empty state's copy, literally (`_build_drop_zone`, `screen_title("Queue.")`): the heading,
+    // the section label and the three action labels the Python empty-state tests read.
+    let said = texts_under(f.w.win.upcast_ref());
+    for want in [
+        "Queue.",
+        "01 // Queue",
+        "Drop images here.",
+        "Add files\u{2026}",
+        "Add folder\u{2026}",
+        "Query Hydrus\u{2026}",
+    ] {
+        assert!(
+            said.iter().any(|t| t == want),
+            "the empty state does not say {want:?}: {said:?}"
+        );
+    }
     assert_eq!(
         f.w.s.queue_stack.visible_child_name().as_deref(),
         Some("empty")
@@ -748,10 +790,19 @@ fn persisted_quota_pause(app: &adw::Application) {
         f.say(),
         format!("Restored 2 image(s) from your last session \u{b7} {quota}")
     );
+    // The strip's note and estimate, as literal text (a constant compared with itself would pass
+    // whatever the constant said), and the count on a paused strip: nothing waits to be searched.
     assert_eq!(
         f.w.s.shell.run_note_label.text(),
-        hatate_gtk::shell::QUOTA_PAUSED_NOTE
+        "paused \u{2014} quota exhausted"
     );
+    assert_eq!(f.w.s.shell.run_eta_label.text(), "ETA paused");
+    assert_eq!(f.w.s.shell.run_progress_label.text(), "nothing queued");
+    // Dismissing the pause takes the note and the estimate back off the strip.
+    f.w.hide_quota_banner();
+    assert_eq!(f.w.s.shell.run_note_label.text(), "");
+    f.w.refresh_run_progress_label();
+    assert_eq!(f.w.s.shell.run_eta_label.text(), "ETA \u{2014}");
     assert!(
         f.w.s
             .quota_banner
@@ -815,6 +866,28 @@ fn close_saves_and_marks_a_clean_exit(app: &adw::Application) {
     );
     // A second close does nothing more.
     f.w.close_teardown();
+    f.close();
+}
+
+/// `closeEvent`'s `save_session(self.entries)` is a full write and is not skipped for an empty
+/// list: a list emptied since the last save leaves an empty session, not the old rows (found by
+/// the action differential, 13 scenarios).
+fn close_writes_an_empty_list_over_the_old_rows(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: seeded(3, MatchStatus::Good),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    assert_eq!(f.len(), 3);
+    assert_eq!(f.saved_count(), 3, "the seeded session is on disk");
+    *f.w.s.queue.borrow_mut() =
+        hatate_core::queue::QueueModel::new(Vec::new(), f.w.s.settings.clone());
+    f.w.list_changed();
+    f.w.close_teardown();
+    assert_eq!(f.saved_count(), 0, "the final save wrote the empty list");
     f.close();
 }
 
