@@ -758,11 +758,10 @@ impl MainWindow {
             let s = self.s.settings.lock().unwrap();
             (s.autosave_session, s.autosave_interval_seconds)
         };
-        if !on {
+        let Some(interval) = autosave_interval(on, interval) else {
             tracing::info!("Session autosave is off");
             return;
-        }
-        let interval = interval.max(MIN_AUTOSAVE_INTERVAL_SECONDS) as u32;
+        };
         let w = self.downgrade();
         let id = glib::timeout_add_seconds_local(interval, move || {
             if let Some(w) = w.upgrade() {
@@ -894,6 +893,17 @@ impl MainWindow {
     }
 }
 
+/// The timer's period in seconds, or `None` when autosave is off: `max(MIN_INTERVAL_SECONDS,
+/// int(settings.autosave_interval_seconds))`, so a self-defeating setting cannot make the timer
+/// fire as fast as the loop turns.
+pub fn autosave_interval(on: bool, seconds: i64) -> Option<u32> {
+    on.then(|| {
+        seconds
+            .max(MIN_AUTOSAVE_INTERVAL_SECONDS)
+            .min(i64::from(u32::MAX)) as u32
+    })
+}
+
 /// The user's home folder (`Path.home()`).
 fn home_dir() -> PathBuf {
     std::env::var_os("HOME").map_or_else(|| PathBuf::from("/"), PathBuf::from)
@@ -920,6 +930,18 @@ fn _session_now() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn autosave_interval_is_floored_and_off_stops_it() {
+        assert_eq!(autosave_interval(true, 120), Some(120));
+        assert_eq!(autosave_interval(true, 10), Some(10));
+        // `test_a_self_defeating_interval_is_floored`: 0, 1 and a negative all become 10.
+        assert_eq!(autosave_interval(true, 0), Some(10));
+        assert_eq!(autosave_interval(true, 1), Some(10));
+        assert_eq!(autosave_interval(true, -5), Some(10));
+        // `test_turning_it_off_stops_the_timer`.
+        assert_eq!(autosave_interval(false, 120), None);
+    }
 
     #[test]
     fn the_default_session_name_is_pythons_strftime() {
