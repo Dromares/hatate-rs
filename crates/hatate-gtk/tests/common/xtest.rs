@@ -223,19 +223,14 @@ impl Xtest {
     /// window under it. There is no window manager under `xvfb-run`, so nothing else would: without
     /// both, GTK sees no focus and a key goes nowhere.
     pub fn focus_window_at(&mut self, x: i16, y: i16) -> Result<(), String> {
-        self.fake(6, 0, 0, 0)?;
-        self.sync()?;
-        std::thread::sleep(std::time::Duration::from_millis(100));
         self.fake(6, 0, x, y)?;
         self.sync()?;
-        std::thread::sleep(std::time::Duration::from_millis(100));
         let q = [38, 0, 2, 0];
         let mut req = q.to_vec();
         req.extend(self.root.to_le_bytes());
         self.sock.write_all(&req).map_err(|e| e.to_string())?;
         let r = self.reply()?;
         let child = u32::from_le_bytes(r[12..16].try_into().unwrap());
-        eprintln!("DBG xtest root={:#x} child={:#x} opcode={} first={} per={}", self.root, child, self.xtest_opcode, self.first_keycode, self.per_keycode);
         if child == 0 {
             return Err(format!("no window under the pointer at {x},{y}"));
         }
@@ -251,15 +246,12 @@ impl Xtest {
     /// it, and surfaces any X error those raised.
     fn sync(&mut self) -> Result<(), String> {
         self.sock.write_all(&[43, 0, 1, 0]).map_err(|e| e.to_string())?;
-        let r = self.reply()?;
-        eprintln!("DBG xtest focus now {:#x}", u32::from_le_bytes(r[8..12].try_into().unwrap()));
-        Ok(())
+        self.reply().map(|_| ())
     }
 
     /// Presses and releases `key` with the modifiers held (only Alt is needed here).
     pub fn tap(&mut self, key: Key, alt: bool) -> Result<(), String> {
         let code = self.keycode(key.keysym())?;
-        eprintln!("DBG xtest key {key:?} keycode {code}");
         let alt_code = if alt {
             Some(self.keycode(KEYSYM_ALT_L)?)
         } else {
