@@ -14,6 +14,7 @@ pub mod protocol;
 pub mod pyvalidate;
 pub mod schema;
 pub mod server;
+pub mod tool_handlers;
 pub mod tools;
 
 use crate::error::ErrorKind;
