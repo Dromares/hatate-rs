@@ -1516,41 +1516,89 @@ fn first_model_button_text(w: &gtk4::Widget) -> Option<String> {
     None
 }
 
+/// DAN-2246: the menubar by keyboard, with real X key events (`common::xtest`) delivered to the
+/// real window. GTK does Alt+mnemonic, Left and Right on its own and this pins that it still does;
+/// `menubar_keys` adds F10 (open the first menu, again to close) and the return of focus to the
+/// widget that had it before the bar was entered.
 fn menubar_keyboard_path(app: &adw::Application) {
+    use common::xtest::{Key, Xtest};
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("menubar_keyboard_path: skipped ({why})");
+            return;
+        }
+    };
     let f = fx(app);
+    // Earlier scenarios leave their secondary windows mapped (the log viewer); they would hold the
+    // keyboard. Only this scenario's window may be on screen.
+    for w in gtk4::Window::list_toplevels() {
+        if &w != f.w.win.upcast_ref::<gtk4::Widget>() {
+            if let Ok(w) = w.downcast::<gtk4::Window>() {
+                w.destroy();
+            }
+        }
+    }
     f.w.win.set_default_size(1100, 800);
     pump_for(400);
     let root = f.w.win.clone().upcast::<gtk4::Widget>();
-    let mut x = common::xtest::Xtest::connect().expect("XTEST");
-    let kc = gtk4::EventControllerKey::new();
-    kc.set_propagation_phase(gtk4::PropagationPhase::Capture);
-    kc.connect_key_pressed(|_, k, code, st| { eprintln!("DBG KEY {k:?} {code} {st:?}"); gtk4::glib::Propagation::Proceed });
-    f.w.win.add_controller(kc);
-    x.focus_window_at(300, 300).expect("focus");
-    pump_for(200);
     let window = f.w.win.upcast_ref::<gtk4::Window>();
-    let show = |tag: &str| {
+    let focus = || gtk4::prelude::GtkWindowExt::focus(window);
+    let open_menus = || {
         let mut v = Vec::new();
         open_menu_first_entries(&root, &mut v);
-        eprintln!("DBG {tag}: active={} focus={:?} open={v:?}", f.w.win.is_active(), gtk4::prelude::GtkWindowExt::focus(window).map(|w| w.type_().name()));
+        v
     };
-    show("start");
-    let seq: &[(&str, common::xtest::Key, bool)] = &[
-        ("Alt+f", common::xtest::Key::Char('f'), true),
-        ("Right", common::xtest::Key::Right, false),
-        ("Right", common::xtest::Key::Right, false),
-        ("Left", common::xtest::Key::Left, false),
-        ("Escape", common::xtest::Key::Escape, false),
-        ("Escape", common::xtest::Key::Escape, false),
-        ("F10", common::xtest::Key::F10, false),
-        ("Right", common::xtest::Key::Right, false),
-        ("Escape", common::xtest::Key::Escape, false),
-        ("Escape", common::xtest::Key::Escape, false),
-    ];
-    for (tag, k, alt) in seq {
-        x.tap(*k, *alt).unwrap();
+    let files = "Add Files\u{2026}".to_owned();
+    let hydrus = "Send File + URL + Tags to Hydrus (upload)".to_owned();
+
+    // No window manager under xvfb: the pointer and the X focus put the keys on this window.
+    keys.focus_window_at(300, 300).expect("focus the window");
+    let add = find_button(&root, "Add files\u{2026}").expect("Add files");
+    add.grab_focus();
+    pump_for(200);
+    let add_widget = add.clone().upcast::<gtk4::Widget>();
+    assert_eq!(focus().as_ref(), Some(&add_widget), "Add files starts with focus");
+
+    let mut press = |key: Key, alt: bool| {
+        keys.tap(key, alt).expect("inject");
         pump_for(400);
-        show(tag);
-    }
+    };
+
+    // The keys reach the window at all: Alt+F is GTK's own, and opens Files.
+    press(Key::Char('f'), true);
+    assert_eq!(open_menus(), [files.clone()], "Alt+F opens Files");
+    press(Key::Escape, false);
+    assert!(open_menus().is_empty(), "Escape closes it");
+    assert_eq!(focus().as_ref(), Some(&add_widget), "and focus returns to Add files");
+
+    // F10 opens the first menu.
+    press(Key::F10, false);
+    assert_eq!(open_menus(), [files.clone()], "F10 opens Files");
+    // Right moves to the next menu, Left back.
+    press(Key::Right, false);
+    assert_eq!(open_menus(), [hydrus.clone()], "Right opens Hydrus and closes Files");
+    press(Key::Left, false);
+    assert_eq!(open_menus(), [files.clone()], "Left goes back to Files");
+    // F10 again closes, and focus goes back to where it was before F10.
+    press(Key::F10, false);
+    assert!(open_menus().is_empty(), "F10 a second time closes the menu");
+    assert_eq!(focus().as_ref(), Some(&add_widget), "focus returns to Add files after F10, F10");
+
+    // Escape does the same after a trip through two menus.
+    press(Key::F10, false);
+    press(Key::Right, false);
+    assert_eq!(open_menus(), [hydrus.clone()]);
+    press(Key::Escape, false);
+    assert!(open_menus().is_empty(), "Escape closes the Hydrus menu");
+    assert_eq!(
+        focus().as_ref(),
+        Some(&add_widget),
+        "Escape returns focus to the widget that had it before F10"
+    );
     f.close();
 }

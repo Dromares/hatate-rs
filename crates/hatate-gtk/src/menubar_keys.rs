@@ -95,6 +95,16 @@ pub fn install(win: &adw::ApplicationWindow, bar: &gtk::PopoverMenuBar) {
         });
     }
 
+    // The window sees F10 while focus is in the page; an open menu holds the keyboard, so each
+    // popover has the same controller to close itself.
+    win.add_controller(f10(bar));
+    for p in menu_popovers(bar) {
+        p.add_controller(f10(bar));
+    }
+}
+
+/// F10, no modifiers: open the first menu, or close the open one.
+fn f10(bar: &gtk::PopoverMenuBar) -> gtk::EventControllerKey {
     let keys = gtk::EventControllerKey::new();
     // Capture: an entry or a list that has focus must not swallow the key first.
     keys.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -119,5 +129,5 @@ pub fn install(win: &adw::ApplicationWindow, bar: &gtk::PopoverMenuBar) {
         }
         glib::Propagation::Stop
     });
-    win.add_controller(keys);
+    keys
 }
