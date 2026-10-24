@@ -335,6 +335,12 @@ async fn lens_finds_matches_and_a_rule34_search_tile_is_recovered_through_the_li
                 .to_owned(),
         ),
     );
+    // The Lens match from `payload()` is checked for availability, as Python's runner does, and a
+    // page that does not answer is left out.
+    routes.insert(
+        "www.pinterest.com/pin/0/".to_owned(),
+        html("<html><body>a pin</body></html>".to_owned()),
+    );
     routes.insert(
         "wimg.rule34.xxx/t/5.jpg".to_owned(),
         Answer {
