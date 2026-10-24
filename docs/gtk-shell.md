@@ -1447,11 +1447,11 @@ evidence from a run, not a test that stays in the tree, and CI does not run it.
 | 619 | `TestFontWeightsMatchTheRegisteredFace.test_every_declared_weight_is_a_weight_the_family_ships` | **6.c**: `smoke::fonts_cover_the_status_glyphs_and_kanji`, `lib::fonts::tests::nine_faces_are_bundled_and_none_is_woff2` (the Ryoku Status face and the weights shipped) |
 | 667 | `TestStatusGlyphFontCoverage.test_every_status_glyph_is_covered_by_its_routed_font` | **6.c**: `smoke::fonts_cover_the_status_glyphs_and_kanji`, `lib::fonts::tests::nine_faces_are_bundled_and_none_is_woff2` (the Ryoku Status face and the weights shipped) |
 | 757 | `TestStatusWeightContrast.test_every_status_weight_clears_aa_against_card` | 6.d: the Status column's weights |
-| 790 | `TestBorderTierContrast.test_border_tiers_clear_non_text_floor` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
-| 807 | `TestBorderTierContrast.test_hover_focus_tier_is_louder_than_resting_tier` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
-| 816 | `TestBorderTierContrast.test_ink_18_itself_is_unchanged` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
-| 835 | `TestBorderTierContrast.test_header_section_border_clears_non_text_floor` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
-| 857 | `TestBorderTierContrast.test_status_bar_border_is_documented_quiet_exception` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
+| 790 | `TestBorderTierContrast.test_border_tiers_clear_non_text_floor` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (the border tiers are carried, D3; `lib::theme::tests::the_border_tier_clears_three_to_one_where_a_control_sits`, and the measured boundaries in section 8) |
+| 807 | `TestBorderTierContrast.test_hover_focus_tier_is_louder_than_resting_tier` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (the border tiers are carried, D3; `lib::theme::tests::the_border_tier_clears_three_to_one_where_a_control_sits`, and the measured boundaries in section 8) |
+| 816 | `TestBorderTierContrast.test_ink_18_itself_is_unchanged` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (the border tiers are carried, D3; `lib::theme::tests::the_border_tier_clears_three_to_one_where_a_control_sits`, and the measured boundaries in section 8) |
+| 835 | `TestBorderTierContrast.test_header_section_border_clears_non_text_floor` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (the border tiers are carried, D3; `lib::theme::tests::the_border_tier_clears_three_to_one_where_a_control_sits`, and the measured boundaries in section 8) |
+| 857 | `TestBorderTierContrast.test_status_bar_border_is_documented_quiet_exception` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (the border tiers are carried, D3; `lib::theme::tests::the_border_tier_clears_three_to_one_where_a_control_sits`, and the measured boundaries in section 8) |
 | 1294 | `TestGenericContrastSweep.test_every_rendered_pair_clears_its_floor_or_is_exempt` | **6.c**: `lib::theme::tests::body_text_tiers_stay_above_four_and_a_half`, `lib::tokens::tests::contrast_matches_the_published_ratios` (text tiers; the rendered-pair sweep is the verifier's shot set) |
 
 ### `tests/test_thumbnail_worker.py` (26)
@@ -1489,95 +1489,128 @@ evidence from a run, not a test that stays in the tree, and CI does not run it.
 
 **Where the shots come from.** The hosted `ci` run renders them on the CI toolkit (GTK 4.14 / libadwaita 1.5,
 Xvfb, cairo renderer, temp profile, bundled fonts) with `examples/shot.rs` (test-only) and uploads them as the
-artifact `shots` (run 40079596495 at `8e5764a`; `gh run download 40079596495 -n shots`). Every shot is
+artifact `shots` (run 40087927106 at `5ed1c1b`; `gh run download 40087927106 -n shots`). Every shot is
 synthetic: no real session, file or image. Each shot has a `.rects` sidecar (label rectangles in window
-coordinates) that the measuring script reads. Window size is 1090x790 in every shot except `empty-min`, which
-is the stated minimum (1010x790).
+coordinates) that the measuring scripts read. Window size is 1090x790 in every shot except `empty-min`, which
+is the stated minimum (1010x790), and `logs` (the log viewer's own window).
+
+**The shots are 1:1 since DAN-2242.** The first shot harness asked `WidgetPaintable` for the window's allocated
+size (1090x790) while its intrinsic size is 1100x800 (the 5 px client-side margin), so every shot was scaled by
+0.991 x 0.988 and each 1 px border was smeared over two pixels; a capture of the real display (`import -window
+root`) showed them crisp. `texture_of` in `shot.rs` now snapshots at the intrinsic size and cuts the allocation
+out. The tables below are from the fixed harness; numbers quoted from earlier reads (DAN-2228, DAN-2229) are
+from scaled shots.
 
 Shots, dark and light each: `empty` (the empty state), `empty-min` (the empty state at the stated minimum),
 `rows` (a list with rows), `crashed` (the Crashed banner), `survived` ("Nothing survived."), `quota` (the
-SauceNAO pause banner), `logs` (the log viewer), `dialog` (a Yes/No question, default No), `menu` and
-`menu-*-popover` (the Files menu open), `focus` (the first control with the focus ring showing).
+SauceNAO pause banner), `logs` (the log viewer window), `dialog` (a Yes/No question, default No, ring showing),
+`menu` and `menu-*-popover` (the Files menu open), `menu-hover` (the same with `Save Session As...` under the
+pointer), `focus` (the first control, the Queue mode switch, with the focus ring), `focus-files` (the
+stamp-filled Add files) and `focus-folder` (the hollow Add folder) with the ring showing, and `hover-folder`
+(Add folder under the pointer). A headless session has no pointer, so the hover states are set on the widget.
 
 **Text contrast.** `measure.py` (outside the repo: `worktrees/DAN-2215-tools/measure.py SHOTDIR`) takes each
 label's rectangle, the most common colour inside it as the background and the pixel farthest from it as the
-foreground (the extreme-pixel method), and reports the WCAG 2.x ratio. **508 labels, dark and light: 0 enabled
-labels under 4.5:1.** The full per-label table is `worktrees/DAN-2215/shots/contrast-ci.md`; the table below
+foreground (the extreme-pixel method), and reports the WCAG 2.x ratio. **690 labels, dark and light: 0 enabled
+labels under 4.5:1.** The full per-label table is `worktrees/DAN-2215/shots/contrast-ci2242.md`; the table below
 groups it by (scheme, fg, bg). Disabled controls are exempt (`Start Search`, the gear, `Query Hydrus`,
 `Resume Queue`, ...; each is `DEFERRED(6.e/6.f/6.g/6.h)`). **Not measured:** the text inside the `dialog` shot
 (the scrim dims the window and the dialog's own labels are not in the widget tree the renderer records).
 
 | scheme | fg | bg | ratio | verdict | labels | example |
 |---|---|---|---|---|---|---|
-| dark | #0d0d0d | #6d6863 | 3.53 | disabled (exempt) | 11 | ▶ Start Search, Resume Queue, Review the 4 waiting |
-| dark | #6d6964 | #0d0d0d | 3.57 | disabled (exempt) | 15 | ⚙, Query Hydrus…, Continue with other  |
-| dark | #817b75 | #0d0d0d | 4.65 | pass | 1 | 410 |
-| dark | #827d77 | #0d0d0d | 4.77 | pass | 8 | ETA — |
-| dark | #85807a | #0d0d0d | 4.97 | pass | 1 | Crash log |
-| dark | #87827c | #0d0d0d | 5.10 | pass | 1 | ETA paused |
-| dark | #88827c | #0d0d0d | 5.12 | pass | 3 | Last autosave, paused — quota exhau, Resets |
-| dark | #88837d | #0d0d0d | 5.17 | pass | 2 | ago, Crash log |
-| dark | #89847e | #0d0d0d | 5.24 | pass | 4 | Sites, Quota exhausted at, Images waiting, 00:00 UTC |
-| dark | #8a847e | #0d0d0d | 5.26 | pass | 103 | Files, Hydrus, Sites, Settings, Help, Review, Activity, 00 / |
-| dark | #8d8680 | #0d0d0d | 5.42 | pass | 10 | Hatate did not exit , Or add them from a f, Hatate stopped h |
-| dark | #8f8983 | #0d0d0d | 5.62 | pass | 1 | 力 |
-| dark | #cbc2b8 | #0d0d0d | 11.06 | pass | 1 | 1 |
-| dark | #cdc4ba | #0d0d0d | 11.29 | pass | 64 | 力, 鏡, Hatate, 3, 0s, Queue., ◐, Run interrupted — pa, 0s ago |
-| dark | #0d0d0d | #cdc4ba | 11.29 | pass | 16 | Queue, Add files…, Files, Start new search |
-| light | #3e3c3a | #141414 | 1.68 | disabled (exempt) | 5 | Query Hydrus…, Re-check Queued Impo, Pawchive Index…, Export |
-| light | #bdb9af | #f2ede1 | 1.68 | disabled (exempt) | 5 | Query Hydrus…, Re-check Queued Impo, Pawchive Index…, Export |
-| light | #857f75 | #e8e1d2 | 3.05 | disabled (exempt) | 15 | ⚙, Query Hydrus…, Continue with other  |
-| light | #efe9dc | #857f75 | 3.28 | disabled (exempt) | 11 | ▶ Start Search, Resume Queue, Review the 4 waiting |
-| light | #666258 | #e8e1d2 | 4.67 | pass | 1 | 410 |
-| light | #656057 | #e8e1d2 | 4.80 | pass | 8 | ETA — |
-| light | #8c8680 | #141414 | 5.12 | pass | 2 | Ctrl+S, Ctrl+O |
-| light | #615b53 | #e8e1d2 | 5.15 | pass | 1 | Crash log |
-| light | #605a53 | #e8e1d2 | 5.23 | pass | 1 | ETA paused |
-| light | #5f5a51 | #e8e1d2 | 5.26 | pass | 3 | Last autosave, paused — quota exhau, Resets |
-| light | #5e5950 | #e8e1d2 | 5.34 | pass | 2 | ago, Crash log |
-| light | #5d584f | #e8e1d2 | 5.42 | pass | 4 | Sites, Quota exhausted at, Images waiting, 00:00 UTC |
-| light | #5c574f | #e8e1d2 | 5.50 | pass | 102 | Files, Hydrus, Sites, Settings, Help, Review, Activity, 00 / |
-| light | #5c564e | #e8e1d2 | 5.57 | pass | 1 | Last saved session |
-| light | #5f5b53 | #f2ede1 | 5.78 | pass | 2 | Ctrl+S, Ctrl+O |
-| light | #57524a | #e8e1d2 | 5.95 | pass | 10 | Hatate did not exit , Or add them from a f, Hatate stopped h |
-| light | #514d45 | #e8e1d2 | 6.46 | pass | 1 | 力 |
-| light | #cdc4ba | #262524 | 8.89 | pass | 1 | Add Files… |
-| light | #cdc4ba | #141414 | 10.70 | pass | 5 | Add Folder…, Save Session As…, Open Session…, Open Matched U |
-| light | #211d17 | #ddd8cd | 11.80 | pass | 1 | Add Files… |
-| light | #242019 | #e8e1d2 | 12.45 | pass | 1 | 1 |
-| light | #211d17 | #e8e1d2 | 12.88 | pass | 64 | 力, 鏡, Hatate, 3, 0s, Queue., ◐, Run interrupted — pa, 0s ago |
-| light | #211d17 | #f2ede1 | 14.35 | pass | 5 | Add Folder…, Save Session As…, Open Session…, Open Matched U |
-| light | #f6f1e6 | #211d17 | 14.88 | pass | 16 | Queue, Add files…, Files, Start new search |
+| dark | #635f5b | #0d0d0d | 3.07 | disabled (exempt) | 12 | ⚙ |
+| dark | #67635f | #141414 | 3.09 | disabled (exempt) | 9 | Query Hydrus…, Continue with other engines |
+| dark | #0d0d0d | #6d6863 | 3.53 | disabled (exempt) | 12 | ▶ Start Search |
+| dark | #111111 | #716c67 | 3.64 | disabled (exempt) | 2 | Resume Queue, Review the 4 waiting → |
+| dark | #8a857f | #141414 | 5.04 | pass | 4 | Crash log, 410, Resets |
+| dark | #87817b | #0d0d0d | 5.05 | pass | 13 | stopped, ETA —, 力 |
+| dark | #6f849c | #0d0d0d | 5.05 | pass | 1 | Log file: /tmp/.tmpTtH6td/config/hatate-linux/ha |
+| dark | #8b8680 | #141414 | 5.11 | pass | 2 | Last autosave, 00:00 UTC |
+| dark | #8c8680 | #141414 | 5.12 | pass | 24 | Hatate did not exit cleanly during this run. Eve, Discard &  |
+| dark | #88837d | #0d0d0d | 5.17 | pass | 10 | Ready, ETA paused |
+| dark | #89837d | #0d0d0d | 5.19 | pass | 3 | ago, paused — quota exhausted, last run failed — see crash l |
+| dark | #89847e | #0d0d0d | 5.24 | pass | 1 | Restored 12 image(s) from your last session |
+| dark | #8a847e | #0d0d0d | 5.26 | pass | 114 | Files, Hydrus, Sites, Settings, Help, Review, Activity, 00 / |
+| dark | #97918a | #0d0d0d | 6.23 | pass | 1 | 力 |
+| dark | #cdc4ba | #262524 | 8.89 | pass | 1 | Add folder… |
+| dark | #cdc4ba | #141414 | 10.70 | pass | 29 | ◐, Run interrupted — partial results survived, 0s ago, no ne |
+| dark | #cdc4ba | #0d0d0d | 11.29 | pass | 58 | 力, 鏡, Hatate, 3, 1, 0s, Queue., 空, Refresh, Copy all, Open l |
+| dark | #0d0d0d | #cdc4ba | 11.29 | pass | 23 | Queue, Add files…, Files, Start new search |
+| light | #3e3c3a | #141414 | 1.68 | disabled (exempt) | 10 | Query Hydrus…, Re-check Queued Imports, Pawchive Index…, Exp |
+| light | #bdb9af | #f2ede1 | 1.68 | disabled (exempt) | 10 | Query Hydrus…, Re-check Queued Imports, Pawchive Index…, Exp |
+| light | #847e74 | #e8e1d2 | 3.09 | disabled (exempt) | 12 | ⚙ |
+| light | #89847b | #f2ede1 | 3.18 | disabled (exempt) | 9 | Query Hydrus…, Continue with other engines |
+| light | #f4efe3 | #8a857c | 3.20 | disabled (exempt) | 2 | Resume Queue, Review the 4 waiting → |
+| light | #efe9dc | #857f75 | 3.28 | disabled (exempt) | 12 | ▶ Start Search |
+| light | #50657b | #e8e1d2 | 4.62 | pass | 1 | Log file: /tmp/.tmpKJexVC/config/hatate-linux/ha |
+| light | #8c8680 | #141414 | 5.12 | pass | 3 | Ctrl+S, Ctrl+O |
+| light | #5f5b52 | #e8e1d2 | 5.20 | pass | 13 | stopped, ETA —, 力 |
+| light | #5e5950 | #e8e1d2 | 5.34 | pass | 10 | Ready, ETA paused |
+| light | #5d584f | #e8e1d2 | 5.42 | pass | 4 | ago, paused — quota exhausted, Restored 12 image(s) from you |
+| light | #5c574f | #e8e1d2 | 5.50 | pass | 114 | Files, Hydrus, Sites, Settings, Help, Review, Activity, 00 / |
+| light | #615c55 | #f2ede1 | 5.67 | pass | 4 | Crash log, 410, Resets |
+| light | #605c54 | #f2ede1 | 5.70 | pass | 2 | Last autosave, 00:00 UTC |
+| light | #5f5b53 | #f2ede1 | 5.78 | pass | 27 | Hatate did not exit cleanly during this run. Eve, Discard &  |
+| light | #4b4740 | #e8e1d2 | 7.09 | pass | 1 | 力 |
+| light | #cdc4ba | #262524 | 8.89 | pass | 4 | Add Files…, Save Session As…, Ctrl+S |
+| light | #cdc4ba | #141414 | 10.70 | pass | 9 | Add Folder…, Save Session As…, Open Session…, Open Matched U |
+| light | #211d17 | #d9d4c9 | 11.34 | pass | 3 | Add folder…, Save Session As…, Ctrl+S |
+| light | #211d17 | #ddd8cd | 11.80 | pass | 2 | Add Files… |
+| light | #211d17 | #e8e1d2 | 12.88 | pass | 58 | 力, 鏡, Hatate, 3, 1, 0s, Queue., 空, Refresh, Copy all, Open l |
+| light | #211d17 | #f2ede1 | 14.35 | pass | 38 | ◐, Run interrupted — partial results survived, 0s ago, no ne |
+| light | #f6f1e6 | #211d17 | 14.88 | pass | 23 | Queue, Add files…, Files, Start new search |
 
-**Non-text contrast (3:1).** `nontext.py` (same directory): one pixel line across each boundary, ring or
-border pixel against the surface on each side.
+**Non-text contrast (3:1) and the other DAN-2242 measures.** `worktrees/DAN-2242-tools/measure-2242.py SHOTDIR`
+(output `worktrees/DAN-2242-measure-ci.log`), extreme pixel on a short scan across each edge, against the
+surface it sits on.
 
-| Shot | Boundary | boundary px | surface A | surface B | ratio vs A | ratio vs B | scheme | 3:1 |
-|---|---|---|---|---|---|---|---|---|
-| focus-dark | focus ring, Queue (checked mode switch): ring px vs the fill it sits in | #0d0d0d | #cdc4ba | #cdc4ba | 11.29 | 11.29 | dark | pass |
-| empty-dark | card hairline (top edge) vs page / vs card | #2d2c2a | #0d0d0d | #0d0d0d | 1.39 | 1.39 | dark | BELOW |
-| empty-dark | Add folder button border (left edge) vs page / vs button | #2e2c2a | #0d0d0d | #0d0d0d | 1.40 | 1.40 | dark | BELOW |
-| empty-dark | run strip border (top edge) vs page / vs strip | #1f1e1d | #0d0d0d | #0d0d0d | 1.17 | 1.17 | dark | BELOW |
-| focus-light | focus ring, Queue (checked mode switch): ring px vs the fill it sits in | #f6f1e6 | #211d17 | #211d17 | 14.88 | 14.88 | light | pass |
-| empty-light | card hairline (top edge) vs page / vs card | #ada79b | #e8e1d2 | #e8e1d2 | 1.84 | 1.84 | light | BELOW |
-| empty-light | Add folder button border (left edge) vs page / vs button | #aca69a | #e8e1d2 | #e8e1d2 | 1.86 | 1.86 | light | BELOW |
-| empty-light | run strip border (top edge) vs page / vs strip | #c8c2b4 | #e8e1d2 | #e8e1d2 | 1.36 | 1.36 | light | BELOW |
+| Boundary | scheme | pixel | surface | ratio | 3:1 |
+|---|---|---|---|---|---|
+| gear button border (`ink-46`) | dark | #65615c | page #0d0d0d | 3.16 | pass |
+| gear button border (`ink-46`) | light | #827c72 | page #e8e1d2 | 3.18 | pass |
+| mode-switch outer edge (`ink-46`) | dark | #65615c | page #0d0d0d | 3.16 | pass |
+| mode-switch outer edge (`ink-46`) | light | #827c72 | page #e8e1d2 | 3.18 | pass |
+| Add folder border (`ink-46`) | dark | #696560 | raised #141414 (it sits in the frame) | 3.19 | pass |
+| Add folder border (`ink-46`) | light | #878279 | raised #f2ede1 | 3.27 | pass |
+| Add folder border, pointer over it (`ink-58`) | dark / light | #87827b / #67635a | page | 5.10 / 4.60 | pass |
+| focus ring on `No` (2 px `ink`) | dark / light | #cdc4ba / #211d17 | dialog #141414 / #f2ede1 | 10.70 / 14.35 | pass |
+| focus ring on Add folder (hollow) | dark / light | #cdc4ba / #211d17 | raised | 10.70 / 14.35 | pass |
+| focus ring on Add files (stamp-filled, `stamp_fg`) | dark / light | #0d0d0d / #f6f1e6 | stamp #cdc4ba / #211d17 | 11.29 / 14.88 | pass |
+| **the deliberate sub-3:1 set (`ink-18`)**: run strip border | dark / light | #302e2c / #a8a396 | page | 1.44 / 1.93 | by design |
+| frame hairline | dark / light | #353331 / #afaba1 | page | 1.54 / 1.76 | by design |
+| menubar rule | dark / light | #302e2c / #a8a396 | page | 1.44 / 1.93 | by design |
 
-- **The focus ring passes in both schemes** (one ring token: 2 px `ink`, or `stamp_fg` on a stamp-filled
-  control). Only the checked mode-switch ring is on a shot; every other control's ring is the same `ink`
-  outline on the page, whose ratio against the page is the `ink` text ratio (11.29 dark, 12.88 light).
-- **The hairlines do not reach 3:1, and this is a measured miss, not a pass.** Card edges, the run strip and
-  the buttons' own borders use `ink-18` from `tokens.css` (design: "hairline, at rest"), which is 1.2 to 1.9:1
-  against the page. Python adds two tiers beyond the sheet (`ink-46` and `ink-58`, DAN-224) for exactly this. The mockup's
-  `tokens.css` has had them since DAN-2213, but the copy vendored at this head predates that, so they are not
-  carried (D3). The design read ruled it: controls take `ink-46`, containers keep `ink-18`; re-vendoring and
-  applying that is DAN-2242, non-blocking. Every control that has only its border to say it is a control also
-  carries a text label that passes 4.5:1. Nothing in this ticket changes the colour.
+Add folder measures 3.36 dark and 2.93 light against the *page* colour, but it never touches the page: the
+button sits in the raised frame, so the surface it has to clear is the frame's.
+
+- **The border tiers.** A control whose border is its shape (`button.pill`, `button.icon-boxed`, the
+  mode-switch group, the banner action buttons, the disabled hollow variants) uses `ink-46` at rest and
+  `ink-58` on hover, as `gui/theme.py` does (D3). `ink-45` is not used: it is 2.68:1 on the light page by the
+  design read. Cards, the run strip, the frame hairline and rules stay `ink-18`: they group content that
+  carries its own 4.5:1 text. A disabled hollow control keeps its `ink-46` border and `ink-45` text
+  (libadwaita's 50% fade would take the border to 1.6:1); a disabled stamp keeps the fade.
+- **Ghost kanji (fix 1).** The label box is 420 px tall (`630,-11 420x420`, was 420x604); its upper strokes
+  bleed off under the menubar (ink rows 34 to 236 above the frame) as in the AppImage shot, and nothing of the
+  glyph shows inside the frame: 20,700 sampled interior pixels, 0 off the raised fill, both schemes.
+- **Frame fill (fix 2).** Interior pixel `#141414` dark / `#f2ede1` light in the empty, Crashed, quota and
+  Nothing-survived states.
+- **Card outline (fix 3).** No pixel outside the frame differs from the page colour (amplified diff
+  `amp-empty-{dark,light}.png`: 0 stray pixels in the heading-to-frame strip and the left margin).
+- **Hint on a hovered row (fix 5).** `Ctrl+S` on the hovered `Save Session As...` row: 8.89:1 dark, 11.34:1
+  light (was 4.25 dark); at rest 5.12 / 5.78.
+- **Dialog default (fix 6).** `No` shows a 2 px `ink` ring when the dialog opens (`set_focus_visible(true)` on
+  the window before `choose`); `Yes` shows only its 1 px border.
+- **The focus ring** passes in both schemes on every control shot: one ring token, 2 px `ink`, or `stamp_fg`
+  on a stamp-filled control.
 - **Not judgeable from shots:** window chrome, the GPU renderer, the real compositor backdrop (inactive
-  selection), HiDPI and hover wash. Owner: Cloud, on real hardware in Phase 7 (DAN-1999 F4).
+  selection), HiDPI and hover wash on a real pointer. Owner: Cloud, on real hardware in Phase 7 (DAN-1999 F4).
 
 **Tab order of the shell** (state `tab` of `shot.rs`, walking `child_focus(TabForward)` from the top): on the
 empty Queue, `Queue`, `Review`, `Activity`, `Add files`, `Add folder`. `Start Search`, the gear and
 `Query Hydrus` are disabled and are skipped. The order is printed by the shot renderer in a live Xvfb
-session (hosted `ci` log, step "Shot set (under Xvfb)"). The menubar's own keyboard path (Files, Hydrus, Sites, Settings,
-Help) is not covered by a shot or a scenario here and is left to the design read.
+session (hosted `ci` log, step "Shot set (under Xvfb)"). The menubar's own keyboard path (F10 opens Files, Right moves to Hydrus, Escape returns focus) is **not
+covered**: a smoke scenario that sends real key events (`xdotool`, XTEST, under Xvfb with no window manager)
+was tried for DAN-2242 and the keys never reached GTK (Tab, Ctrl+O, Alt+F and F10 were all no-ops with the
+window active and X focus on it), so it is not in the suite; whether F10 is handled at all for an
+`AdwApplicationWindow` (which, unlike `GtkApplicationWindow`, does not own the menubar) is unproven.
