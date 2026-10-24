@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::Settings;
 
 /// `MatchStatus` (`core/models.py:27-33`). Anything else in a file means `NotSearched`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MatchStatus {
     #[default]
     #[serde(rename = "not_searched")]
@@ -40,6 +40,18 @@ impl MatchStatus {
         MatchStatus::Error,
         MatchStatus::Searching,
     ];
+
+    /// `MatchStatus.label`: the long wording the filter menus and the export use.
+    pub fn label(self) -> &'static str {
+        match self {
+            MatchStatus::NotSearched => "Not searched",
+            MatchStatus::Good => "Found (good)",
+            MatchStatus::Poor => "Found (review)",
+            MatchStatus::NotFound => "Not found",
+            MatchStatus::Error => "Error",
+            MatchStatus::Searching => "Searching...",
+        }
+    }
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -270,6 +282,15 @@ pub struct Entry {
     /// writes it as the site.
     #[serde(skip)]
     pub stale_source_name: Option<String>,
+    /// ... and for `ImageEntry.match_width` / `match_height` (DAN-2214: the export writes them).
+    #[serde(skip)]
+    pub stale_match_width: Option<i64>,
+    #[serde(skip)]
+    pub stale_match_height: Option<i64>,
+    /// `ImageEntry.file_missing`: the file was not on disk when the list was last checked
+    /// (DAN-2214). Describes the disk right now, so it is re-checked on load and never stored.
+    #[serde(skip)]
+    pub file_missing: bool,
 }
 
 impl Entry {
@@ -297,6 +318,9 @@ impl Entry {
             stale_similarity: None,
             stale_similarity_measured: false,
             stale_source_name: None,
+            stale_match_width: None,
+            stale_match_height: None,
+            file_missing: false,
         }
     }
 
@@ -342,6 +366,23 @@ impl Entry {
         match self.selected_candidate() {
             Some(c) => c.source_name.as_deref(),
             None => self.stale_source_name.as_deref(),
+        }
+    }
+
+    /// `ImageEntry.match_width`: the selected match's width, or the one a cached result's dead
+    /// matches left behind ([`Entry::stale_match_width`]).
+    pub fn match_width(&self) -> Option<i64> {
+        match self.selected_candidate() {
+            Some(c) => c.width,
+            None => self.stale_match_width,
+        }
+    }
+
+    /// `ImageEntry.match_height`, as [`Entry::match_width`].
+    pub fn match_height(&self) -> Option<i64> {
+        match self.selected_candidate() {
+            Some(c) => c.height,
+            None => self.stale_match_height,
         }
     }
 
