@@ -362,9 +362,11 @@ impl MainWindow {
         }
     }
 
-    /// `ghost_glyph_for(key)`: the Queue swaps in the Empty glyph while it shows its drop zone.
+    /// `ghost_glyph_for(key)`: the Queue swaps in the Empty glyph while it shows its drop zone
+    /// (stack index 1). The "Nothing survived." page is a third page, so it keeps the list's
+    /// glyph, as Python does.
     pub fn ghost_glyph_for(&self, key: &str) -> String {
-        if key == "queue" && self.s.queue.borrow().is_empty() {
+        if key == "queue" && self.s.queue_stack.visible_child_name().as_deref() == Some("empty") {
             return shell::EMPTY_GHOST_GLYPH.to_owned();
         }
         shell::ghost_glyph(key).to_owned()
