@@ -204,13 +204,12 @@ impl QueueModel {
 
     /// `_set_rows_reviewed([entry], reviewed)`: only a row whose flag changes is touched.
     pub fn set_reviewed(&mut self, id: EntryId, reviewed: bool) {
-        let remaining;
         match self.entry_mut(id) {
             Some(entry) if entry.reviewed != reviewed => entry.reviewed = reviewed,
             _ => return,
         }
         self.refresh_row(id);
-        remaining = self.entries.iter().filter(|e| needs_review(e)).count();
+        let remaining = self.entries.iter().filter(|e| needs_review(e)).count();
         info!(
             "{} 1 image(s) as reviewed ({remaining} still to review)",
             if reviewed { "Marked" } else { "Unmarked" }

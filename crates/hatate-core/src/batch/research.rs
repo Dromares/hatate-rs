@@ -14,8 +14,8 @@ use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
 
 use super::run::{Autosave, BatchEnv, Reporter, SessionSink, search_pending};
-use crate::config::{HydrusSettings, Settings};
-use crate::hydrus_client::{HydrusClient, HydrusError};
+use crate::config::Settings;
+use crate::mcp::tool_handlers::HydrusClientFactory;
 use crate::model::Entry;
 use crate::queue::{EntryId, SearchDone, SearchLauncher};
 use crate::quota_pause::QuotaPauseFile;
@@ -45,8 +45,7 @@ pub struct BatchSearchLauncher {
     pub unit_random: Arc<dyn Fn() -> f64 + Send + Sync>,
     /// What `_launch_search_worker` does before it starts the worker.
     pub reset_run_state: Arc<dyn Fn() + Send + Sync>,
-    pub hydrus_client:
-        Arc<dyn Fn(&HydrusSettings) -> Result<HydrusClient, HydrusError> + Send + Sync>,
+    pub hydrus_client: HydrusClientFactory,
     pub runtime: tokio::runtime::Handle,
 }
 
@@ -89,7 +88,7 @@ struct Run {
     reporter: Arc<dyn Reporter>,
     unit_random: Arc<dyn Fn() -> f64 + Send + Sync>,
     reset_run_state: Arc<dyn Fn() + Send + Sync>,
-    hydrus_client: Arc<dyn Fn(&HydrusSettings) -> Result<HydrusClient, HydrusError> + Send + Sync>,
+    hydrus_client: HydrusClientFactory,
     runtime: tokio::runtime::Handle,
 }
 
