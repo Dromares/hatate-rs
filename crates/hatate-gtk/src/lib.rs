@@ -6,6 +6,7 @@ pub mod banners;
 pub mod dialogs;
 pub mod error;
 pub mod fonts;
+pub mod logsink;
 pub mod logview;
 pub mod menu;
 pub mod session_ops;
