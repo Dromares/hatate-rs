@@ -1,0 +1,469 @@
+//! The action differential, Rust side (DAN-2215, Phase 6 acceptance).
+//!
+//! Runs the same scripted action sequences the Python driver runs through `MainWindow` at
+//! `76c85c4`, through the Rust window, and writes one JSON digest per step in the same shape.
+//! The comparer, the scenario generator and the Python driver live outside the repo
+//! (`worktrees/DAN-2215-tools`, the tree is Rust only); this is the half that has to be Rust.
+//!
+//! Test-only. It needs a display and reads its inputs from the environment, and nothing of that
+//! exists in the shipped binary: `HATATE_DIFF_SCENARIOS` (JSONL), `HATATE_DIFF_OUT`,
+//! `HATATE_DIFF_FILES` (where a scenario's files live), `HATATE_DIFF_NOW` (the frozen clock) and
+//! `HATATE_DIFF_ROOT` (the temp HOME). Without `HATATE_DIFF_SCENARIOS` it does nothing.
+
+mod common;
+
+use common::*;
+use gtk4::prelude::*;
+use hatate_core::paths::Paths;
+use hatate_gtk::dialogs::{Asked, Buttons, Kind, Response};
+use hatate_gtk::window::{Env, MainWindow};
+use libadwaita as adw;
+use serde_json::{Value, json};
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+struct Ctx {
+    files: PathBuf,
+    root: PathBuf,
+    now: f64,
+}
+
+fn main() {
+    let Some(scenarios) = std::env::var_os("HATATE_DIFF_SCENARIOS") else {
+        println!("differential: skipped (HATATE_DIFF_SCENARIOS is not set)");
+        return;
+    };
+    if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_none() {
+        eprintln!("differential: no display");
+        std::process::exit(1);
+    }
+    let out = std::env::var("HATATE_DIFF_OUT").expect("HATATE_DIFF_OUT");
+    let ctx = Ctx {
+        files: PathBuf::from(std::env::var("HATATE_DIFF_FILES").expect("HATATE_DIFF_FILES")),
+        root: PathBuf::from(std::env::var("HATATE_DIFF_ROOT").expect("HATATE_DIFF_ROOT")),
+        now: std::env::var("HATATE_DIFF_NOW")
+            .expect("HATATE_DIFF_NOW")
+            .parse()
+            .expect("HATATE_DIFF_NOW is a number"),
+    };
+    let text = std::fs::read_to_string(scenarios).expect("scenario file");
+    let specs: Vec<Value> = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).expect("scenario line"))
+        .collect();
+
+    let fonts = tempfile::tempdir().expect("font dir");
+    hatate_gtk::fonts::load(fonts.path()).expect("the bundled fonts load");
+    let out = Rc::new(RefCell::new(std::fs::File::create(out).expect("out file")));
+    let ctx = Rc::new(ctx);
+    let code = hatate_gtk::app::with_application(move |app| {
+        for spec in &specs {
+            let id = spec["id"].clone();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_scenario(app, &ctx, spec)
+            }));
+            let line = match result {
+                Ok(trace) => json!({"id": id, "side": "rs", "trace": trace}),
+                Err(e) => {
+                    let why = e
+                        .downcast_ref::<String>()
+                        .cloned()
+                        .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+                        .unwrap_or_default();
+                    json!({"id": id, "side": "rs", "error": format!("panic: {why}")})
+                }
+            };
+            let mut f = out.borrow_mut();
+            writeln!(f, "{line}").unwrap();
+            f.flush().unwrap();
+        }
+        app.quit();
+    });
+    let _ = code;
+}
+
+fn abs(ctx: &Ctx, p: &str) -> PathBuf {
+    if p.starts_with('/') {
+        PathBuf::from(p)
+    } else {
+        ctx.files.join(p)
+    }
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap() {
+        let e = e.unwrap();
+        let dest = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_dir(&e.path(), &dest);
+        } else {
+            std::fs::copy(e.path(), dest).unwrap();
+        }
+    }
+}
+
+fn make_files(ctx: &Ctx, spec: &Value) {
+    let _ = std::fs::remove_dir_all(&ctx.files);
+    std::fs::create_dir_all(&ctx.files).unwrap();
+    if let Some(files) = spec["files"].as_object() {
+        for (rel, content) in files {
+            let p = ctx.files.join(rel);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            // The scenario holds the bytes as latin-1 text, as the Python driver writes them.
+            let bytes: Vec<u8> = content
+                .as_str()
+                .unwrap()
+                .chars()
+                .map(|c| c as u32 as u8)
+                .collect();
+            std::fs::write(p, bytes).unwrap();
+        }
+    }
+}
+
+fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
+    make_files(ctx, spec);
+    let _ = std::fs::remove_dir_all(&ctx.root);
+    let paths = temp_paths(&ctx.root);
+    std::fs::create_dir_all(paths.config_dir()).unwrap();
+    copy_dir(
+        Path::new(spec["profile"].as_str().expect("profile")),
+        paths.config_dir(),
+    );
+
+    let script = Rc::new(Script::default());
+    let opened = Rc::new(RefCell::new(Vec::<PathBuf>::new()));
+    let mut env = Env::new(paths.clone(), spec["unclean"].as_bool().unwrap_or(false));
+    env.prompter = Some(script.clone());
+    let now = ctx.now;
+    env.clock = Rc::new(move || now);
+    {
+        let opened = opened.clone();
+        env.open_path = Rc::new(move |p| opened.borrow_mut().push(p.to_path_buf()));
+    }
+    let w = MainWindow::new(app, env);
+    w.win.present();
+    settle(&w);
+    let mut trace = vec![digest(ctx, &paths, &w, &script, &opened, "start")];
+    script.reset();
+    opened.borrow_mut().clear();
+
+    for (i, step) in spec["steps"].as_array().unwrap().iter().enumerate() {
+        let op = step["op"].as_str().unwrap();
+        for a in step["msg"].as_array().into_iter().flatten() {
+            script.push(Answer::Msg(if a.as_str() == Some("yes") {
+                Response::Yes
+            } else {
+                Response::No
+            }));
+        }
+        do_step(ctx, &w, &script, step);
+        settle(&w);
+        trace.push(digest(
+            ctx,
+            &paths,
+            &w,
+            &script,
+            &opened,
+            &format!("{i}:{op}"),
+        ));
+        script.reset();
+        opened.borrow_mut().clear();
+    }
+    w.win.close();
+    settle(&w);
+    trace.push(digest(ctx, &paths, &w, &script, &opened, "close"));
+    w.win.destroy();
+    pump_for(20);
+    trace
+}
+
+fn do_step(ctx: &Ctx, w: &MainWindow, script: &Script, step: &Value) {
+    let op = step["op"].as_str().unwrap();
+    let strs = |k: &str| -> Vec<String> {
+        step[k]
+            .as_array()
+            .map(|a| a.iter().map(|x| x.as_str().unwrap().to_owned()).collect())
+            .unwrap_or_default()
+    };
+    match op {
+        "add_files" => {
+            script.push(Answer::Files(
+                strs("paths").iter().map(|p| abs(ctx, p)).collect(),
+            ));
+            w.activate_action("add-files");
+        }
+        "add_folder" => {
+            script.push(Answer::Path(step["folder"].as_str().map(|f| abs(ctx, f))));
+            w.activate_action("add-folder");
+        }
+        "drop" => w.drop_paths(strs("paths").iter().map(|p| abs(ctx, p)).collect()),
+        "save_session_as" => {
+            std::fs::create_dir_all(ctx.files.join("named")).unwrap();
+            script.push(Answer::Path(
+                step["name"]
+                    .as_str()
+                    .map(|n| ctx.files.join("named").join(n)),
+            ));
+            w.activate_action("save-session-as");
+        }
+        "open_session" => {
+            script.push(Answer::Path(step["path"].as_str().map(|p| abs(ctx, p))));
+            w.activate_action("open-session");
+        }
+        "clear_session" => w.activate_action("clear-session"),
+        "set_theme" => w.set_theme(step["mode"].as_str().unwrap()),
+        "autosave" => w.autosave_now(),
+        "delete_files" => {
+            for p in strs("paths") {
+                let _ = std::fs::remove_file(abs(ctx, &p));
+            }
+        }
+        "open_log" => w.activate_action("open-log"),
+        other => panic!("unknown op {other}"),
+    }
+}
+
+/// Lets the main loop turn until nothing the window started is still running.
+fn settle(w: &MainWindow) {
+    pump_for(30);
+    pump_until(20_000, || {
+        !w.s.file_hash_worker.is_running()
+            && !w.s.missing_file_worker.is_running()
+            && !w
+                .s
+                .autosave_inflight
+                .load(std::sync::atomic::Ordering::SeqCst)
+    });
+    pump_for(60);
+    for _ in 0..5 {
+        pump_for(10);
+    }
+}
+
+/// The text of every label under `w`, depth first, in tree order.
+fn labels(w: &gtk4::Widget, out: &mut Vec<String>) {
+    if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+        out.push(l.text().to_string());
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        labels(&child, out);
+        c = child.next_sibling();
+    }
+}
+
+fn labels_of(w: &impl IsA<gtk4::Widget>) -> Vec<String> {
+    let mut out = Vec::new();
+    labels(w.upcast_ref(), &mut out);
+    out
+}
+
+/// The labels of every `.meta-line` box under `w`.
+fn meta_lines(w: &gtk4::Widget, out: &mut Vec<String>) {
+    if w.has_css_class("meta-line") {
+        labels(w, out);
+        return;
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        meta_lines(&child, out);
+        c = child.next_sibling();
+    }
+}
+
+/// Qt's `not isHidden()`: the widget's own visible flag, not whether its ancestors are shown.
+fn flag(w: &impl IsA<gtk4::Widget>) -> bool {
+    w.property::<bool>("visible")
+}
+
+fn kind(k: Kind) -> &'static str {
+    match k {
+        Kind::Information => "information",
+        Kind::Warning => "warning",
+        Kind::Critical => "critical",
+        Kind::Question => "question",
+    }
+}
+
+fn button(r: Response) -> &'static str {
+    match r {
+        Response::Ok => "ok",
+        Response::Yes => "yes",
+        Response::No => "no",
+    }
+}
+
+fn digest(
+    ctx: &Ctx,
+    paths: &Paths,
+    w: &MainWindow,
+    script: &Script,
+    opened: &Rc<RefCell<Vec<PathBuf>>>,
+    step: &str,
+) -> Value {
+    let s = &w.s;
+    let sh = &s.shell;
+    let q = s.queue.borrow();
+    let entries = q.entries();
+    let page = if entries.is_empty() {
+        if s.nothing_survived.borrow().is_some() {
+            "survived"
+        } else {
+            "empty"
+        }
+    } else {
+        "rows"
+    };
+    let progress = (sh.progress_bar.fraction() * 1e6).round() / 1e6;
+    let mut survived_meta = Value::Null;
+    if let Some(p) = s.nothing_survived.borrow().as_ref() {
+        let mut m = Vec::new();
+        meta_lines(p.root.upcast_ref(), &mut m);
+        survived_meta = json!(m);
+    }
+    let dialogs: Vec<Value> = script
+        .shown
+        .borrow()
+        .iter()
+        .zip(script.results.borrow().iter())
+        .map(|(d, r)| {
+            json!({
+                "kind": kind(d.kind), "title": d.title, "text": d.text,
+                "buttons": if d.buttons == Buttons::YesNo { "yes_no" } else { "ok" },
+                "default": button(d.default),
+                "result": if d.buttons == Buttons::Ok { "ok" } else { button(*r) },
+            })
+        })
+        .collect();
+    let choosers: Vec<Value> = script
+        .asked
+        .borrow()
+        .iter()
+        .map(|a| match a {
+            Asked::OpenFiles { title, filter } => {
+                json!({"kind": "open_files", "title": title, "filter": filter})
+            }
+            Asked::Folder { title } => json!({"kind": "folder", "title": title}),
+            Asked::OpenFile { title, filter } => {
+                json!({"kind": "open_file", "title": title, "filter": filter})
+            }
+            Asked::SaveFile {
+                title,
+                default_name,
+                filter,
+            } => json!({"kind": "save_file", "title": title,
+                        "default_name": Path::new(default_name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                        "filter": filter}),
+        })
+        .collect();
+    let rb = &s.run_banner;
+    let qb = &s.quota_banner;
+    let mut run_meta = Vec::new();
+    labels(rb.parts.meta_slot.upcast_ref(), &mut run_meta);
+    let mut quota_meta = Vec::new();
+    labels(qb.parts.meta_slot.upcast_ref(), &mut quota_meta);
+    let _ = labels_of(&rb.parts.body);
+    json!({
+        "step": step,
+        "status": sh.status_text(),
+        "run_note": sh.run_note_label.text(),
+        "run_progress": sh.run_progress_label.text(),
+        "run_eta": sh.run_eta_label.text(),
+        "sent": sh.sent_count_label.text(),
+        "wait": sh.wait_countdown_label.text(),
+        "quota_label": sh.saucenao_quota_label.text(),
+        "progress": progress,
+        "list": entries.iter().map(|e| json!({
+            "path": e.path, "hash": e.hydrus_hash, "status": e.status.as_str(),
+            "sent": e.sent_to_hydrus, "confirmed": e.hydrus_import_confirmed,
+            "reviewed": e.reviewed, "interrupted": e.interrupted_mid_search,
+        })).collect::<Vec<_>>(),
+        "page": page,
+        "ghost": sh.root.glyph(),
+        "mode": sh.current_mode(),
+        "run_banner": {
+            "visible": flag(&rb.root),
+            "body": rb.parts.body.text().to_string(),
+            "meta": run_meta,
+        },
+        "quota_banner": {
+            "visible": flag(&qb.root),
+            "body": qb.parts.body.text().to_string(),
+            "review": qb.review.label().map(|l| l.to_string()).unwrap_or_default(),
+            "review_visible": flag(&qb.review),
+            "meta": quota_meta,
+        },
+        "survived_meta": survived_meta,
+        "dialogs": dialogs,
+        "choosers": choosers,
+        "opened": opened.borrow().iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
+        "files": profile_files(ctx, paths),
+    })
+}
+
+/// `session.db` rows, `config.json` and the named sessions: what the step left on disk.
+fn profile_files(ctx: &Ctx, paths: &Paths) -> Value {
+    let mut session_rows = Value::Null;
+    let db = paths.session_db();
+    if db.exists() {
+        let uri = format!("file:{}?mode=ro", db.display());
+        session_rows = match rusqlite::Connection::open_with_flags(
+            uri,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+        ) {
+            Ok(conn) => {
+                let q = conn.prepare("SELECT path, ordinal, data FROM entries ORDER BY ordinal");
+                match q {
+                    Ok(mut stmt) => {
+                        let rows: Vec<Value> = stmt
+                            .query_map([], |r| {
+                                let p: String = r.get(0)?;
+                                let o: i64 = r.get(1)?;
+                                let d: String = r.get(2)?;
+                                Ok(json!([p, o, serde_json::from_str::<Value>(&d).unwrap()]))
+                            })
+                            .unwrap()
+                            .map(|r| r.unwrap())
+                            .collect();
+                        Value::Array(rows)
+                    }
+                    Err(_) => json!("error: OperationalError"),
+                }
+            }
+            Err(_) => json!("error: OperationalError"),
+        };
+    }
+    let config = match std::fs::read_to_string(paths.config_file()) {
+        Ok(t) => serde_json::from_str::<Value>(&t).unwrap_or_else(|_| json!("unreadable")),
+        Err(_) => Value::Null,
+    };
+    let mut named: BTreeMap<String, Value> = BTreeMap::new();
+    if let Ok(rd) = std::fs::read_dir(ctx.files.join("named")) {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.ends_with(".json") {
+                continue;
+            }
+            let v = match std::fs::read_to_string(e.path())
+                .ok()
+                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+            {
+                Some(mut v) => {
+                    if let Some(o) = v.as_object_mut() {
+                        o.shift_remove("saved_at");
+                    }
+                    v
+                }
+                None => json!("unreadable"),
+            };
+            named.insert(name, v);
+        }
+    }
+    json!({"session_rows": session_rows, "config": config, "named": named})
+}
