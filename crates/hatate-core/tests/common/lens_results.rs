@@ -91,7 +91,7 @@ fn handles_js(c: &Cfg) -> String {
     let [ix, iy, iw, ih] = c.img;
     let [l, t, r, b] = c.crop;
     format!(
-        "var IMG=[{ix},{iy},{iw},{ih}], CROP=[{l},{t},{r},{b}], DRAG=null;\n\
+        "var IMG=[{ix},{iy},{iw},{ih}], CROP=[{l},{t},{r},{b}], DRAG=null, TL='';\n\
          function lbl(k){{ if(k==='tl')return 'top left corner of search area: left '+CROP[0]+'%, top '+CROP[1]+'%'; \
            return 'bottom right corner of search area: right '+CROP[2]+'%, bottom '+CROP[3]+'%'; }}\n\
          function render(){{ document.querySelectorAll('[data-corner]').forEach(function(n){{n.remove();}});\n\
@@ -106,7 +106,8 @@ fn handles_js(c: &Cfg) -> String {
            var py=Math.max(0,Math.min(100,Math.round((e.clientY-IMG[1])/IMG[3]*100)));\n\
            if(DRAG==='tl'){{CROP[0]=px;CROP[1]=py;}}else{{CROP[2]=px;CROP[3]=py;}}\n\
            var which=DRAG; DRAG=null; render();\n\
-           if(which==='br'){{fetch('/search?async=1&widen=1&crop='+CROP.join(','));}} }});"
+           if(which==='tl'){{TL=e.clientX.toFixed(1)+','+e.clientY.toFixed(1);}}\n\
+           if(which==='br'){{fetch('/search?async=1&widen=1&crop='+CROP.join(',')+'&tl='+TL+'&br='+e.clientX.toFixed(1)+','+e.clientY.toFixed(1));}} }});"
     )
 }
 

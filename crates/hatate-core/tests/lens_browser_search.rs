@@ -176,6 +176,7 @@ impl Rig {
         self.server
             .recorded()
             .iter()
+            .filter(|r| r.target != "/favicon.ico")
             .map(|r| format!("{} {}", r.method, r.target))
             .collect()
     }
@@ -342,6 +343,61 @@ async fn a_partial_search_area_is_dragged_out_and_the_widened_results_win() {
         .filter(|r| r.contains("widen=1"))
         .count();
     assert_eq!(widens, 1, "whole_image=false never drags");
+}
+
+/// The fake site reports where each handle was let go, so the drag's target is a number here:
+/// `DRAG_OVERSHOOT_PX` (8) past the image's top-left and bottom-right corners, which are at
+/// (200, 150) and (800, 550) in `Cfg::default()`.
+#[tokio::test]
+#[ignore = "starts a real Chromium"]
+async fn the_handles_are_dragged_eight_pixels_past_the_image_corners() {
+    let rig = Rig::new(
+        Cfg {
+            crop: [9, 4, 87, 90],
+            ..Cfg::default()
+        },
+        plain(),
+    )
+    .await;
+    let browser = rig.browser();
+    search(&browser, true).await.unwrap();
+    browser.shutdown();
+    let widens: Vec<String> = rig
+        .requests()
+        .into_iter()
+        .filter(|r| r.contains("widen=1"))
+        .collect();
+    assert_eq!(
+        widens,
+        ["GET /search?async=1&widen=1&crop=0,0,100,100&tl=192.0,142.0&br=808.0,558.0"]
+    );
+}
+
+/// `WHOLE_ENOUGH` is 0.95 of both the width and the height: a search area of 96 % x 96 % is the
+/// whole picture, near enough; 94 % x 94 % is dragged out; and so is 96 % wide by 90 % tall, since
+/// both sides have to reach it.
+#[tokio::test]
+#[ignore = "starts a real Chromium"]
+async fn a_search_area_is_widened_unless_both_sides_are_at_least_95_percent() {
+    let rig = Rig::new(Cfg::default(), plain()).await;
+    let browser = rig.browser();
+    let widens = |rig: &Rig| {
+        rig.requests()
+            .iter()
+            .filter(|r| r.contains("widen=1"))
+            .count()
+    };
+    for (crop, widened) in [
+        ([2, 2, 98, 98], 0),
+        ([3, 3, 97, 97], 1),
+        ([2, 5, 98, 95], 2),
+        ([5, 2, 95, 98], 3),
+    ] {
+        rig.cfg.lock().unwrap().crop = crop;
+        search(&browser, true).await.unwrap();
+        assert_eq!(widens(&rig), widened, "crop {crop:?}");
+    }
+    browser.shutdown();
 }
 
 #[tokio::test]
