@@ -360,7 +360,11 @@ mod tests {
             for verdict in verdicts {
                 for reviewed in [false, true] {
                     let e = entry(status, verdict, reviewed);
-                    assert_eq!(StatusTier::of(&e), expected, "{status:?} {verdict:?} {reviewed}");
+                    assert_eq!(
+                        StatusTier::of(&e),
+                        expected,
+                        "{status:?} {verdict:?} {reviewed}"
+                    );
                     cells += 1;
                 }
             }
@@ -383,15 +387,75 @@ mod tests {
     #[test]
     fn the_chip_of_each_tier_matches_the_table_of_call_1a() {
         use GlyphFont::{Mono, RyokuStatus};
-        use Ink::{Ink100, Ink65};
+        use Ink::{Ink65, Ink100};
         // tier, chip, glyph, font, ink, bold, italic, boxed, label
         let table = [
-            (StatusTier::Good, "Good", '\u{25cf}', Mono, Ink65, false, false, false, "Found (good)"),
-            (StatusTier::Review, "Review", '\u{25d0}', RyokuStatus, Ink100, true, false, false, "Found (review)"),
-            (StatusTier::NotFound, "Not found", '\u{25cb}', RyokuStatus, Ink100, true, false, false, "Not found"),
-            (StatusTier::Error, "Error", '\u{d7}', Mono, Ink100, true, false, true, "Error"),
-            (StatusTier::Searching, "Searching", '\u{25d0}', RyokuStatus, Ink65, false, true, false, "Searching..."),
-            (StatusTier::Unsearched, "Unsearched", '\u{b7}', Mono, Ink65, false, false, false, "Not searched"),
+            (
+                StatusTier::Good,
+                "Good",
+                '\u{25cf}',
+                Mono,
+                Ink65,
+                false,
+                false,
+                false,
+                "Found (good)",
+            ),
+            (
+                StatusTier::Review,
+                "Review",
+                '\u{25d0}',
+                RyokuStatus,
+                Ink100,
+                true,
+                false,
+                false,
+                "Found (review)",
+            ),
+            (
+                StatusTier::NotFound,
+                "Not found",
+                '\u{25cb}',
+                RyokuStatus,
+                Ink100,
+                true,
+                false,
+                false,
+                "Not found",
+            ),
+            (
+                StatusTier::Error,
+                "Error",
+                '\u{d7}',
+                Mono,
+                Ink100,
+                true,
+                false,
+                true,
+                "Error",
+            ),
+            (
+                StatusTier::Searching,
+                "Searching",
+                '\u{25d0}',
+                RyokuStatus,
+                Ink65,
+                false,
+                true,
+                false,
+                "Searching...",
+            ),
+            (
+                StatusTier::Unsearched,
+                "Unsearched",
+                '\u{b7}',
+                Mono,
+                Ink65,
+                false,
+                false,
+                false,
+                "Not searched",
+            ),
         ];
         for (tier, chip, glyph, font, ink, bold, italic, boxed, label) in table {
             assert_eq!(tier.chip_text(), chip);
@@ -450,7 +514,13 @@ mod tests {
         assert_eq!(SentTier::of(&unsent), SentTier::NotSent);
         assert_eq!(reviewed_rank(&entry(MatchStatus::Good, None, false)), 0);
         assert_eq!(reviewed_rank(&entry(MatchStatus::Good, None, true)), 1);
-        assert_eq!(reviewed_cell_text(&entry(MatchStatus::Good, None, true)), "\u{25cf}");
-        assert_eq!(reviewed_cell_text(&entry(MatchStatus::Good, None, false)), EMPTY_CELL);
+        assert_eq!(
+            reviewed_cell_text(&entry(MatchStatus::Good, None, true)),
+            "\u{25cf}"
+        );
+        assert_eq!(
+            reviewed_cell_text(&entry(MatchStatus::Good, None, false)),
+            EMPTY_CELL
+        );
     }
 }
