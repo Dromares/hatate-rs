@@ -305,10 +305,8 @@ impl LensPage {
         };
         match tokio::time::timeout(Duration::from_millis(timeout_ms), work).await {
             Ok(result) => result,
-            Err(_) => Err(PageError::other(
-                API,
-                format!("Timeout {timeout_ms}ms exceeded."),
-            )),
+            // Python's text for this one has no `Page.wait_for_url:` in front of it.
+            Err(_) => Err(PageError::bare(format!("Timeout {timeout_ms}ms exceeded."))),
         }
     }
 

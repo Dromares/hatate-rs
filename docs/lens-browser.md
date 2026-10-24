@@ -19,10 +19,9 @@ on the build machine is broken (`libsimdutf.so.36` missing).
 
 Not here, and who owns it:
 
-* The per-search half (`_search_area` through `_one`, `fetch_results_payloads`) is 5.c (DAN-2165).
-  `LensBrowser` takes it as a `SearchStep`; the shipped step is `UnportedSearch`, which answers
-  `LensBrowserUnavailable`, and `LiveEngines` is not rewired, so `hatate batch` prints what it printed
-  before this ticket.
+* The per-search half (`_search_area` through `_one`, `fetch_results_payloads`) is 5.c (DAN-2165,
+  `docs/lens-search.md`). `LensBrowser` takes it as a `SearchStep`; 5.c's `LensSearch` is the shipped
+  step and `LiveEngines::for_profile` builds the browser.
 * `core/desktop_attention.py` (the KWin taskbar/attention script, `tests/test_thin_modules.py`) has no
   ticket. `WindowAttention` is a trait here (`quiet`, `ask_for_input`) with a no-op shipped
   implementation. It needs an owner before Lens is wired for Plasma users.

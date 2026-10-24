@@ -238,7 +238,9 @@ impl Engines for ScriptedEngines {
     fn google_lens_wait_for_turn<'a>(&'a self, on_tick: Option<OnTick>) -> BoxFuture<'a, ()> {
         let backend = self.lens_backend.lock().unwrap().clone();
         match backend {
-            Some(engines) => Box::pin(async move { engines.google_lens_wait_for_turn(on_tick).await }),
+            Some(engines) => {
+                Box::pin(async move { engines.google_lens_wait_for_turn(on_tick).await })
+            }
             None => panic!("Google Lens is not scripted"),
         }
     }
@@ -253,7 +255,9 @@ impl Engines for ScriptedEngines {
         let backend = self.lens_backend.lock().unwrap().clone();
         match backend {
             Some(engines) => Box::pin(async move {
-                engines.google_lens(path, timeout, on_tick, whole_image).await
+                engines
+                    .google_lens(path, timeout, on_tick, whole_image)
+                    .await
             }),
             None => panic!("Google Lens is not scripted"),
         }

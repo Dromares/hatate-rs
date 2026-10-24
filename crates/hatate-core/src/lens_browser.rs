@@ -494,6 +494,11 @@ impl LensBrowser {
         }
     }
 
+    /// The profile directory this browser starts Chromium with.
+    pub fn profile_dir(&self) -> &std::path::Path {
+        &self.core.settings.profile_dir
+    }
+
     /// `start`.
     pub fn start(&self) {
         let mut thread = self.core.thread.lock().unwrap_or_else(|p| p.into_inner());

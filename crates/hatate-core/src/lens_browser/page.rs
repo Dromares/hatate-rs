@@ -70,6 +70,15 @@ impl PageError {
         }
     }
 
+    /// An exception whose text Playwright gives without the call's name in front of it (the
+    /// `TimeoutError` of `wait_for_url`, which comes from `expect_navigation`).
+    pub fn bare(message: impl std::fmt::Display) -> Self {
+        PageError {
+            message: message.to_string(),
+            gone: false,
+        }
+    }
+
     /// `type(exc).__name__ == "TargetClosedError"`.
     pub fn is_target_closed(&self) -> bool {
         self.gone

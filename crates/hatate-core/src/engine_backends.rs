@@ -101,6 +101,11 @@ impl LiveEngines {
         self
     }
 
+    /// The browser behind Lens, when this build has one (`for_profile` gives it one).
+    pub fn lens_browser(&self) -> Option<&LensBrowser> {
+        self.lens_browser.as_ref()
+    }
+
     /// The clock the Lens client was built on.
     fn lens_clock(&self) -> Arc<dyn Clock> {
         self.lens.clock()

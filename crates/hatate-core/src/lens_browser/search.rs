@@ -539,3 +539,85 @@ impl SearchStep for LensSearch {
         Box::pin(self.one(ctx, job))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_results_url_has_a_vsrid_or_is_the_robot_check() {
+        assert!(is_results_url(
+            "https://lens.google.com/search?ep=gsbubb&vsrid=ABC&x=1"
+        ));
+        assert!(is_results_url(
+            "https://www.google.com/sorry/index?continue=x"
+        ));
+        assert!(!is_results_url("https://www.google.com/"));
+        assert!(!is_results_url("https://lens.google.com/search?vsrid"));
+    }
+
+    #[test]
+    fn only_a_search_url_has_its_body_read() {
+        assert!(is_search_url("https://lens.google.com/search?ep=1"));
+        assert!(is_search_url("https://x.example/a/search"));
+        assert!(!is_search_url("https://lens.google.com/upload"));
+    }
+
+    #[test]
+    fn a_body_with_a_host_outside_google_carries_results() {
+        for body in [
+            r#"["https://danbooru.donmai.us/posts/1"]"#,
+            r#"["https:\/\/example.org\/a.jpg"]"#,
+            r#"x http://foo.bar/y"#,
+            r#"HTTPS://EXAMPLE.ORG"#,
+            // The first host is Google's, the second is not.
+            r#"["https://www.google.com/a","https://other.net/b"]"#,
+            // `\w*\.?google` only excludes a host that starts that way.
+            r#"https://my-google.com/a"#,
+        ] {
+            assert!(source_hint(body), "{body}");
+        }
+        for body in [
+            "",
+            "no urls here",
+            r#"["https://www.google.com/a"]"#,
+            r#"["https://google.com/a","https://gstatic.com/x","https://lh3.googleusercontent.com/z"]"#,
+            r#"["https:\/\/www.w3.org\/1999\/xhtml", "http://schema.org/Thing"]"#,
+            // A host needs a dot and a two-letter ending.
+            r#"https://localhost/a"#,
+            r#"https://a.b/c"#,
+            r#"https://:/"#,
+            r#"ftp://example.org"#,
+        ] {
+            assert!(!source_hint(body), "{body}");
+        }
+    }
+
+    #[test]
+    fn the_unicode_case_rules_of_python_decide_the_letters() {
+        // Read off CPython's `re` for the same pattern. `\u{17f}` (long s) and the Kelvin sign fold
+        // into `s` and `k` under re.IGNORECASE, and `\u{130}` / `\u{131}` into `i`.
+        for body in [
+            "https://exa\u{17f}mple.org",
+            "https://example.or\u{212a}",
+            "http\u{17f}://example.org",
+            "https://example.\u{130}\u{131}",
+            "https://www.\u{17f}chema.org",
+            "https://gstat\u{17f}.com/",
+            "https://\u{17f}tatic.com",
+            "https://gs\u{130}tatic.com",
+        ] {
+            assert!(source_hint(body), "{body:?}");
+        }
+        for body in [
+            "https://\u{17f}chema.org",
+            "https://gstat\u{130}c.com/",
+            "https://gstat\u{131}c.com/",
+            "https://g\u{17f}tatic.com",
+            // `\w` takes a superscript two, so this is `\w*google` and excluded.
+            "https://\u{b2}google.com/x.org",
+        ] {
+            assert!(!source_hint(body), "{body:?}");
+        }
+    }
+}

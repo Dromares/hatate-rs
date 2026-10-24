@@ -327,4 +327,22 @@ mod tests {
             "{answer:?}"
         );
     }
+
+    /// `hatate batch` runs Google Lens over a browser on the profile's own `lens_profile`, and a
+    /// build made for tests (`LiveEngines::new`) has none. Nothing here starts it.
+    #[test]
+    fn the_batch_engines_put_a_lens_browser_on_the_profiles_lens_profile() {
+        install_crypto_provider();
+        let home = tempfile::tempdir().unwrap();
+        let home_os = home.path().as_os_str().to_owned();
+        let paths = Paths::from_lookup(|k| (k == "HOME").then(|| home_os.clone())).unwrap();
+        let net = NetClient::new(NetConfig::default()).unwrap();
+        let clock: Arc<dyn Clock> = Arc::new(ManualClock::new(1_700_000_000.0, 100.0));
+        let engines = build_engines(net.clone(), clock.clone(), &paths);
+        let browser = engines
+            .lens_browser()
+            .expect("hatate batch has a Lens browser");
+        assert_eq!(browser.profile_dir(), paths.lens_profile_dir());
+        assert!(LiveEngines::new(net, clock).lens_browser().is_none());
+    }
 }
