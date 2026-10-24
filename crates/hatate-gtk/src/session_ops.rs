@@ -154,12 +154,20 @@ impl MainWindow {
         let job = self.s.workers.run(
             move |ctx| {
                 let progress = |done: usize, total: usize, eta: f64| ctx.report((done, total, eta));
-                hash_files(&to_hash, workers, &hash_source, ctx.stop_flag(), Some(&progress))
+                hash_files(
+                    &to_hash,
+                    workers,
+                    &hash_source,
+                    ctx.stop_flag(),
+                    Some(&progress),
+                )
             },
             move |event| {
                 let Some(w) = w.upgrade() else { return };
                 match event {
-                    Event::Progress((done, total, eta)) => w.on_file_hash_progress(done, total, eta),
+                    Event::Progress((done, total, eta)) => {
+                        w.on_file_hash_progress(done, total, eta)
+                    }
                     Event::Done(Some(hashes)) => w.on_file_hash_finished(hashes),
                     // The worker was stopped: Python's emits nothing.
                     Event::Done(None) => {}
@@ -176,7 +184,10 @@ impl MainWindow {
         } else {
             value as f64 / maximum as f64
         };
-        self.s.shell.progress_bar.set_fraction(fraction.clamp(0.0, 1.0));
+        self.s
+            .shell
+            .progress_bar
+            .set_fraction(fraction.clamp(0.0, 1.0));
     }
 
     /// `_on_file_hash_progress(done, total, eta)`.
@@ -354,7 +365,10 @@ impl MainWindow {
         let (affected, total) = {
             let q = self.s.queue.borrow();
             (
-                q.entries().iter().filter(|e| missing.contains(&e.path)).count(),
+                q.entries()
+                    .iter()
+                    .filter(|e| missing.contains(&e.path))
+                    .count(),
                 q.len(),
             )
         };
@@ -415,8 +429,14 @@ impl MainWindow {
                 let entries: Vec<Entry> = w.s.queue.borrow().entries().to_vec();
                 match named::save(&path, &entries, (w.s.clock)()) {
                     Ok(()) => {
-                        tracing::info!("Saved session to {} ({} entries)", path.display(), entries.len());
-                        let base = path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+                        tracing::info!(
+                            "Saved session to {} ({} entries)",
+                            path.display(),
+                            entries.len()
+                        );
+                        let base = path
+                            .file_name()
+                            .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
                         w.say(&format!("Saved {} image(s) to {base}", entries.len()));
                     }
                     Err(e) => {
@@ -520,7 +540,11 @@ impl MainWindow {
         let entries = loaded.entries;
         self.stop_background_workers();
         self.replace_entries(entries.clone());
-        tracing::info!("Opened session {} with {} entries", path.display(), entries.len());
+        tracing::info!(
+            "Opened session {} with {} entries",
+            path.display(),
+            entries.len()
+        );
         self.say(&format!(
             "Opened {} - {} image(s)",
             base_name(&path),
@@ -623,12 +647,7 @@ impl MainWindow {
 
     fn show_log_viewer(&self, crash: bool) {
         let opener = self.s.open_path.clone();
-        let viewer = crate::logview::LogViewer::new(
-            &self.win,
-            self.s.logs.clone(),
-            opener,
-            crash,
-        );
+        let viewer = crate::logview::LogViewer::new(&self.win, self.s.logs.clone(), opener, crash);
         viewer.present();
         *self.s.log_viewer.borrow_mut() = Some(viewer);
     }
@@ -729,7 +748,8 @@ impl MainWindow {
         // write landing afterwards would put a slightly older session on top of the one meant to
         // be authoritative (`SessionAutosaver.shutdown`).
         let t = std::time::Instant::now();
-        while self.s.autosave_inflight.load(Ordering::SeqCst) && t.elapsed() < AUTOSAVE_SHUTDOWN_WAIT
+        while self.s.autosave_inflight.load(Ordering::SeqCst)
+            && t.elapsed() < AUTOSAVE_SHUTDOWN_WAIT
         {
             std::thread::sleep(Duration::from_millis(20));
         }

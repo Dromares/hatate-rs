@@ -94,7 +94,11 @@ mod tests {
     #[test]
     fn faults_are_counted_in_the_section_before_the_last() {
         assert_eq!(faults_in_previous_run(""), 0);
-        assert_eq!(faults_in_previous_run(&section(3)), 0, "one mark: only this run");
+        assert_eq!(
+            faults_in_previous_run(&section(3)),
+            0,
+            "one mark: only this run"
+        );
         let two = format!("{}{}", section(2), section(0));
         assert_eq!(faults_in_previous_run(&two), 2);
         let three = format!("{}{}{}", section(5), section(1), section(0));
@@ -133,7 +137,10 @@ mod tests {
 
     #[test]
     fn a_stamp_needs_the_bracket() {
-        assert_eq!(stamp_of("2026-10-22 10:00:00 [INFO] x"), Some("2026-10-22 10:00:00"));
+        assert_eq!(
+            stamp_of("2026-10-22 10:00:00 [INFO] x"),
+            Some("2026-10-22 10:00:00")
+        );
         assert_eq!(stamp_of("2026-10-22 10:00:00 INFO x"), None);
         assert_eq!(stamp_of("26-10-22 10:00:00 [INFO]"), None);
     }

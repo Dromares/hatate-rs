@@ -282,7 +282,10 @@ mod tests {
         };
         assert_eq!(
             view_text(&s, false),
-            ("Log file: /p/hatate-rs.log".into(), "(no log entries yet)".into())
+            (
+                "Log file: /p/hatate-rs.log".into(),
+                "(no log entries yet)".into()
+            )
         );
         assert_eq!(
             view_text(&s, true),

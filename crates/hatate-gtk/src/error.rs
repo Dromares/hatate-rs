@@ -165,7 +165,9 @@ mod tests {
 
     #[test]
     fn a_font_error_names_no_path() {
-        let e = FontError::new("font dir /home/x/.cache/hatate-rs/fonts: permission denied (os error 13)");
+        let e = FontError::new(
+            "font dir /home/x/.cache/hatate-rs/fonts: permission denied (os error 13)",
+        );
         assert_eq!(e.kind(), ErrorKind::Io);
         clean(&e.user_message(), "/home/x");
         assert!(e.detail().contains("/home/x"));

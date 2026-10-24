@@ -256,7 +256,9 @@ mod tests {
         let mut queued = sent;
         queued.hydrus_import_confirmed = false;
         let text = interrupted_prose(&[queued, waiting, untouched]);
-        assert!(text.contains("0 of 3 images are already sent to Hydrus, 1 is still queued with Hydrus, 1 is decided"));
+        assert!(text.contains(
+            "0 of 3 images are already sent to Hydrus, 1 is still queued with Hydrus, 1 is decided"
+        ));
     }
 
     #[test]

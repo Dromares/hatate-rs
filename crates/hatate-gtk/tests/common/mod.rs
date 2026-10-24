@@ -12,7 +12,9 @@ use hatate_core::config::Settings;
 use hatate_core::model::{Entry, MatchStatus};
 use hatate_core::paths::Paths;
 use hatate_core::session::SessionStore;
-use hatate_gtk::dialogs::{Asked, Buttons, Done, Kind, Prompter, Response, Shown, default_response};
+use hatate_gtk::dialogs::{
+    Asked, Buttons, Done, Kind, Prompter, Response, Shown, default_response,
+};
 use hatate_gtk::window::{Env, MainWindow, MissingFiles};
 use libadwaita as adw;
 use std::cell::{Cell, RefCell};
@@ -49,7 +51,11 @@ impl Script {
     }
 
     pub fn last_shown(&self) -> Shown {
-        self.shown.borrow().last().cloned().expect("no dialog was shown")
+        self.shown
+            .borrow()
+            .last()
+            .cloned()
+            .expect("no dialog was shown")
     }
 
     pub fn count_shown(&self) -> usize {
@@ -107,7 +113,13 @@ impl Prompter for Script {
         }
     }
 
-    fn save_file(&self, title: &str, default_name: &str, filter: &str, done: Done<Option<PathBuf>>) {
+    fn save_file(
+        &self,
+        title: &str,
+        default_name: &str,
+        filter: &str,
+        done: Done<Option<PathBuf>>,
+    ) {
         self.asked.borrow_mut().push(Asked::SaveFile {
             title: title.to_owned(),
             default_name: default_name.to_owned(),

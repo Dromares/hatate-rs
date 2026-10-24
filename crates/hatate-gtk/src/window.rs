@@ -36,6 +36,13 @@ use std::sync::{Arc, Mutex};
 /// `setWindowTitle` (`main_window.py:422`) reads "Hatate-linux - IQDB/SauceNAO tagger for Hydrus".
 pub const WINDOW_TITLE: &str = "Hatate (work in progress Rust rewrite)";
 
+/// The window's minimum size (design gate 2.5, DAN-1974 item 2): the width and height below which a
+/// frame of the Queue or the Review (right rail in) would clip, **measured** on the CI toolkit
+/// (GTK 4.14 / libadwaita 1.5) in both schemes by the `minimum_size_*` scenarios of
+/// `tests/smoke.rs`, which fail if any state needs more. `docs/gtk-shell.md` has the table.
+pub const MIN_WIDTH: i32 = 1010;
+pub const MIN_HEIGHT: i32 = 750;
+
 /// `core/missing_files.find_missing_paths(paths, stop_check)`: the subset of `paths` that no
 /// longer exist. 6.b ports it; until it merges the shipped window is given a stand-in by
 /// [`default_missing_files`] and a test gives its own.
@@ -92,15 +99,11 @@ impl Env {
 /// Hands a file or folder to the desktop's default handler.
 fn open_with_desktop(path: &Path) {
     let file = gio::File::for_path(path);
-    gtk::FileLauncher::new(Some(&file)).launch(
-        None::<&gtk::Window>,
-        gio::Cancellable::NONE,
-        |r| {
-            if let Err(e) = r {
-                tracing::warn!("could not open a file with the desktop: {e}");
-            }
-        },
-    );
+    gtk::FileLauncher::new(Some(&file)).launch(None::<&gtk::Window>, gio::Cancellable::NONE, |r| {
+        if let Err(e) = r {
+            tracing::warn!("could not open a file with the desktop: {e}");
+        }
+    });
 }
 
 /// The window's state: what Python keeps on `self`.
@@ -192,6 +195,7 @@ impl MainWindow {
             .default_width(1100)
             .default_height(650)
             .build();
+        win.set_size_request(MIN_WIDTH, MIN_HEIGHT);
         let prompter: Rc<dyn Prompter> = env
             .prompter
             .clone()
@@ -444,8 +448,14 @@ impl MainWindow {
         for (action, accel) in menu::accelerators() {
             app.set_accels_for_action(&action, &[accel]);
         }
-        self.s.shell.search_toggle_btn.set_action_name(Some("win.toggle-search"));
-        self.s.shell.settings_btn.set_action_name(Some("win.preferences"));
+        self.s
+            .shell
+            .search_toggle_btn
+            .set_action_name(Some("win.toggle-search"));
+        self.s
+            .shell
+            .settings_btn
+            .set_action_name(Some("win.preferences"));
     }
 
     fn connect_shell_action(&self, action: &gio::SimpleAction, name: &str) {
@@ -579,7 +589,10 @@ fn build_drop_zone() -> gtk::Overlay {
         buttons.append(b);
     }
     block.append(&buttons);
-    inner.append(&widgets::top_weighted(&block, widgets::DROP_ZONE_BELOW_WEIGHT));
+    inner.append(&widgets::top_weighted(
+        &block,
+        widgets::DROP_ZONE_BELOW_WEIGHT,
+    ));
     panel.append(&inner);
     widgets::brackets(&panel)
 }
