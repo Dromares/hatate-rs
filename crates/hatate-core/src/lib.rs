@@ -73,6 +73,7 @@ pub mod sidecar;
 pub mod similarity_check;
 pub mod similarity_display;
 pub mod sites;
+pub mod status_tier;
 pub mod tag_band_metrics;
 pub mod tag_borrowing;
 pub mod tag_colors;
