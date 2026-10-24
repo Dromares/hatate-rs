@@ -20,6 +20,9 @@ use std::time::Duration;
 use chromiumoxide::cdp::browser_protocol::browser::{
     Bounds, GetWindowForTargetParams, SetWindowBoundsParams,
 };
+use chromiumoxide::cdp::browser_protocol::dom::{
+    GetContentQuadsParams, ScrollIntoViewIfNeededParams,
+};
 use chromiumoxide::cdp::browser_protocol::emulation::{
     SetDeviceMetricsOverrideParams, SetFocusEmulationEnabledParams, SetLocaleOverrideParams,
     SetUserAgentOverrideParams,
@@ -27,7 +30,9 @@ use chromiumoxide::cdp::browser_protocol::emulation::{
 use chromiumoxide::cdp::browser_protocol::input::{
     DispatchMouseEventParams, DispatchMouseEventType, MouseButton,
 };
+use chromiumoxide::cdp::browser_protocol::page::GetLayoutMetricsParams;
 use chromiumoxide::cdp::browser_protocol::page::{EventDomContentEventFired, NavigateParams};
+use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
 use chromiumoxide::error::CdpError;
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
@@ -371,6 +376,67 @@ impl Locator {
         })
     }
 
+    /// The point `_clickablePoint` picks, or `None` while the element has no box on the page.
+    async fn clickable_point(&self) -> Result<Option<(f64, f64)>, PageError> {
+        const API: &str = "Locator.click";
+        let cdp = |e: CdpError| PageError::from_cdp(API, &e);
+        let reply = self
+            .page
+            .page
+            .execute(
+                EvaluateParams::builder()
+                    .expression(format!("({})", self.target()))
+                    .return_by_value(false)
+                    .build()
+                    .map_err(|e| PageError::other(API, e))?,
+            )
+            .await
+            .map_err(cdp)?;
+        let Some(object_id) = reply.result.result.object_id.clone() else {
+            return Ok(None);
+        };
+        let mut scroll = ScrollIntoViewIfNeededParams::default();
+        scroll.object_id = Some(object_id.clone());
+        let _ = self.page.page.execute(scroll).await;
+        let mut quads = GetContentQuadsParams::default();
+        quads.object_id = Some(object_id);
+        let Ok(quads) = self.page.page.execute(quads).await else {
+            return Ok(None);
+        };
+        let metrics = self
+            .page
+            .page
+            .execute(GetLayoutMetricsParams::default())
+            .await
+            .map_err(|e| PageError::from_cdp(API, &e))?;
+        let (width, height) = (
+            metrics.result.css_layout_viewport.client_width as f64,
+            metrics.result.css_layout_viewport.client_height as f64,
+        );
+        for quad in &quads.result.quads {
+            let raw = quad.inner();
+            if raw.len() != 8 {
+                continue;
+            }
+            // Each corner clipped to the viewport.
+            let points: Vec<(f64, f64)> = raw
+                .chunks(2)
+                .map(|p| (p[0].clamp(0.0, width), p[1].clamp(0.0, height)))
+                .collect();
+            let mut area = 0.0;
+            for i in 0..4 {
+                let (a, b) = (points[i], points[(i + 1) % 4]);
+                area += a.0 * b.1 - b.0 * a.1;
+            }
+            if (area / 2.0).abs() > 0.99 {
+                let x = points.iter().map(|p| p.0).sum::<f64>() / 4.0;
+                let y = points.iter().map(|p| p.1).sum::<f64>() / 4.0;
+                return Ok(Some((x, y)));
+            }
+        }
+        Ok(None)
+    }
+
     /// `locator.get_attribute(name)`.
     pub async fn get_attribute(&self, name: &str) -> Result<Option<String>, PageError> {
         let name = serde_json::to_string(name).unwrap_or_default();
@@ -385,21 +451,17 @@ impl Locator {
             .await
     }
 
-    /// `locator.click(timeout=timeout_ms)`.
+    /// `locator.click(timeout=timeout_ms)`: scrolls the element into view as the protocol does,
+    /// waits until it has a content quad of some size, and presses at the centre of the first one
+    /// that is on the page, as Playwright's `_clickablePoint` does (an inline link that wraps, or
+    /// holds several boxes, is clicked in its first box, not at the centre of all of them).
     pub async fn click(&self, timeout_ms: u64) -> Result<(), PageError> {
         const API: &str = "Locator.click";
         let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout_ms);
-        let centre = format!(
-            "(() => {{ const e = {}; if (!e) return null; \
-             if (e.scrollIntoViewIfNeeded) e.scrollIntoViewIfNeeded(true); \
-             const r = e.getBoundingClientRect(); \
-             if (r.width <= 0 || r.height <= 0) return null; \
-             return [r.left + r.width / 2, r.top + r.height / 2]; }})()",
-            self.target()
-        );
+        let cdp = |e: CdpError| PageError::from_cdp(API, &e);
         let (x, y) = loop {
-            let found: Option<(f64, f64)> = self.page.evaluate(API, &centre).await?;
-            if let Some(point) = found {
+            self.page.check(API)?;
+            if let Some(point) = self.clickable_point().await? {
                 break point;
             }
             if tokio::time::Instant::now() >= deadline {
@@ -410,7 +472,6 @@ impl Locator {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         };
-        let cdp = |e: CdpError| PageError::from_cdp(API, &e);
         let mouse =
             |kind: DispatchMouseEventType, button: MouseButton, buttons: i64, clicks: i64| {
                 DispatchMouseEventParams::builder()
