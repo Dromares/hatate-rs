@@ -112,20 +112,20 @@ bytes. The grant covers it (2 or less).
 | `test_lens_browser.py::TestWaitingOnResultsNotTheClock` (4) | `lens_browser_search::a_slow_response_is_still_waited_for`, `a_step_whose_response_never_comes_waits_no_longer_than_the_fixed_wait_it_replaces`, `controls_that_are_not_there_cost_no_click_timeout`, `a_whole_image_search_uploads_reads_both_tabs_and_collects_the_tiles` |
 | `TestOnlyCallingForTheUserWhenNeeded`: `test_a_check_after_the_upload_asks_for_the_user`, `…_after_clicking_a_tab_asks_too`, `…_after_the_explicit_notice_asks_too`, `…_on_first_opening_google_asks_too`, `test_an_in_page_recaptcha_counts_as_a_check`, `test_an_unanswered_check_is_reported_and_the_window_goes_quiet`, `test_an_ordinary_search_never_asks` | `lens_browser_search::a_robot_check_after_the_upload_calls_the_user_and_carries_on_once_cleared`, `a_check_after_opening_a_tab_asks_the_user_too`, `a_robot_check_that_goes_unanswered_is_reported_and_the_window_goes_quiet`, and the first assertions of `a_whole_image_search_…` (an ordinary search asks nobody); the explicit-notice and first-open checks are in the browser differential (`challenge-*` cases) |
 | `FakePage`-driven `_one` calls in `test_lens_browser.py` | the browser differential runs the real `_one` against the real Chromium on both sides; committed: `a_partial_search_area_is_dragged_out_and_the_widened_results_win`, `a_widen_that_brings_nothing_new_falls_back_to_the_cropped_results`, `the_explicit_results_notice_is_confirmed_when_there_is_no_tab_to_open`, `empty_results_come_back_as_no_payloads_and_no_tiles`, `a_page_that_cannot_read_the_file_ends_in_the_navigation_timeout`, `an_upload_that_never_answers_ends_in_a_browser_error`, `a_window_closed_mid_search_is_reopened_and_the_search_runs_again` |
-| `test_search_quality.py::TestRule34Listing` (`test_listing_posts_are_read`, `test_the_closest_post_is_chosen_over_a_variant`, `test_nothing_close_enough_finds_nothing`) | `boorus::rule34::tests::listing_posts_are_read_in_page_order`, `lens_sites_https::the_closest_post_within_the_limit_is_found_over_https`, `the_nearest_post_past_the_limit_is_not_a_match` |
+| `test_search_quality.py::TestRule34SearchTiles` (`test_listing_posts_are_read`, `test_the_closest_post_is_chosen_over_a_variant`, `test_nothing_close_enough_finds_nothing`) | `boorus::rule34::tests::listing_posts_are_read_in_page_order`, `lens_sites_https::the_closest_post_within_the_limit_is_found_over_https`, `the_nearest_post_past_the_limit_is_not_a_match` |
 | `…::test_search_puts_the_recovered_post_first` | `lens_batch::lens_finds_matches_and_a_rule34_search_tile_is_recovered_through_the_listing_page` (end to end, over https) |
 | `TestSubredditLinksBecomeThePost` (`only_listings_count`, `the_post_holding_the_image_is_found`, `an_unfound_post_falls_back…`, `other_urls_are_untouched…`) | `reddit::tests::only_listings_count_as_subreddits`, `the_post_holding_the_image_is_found`, `an_unfound_post_falls_back_to_the_image_not_the_subreddit`, `other_urls_are_untouched_and_never_looked_up` (3.b); the network half: `lens_sites_https::a_found_post_a_missing_post_and_a_removed_post` |
 | `…::test_a_rate_limited_feed_falls_back_and_is_not_remembered`, `test_a_subreddit_with_no_image_to_go_on_is_dropped`, `test_lens_search_hands_back_the_post` | 3.b `reddit::tests`, and `lens_sites_https::a_dropped_connection_or_a_slow_listing_finds_nothing` for the network error |
 | `test_lens_browser.py::TestAClosedWindowIsReopened`, `TestNotAskingGoogleTooOften`, `TestTheWindowHasItsOwnClass` | 5.a and 5.b, see `docs/lens-browser.md` section 4 |
 | `tests/test_appimage_lens.py` | Phase 7 |
 | `tests/live_sources/check_google_lens_dependency.py` | not applicable: it talks to the live service and is never run in CI |
-| the engine-runner Lens wiring tests (`test_engine_runner.py`) | `lens_batch` (4 tests: a found match, an unavailable browser latches Lens, an unanswered robot check rests it, three browser failures stand it down) and `hatate-cli`'s `lens_wiring` |
+| no Python test covers the runner's Lens wiring end to end | new: `lens_batch` (4 tests: a found match with a rule34 recovery, an unavailable browser latches Lens, an unanswered robot check rests it, three browser failures stand it down) and `batch_cmd::tests::the_batch_engines_put_a_lens_browser_on_the_profiles_lens_profile` |
 
 ## 6. Error shape (DAN-2116 item 1)
 
-This ticket adds no error type with its own enum: the page-level failures stay `PageError`
-(5.b), which `LensFetchError` carries, and the site lookups return `Unexpected` as Python lets an
-exception out. `PageError::user_message` and `LensFetchError::user_message` name what failed and what
-to do without a URL query, an access key, a profile path or OS error text (`lens_browser_cdp` asserts it
-for a launch that fails and for a page error; the 5.c search errors are the same `PageError`).
+This ticket adds no error type. A page-level failure in the search half is the `PageError` of 5.b,
+which `LensFetchError` carries into `LensError` (5.a); a site lookup that lets an exception out
+(a decompression bomb, a hard deadline) is `LensError::Unexpected`, as Python lets it out of `search`.
+`kind()`, `user_message()` and `detail()` are 5.a's and 5.b's, and the test that keeps paths and OS
+text out of the message is `lens_browser::the_error_shape_keeps_paths_and_os_text_out_of_the_user_message`.
 `Entry.error_message` and `MatchStatus` are unchanged on disk.
