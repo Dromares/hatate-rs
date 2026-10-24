@@ -40,12 +40,14 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 const NOW: f64 = 1_792_725_790.0;
-pub const HOSTS: [&str; 5] = [
+pub const HOSTS: [&str; 7] = [
     "rule34.xxx",
     "wimg.rule34.xxx",
     "www.reddit.com",
     "api.rule34.xxx",
     "danbooru.donmai.us",
+    "www.pinterest.com",
+    "www.example.org",
 ];
 
 /// One scripted answer by `host` + request target.
@@ -139,6 +141,8 @@ pub struct Ran {
     pub session_db: PathBuf,
     pub calls: Vec<FetchCall>,
     pub requests: Vec<String>,
+    /// Every sleep the run asked of the clock.
+    pub sleeps: Vec<f64>,
     _dir: tempfile::TempDir,
 }
 
@@ -234,6 +238,7 @@ pub async fn run_scenario(scenario: &Scenario) -> Ran {
         session_db,
         calls,
         requests,
+        sleeps: clock.sleeps(),
         _dir: dir,
     }
 }
