@@ -733,6 +733,36 @@ mod tests {
     }
 
     #[test]
+    fn a_call_runs_on_the_owners_thread() {
+        let (owner, ch) = spawn_owner_thread(model(1));
+        let caller = std::thread::current().id();
+        let ran_on = ch.call(|_| Ok(std::thread::current().id()), 5.0).unwrap();
+        assert_ne!(ran_on, caller);
+        assert_eq!(
+            ran_on,
+            ch.call(|_| Ok(std::thread::current().id()), 5.0).unwrap(),
+            "always the same one thread"
+        );
+        drop(owner.stop());
+    }
+
+    #[test]
+    fn a_closure_that_runs_longer_than_the_timeout_times_out() {
+        let (owner, ch) = spawn_owner_thread(model(1));
+        let err = ch
+            .call(
+                |_| {
+                    std::thread::sleep(Duration::from_millis(400));
+                    Ok("done")
+                },
+                0.05,
+            )
+            .unwrap_err();
+        assert!(matches!(err, InvokeError::Timeout(_)), "{err:?}");
+        drop(owner.stop());
+    }
+
+    #[test]
     fn an_owner_that_never_answers_gives_pythons_timeout_text() {
         let (owner, ch) = QueueOwner::new(model(1));
         let err = ch.call(|m| Ok(m.len()), 0.05).unwrap_err();
