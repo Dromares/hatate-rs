@@ -640,6 +640,39 @@ impl std::fmt::Display for GoogleImagesError {
 
 impl std::error::Error for GoogleImagesError {}
 
+impl GoogleImagesError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        use crate::error::ErrorKind;
+        match self {
+            Self::Failed(_) => ErrorKind::EngineFailed,
+            Self::Blocked(_) | Self::JavaScript => ErrorKind::EngineBlocked,
+            Self::Unexpected(raised) => raised.kind(),
+        }
+    }
+
+    /// What failed and what to do; the engine's own text can carry an address, so none of it is
+    /// shown.
+    pub fn user_message(&self) -> String {
+        match self {
+            Self::Failed(_) => {
+                "Google Images could not search this image. Try again, or use the other engines."
+                    .to_owned()
+            }
+            Self::Blocked(_) | Self::JavaScript => {
+                "Google Images will not answer this app right now, so it was skipped for this \
+                 run. Try again later, or turn it off in Settings."
+                    .to_owned()
+            }
+            Self::Unexpected(raised) => raised.user_message(),
+        }
+    }
+
+    /// The engine's text, for a log.
+    pub fn detail(&self) -> String {
+        self.to_string()
+    }
+}
+
 impl From<UnexpectedInput> for GoogleImagesError {
     fn from(raised: UnexpectedInput) -> Self {
         GoogleImagesError::Unexpected(raised)

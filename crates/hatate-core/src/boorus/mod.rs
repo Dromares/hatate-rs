@@ -315,6 +315,34 @@ impl std::fmt::Display for BooruError {
 
 impl std::error::Error for BooruError {}
 
+impl BooruError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        match self {
+            BooruError::Fetch(_) => crate::error::ErrorKind::DownloadFailed,
+            BooruError::ContentGone(_) => crate::error::ErrorKind::NotFound,
+        }
+    }
+
+    /// What failed and what to do; the fetch's text can carry an address, so none of it is shown.
+    pub fn user_message(&self) -> String {
+        match self {
+            BooruError::Fetch(_) => {
+                "The page of a match could not be fetched, so its tags are missing. Try the search \
+                 again later."
+            }
+            BooruError::ContentGone(_) => {
+                "A match has been deleted from its site, so it was dropped."
+            }
+        }
+        .to_owned()
+    }
+
+    /// The fetch's text, for a log.
+    pub fn detail(&self) -> String {
+        self.to_string()
+    }
+}
+
 /// What a fetch of a booru post page yields (`BooruPageInfo`). See the Python class for why each
 /// field is kept apart from the others; the ones that are easy to conflate:
 ///

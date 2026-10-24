@@ -61,6 +61,23 @@ impl std::fmt::Display for IqdbError {
 
 impl std::error::Error for IqdbError {}
 
+impl IqdbError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        crate::error::ErrorKind::EngineFailed
+    }
+
+    /// What failed and what to do; the engine's own text can carry an address, so none of it is
+    /// shown.
+    pub fn user_message(&self) -> String {
+        "IQDB could not search this image. Try again, or use the other engines.".to_owned()
+    }
+
+    /// The engine's text, for a log.
+    pub fn detail(&self) -> String {
+        self.0.clone()
+    }
+}
+
 /// "IQDB 3D" for the 3D instance, else "IQDB": how `search` names the instance in its messages.
 pub fn instance_name(base_url: &str) -> &'static str {
     if base_url.contains("3d.iqdb") {

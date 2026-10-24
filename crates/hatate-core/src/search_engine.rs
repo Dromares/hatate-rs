@@ -96,6 +96,41 @@ impl std::fmt::Display for SearchError {
 
 impl std::error::Error for SearchError {}
 
+impl SearchError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        match self {
+            SearchError::Engine(e) => e.kind(),
+            SearchError::Remote(e) => e.kind(),
+            SearchError::Resolve(e) => e.kind(),
+            SearchError::Similarity(e) => e.kind(),
+            SearchError::Bomb(e) => e.kind(),
+        }
+    }
+
+    /// What failed and what to do; no path, address or OS text. The window shows this; `Display`
+    /// is Python's `str(exc)`, which `Entry.error_message` keeps byte for byte.
+    pub fn user_message(&self) -> String {
+        match self {
+            SearchError::Engine(e) => e.user_message(),
+            SearchError::Remote(e) => e.user_message(),
+            SearchError::Resolve(e) => e.user_message(),
+            SearchError::Similarity(e) => e.user_message(),
+            SearchError::Bomb(e) => e.user_message(),
+        }
+    }
+
+    /// The exception's text, for a log.
+    pub fn detail(&self) -> String {
+        match self {
+            SearchError::Engine(e) => e.detail(),
+            SearchError::Remote(e) => e.detail(),
+            SearchError::Resolve(e) => e.detail(),
+            SearchError::Similarity(e) => e.detail(),
+            SearchError::Bomb(e) => e.detail(),
+        }
+    }
+}
+
 impl From<crate::engine_runner::Raised> for SearchError {
     fn from(e: crate::engine_runner::Raised) -> Self {
         SearchError::Engine(e)

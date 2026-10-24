@@ -60,6 +60,34 @@ impl fmt::Display for ResolveError {
 
 impl std::error::Error for ResolveError {}
 
+impl ResolveError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        match self {
+            ResolveError::Raised(r) => r.kind(),
+            ResolveError::Bomb(b) => b.kind(),
+            ResolveError::Url(_) => crate::error::ErrorKind::InvalidUrl,
+        }
+    }
+
+    /// What failed and what to do; no path or address.
+    pub fn user_message(&self) -> String {
+        match self {
+            ResolveError::Raised(r) => r.user_message(),
+            ResolveError::Bomb(b) => b.user_message(),
+            ResolveError::Url(u) => u.user_message(),
+        }
+    }
+
+    /// The exception's text, for a log.
+    pub fn detail(&self) -> String {
+        match self {
+            ResolveError::Raised(r) => r.detail(),
+            ResolveError::Bomb(b) => b.detail(),
+            ResolveError::Url(u) => u.detail(),
+        }
+    }
+}
+
 impl From<Raised> for ResolveError {
     fn from(r: Raised) -> Self {
         ResolveError::Raised(r)

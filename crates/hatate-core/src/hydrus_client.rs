@@ -199,7 +199,9 @@ impl HydrusError {
             | ErrorKind::EngineBlocked
             | ErrorKind::EngineFailed
             | ErrorKind::FormatRefused
-            | ErrorKind::Unexpected => {
+            | ErrorKind::Unexpected
+            | ErrorKind::Timeout
+            | ErrorKind::InvalidUrl => {
                 "Hydrus failed in a way Hatate does not expect. Try again.".to_owned()
             }
             ErrorKind::Io => {

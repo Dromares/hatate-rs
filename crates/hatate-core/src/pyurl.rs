@@ -169,6 +169,22 @@ impl std::fmt::Display for UrlValueError {
 
 impl std::error::Error for UrlValueError {}
 
+impl UrlValueError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        crate::error::ErrorKind::InvalidUrl
+    }
+
+    /// What failed and what to do; no address.
+    pub fn user_message(&self) -> String {
+        "A match has an address Hatate cannot read, so it was skipped.".to_owned()
+    }
+
+    /// Python's message.
+    pub fn detail(&self) -> String {
+        self.to_string()
+    }
+}
+
 /// `urlparse(url, scheme)`: `scheme` is what a URL with no scheme of its own gets.
 pub fn urlparse(url: &str, default_scheme: &str) -> Parsed {
     parsed_from(split(url, Some(default_scheme)))

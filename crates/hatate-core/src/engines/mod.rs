@@ -103,6 +103,24 @@ impl std::fmt::Display for UnexpectedInput {
 
 impl std::error::Error for UnexpectedInput {}
 
+impl UnexpectedInput {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        crate::error::ErrorKind::Unexpected
+    }
+
+    /// What failed and what to do.
+    pub fn user_message(&self) -> String {
+        "A search engine sent an answer Hatate could not read. Try again, or use the other \
+         engines."
+            .to_owned()
+    }
+
+    /// Why Python raises.
+    pub fn detail(&self) -> String {
+        self.to_string()
+    }
+}
+
 /// What `for x in value or []` visits, for the elements that are objects. A falsy value is empty;
 /// an array is its items; a non-empty object or string is iterated by key or by character, and
 /// neither is an object; a number or `true` is not iterable, which Python raises on.
