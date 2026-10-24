@@ -137,6 +137,14 @@ window:focus:focus-visible, popover:focus:focus-visible, popover > contents:focu
 dialog:focus:focus-visible, floating-sheet:focus:focus-visible, sheet:focus:focus-visible,
 dialog widget:focus:focus-visible { outline: none; }
 
+/* ---- selected text: an ink-18 wash under ink text, not libadwaita's accent blue (the only chroma in a
+   warm-monochrome app, and 3.4:1 under the log viewer's path line). The `:focus-within` and `:backdrop`
+   forms are libadwaita's own, which would otherwise win on specificity ---- */
+selection, label > selection, label > selection:focus-within, label > selection:backdrop,
+text > selection, text > selection:focus-within, text > selection:backdrop,
+textview text selection, textview text selection:focus-within, textview text selection:backdrop
+{ background: @ink_18; color: @ink; }
+
 /* ---- cards: regions of a flat page, set off by a 1px hairline, not a fill (DAN-1160 / G-08) ---- */
 /* libadwaita's own `.card` draws a radius-12 outline and a shadow falloff; this one is a plain region */
 .card { background: transparent; border-radius: 0; box-shadow: none; }
