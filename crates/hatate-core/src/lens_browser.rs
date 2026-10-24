@@ -933,4 +933,28 @@ mod tests {
             ErrorKind::EngineFailed
         );
     }
+
+    /// DAN-2198: every test injects its own `LensSettings`, so nothing else pins what the binary
+    /// ships. Values are Python's at `76c85c4` (`core/lens_browser.py`).
+    #[test]
+    fn shipped_settings_are_pythons_values_at_76c85c4() {
+        let settings = LensSettings::shipped(PathBuf::from("/profile"));
+        assert_eq!(settings.profile_dir, PathBuf::from("/profile"));
+        assert_eq!(settings.safesearch_url, "https://www.google.com/safesearch");
+        assert_eq!(
+            settings.warmup_searches,
+            [
+                "https://www.google.com/search?q=weather&hl=en",
+                "https://www.google.com/search?q=news&hl=en",
+            ]
+        );
+        assert_eq!(settings.challenge_wait_ms, 180_000);
+        assert_eq!(settings.challenge_poll_ms, 1000);
+        assert_eq!(settings.answer_grace_seconds, 120.0); // the `+ 120` in `fetch`
+        assert!(settings.extra_launch_args.is_empty());
+        // Not settings fields, but the same "what the shipped window looks like" pin.
+        assert_eq!(launch::WINDOW_CLASS, "hatate-lens");
+        assert_eq!(page::VIEWPORT, (1280, 900));
+        assert_eq!(page::LOCALE, "en-US");
+    }
 }
