@@ -88,7 +88,7 @@ lines (timestamps normalised), the session state after every 40th call (every ca
 and after the last, and the search-cache directory.
 
 Result at the head named in the log: seeds 1 to 8, 400 calls each, **3200 cases, 0 differences
-except class P1** (section 5).
+except class P1, granted by name on DAN-2209** (section 5).
 
 **Named tests** (`crates/hatate-core/tests/mcp_tool_handlers.rs`, `src/queue.rs`): the Python tests
 mapped in section 6, plus the transport tests: `get_images` and `get_diff` over a self-signed local
@@ -103,16 +103,34 @@ one failure for each client: a download bounded by `hydrus.timeout`
 
 ## 5. Differences from Python
 
-**P1: the PNG container bytes of `get_diff`'s `diff_image`.** Matched by pixels, mode and size in
-every case; not by bytes. 39 `get_diff` responses in the 3200 cases, and the same 39 audit lines
-(Python's audit line prints the image as `str(bytes)`, and so does the Rust one, so the line differs
-in the same bytes). Cause: Pillow 12.3.0 in the venv is built on zlib-ng and chooses PNG row filters
-with its own heuristic; the Rust encoder is the `png` crate's. A probe (not committed) fed Pillow's
-filtered rows one row at a time to `libz-rs-sys` 0.5 (zlib-rs) at level 6, memLevel 9: 50 of 60
-vectors reproduced Pillow's IDAT stream, 10 did not. No crate available reproduces zlib-ng's deflate
-exactly, so the container bytes cannot be matched. The sizes differ by 5 to 15 percent (806 against
-874, 737 against 808). Taken to Cloud for a ruling (the ticket asks for it before the verify ticket
-opens).
+**P1 (granted, [DAN-2209](/DAN/issues/DAN-2209)): the PNG container bytes of `get_diff`'s
+`diff_image`.** Matched by decoded picture (pixels, mode, bit depth, colour type, size) in every case;
+not by bytes. 37 `get_diff` responses in the 3200 cases (seeds 2 to 8: 7, 2, 2, 7, 8, 10, 1; seed 1
+has none), decoded-equal 37 of 37, and the same 37 audit lines (Python's audit line prints the image
+as `str(bytes)`, and so does the Rust one, so the line differs in the same substring only). Cause:
+Pillow 12.3.0 in the venv is built on zlib-ng and chooses PNG row filters with its own heuristic; the
+Rust encoder is the `png` crate's. A probe (not committed) fed Pillow's filtered rows one row at a
+time to `libz-rs-sys` 0.5 (zlib-rs) at level 6, memLevel 9: 50 of 60 vectors reproduced Pillow's IDAT
+stream, 10 did not. No crate available reproduces zlib-ng's deflate exactly, and the sizes differ by
+5 to 15 percent (806 against 874, 737 against 808). Cloud ruled on DAN-2209 (2026-10-24): granted by
+name, for this field only, under these conditions:
+
+1. Decoded equality on every `get_diff` case: both PNGs decoded, pixels, mode (`L`), bit depth and
+   size compared exactly; the count and one pixel hash per side are reported.
+2. Python decodes the Rust PNG: Pillow's `Image.open(...).load()` on every Rust `diff_image`, warnings
+   as errors; the `png` crate decodes every Python one.
+3. Everything around the bytes stays byte-equal: content-block `type`, `mimeType`, block order and the
+   text block. In the audit lines only the image-bytes substring is masked; the rest of each line is
+   compared byte for byte.
+4. No new dependency for this: no `libz-ng-sys` and no `libz-rs-sys` is added to `Cargo.lock` (the
+   `zlib-rs` already in the lock is a transitive entry on `main`; this PR's `Cargo.lock` diff is empty).
+   The probe stays out of the tree.
+5. The differential names it: `P1 (granted, DAN-2209): N cases, decoded-equal N/N`, and 0 other
+   differences.
+
+The grant covers the PNG container bytes of that one block and the matching `str(bytes)` substring of
+that tool's audit line, and nothing else. Python is not changed. The audit line's whole-image dump is
+log growth, not a wrong result; no Python fix will be filed (a Phase 7 candidate).
 
 **D1: a Hydrus send does not hold the model.** Python runs `send_*` ON the GUI thread: the window is
 blocked until Hydrus answers or 60 s pass. Here the entry is copied out, sent on the tool's thread,
