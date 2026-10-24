@@ -7,8 +7,10 @@
 //! through its [`Workers`](crate::worker::Workers); a continuation never runs after the window
 //! began closing (`self._closing`, DAN-128).
 
+use crate::banners::thousands;
 use crate::dialogs;
 use crate::error::SessionError;
+use crate::shell::{IDLE_ETA, IDLE_PROGRESS, QUOTA_PAUSED_ETA};
 use crate::text::format_duration;
 use crate::window::MainWindow;
 use crate::worker::Event;
@@ -20,7 +22,7 @@ use hatate_core::batch::hashing::hash_files;
 use hatate_core::batch::intake::{self, filter_duplicate_paths, scan_folder};
 use hatate_core::batch::{Autosave, Silent};
 use hatate_core::crash_marker::CrashMarkers;
-use hatate_core::model::Entry;
+use hatate_core::model::{Entry, MatchStatus};
 use hatate_core::queue::QueueModel;
 use hatate_core::session::{self, LoadOptions, SessionStore, named};
 use std::collections::HashMap;
@@ -179,6 +181,7 @@ impl MainWindow {
     }
 
     fn set_progress(&self, value: usize, maximum: usize) {
+        self.s.run_progress.set((value as i64, maximum as i64));
         let fraction = if maximum == 0 {
             0.0
         } else {
@@ -212,6 +215,8 @@ impl MainWindow {
         self.s.shell.wait_countdown_label.set_text("");
         let paths = std::mem::take(&mut *self.s.pending_import_paths.borrow_mut());
         self.s.shell.progress_bar.set_fraction(0.0);
+        let (_, max) = self.s.run_progress.get();
+        self.s.run_progress.set((0, max));
 
         // Apply freshly computed hashes to already-added entries that had none cached.
         {
@@ -273,6 +278,96 @@ impl MainWindow {
     /// ghost glyph and the count follow it. 6.d's view hangs its refresh here.
     pub fn list_changed(&self) {
         self.refresh_queue_empty_state();
+        self.refresh_sent_count_label();
+    }
+
+    /// `_idle_run_text()`: what the strip's count says when no run is under way. "nothing
+    /// queued" is only true of an empty list.
+    pub fn idle_run_text(&self) -> String {
+        let waiting = self
+            .s
+            .queue
+            .borrow()
+            .entries()
+            .iter()
+            .filter(|e| e.status == MatchStatus::NotSearched)
+            .count();
+        if waiting > 0 {
+            format!("{} not searched", thousands(waiting as i64))
+        } else {
+            IDLE_PROGRESS.to_owned()
+        }
+    }
+
+    /// `_refresh_run_progress_label()`: the count, and the estimate that joins it once a run has
+    /// one. With no run to report the strip says so rather than going blank (R-05).
+    /// DEFERRED(6.e): the pace estimate of a live run (`_run_estimate`); here a run that is
+    /// active reports its count and `ETA paused`/`ETA \u{2014}` until 6.e supplies the estimate.
+    pub fn refresh_run_progress_label(&self) {
+        let (done, total) = self.s.run_progress.get();
+        let strip = &self.s.shell;
+        // A run paused on the quota is not idle and is not finishing: the estimate would be a lie
+        // either way (S-04).
+        let paused_eta = if self.s.quota_paused.get() {
+            QUOTA_PAUSED_ETA
+        } else {
+            IDLE_ETA
+        };
+        if total <= 0 || (done <= 0 && !self.s.run_active.get()) {
+            strip.run_progress_label.set_text(&self.idle_run_text());
+            strip.run_eta_label.set_text(paused_eta);
+            return;
+        }
+        self.s.run_counted.set(true);
+        strip.run_progress_label.set_text(&format!(
+            "{}/{} searched",
+            thousands(done),
+            thousands(total)
+        ));
+        strip.run_eta_label.set_text(paused_eta);
+    }
+
+    /// `_refresh_sent_count_label()`: keeps the status-bar "N sent" readout in step with the list.
+    pub fn refresh_sent_count_label(&self) {
+        let text = {
+            let q = self.s.queue.borrow();
+            let entries = q.entries();
+            if entries.is_empty() {
+                None
+            } else {
+                let sent = entries
+                    .iter()
+                    .filter(|e| e.sent_to_hydrus && e.hydrus_import_confirmed)
+                    .count();
+                let queued = entries
+                    .iter()
+                    .filter(|e| e.sent_to_hydrus && !e.hydrus_import_confirmed)
+                    .count();
+                let mut text = format!("{sent} sent");
+                if queued > 0 {
+                    text.push_str(&format!(" ({queued} queued)"));
+                }
+                // Only once something has actually been reviewed (R-04).
+                if entries.iter().any(|e| e.reviewed) {
+                    let to_review = entries
+                        .iter()
+                        .filter(|e| !e.sent_to_hydrus && !e.reviewed)
+                        .count();
+                    text.push_str(&format!(" \u{b7} {to_review} to review"));
+                }
+                Some(text)
+            }
+        };
+        self.s
+            .shell
+            .sent_count_label
+            .set_text(text.as_deref().unwrap_or(""));
+        if !self.s.run_counted.get() && !self.s.run_active.get() {
+            self.s
+                .shell
+                .run_progress_label
+                .set_text(&self.idle_run_text());
+        }
     }
 
     // ---- restore --------------------------------------------------------------------------

@@ -277,6 +277,11 @@ fn meta_lines(w: &gtk4::Widget, out: &mut Vec<String>) {
     }
 }
 
+/// Qt's `not isHidden()`: the widget's own visible flag, not whether its ancestors are shown.
+fn flag(w: &impl IsA<gtk4::Widget>) -> bool {
+    w.property::<bool>("visible")
+}
+
 fn kind(k: Kind) -> &'static str {
     match k {
         Kind::Information => "information",
@@ -383,15 +388,15 @@ fn digest(
         "ghost": sh.root.glyph(),
         "mode": sh.current_mode(),
         "run_banner": {
-            "visible": rb.root.is_visible(),
+            "visible": flag(&rb.root),
             "body": rb.parts.body.text().to_string(),
             "meta": run_meta,
         },
         "quota_banner": {
-            "visible": qb.root.is_visible(),
+            "visible": flag(&qb.root),
             "body": qb.parts.body.text().to_string(),
             "review": qb.review.label().map(|l| l.to_string()).unwrap_or_default(),
-            "review_visible": qb.review.is_visible(),
+            "review_visible": flag(&qb.review),
             "meta": quota_meta,
         },
         "survived_meta": survived_meta,

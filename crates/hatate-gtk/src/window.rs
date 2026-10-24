@@ -144,6 +144,12 @@ pub struct State {
     pub missing: RefCell<HashSet<String>>,
     /// `self._quota_paused`.
     pub quota_paused: Cell<bool>,
+    /// The run strip's gauge as Qt keeps it: `(progress_bar.value(), progress_bar.maximum())`.
+    pub run_progress: Cell<(i64, i64)>,
+    /// `self._run_active`: a search is under way (6.e sets it).
+    pub run_active: Cell<bool>,
+    /// `self._run_counted`: the strip has shown a run's count, which then stays on screen.
+    pub run_counted: Cell<bool>,
     pub scheme: Cell<Scheme>,
     pub win: adw::ApplicationWindow,
     /// The dialogs that are open (the log viewer), so a test can find them.
@@ -290,6 +296,9 @@ impl MainWindow {
             session_restore_status: RefCell::new(None),
             missing: RefCell::new(HashSet::new()),
             quota_paused: Cell::new(false),
+            run_progress: Cell::new((0, 0)),
+            run_active: Cell::new(false),
+            run_counted: Cell::new(false),
             scheme: Cell::new(Scheme::Dark),
             win: win.clone(),
             log_viewer: RefCell::new(None),

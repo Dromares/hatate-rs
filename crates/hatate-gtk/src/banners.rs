@@ -220,7 +220,7 @@ impl MainWindow {
             .meta_slot
             .append(&widgets::meta_line(&items, false, Some(0)));
         self.s.shell.run_note_label.set_text(QUOTA_PAUSED_NOTE);
-        // DEFERRED(6.e): `_refresh_run_progress_label()`.
+        self.refresh_run_progress_label();
         banner.root.set_visible(true);
     }
 
