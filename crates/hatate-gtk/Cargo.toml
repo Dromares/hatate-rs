@@ -32,6 +32,10 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 
 [dev-dependencies]
 tempfile = "3.27.0"
+# The action differential driver (tests/differential.rs) reads `session.db` and `config.json` back
+# the way the Python driver does. Same versions as hatate-core.
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
 
 # Needs a display, so it is its own program: it runs under `xvfb-run` with HATATE_GTK_SMOKE=1, and
 # GTK must be on the main thread, which the default test harness does not give a test. With `CI`
@@ -39,4 +43,12 @@ tempfile = "3.27.0"
 [[test]]
 name = "smoke"
 path = "tests/smoke.rs"
+harness = false
+
+# The action differential, Rust side (DAN-2215): drives the window through a scripted sequence and
+# writes a digest per step for the out-of-tree comparer. Needs a display and the scenario file, so
+# it skips unless HATATE_DIFF_SCENARIOS is set. Test-only: the shipped binary has no such input.
+[[test]]
+name = "differential"
+path = "tests/differential.rs"
 harness = false

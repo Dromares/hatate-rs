@@ -1124,6 +1124,8 @@ dependencies = [
  "gtk4",
  "hatate-core",
  "libadwaita",
+ "rusqlite",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",

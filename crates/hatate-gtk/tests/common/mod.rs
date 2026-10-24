@@ -35,19 +35,42 @@ pub enum Answer {
 /// A prompter that answers at once from a script and keeps a record of every question.
 #[derive(Default)]
 pub struct Script {
+    /// Message-box answers and chooser answers are separate queues, as in the Python oracle's
+    /// driver: which box comes first inside one action is then not part of the script.
     answers: RefCell<VecDeque<Answer>>,
+    picks: RefCell<VecDeque<Answer>>,
     pub shown: RefCell<Vec<Shown>>,
     pub asked: RefCell<Vec<Asked>>,
+    /// The button pressed for each entry of `shown`.
+    pub results: RefCell<Vec<Response>>,
 }
 
 impl Script {
     pub fn push(&self, a: Answer) {
-        self.answers.borrow_mut().push_back(a);
+        match a {
+            Answer::Msg(_) => self.answers.borrow_mut().push_back(a),
+            _ => self.picks.borrow_mut().push_back(a),
+        }
     }
 
-    /// The next scripted answer. Taken before it is acted on: the continuation may ask again.
+    /// Forgets every unused answer and every record.
+    pub fn reset(&self) {
+        self.answers.borrow_mut().clear();
+        self.picks.borrow_mut().clear();
+        self.shown.borrow_mut().clear();
+        self.asked.borrow_mut().clear();
+        self.results.borrow_mut().clear();
+    }
+
+    /// The next scripted message-box answer. Taken before it is acted on: the continuation may
+    /// ask again.
     fn next(&self) -> Option<Answer> {
         self.answers.borrow_mut().pop_front()
+    }
+
+    /// The next scripted chooser answer.
+    fn next_pick(&self) -> Option<Answer> {
+        self.picks.borrow_mut().pop_front()
     }
 
     pub fn last_shown(&self) -> Shown {
@@ -78,6 +101,7 @@ impl Prompter for Script {
             // An unscripted box is answered by its default button, as pressing Enter would.
             _ => default,
         };
+        self.results.borrow_mut().push(answer);
         done(answer);
     }
 
@@ -86,7 +110,7 @@ impl Prompter for Script {
             title: title.to_owned(),
             filter: filter.to_owned(),
         });
-        match self.next() {
+        match self.next_pick() {
             Some(Answer::Files(f)) => done(f),
             _ => done(Vec::new()),
         }
@@ -96,7 +120,7 @@ impl Prompter for Script {
         self.asked.borrow_mut().push(Asked::Folder {
             title: title.to_owned(),
         });
-        match self.next() {
+        match self.next_pick() {
             Some(Answer::Path(p)) => done(p),
             _ => done(None),
         }
@@ -107,7 +131,7 @@ impl Prompter for Script {
             title: title.to_owned(),
             filter: filter.to_owned(),
         });
-        match self.next() {
+        match self.next_pick() {
             Some(Answer::Path(p)) => done(p),
             _ => done(None),
         }
@@ -125,7 +149,7 @@ impl Prompter for Script {
             default_name: default_name.to_owned(),
             filter: filter.to_owned(),
         });
-        match self.next() {
+        match self.next_pick() {
             Some(Answer::Path(p)) => done(p),
             _ => done(None),
         }
