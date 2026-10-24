@@ -196,6 +196,65 @@ async fn the_nearest_post_past_the_limit_is_not_a_match() {
     assert_eq!(w.seen().len(), 3, "the thumbnails were all read first");
 }
 
+/// A 17 x 16 grey picture whose `dhash(.., 16)` differs from `edge_picture(0)`'s in exactly
+/// `flipped` bits: every row climbs left to right (bit 0), and the first pixel of each of the first
+/// `flipped` rows is raised past its right-hand neighbour (bit 1).
+fn edge_picture(flipped: u32) -> image::RgbImage {
+    image::RgbImage::from_fn(17, 16, |x, y| {
+        let grey = if x == 0 && y < flipped {
+            250
+        } else {
+            10 * x as u8
+        };
+        image::Rgb([grey, grey, grey])
+    })
+}
+
+/// How many of the 256 bits `thumb` differs from `edge_picture(0)` in, as the lookup sees it.
+fn bits_apart(thumb: &image::RgbImage) -> u32 {
+    let theirs = dhash(Source::Bytes(&png(thumb)), rule34::LISTING_HASH_SIZE)
+        .unwrap()
+        .unwrap();
+    local_hash(&edge_picture(0)).xor_popcount(&theirs)
+}
+
+/// The lookup for `edge_picture(0)` over a listing of one post, whose thumbnail is `thumb`.
+async fn edge_lookup(thumb: &image::RgbImage) -> Option<(String, String, i64)> {
+    let w = world(site(
+        html(listing(&[("9", "/t/e.png")])),
+        vec![("/t/e.png", Reply::ok(png(thumb)))],
+    ))
+    .await;
+    rule34::find_post_by_search(&w.client, "tag", Some(&local_hash(&edge_picture(0))), 15.0)
+        .await
+        .unwrap()
+}
+
+/// `LISTING_MAX_DISTANCE` is 6 of 256 bits at 76c85c4 (`rule34.py`: `best_distance > 6` finds
+/// nothing), and a post exactly that far away is still the post.
+#[tokio::test]
+async fn a_post_exactly_at_the_distance_limit_is_a_match_and_one_bit_past_it_is_not() {
+    assert_eq!(rule34::LISTING_MAX_DISTANCE, 6);
+    assert_eq!(rule34::LISTING_HASH_SIZE, 16);
+    for n in [0, 6, 7] {
+        assert_eq!(
+            bits_apart(&edge_picture(n)),
+            n,
+            "the pictures are {n} bits apart"
+        );
+    }
+    assert_eq!(
+        edge_lookup(&edge_picture(6)).await,
+        Some((
+            "https://rule34.xxx/index.php?page=post&s=view&id=9".to_owned(),
+            "https://wimg.rule34.xxx/t/e.png".to_owned(),
+            6
+        ))
+    );
+    assert_eq!(edge_lookup(&edge_picture(7)).await, None);
+    assert_eq!(edge_lookup(&edge_picture(0)).await.map(|f| f.2), Some(0));
+}
+
 #[tokio::test]
 async fn an_empty_listing_costs_one_request() {
     let w = world(site(
