@@ -6,6 +6,8 @@
 
 #![allow(dead_code)]
 
+pub mod xtest;
+
 use gtk4::glib;
 use gtk4::prelude::*;
 use hatate_core::config::Settings;

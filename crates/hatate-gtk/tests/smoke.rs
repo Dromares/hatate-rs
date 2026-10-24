@@ -89,6 +89,7 @@ const SCENARIOS: &[Scenario] = &[
         "a_dialog_shows_the_ring_on_its_default",
         a_dialog_shows_the_ring_on_its_default,
     ),
+    ("menubar_keyboard_path", menubar_keyboard_path),
     (
         "the_log_viewer_opens_on_close_and_selects_in_ink",
         the_log_viewer_opens_on_close_and_selects_in_ink,
@@ -119,7 +120,12 @@ fn main() {
     let failed = Rc::new(Cell::new(0usize));
     let f = failed.clone();
     let code = hatate_gtk::app::with_application(move |app| {
+        // `HATATE_SMOKE_ONLY=<substring>` runs just the scenarios whose name contains it.
+        let only = std::env::var("HATATE_SMOKE_ONLY").ok();
         for (name, scenario) in SCENARIOS {
+            if only.as_deref().is_some_and(|o| !name.contains(o)) {
+                continue;
+            }
             let result = std::panic::catch_unwind(AssertUnwindSafe(|| scenario(app)));
             match result {
                 Ok(()) => println!("scenario {name} ... ok"),
@@ -1479,4 +1485,72 @@ fn the_log_viewer_opens_on_close_and_selects_in_ink(app: &adw::Application) {
         viewer.window.close();
         f.close();
     }
+}
+
+/// The first label under `w` that is a `GtkModelButton` text, per visible popover menu: what menus
+/// are open, by their first entry.
+fn open_menu_first_entries(w: &gtk4::Widget, out: &mut Vec<String>) {
+    if let Some(p) = w.downcast_ref::<gtk4::PopoverMenu>() {
+        if p.is_visible() {
+            out.push(first_model_button_text(p.upcast_ref()).unwrap_or_default());
+        }
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        open_menu_first_entries(&child, out);
+        c = child.next_sibling();
+    }
+}
+
+fn first_model_button_text(w: &gtk4::Widget) -> Option<String> {
+    if w.type_().name() == "GtkModelButton" {
+        return w.property::<Option<String>>("text");
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(t) = first_model_button_text(&child) {
+            return Some(t);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
+fn menubar_keyboard_path(app: &adw::Application) {
+    let f = fx(app);
+    f.w.win.set_default_size(1100, 800);
+    pump_for(400);
+    let root = f.w.win.clone().upcast::<gtk4::Widget>();
+    let mut x = common::xtest::Xtest::connect().expect("XTEST");
+    let kc = gtk4::EventControllerKey::new();
+    kc.set_propagation_phase(gtk4::PropagationPhase::Capture);
+    kc.connect_key_pressed(|_, k, code, st| { eprintln!("DBG KEY {k:?} {code} {st:?}"); gtk4::glib::Propagation::Proceed });
+    f.w.win.add_controller(kc);
+    x.focus_window_at(300, 300).expect("focus");
+    pump_for(200);
+    let window = f.w.win.upcast_ref::<gtk4::Window>();
+    let show = |tag: &str| {
+        let mut v = Vec::new();
+        open_menu_first_entries(&root, &mut v);
+        eprintln!("DBG {tag}: active={} focus={:?} open={v:?}", f.w.win.is_active(), gtk4::prelude::GtkWindowExt::focus(window).map(|w| w.type_().name()));
+    };
+    show("start");
+    let seq: &[(&str, common::xtest::Key, bool)] = &[
+        ("Alt+f", common::xtest::Key::Char('f'), true),
+        ("Right", common::xtest::Key::Right, false),
+        ("Right", common::xtest::Key::Right, false),
+        ("Left", common::xtest::Key::Left, false),
+        ("Escape", common::xtest::Key::Escape, false),
+        ("Escape", common::xtest::Key::Escape, false),
+        ("F10", common::xtest::Key::F10, false),
+        ("Right", common::xtest::Key::Right, false),
+        ("Escape", common::xtest::Key::Escape, false),
+        ("Escape", common::xtest::Key::Escape, false),
+    ];
+    for (tag, k, alt) in seq {
+        x.tap(*k, *alt).unwrap();
+        pump_for(400);
+        show(tag);
+    }
+    f.close();
 }
