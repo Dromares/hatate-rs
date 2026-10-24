@@ -161,4 +161,13 @@ Python has no test for the error shape (it has no such thing); the Rust tests ar
 
 ## How it was checked
 
-(Filled in below after the differential: see the PR body and `worktrees/DAN-2216-differential.log`.)
+**Differential against Python at `76c85c4`.** The harness lives outside the repo (the tree is Rust only); the log is `worktrees/DAN-2216-differential.log`. The scratch Rust tests that dump answers (`zz_p6a_diff.rs`, `zz_p6a_run.rs`) are copied in for a run and never committed.
+
+- *Direct* (3 seeds, 6,298 cases each, **0 differing**): all 288 combinations of status, upscale verdict (including `""`, `FLAGGED` and an unknown string), reviewed, sent and confirmed, against `theme.status_glyph`/`status_weight`/`status_glyph_font`/`chip_label`, `MatchStatus.sort_rank`/`label`, `BOXED_CHIPS`, `ImageTableModel._display`/`_chip`, `sort_key_for_column` for the Status, Upscale, Sent and Reviewed columns, `_upscale_glyph`/`_upscale_weight` and `upscale_verdict_label`; 2,000 seeded entry lists against `_interrupted_prose` (the string, and the four counts); 4,010 sizes against PyQt6 `QSize.scaled(KeepAspectRatio)`.
+- *Run endings* (6 seeds, 540 scenarios, 25,802 signals, **0 differing**): the real `SearchWorker._run()` with its engines scripted, a fake clock and `random.uniform` at its midpoint, against `RunChannel` over `run_batch` (the scripted engines and the local https booru server of `batch_run.rs`). One run per ending, with retries, rate-limit waits (1,343 countdown signals) and ETAs compared: every `image_updated`(searching), `progress` (with the window's `RunEstimate` ETA), `wait_countdown`, `paused_out_of_quota` and `finished_all`, in order. Python's `finished_all` after a pause is dropped on the Rust side because `PausedForQuota` is itself the end (call 2).
+- *Failed:* in Python a staging directory that cannot be made kills the worker thread on `FileExistsError` and emits no signal. Rust ends `Ending::Failed` with a path-free message; the test is `batch_run::a_worker_that_dies_is_failed_with_a_message_that_names_no_path`. That is a documented class of one (Rust-only state), not a difference in a signal.
+- *Sensitivity:* swapping the Good and Review ranks turns 96 of 288 tier cells red, changing "is" to "are" for one image turns 657 of 2,000 counts red, shifting the ETA by a second turns 100 of 100 scenarios red.
+
+**Granted, not compared:** Review and Not found are bold in Rust (`phase6-calls` 1d); the differential does not judge pixels.
+
+**Local gate** at the head: `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (2,168 passed, 0 failed; `worktrees/DAN-2216/DAN-2216-gate.log`).
