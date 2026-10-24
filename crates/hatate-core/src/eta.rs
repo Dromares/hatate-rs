@@ -278,3 +278,141 @@ pub fn worker_waiting_text(seconds: f64) -> String {
         fixed0(seconds)
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn feed(run: &mut RunEstimate, signals: &[(i64, i64, f64)]) {
+        for &(done, total, at) in signals {
+            run.record(done, total, Some(at));
+        }
+    }
+
+    #[test]
+    fn nothing_is_said_until_two_intervals_have_passed() {
+        let mut run = RunEstimate::new();
+        assert_eq!(run.seconds_remaining(), -1.0);
+        feed(&mut run, &[(1, 10, 100.0), (2, 10, 160.0)]);
+        assert_eq!(run.intervals(), 1);
+        assert_eq!(run.seconds_remaining(), -1.0, "one interval is one sample");
+        feed(&mut run, &[(3, 10, 220.0)]);
+        assert_eq!(run.intervals(), 2);
+        assert_eq!(run.seconds_per_image(), 60.0);
+        assert_eq!(run.seconds_remaining(), 7.0 * 60.0);
+    }
+
+    #[test]
+    fn the_baseline_is_the_first_signal_and_the_total_is_reread() {
+        let mut run = RunEstimate::new();
+        feed(&mut run, &[(5, 10, 0.0), (6, 10, 30.0), (7, 12, 60.0)]);
+        assert_eq!(run.intervals(), 2);
+        assert_eq!(run.seconds_remaining(), 5.0 * 30.0, "total grew to 12");
+    }
+
+    #[test]
+    fn no_elapsed_time_is_unknown_and_reset_forgets() {
+        let mut run = RunEstimate::new();
+        feed(&mut run, &[(1, 9, 5.0), (2, 9, 5.0), (3, 9, 5.0)]);
+        assert_eq!(run.seconds_per_image(), -1.0);
+        feed(&mut run, &[(4, 9, 6.0)]);
+        assert!(run.seconds_remaining() > 0.0);
+        run.reset();
+        assert_eq!(run, RunEstimate::new());
+    }
+
+    #[test]
+    fn durations_round_halves_to_even_like_python() {
+        assert_eq!(format_duration(0.5, false), "0s");
+        assert_eq!(format_duration(1.5, false), "2s");
+        assert_eq!(format_duration(2.5, false), "2s");
+        assert_eq!(format_duration(59.5, false), "1m", "59.5 rounds to 60");
+        assert_eq!(format_duration(-3.0, false), "0s");
+        assert_eq!(format_duration(150.0, false), "2m 30s");
+        assert_eq!(format_duration(3900.0, false), "1h 5m");
+        assert_eq!(format_duration(7740.0, true), "2h 09m");
+        assert_eq!(format_duration(7740.0, false), "2h 9m");
+        assert_eq!(format_duration(3600.0, true), "1h");
+        assert_eq!(
+            format_duration(4.0 * 86400.0 + 5.0 * 3600.0, false),
+            "4d 5h"
+        );
+        assert_eq!(format_duration(2.0 * 86400.0, false), "2d");
+    }
+
+    #[test]
+    fn the_countdown_rounds_halves_to_even() {
+        assert_eq!(wait_countdown_text("Rate limit", 38.4), "waiting 38s");
+        assert_eq!(wait_countdown_text("Rate limit", 0.5), "waiting 0s");
+        assert_eq!(wait_countdown_text("Rate limit", 1.5), "waiting 2s");
+        assert_eq!(wait_countdown_text("Rate limit", 2.5), "waiting 2s");
+        assert_eq!(
+            wait_countdown_text("SauceNAO quota", 9.0),
+            "saucenao quota 9s"
+        );
+        assert_eq!(wait_countdown_text("", 9.0), "");
+        assert_eq!(wait_countdown_text("Rate limit", 0.0), "");
+        assert_eq!(
+            worker_waiting_text(45.5),
+            "Waiting 46s before next search (rate limiting)\u{2026}"
+        );
+        assert_eq!(
+            worker_waiting_text(46.5),
+            "Waiting 46s before next search (rate limiting)\u{2026}"
+        );
+    }
+
+    // 2026-03-02 (a Monday) 10:00:00 as naive seconds.
+    const MONDAY_10: i64 = 1_772_445_600;
+
+    #[test]
+    fn the_finish_time_is_phrased_by_distance() {
+        let at = |s: f64| format_finish_time(s, MONDAY_10);
+        assert_eq!(at(0.0), "ends 10:00");
+        assert_eq!(at(-50.0), "ends 10:00");
+        assert_eq!(at(4.0 * 3600.0 + 20.0 * 60.0), "ends 14:20");
+        assert_eq!(at(15.0 * 3600.0), "ends tomorrow 01:00");
+        assert_eq!(at(3.0 * 86400.0), "ends Thu 10:00");
+        assert_eq!(at(6.0 * 86400.0 + 3600.0), "ends Sun 11:00");
+        assert_eq!(at(7.0 * 86400.0), "ends 9 Mar");
+        assert_eq!(at(f64::INFINITY), "", "an absurd horizon is no finish time");
+        assert_eq!(at(1.0e15), "");
+        assert_eq!(at(8.64e13), "");
+    }
+
+    #[test]
+    fn the_run_strip_follows_the_state_of_the_run() {
+        let strip = |done, total, active, paused, remaining, unsearched| {
+            run_strip(
+                done, total, active, paused, remaining, unsearched, MONDAY_10,
+            )
+        };
+        let idle = strip(0, 0, false, false, -1.0, 0);
+        assert_eq!(
+            (idle.progress.as_str(), idle.eta.as_str()),
+            ("nothing queued", "ETA \u{2014}")
+        );
+        let waiting = strip(0, 0, false, false, -1.0, 12_345);
+        assert_eq!(waiting.progress, "12,345 not searched");
+        let paused = strip(0, 5, false, true, -1.0, 5);
+        assert_eq!(paused.eta, "ETA paused");
+        let early = strip(2, 1_000, true, false, -1.0, 998);
+        assert_eq!(early.progress, "2/1,000 searched");
+        assert_eq!(early.eta, "ETA \u{2014}", "no estimate yet");
+        let running = strip(10, 1_000, true, false, 7_200.0, 990);
+        assert_eq!(running.eta, "ETA ~2h \u{b7} ends 12:00");
+        let stopped = strip(10, 1_000, false, false, 7_200.0, 990);
+        assert_eq!(
+            stopped.eta, "ETA \u{2014}",
+            "the estimate is for an active run"
+        );
+    }
+
+    #[test]
+    fn thousands_groups_like_python() {
+        assert_eq!(thousands(0), "0");
+        assert_eq!(thousands(999), "999");
+        assert_eq!(thousands(1000), "1,000");
+        assert_eq!(thousands(-1234567), "-1,234,567");
+    }
+}

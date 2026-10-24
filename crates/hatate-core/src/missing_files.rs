@@ -151,3 +151,77 @@ pub fn missing_dialog_text(affected: usize, total: usize) -> String {
          still works - Hydrus re-downloads from the source and applies the tags."
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn dirname_and_basename_follow_posixpath() {
+        assert_eq!(dirname("/a/b/c.png"), "/a/b");
+        assert_eq!(dirname("c.png"), "");
+        assert_eq!(dirname("/c.png"), "/");
+        assert_eq!(dirname("a//b"), "a");
+        assert_eq!(dirname("a/b/"), "a/b");
+        assert_eq!(basename("a/b/"), "");
+        assert_eq!(basename("a/b.png"), "b.png");
+    }
+
+    #[test]
+    fn paths_are_grouped_by_directory_in_first_seen_order() {
+        let g = group_by_directory(["/b/1", "/a/2", "/b/3", "x"]);
+        let dirs: Vec<&str> = g.iter().map(|(d, _)| d.as_str()).collect();
+        assert_eq!(dirs, vec!["/b", "/a", "."]);
+        assert_eq!(g[0].1, vec!["/b/1", "/b/3"]);
+    }
+
+    #[test]
+    fn a_missing_file_a_missing_directory_and_a_file_for_a_directory_are_all_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().to_str().unwrap();
+        std::fs::write(dir.path().join("here.png"), b"x").unwrap();
+        std::fs::write(dir.path().join("plain"), b"x").unwrap();
+        let paths = [
+            format!("{d}/here.png"),
+            format!("{d}/gone.png"),
+            format!("{d}/nodir/a.png"),
+            format!("{d}/plain/a.png"),
+        ];
+        let missing = find_missing_paths(paths.iter().map(String::as_str), None);
+        assert_eq!(missing.len(), 3);
+        assert!(!missing.contains(&paths[0]));
+    }
+
+    #[test]
+    fn a_stop_returns_what_was_found_so_far_and_the_worker_reports_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().to_str().unwrap();
+        for sub in ["one", "two"] {
+            std::fs::create_dir(dir.path().join(sub)).unwrap();
+        }
+        let paths = vec![format!("{d}/one/a.png"), format!("{d}/two/b.png")];
+        let polls = Cell::new(0);
+        let stop_second = || {
+            polls.set(polls.get() + 1);
+            polls.get() > 1
+        };
+        let partial = find_missing_paths(paths.iter().map(String::as_str), Some(&stop_second));
+        assert_eq!(partial.len(), 1, "only the first directory was scanned");
+        assert!(check_session_files(&paths, &|| true).is_empty());
+        assert_eq!(check_session_files(&paths, &|| false).len(), 2);
+    }
+
+    #[test]
+    fn flagging_marks_the_entries_in_the_set_and_counts_them() {
+        let mut entries = vec![Entry::new("/a"), Entry::new("/b"), Entry::new("/a")];
+        let missing: HashSet<String> = ["/a".to_owned()].into();
+        assert_eq!(flag_missing(&mut entries, &missing), 2);
+        assert!(entries[0].file_missing && !entries[1].file_missing && entries[2].file_missing);
+        assert_eq!(
+            missing_status_text(2),
+            "2 image(s) in this list are no longer on disk - see the File column"
+        );
+        assert!(missing_dialog_text(2, 3).starts_with("2 of 3 image(s) in this session"));
+    }
+}

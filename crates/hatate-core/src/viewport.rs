@@ -73,3 +73,45 @@ pub fn entries_needing_thumbnails<T>(
         in_flight,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_range_is_buffered_clamped_and_never_empty_for_a_swapped_pair() {
+        assert_eq!(visible_range_with_buffer(10, 20, 100, 15), Some((0, 35)));
+        assert_eq!(visible_range_with_buffer(40, 50, 100, 15), Some((25, 65)));
+        assert_eq!(visible_range_with_buffer(90, 99, 100, 15), Some((75, 99)));
+        assert_eq!(visible_range_with_buffer(20, 10, 100, 0), Some((10, 20)));
+        assert_eq!(visible_range_with_buffer(0, 5, 0, 15), None);
+        assert_eq!(visible_range_with_buffer(0, 5, -3, 15), None);
+    }
+
+    #[test]
+    fn a_negative_end_is_the_last_row_and_a_negative_start_the_first() {
+        assert_eq!(visible_range_with_buffer(-1, -1, 8, 2), Some((0, 7)));
+        assert_eq!(visible_range_with_buffer(30, -1, 100, 0), Some((30, 99)));
+        assert_eq!(visible_range_with_buffer(-1, 4, 100, 0), Some((0, 4)));
+    }
+
+    #[test]
+    fn a_row_being_made_is_not_work_to_do() {
+        let rows = [1usize, 2, 3, 4];
+        let in_flight: HashSet<usize> = [3].into();
+        let work = entries_needing_thumbnails(rows, |r| *r, |id| id == 1, &in_flight);
+        assert_eq!(work.needed, vec![2, 4]);
+        assert_eq!((work.already_cached, work.in_flight), (1, 1));
+        assert_eq!(work.examined(), 4);
+    }
+
+    #[test]
+    fn cached_wins_over_in_flight() {
+        let in_flight: HashSet<usize> = [1].into();
+        let work = entries_needing_thumbnails([1usize], |r| *r, |_| true, &in_flight);
+        assert_eq!(
+            (work.needed.len(), work.already_cached, work.in_flight),
+            (0, 1, 0)
+        );
+    }
+}

@@ -322,3 +322,225 @@ pub fn comparison_readout(
         tooltip: comparison_banner_text(entry, candidate),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Candidate;
+
+    fn entry(status: MatchStatus) -> Entry {
+        let mut e = Entry::new("/nonexistent/pic.png");
+        e.status = status;
+        e
+    }
+
+    fn matched(similarity: f64, measured: bool, w: i64, h: i64) -> (Entry, Candidate) {
+        let mut e = entry(MatchStatus::Good);
+        e.local_width = Some(1000);
+        e.local_height = Some(1000);
+        let mut c = Candidate::new("https://danbooru.donmai.us/posts/1");
+        c.source_name = Some("Danbooru".to_owned());
+        c.similarity = similarity;
+        c.similarity_measured = measured;
+        if !measured {
+            // An engine that reports a real score would make the match measured regardless.
+            c.engine = "ascii2d".to_owned();
+        }
+        c.width = Some(w);
+        c.height = Some(h);
+        e.candidates.push(c.clone());
+        (e, c)
+    }
+
+    #[test]
+    fn sizes_are_human_sized_and_never_past_gb() {
+        assert_eq!(human_size(None), None);
+        assert_eq!(human_size(Some(0)).as_deref(), Some("0 B"));
+        assert_eq!(human_size(Some(1023)).as_deref(), Some("1023 B"));
+        assert_eq!(human_size(Some(1024)).as_deref(), Some("1.0 KB"));
+        assert_eq!(human_size(Some(10_340)).as_deref(), Some("10.1 KB"));
+        assert_eq!(human_size(Some(5 * 1024 * 1024)).as_deref(), Some("5.0 MB"));
+        assert_eq!(human_size(Some(3 << 40)).as_deref(), Some("3072.0 GB"));
+    }
+
+    #[test]
+    fn the_placeholder_says_why_the_row_has_no_match() {
+        let mut e = entry(MatchStatus::NotFound);
+        assert_eq!(no_candidate_text(&e), "No match found");
+        e.error_message = Some("ascii2d blocked".to_owned());
+        assert_eq!(
+            no_candidate_text(&e),
+            "No match found (not every engine could search: ascii2d blocked)"
+        );
+        e.status = MatchStatus::Error;
+        assert_eq!(no_candidate_text(&e), "Search error: ascii2d blocked");
+        e.error_message = None;
+        assert_eq!(no_candidate_text(&e), "Search error: ");
+        assert_eq!(
+            no_candidate_text(&entry(MatchStatus::Searching)),
+            "Searching\u{2026}"
+        );
+        assert_eq!(
+            no_candidate_text(&entry(MatchStatus::NotSearched)),
+            "Not searched yet"
+        );
+        assert_eq!(
+            no_candidate_text(&entry(MatchStatus::Good)),
+            "Not searched yet"
+        );
+    }
+
+    #[test]
+    fn the_caption_says_a_ranking_is_not_a_measurement() {
+        let (e, _) = matched(95.0, true, 10, 10);
+        assert_eq!(matched_caption(&e), "Matched image: Danbooru (95% similar)");
+        let (e, _) = matched(76.0, false, 10, 10);
+        assert_eq!(
+            matched_caption(&e),
+            "Matched image: Danbooru (~76% similar - ranking, not measured)"
+        );
+        assert_eq!(
+            matched_caption(&entry(MatchStatus::NotFound)),
+            "Matched image:"
+        );
+    }
+
+    #[test]
+    fn the_frame_label_repeats_only_an_unmeasured_score() {
+        let (e, _) = matched(95.0, true, 10, 10);
+        assert_eq!(matched_frame_label(&e), "Match \u{2014} Danbooru");
+        let (e, _) = matched(77.0, false, 10, 10);
+        assert_eq!(
+            matched_frame_label(&e),
+            "Match \u{2014} Danbooru \u{b7} ~77% \u{b7} ranking, not measured"
+        );
+        assert_eq!(matched_frame_label(&entry(MatchStatus::NotFound)), "Match");
+    }
+
+    #[test]
+    fn the_match_info_names_borrowed_tags_and_an_incomplete_reason() {
+        assert_eq!(matched_image_info_text(None), "");
+        let (_, mut c) = matched(95.0, true, 1600, 1200);
+        assert_eq!(matched_image_info_text(Some(&c)), "1600\u{d7}1200");
+        c.remote_format = Some("JPEG".to_owned());
+        c.remote_size_bytes = Some(2048);
+        assert_eq!(
+            matched_image_info_text(Some(&c)),
+            "1600\u{d7}1200 \u{2022} JPEG \u{2022} 2.0 KB"
+        );
+        assert_eq!(
+            matched_frame_meta(Some(&c)),
+            "1600 \u{d7} 1200 \u{b7} JPEG \u{b7} 2.0 KB"
+        );
+        c.tags_borrowed_from = Some("Gelbooru".to_owned());
+        c.incomplete_reason = Some("tags need a login".to_owned());
+        assert_eq!(
+            matched_image_info_text(Some(&c)),
+            "1600\u{d7}1200 \u{2022} JPEG \u{2022} 2.0 KB\ntags from another match of the same image: Gelbooru\ntags need a login"
+        );
+        let bare = Candidate::new("https://x/");
+        assert_eq!(
+            matched_image_info_text(Some(&bare)),
+            "Image info not available"
+        );
+        assert_eq!(matched_frame_meta(Some(&bare)), "");
+        assert_eq!(matched_frame_meta(None), "");
+    }
+
+    #[test]
+    fn the_local_info_reads_the_header_and_the_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("p.png");
+        std::fs::write(&file, vec![0u8; 10_340]).unwrap();
+        let path = file.to_str().unwrap();
+        let png = |_: &str| {
+            Some(ImageInfo {
+                width: 560,
+                height: 900,
+                format: Some("PNG".to_owned()),
+            })
+        };
+        assert_eq!(
+            local_image_info_text(path, &png),
+            "560\u{d7}900 \u{2022} PNG \u{2022} 10.1 KB"
+        );
+        assert_eq!(
+            local_frame_meta(path, &png),
+            "560 \u{d7} 900 \u{b7} PNG \u{b7} 10.1 KB"
+        );
+        let unreadable = |_: &str| None;
+        assert_eq!(local_image_info_text(path, &unreadable), "10.1 KB");
+        let gone = dir.path().join("gone.png");
+        assert_eq!(
+            local_image_info_text(gone.to_str().unwrap(), &unreadable),
+            "Could not read image info"
+        );
+        assert_eq!(local_frame_meta(gone.to_str().unwrap(), &unreadable), "");
+    }
+
+    #[test]
+    fn the_banner_says_whether_the_match_is_an_upgrade() {
+        let (e, c) = matched(95.0, true, 2000, 2000);
+        assert_eq!(comparison_banner_tier(&e, Some(&c)), BANNER_GOOD);
+        assert_eq!(
+            comparison_banner_text(&e, Some(&c)),
+            "95% similar  \u{b7}  match is 2× larger"
+        );
+        let (e, c) = matched(80.0, false, 500, 500);
+        assert_eq!(comparison_banner_tier(&e, Some(&c)), BANNER_UNCERTAIN);
+        assert!(
+            comparison_banner_text(&e, Some(&c))
+                .starts_with("~80% similar (ranking)  \u{b7}  match is ")
+        );
+        let (e, c) = matched(90.0, true, 2000, 1000);
+        assert_eq!(
+            comparison_banner_tier(&e, Some(&c)),
+            BANNER_UNCERTAIN,
+            "a different shape"
+        );
+        assert_eq!(comparison_banner_tier(&e, None), BANNER_NEUTRAL);
+        assert_eq!(comparison_banner_text(&e, None), "");
+    }
+
+    #[test]
+    fn the_readout_splits_the_banner_into_parts() {
+        let glyphs = |key: &str| match key {
+            "good" => Some("\u{25cf}".to_owned()),
+            "estimated" => Some("~".to_owned()),
+            _ => None,
+        };
+        let (e, c) = matched(96.0, true, 2500, 2500);
+        let r = comparison_readout(&e, Some(&c), &glyphs);
+        assert_eq!(
+            (
+                r.glyph.as_str(),
+                r.value.as_str(),
+                r.label.as_str(),
+                r.diff.as_str(),
+                r.tier
+            ),
+            (
+                "\u{25cf}",
+                "96%",
+                "Similarity",
+                "\u{25b2} 2.5× larger",
+                BANNER_GOOD
+            )
+        );
+        assert_eq!(r.tooltip, comparison_banner_text(&e, Some(&c)));
+        let (e, c) = matched(60.0, false, 500, 500);
+        let r = comparison_readout(&e, Some(&c), &glyphs);
+        assert_eq!(
+            (r.glyph.as_str(), r.value.as_str(), r.label.as_str()),
+            ("~", "~60%", "Ranking")
+        );
+        assert!(
+            !r.diff.starts_with('\u{25b2}'),
+            "a smaller match is not marked as an upgrade"
+        );
+        assert_eq!(
+            comparison_readout(&e, None, &glyphs),
+            ComparisonReadout::default()
+        );
+    }
+}

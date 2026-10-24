@@ -76,3 +76,41 @@ impl LogRing {
         self.len() == 0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_ring_keeps_the_newest_lines_and_joins_them_with_newlines() {
+        let ring = LogRing::with_capacity(3);
+        assert!(ring.is_empty());
+        assert_eq!(ring.recent(), "");
+        for n in 1..=5 {
+            ring.push(format!("line {n}"));
+        }
+        assert_eq!(ring.len(), 3);
+        assert_eq!(ring.recent(), "line 3\nline 4\nline 5");
+    }
+
+    #[test]
+    fn a_clone_shares_the_ring_and_the_default_size_is_the_pythons() {
+        let ring = LogRing::new();
+        let other = ring.clone();
+        for n in 0..RING_SIZE + 10 {
+            other.push(n.to_string());
+        }
+        assert_eq!(ring.len(), RING_SIZE);
+        assert!(ring.recent().starts_with("10\n11\n"));
+    }
+
+    #[test]
+    fn a_record_is_stored_as_the_line_the_file_carries() {
+        let ring = LogRing::new();
+        ring.record(0.0, Level::Warning, "hatate.x", "hello");
+        assert_eq!(
+            ring.recent(),
+            "1970-01-01 00:00:00 [WARNING] hatate.x: hello"
+        );
+    }
+}

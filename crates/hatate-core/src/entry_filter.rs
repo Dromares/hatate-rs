@@ -133,3 +133,138 @@ pub fn upscale_verdicts_present(entries: &[Entry]) -> Vec<&'static str> {
         .filter(|label| entries.iter().any(|e| upscale_verdict_label(e) == *label))
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Candidate;
+
+    fn entry(path: &str, status: MatchStatus) -> Entry {
+        let mut e = Entry::new(path);
+        e.status = status;
+        e
+    }
+
+    fn with_match(path: &str, url: &str, source: Option<&str>) -> Entry {
+        let mut e = entry(path, MatchStatus::Good);
+        let mut c = Candidate::new(url);
+        c.source_name = source.map(str::to_owned);
+        e.candidates.push(c);
+        e
+    }
+
+    fn set<T: std::hash::Hash + Eq>(items: impl IntoIterator<Item = T>) -> Option<HashSet<T>> {
+        Some(items.into_iter().collect())
+    }
+
+    #[test]
+    fn an_empty_filter_matches_everything_and_is_inactive() {
+        let f = EntryFilter::default();
+        assert!(!f.is_active());
+        let list = vec![entry("/a/x.png", MatchStatus::Error)];
+        assert_eq!(f.apply_indices(&list), vec![0]);
+        let blank = EntryFilter {
+            text: " \t ".to_owned(),
+            ..EntryFilter::default()
+        };
+        assert!(!blank.is_active(), "whitespace is not a filter");
+    }
+
+    #[test]
+    fn an_empty_set_is_not_the_same_as_no_filter() {
+        let list = vec![entry("/a/x.png", MatchStatus::Good)];
+        let none_allowed = EntryFilter {
+            statuses: set([]),
+            ..EntryFilter::default()
+        };
+        assert!(none_allowed.is_active());
+        assert!(none_allowed.apply(&list).is_empty());
+    }
+
+    #[test]
+    fn status_site_and_verdict_each_narrow_the_list() {
+        let mut flagged = with_match("/a/one.png", "https://danbooru.donmai.us/posts/1", None);
+        flagged.upscale_verdict = Some("flagged".to_owned());
+        let list = vec![
+            flagged,
+            entry("/a/two.png", MatchStatus::NotFound),
+            with_match("/a/three.png", "https://example.invalid/x", Some("Nowhere")),
+        ];
+        let by_status = EntryFilter {
+            statuses: set([MatchStatus::NotFound]),
+            ..EntryFilter::default()
+        };
+        assert_eq!(by_status.apply_indices(&list), vec![1]);
+        let by_site = EntryFilter {
+            sites: set(["Danbooru".to_owned()]),
+            ..EntryFilter::default()
+        };
+        assert_eq!(by_site.apply_indices(&list), vec![0]);
+        let no_match = EntryFilter {
+            sites: set([NO_SITE.to_owned()]),
+            ..EntryFilter::default()
+        };
+        assert_eq!(no_match.apply_indices(&list), vec![1]);
+        let by_verdict = EntryFilter {
+            upscale_verdicts: set(["Flagged".to_owned()]),
+            ..EntryFilter::default()
+        };
+        assert_eq!(by_verdict.apply_indices(&list), vec![0]);
+        let unchecked = EntryFilter {
+            upscale_verdicts: set([UPSCALE_NOT_CHECKED.to_owned()]),
+            ..EntryFilter::default()
+        };
+        assert_eq!(unchecked.apply_indices(&list), vec![1, 2]);
+    }
+
+    #[test]
+    fn text_is_a_trimmed_case_insensitive_filename_substring() {
+        let list = vec![
+            entry("/pics/Cat Photo.PNG", MatchStatus::Good),
+            entry("/cat/dog.png", MatchStatus::Good),
+        ];
+        let f = EntryFilter {
+            text: "  cat p ".to_owned(),
+            ..EntryFilter::default()
+        };
+        assert_eq!(
+            f.apply_indices(&list),
+            vec![0],
+            "the folder name is not searched"
+        );
+    }
+
+    #[test]
+    fn the_menus_offer_only_what_is_present_in_a_fixed_order() {
+        let list = vec![
+            entry("/a", MatchStatus::Error),
+            with_match("/b", "https://safebooru.org/index.php?id=1", None),
+            with_match("/c", "https://danbooru.donmai.us/posts/2", None),
+            with_match("/d", "https://example.invalid/", None),
+        ];
+        assert_eq!(
+            sites_present(&list),
+            vec!["Danbooru", "Other", "Safebooru", NO_SITE]
+        );
+        assert_eq!(
+            statuses_present(&list),
+            vec![MatchStatus::Good, MatchStatus::Error]
+        );
+        assert_eq!(upscale_verdicts_present(&list), vec![UPSCALE_NOT_CHECKED]);
+        let mut clear = entry("/e", MatchStatus::Good);
+        clear.upscale_verdict = Some("clear".to_owned());
+        let mut flagged = entry("/f", MatchStatus::Good);
+        flagged.upscale_verdict = Some("flagged".to_owned());
+        assert_eq!(
+            upscale_verdicts_present(&[clear, flagged, entry("/g", MatchStatus::Good)]),
+            vec!["Flagged", "Clear", UPSCALE_NOT_CHECKED]
+        );
+    }
+
+    #[test]
+    fn an_unknown_verdict_reads_as_not_checked() {
+        let mut e = entry("/a", MatchStatus::Good);
+        e.upscale_verdict = Some("maybe".to_owned());
+        assert_eq!(upscale_verdict_label(&e), UPSCALE_NOT_CHECKED);
+    }
+}

@@ -216,3 +216,116 @@ pub fn conflicts(bindings: &OrderedMap<String>) -> Vec<(String, Vec<String>)> {
     }
     seen.into_iter().filter(|(_, ids)| ids.len() > 1).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mcp::tools::REVIEW_ACTION_IDS;
+
+    fn map(pairs: &[(&str, &str)]) -> OrderedMap<String> {
+        OrderedMap(
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
+        )
+    }
+
+    fn test_paths(home: &std::path::Path) -> crate::paths::Paths {
+        let home = home.as_os_str().to_owned();
+        crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| home.clone())).unwrap()
+    }
+
+    #[test]
+    fn the_registry_is_the_one_the_tool_surface_checks_against() {
+        let ids: Vec<&str> = REVIEW_ACTIONS.iter().map(|a| a.id).collect();
+        assert_eq!(ids, REVIEW_ACTION_IDS.to_vec());
+        assert_eq!(default_bindings().0.len(), 16);
+        assert_eq!(action("compare").map(|a| a.default), Some("C"));
+        assert!(action("compare").unwrap().needs_single_row);
+        assert!(!action("next_row").unwrap().needs_single_row);
+        assert_eq!(action("nope"), None);
+    }
+
+    #[test]
+    fn an_empty_override_clears_the_binding_and_is_not_the_default() {
+        let resolved = resolve(Some(&map(&[("next_row", "")])));
+        assert_eq!(resolved.get("next_row").map(String::as_str), Some(""));
+        assert_eq!(resolved.get("prev_row").map(String::as_str), Some("K"));
+    }
+
+    #[test]
+    fn resolve_drops_unknown_ids_strips_values_and_keeps_registry_order() {
+        let resolved = resolve(Some(&map(&[
+            ("zzz", "X"),
+            ("remove_row", "  Ctrl+Del \t"),
+            ("next_row", "Down"),
+        ])));
+        assert_eq!(resolved.0.len(), 16);
+        assert_eq!(resolved.get("zzz"), None);
+        assert_eq!(
+            resolved.get("remove_row").map(String::as_str),
+            Some("Ctrl+Del")
+        );
+        assert_eq!(resolved.0[0], ("next_row".to_owned(), "Down".to_owned()));
+        assert_eq!(resolve(None), default_bindings());
+    }
+
+    #[test]
+    fn prune_keeps_only_what_differs_from_the_default() {
+        let bound = resolve(Some(&map(&[
+            ("next_row", "Down"),
+            ("prev_row", "K"),
+            ("compare", ""),
+        ])));
+        assert_eq!(prune(&bound), map(&[("next_row", "Down"), ("compare", "")]));
+        assert_eq!(prune(&default_bindings()), OrderedMap::default());
+    }
+
+    #[test]
+    fn conflicts_compare_case_and_space_insensitively_and_ignore_unbound() {
+        let bound = map(&[
+            ("a", "J"),
+            ("b", " j "),
+            ("c", ""),
+            ("d", ""),
+            ("e", "x"),
+            ("f", "X"),
+            ("g", "y"),
+        ]);
+        assert_eq!(
+            conflicts(&bound),
+            vec![
+                ("j".to_owned(), vec!["a".to_owned(), "b".to_owned()]),
+                ("x".to_owned(), vec!["e".to_owned(), "f".to_owned()]),
+            ]
+        );
+        assert_eq!(normalize("  Shift+N "), "shift+n");
+        assert_eq!(normalize("\u{df}"), "ss", "casefold, not lowercase");
+        assert!(conflicts(&default_bindings()).is_empty());
+    }
+
+    #[test]
+    fn an_override_round_trips_through_config_json() {
+        let home = tempfile::tempdir().unwrap();
+        let paths = test_paths(home.path());
+        let mut settings = crate::config::Settings::with_defaults(&paths);
+        settings.review_shortcuts = prune(&resolve(Some(&map(&[
+            ("send_upload", "Ctrl+Return"),
+            ("compare", ""),
+        ]))));
+        settings.save(&paths).expect("saves");
+        let loaded = crate::config::Settings::load(&paths).settings;
+        assert_eq!(loaded.review_shortcuts.len(), 2);
+        assert_eq!(
+            loaded.review_shortcuts.get("compare").map(String::as_str),
+            Some("")
+        );
+        let bindings = resolve(Some(&loaded.review_shortcuts));
+        assert_eq!(
+            bindings.get("send_upload").map(String::as_str),
+            Some("Ctrl+Return")
+        );
+        assert_eq!(bindings.get("compare").map(String::as_str), Some(""));
+    }
+}

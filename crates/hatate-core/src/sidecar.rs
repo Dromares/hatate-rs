@@ -203,3 +203,104 @@ pub fn plan<'a>(
     }
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Tag, TagSource};
+
+    fn test_settings() -> crate::config::Settings {
+        let home = std::ffi::OsString::from("/nonexistent");
+        let paths = crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| home.clone()))
+            .expect("HOME is set");
+        crate::config::Settings::with_defaults(&paths)
+    }
+
+    fn path(p: &str, style: &str) -> Option<String> {
+        sidecar_path(p, style, DEFAULT_EXTENSION).map(|p| p.to_string_lossy().into_owned())
+    }
+
+    fn tagged(path: &str, tags: &[&str]) -> Entry {
+        let mut e = Entry::new(path);
+        e.tags = tags
+            .iter()
+            .map(|t| Tag {
+                name: (*t).to_owned(),
+                namespace: None,
+                source: TagSource::User,
+            })
+            .collect();
+        e
+    }
+
+    #[test]
+    fn append_adds_the_extension_and_replace_swaps_the_suffix() {
+        assert_eq!(path("/p/cat.jpg", STYLE_APPEND).unwrap(), "/p/cat.jpg.txt");
+        assert_eq!(path("/p/cat.jpg", STYLE_REPLACE).unwrap(), "/p/cat.txt");
+        assert_eq!(path("/p/a.tar.gz", STYLE_REPLACE).unwrap(), "/p/a.tar.txt");
+        assert_eq!(path("/p/cat", STYLE_REPLACE).unwrap(), "/p/cat.txt");
+        assert_eq!(path("/p/.hidden", STYLE_REPLACE).unwrap(), "/p/.hidden.txt");
+        assert_eq!(path("/p/..", STYLE_REPLACE).unwrap(), "/p/...txt");
+    }
+
+    #[test]
+    fn the_path_is_normalised_the_way_pathlib_does() {
+        assert_eq!(path("a//b/./c.jpg", STYLE_APPEND).unwrap(), "a/b/c.jpg.txt");
+        assert_eq!(path("//a/b.png", STYLE_APPEND).unwrap(), "//a/b.png.txt");
+        assert_eq!(path("///a/b.png", STYLE_APPEND).unwrap(), "/a/b.png.txt");
+        assert_eq!(path("a/b.jpg/", STYLE_REPLACE).unwrap(), "a/b.txt");
+        assert_eq!(path("cat.", STYLE_REPLACE).unwrap(), "cat.txt");
+        assert_eq!(path("cat.", STYLE_APPEND).unwrap(), "cat..txt");
+    }
+
+    #[test]
+    fn a_path_with_no_name_has_no_sidecar() {
+        for p in ["", ".", "/", "./"] {
+            assert_eq!(path(p, STYLE_APPEND), None, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn an_unrecognised_setting_falls_back_to_the_default() {
+        let mut s = test_settings();
+        s.sidecar_filename_style = "sideways".to_owned();
+        s.sidecar_overwrite = "yes".to_owned();
+        assert_eq!(style_of(Some(&s)), STYLE_APPEND);
+        assert_eq!(overwrite_policy_of(Some(&s)), OVERWRITE_ASK);
+        assert_eq!(style_of(None), STYLE_APPEND);
+        s.sidecar_filename_style = STYLE_REPLACE.to_owned();
+        s.sidecar_overwrite = OVERWRITE_OVERWRITE.to_owned();
+        assert_eq!(style_of(Some(&s)), STYLE_REPLACE);
+        assert_eq!(overwrite_policy_of(Some(&s)), OVERWRITE_OVERWRITE);
+    }
+
+    #[test]
+    fn the_body_is_one_deduplicated_tag_per_line_in_the_entrys_order() {
+        let e = tagged("/p/a.png", &["b", "a", "b", "", "c"]);
+        assert_eq!(render(&e, None), "b\na\nc\n");
+        assert_eq!(render(&tagged("/p/a.png", &[]), None), "");
+    }
+
+    #[test]
+    fn the_plan_separates_writes_from_the_three_reasons_not_to() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().to_str().unwrap();
+        std::fs::write(dir.path().join("have.png.txt"), "old").unwrap();
+        let mut missing = tagged(&format!("{d}/gone.png"), &["x"]);
+        missing.file_missing = true;
+        let entries = vec![
+            tagged(&format!("{d}/new.png"), &["x"]),
+            tagged(&format!("{d}/have.png"), &["y"]),
+            tagged(&format!("{d}/bare.png"), &[]),
+            missing,
+        ];
+        let plan = plan(&entries, None, DEFAULT_EXTENSION);
+        assert_eq!(plan.writes.len(), 2);
+        assert!(!plan.writes[0].exists);
+        assert!(plan.writes[1].exists);
+        assert_eq!(plan.existing().len(), 1);
+        assert_eq!(plan.without_tags.len(), 1);
+        assert_eq!(plan.missing_files.len(), 1);
+        assert_eq!(plan.directories(), vec![std::path::PathBuf::from(d)]);
+    }
+}

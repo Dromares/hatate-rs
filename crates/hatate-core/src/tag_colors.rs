@@ -46,3 +46,72 @@ pub fn get_tag_color(tag: &Tag, settings: &Settings) -> Option<String> {
         ),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::OrderedMap;
+    use crate::model::TagSource;
+
+    fn test_settings() -> crate::config::Settings {
+        let home = std::ffi::OsString::from("/nonexistent");
+        let paths = crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| home.clone()))
+            .expect("HOME is set");
+        crate::config::Settings::with_defaults(&paths)
+    }
+
+    fn tag(ns: Option<&str>) -> Tag {
+        Tag {
+            name: "x".to_owned(),
+            namespace: ns.map(str::to_owned),
+            source: TagSource::User,
+        }
+    }
+
+    fn settings(on: bool, overrides: &[(&str, &str)]) -> Settings {
+        let mut s = test_settings();
+        s.enable_hydrus_tag_colors = on;
+        s.tag_namespace_colors = OrderedMap(
+            overrides
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect(),
+        );
+        s
+    }
+
+    #[test]
+    fn nothing_is_coloured_unless_the_setting_is_on() {
+        assert_eq!(
+            get_tag_color(&tag(Some("creator")), &settings(false, &[])),
+            None
+        );
+    }
+
+    #[test]
+    fn a_namespace_takes_its_override_then_its_default() {
+        let s = settings(true, &[("creator", "#111111")]);
+        assert_eq!(
+            get_tag_color(&tag(Some("creator")), &s).as_deref(),
+            Some("#111111")
+        );
+        assert_eq!(
+            get_tag_color(&tag(Some("copyright")), &s).as_deref(),
+            Some("#bb2cb9")
+        );
+        assert_eq!(get_tag_color(&tag(Some("unheard-of")), &s), None);
+    }
+
+    #[test]
+    fn an_unnamespaced_tag_takes_the_blank_override_or_the_fallback() {
+        assert_eq!(
+            get_tag_color(&tag(None), &settings(true, &[])).as_deref(),
+            Some(UNNAMESPACED_COLOR)
+        );
+        assert_eq!(
+            get_tag_color(&tag(Some("")), &settings(true, &[("", "#222222")])).as_deref(),
+            Some("#222222"),
+            "an empty namespace is no namespace"
+        );
+    }
+}

@@ -351,3 +351,157 @@ pub fn render<'a>(
         to_csv(entries, settings)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{Candidate, MatchStatus, Tag, TagSource};
+
+    fn test_settings() -> crate::config::Settings {
+        let home = std::ffi::OsString::from("/nonexistent");
+        let paths = crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| home.clone()))
+            .expect("HOME is set");
+        crate::config::Settings::with_defaults(&paths)
+    }
+
+    fn tag(ns: Option<&str>, name: &str, source: TagSource) -> Tag {
+        Tag {
+            name: name.to_owned(),
+            namespace: ns.map(str::to_owned),
+            source,
+        }
+    }
+
+    fn sample() -> Entry {
+        let mut e = Entry::new("/pics/a, \"b\".png");
+        e.status = MatchStatus::Good;
+        e.local_width = Some(800);
+        e.local_height = Some(600);
+        let mut c = Candidate::new("https://danbooru.donmai.us/posts/1");
+        c.source_name = Some("Danbooru".to_owned());
+        c.engine = "iqdb".to_owned();
+        c.similarity = 95.0;
+        c.similarity_measured = true;
+        c.width = Some(1600);
+        c.height = Some(1200);
+        e.candidates.push(c);
+        e.tags = vec![
+            tag(Some("creator"), "sam", TagSource::Booru),
+            tag(None, "red, hair", TagSource::User),
+        ];
+        e.sent_to_hydrus = true;
+        e
+    }
+
+    #[test]
+    fn the_csv_is_quoted_crlf_and_in_header_order() {
+        let csv = to_csv([&sample()], None);
+        let mut lines = csv.split("\r\n");
+        assert_eq!(lines.next().unwrap(), HEADERS.join(","));
+        assert_eq!(
+            lines.next().unwrap(),
+            "\"a, \"\"b\"\".png\",\"/pics/a, \"\"b\"\".png\",Found (good),\
+             https://danbooru.donmai.us/posts/1,Danbooru,iqdb,95.0,TRUE,800,600,1600,1200,2,\
+             \"creator:sam, red, hair\",1,queued,FALSE,,,,FALSE,"
+        );
+        assert_eq!(lines.next(), Some(""), "the last row ends in CRLF");
+    }
+
+    #[test]
+    fn an_entry_with_no_match_leaves_the_match_columns_blank() {
+        let mut e = Entry::new("/pics/b.png");
+        e.error_message = Some("boom".to_owned());
+        e.status = MatchStatus::Error;
+        let csv = to_csv([&e], None);
+        let row = csv.split("\r\n").nth(1).unwrap();
+        assert_eq!(
+            row,
+            "b.png,/pics/b.png,Error,,,,,,,,,,0,,0,,FALSE,,,boom,FALSE,"
+        );
+    }
+
+    #[test]
+    fn the_json_record_puts_the_tag_fields_last_and_tags_as_objects() {
+        let json = to_json([&sample()], Some(0.0), None);
+        let keys: Vec<&str> = json
+            .lines()
+            .filter(|l| l.starts_with("      \""))
+            .map(|l| l.trim().split('"').nth(1).unwrap())
+            .collect();
+        let mut expected: Vec<&str> = HEADERS
+            .iter()
+            .copied()
+            .filter(|k| *k != "tags" && *k != "tag_count")
+            .collect();
+        expected.extend(["tags", "tag_count"]);
+        assert_eq!(&keys[..expected.len()], &expected[..]);
+        assert!(json.contains("\"namespace\": null,"));
+        assert!(json.contains("      \"tags\": [\n        {\n          \"name\": \"sam\","));
+        assert!(json.starts_with("{\n  \"schema_version\": 1,\n  \"generated_at\": \""));
+        assert!(json.ends_with("\n  ]\n}"), "no trailing newline");
+    }
+
+    #[test]
+    fn json_escapes_only_what_it_must() {
+        let mut e = Entry::new("/p/\u{e9}\u{1}\u{7f}\"\\.png");
+        e.status = MatchStatus::Good;
+        let json = to_json([&e], Some(0.0), None);
+        assert!(json.contains("\"filename\": \"\u{e9}\\u0001\u{7f}\\\"\\\\.png\""));
+    }
+
+    #[test]
+    fn an_empty_list_is_an_empty_images_array() {
+        let json = to_json(std::iter::empty::<&Entry>(), Some(0.0), None);
+        assert!(json.contains("\"count\": 0,\n  \"images\": []\n}"));
+        assert_eq!(
+            to_csv(std::iter::empty::<&Entry>(), None),
+            format!("{}\r\n", HEADERS.join(","))
+        );
+    }
+
+    #[test]
+    fn the_tags_are_the_ones_a_send_would_carry() {
+        let mut settings = test_settings();
+        settings.filter_sent_tags_by_source = true;
+        settings.enabled_tag_sources = vec!["User".to_owned()];
+        let csv = to_csv([&sample()], Some(&settings));
+        assert!(csv.contains("\"red, hair\",1,"));
+        let json = to_json([&sample()], Some(0.0), Some(&settings));
+        assert!(json.contains("\"tag_count\": 1"));
+        assert!(!json.contains("creator"));
+    }
+
+    #[test]
+    fn provisional_wins_in_the_cache_column_and_zero_sizes_are_blank() {
+        let mut e = sample();
+        e.result_source = Some("cache".to_owned());
+        e.local_width = Some(0);
+        assert_eq!(csv_value(&row_values(&e, None)[18].1), "cache");
+        e.searched_without_saucenao = true;
+        let values = row_values(&e, None);
+        assert_eq!(csv_value(&values[18].1), "provisional");
+        assert_eq!(
+            csv_value(&values[8].1),
+            "",
+            "a width of 0 is blank, as `or \"\"`"
+        );
+    }
+
+    #[test]
+    fn the_format_follows_the_extension() {
+        assert_eq!(format_for_path("/x/Out.JSON"), "json");
+        assert_eq!(format_for_path("/x/out.txt"), "csv");
+        assert_eq!(format_for_path("/x/out"), "csv");
+        assert!(render([&sample()], "json", None).starts_with('{'));
+        assert!(render([&sample()], "csv", None).starts_with("filename,"));
+    }
+
+    #[test]
+    fn floats_print_like_python() {
+        assert_eq!(float_str(92.5), "92.5");
+        assert_eq!(float_str(100.0), "100.0");
+        assert_eq!(float_str(1e-7), "1e-07");
+        assert_eq!(float_str(f64::NAN), "nan");
+        assert_eq!(float_str(f64::NEG_INFINITY), "-inf");
+    }
+}
