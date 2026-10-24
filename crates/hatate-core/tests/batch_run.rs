@@ -25,8 +25,10 @@ use hatate_core::model::{Entry, MatchStatus};
 use hatate_core::net::{NetClient, NetConfig};
 use hatate_core::paths::Paths;
 use hatate_core::quota_pause::QuotaPauseFile;
+use hatate_core::run_state::{RunChannel, RunEnd, RunEvent, RunSink, RunState};
 use hatate_core::search_engine::SearchEngine;
 use hatate_core::session::{LoadOptions, SessionStore};
+use hatate_core::stop_record::{Read as StopRead, StopRecordFile};
 
 const NOW: f64 = 1_792_725_790.0;
 const POST: &str = r#"{"id": 5, "image_width": 800, "image_height": 600, "rating": "g",
@@ -170,6 +172,16 @@ impl World {
     }
 
     async fn run(&self, folder: &Path, entries: &mut Vec<Entry>) -> (Outcome, CountingSink) {
+        self.run_with(self.reporter.clone(), folder, entries).await
+    }
+
+    /// As [`World::run`] with another reporter in the loop's hands.
+    async fn run_with(
+        &self,
+        reporter: Arc<dyn Reporter>,
+        folder: &Path,
+        entries: &mut Vec<Entry>,
+    ) -> (Outcome, CountingSink) {
         let sink = self.sink();
         let quota_file = QuotaPauseFile::new(&self.paths);
         let engines = self.engines.clone();
@@ -184,7 +196,7 @@ impl World {
             quota_exhausted: &quota,
             quota_file: &quota_file,
             sink: &sink,
-            reporter: self.reporter.clone(),
+            reporter,
             unit_random: &random,
             reset_run_state: &reset,
             hydrus_client: &|s| hatate_core::hydrus_client::HydrusClient::new(s),
@@ -1013,5 +1025,281 @@ async fn hash_source_local_reads_every_file_and_a_lying_name_does_not_fool_it() 
         (outcome.added, outcome.duplicates),
         (1, 1),
         "same bytes, so a duplicate by real hash"
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// The RunState channel (DAN-2216): one run per ending, through the real loop.
+// ---------------------------------------------------------------------------------------------
+
+/// A channel over the world's clock, and everything it says, in order.
+fn channel(w: &World) -> (RunChannel, Arc<Mutex<Vec<RunEvent>>>) {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let sink: RunSink = {
+        let seen = Arc::clone(&seen);
+        Arc::new(move |e| seen.lock().unwrap().push(e))
+    };
+    let ch = RunChannel::new(sink, w.clock.clone() as Arc<dyn Clock>)
+        .with_stop_record(StopRecordFile::new(&w.paths))
+        .with_next(w.reporter.clone());
+    (ch, seen)
+}
+
+/// The states only (the Lens changes are filtered out), as `(done, total, current)` for a
+/// running state and a tag for the rest.
+fn shape(events: &[RunEvent]) -> Vec<String> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            RunEvent::State(RunState::Running(p)) => Some(format!(
+                "running {}/{} {}",
+                p.done,
+                p.total,
+                p.current.as_deref().unwrap_or("-")
+            )),
+            RunEvent::State(RunState::Waiting(w)) => Some(format!(
+                "waiting {} {}/{}",
+                w.label, w.progress.done, w.progress.total
+            )),
+            RunEvent::State(RunState::PausedForQuota {
+                searched,
+                remaining,
+            }) => Some(format!("paused {searched} {remaining}")),
+            RunEvent::State(RunState::Ended(end)) => Some(format!("ended {end:?}")),
+            RunEvent::State(RunState::Idle) => Some("idle".to_owned()),
+            RunEvent::Lens(_) => None,
+        })
+        .collect()
+}
+
+/// B1 and the Python worker's signals in order: `image_updated(searching)`, `progress`, ... and
+/// `finished_all`, for a run that completes.
+#[tokio::test]
+async fn a_completed_run_says_running_for_each_image_then_completed() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png", "b.png", "c.png"]);
+    w.match_every_image(3);
+    let (ch, seen) = channel(&w);
+    let mut entries = Vec::new();
+    let (outcome, _) = w.run_with(Arc::new(ch.clone()), &dir, &mut entries).await;
+    assert_eq!(outcome.ending, Ending::Finished);
+    assert_eq!(
+        shape(&seen.lock().unwrap()),
+        [
+            "running 0/3 a.png",
+            "running 1/3 a.png",
+            "running 1/3 b.png",
+            "running 2/3 b.png",
+            "running 2/3 c.png",
+            "running 3/3 c.png",
+            "ended Completed",
+        ]
+    );
+    assert_eq!(ch.state(), RunState::Ended(RunEnd::Completed));
+    assert!(
+        !StopRecordFile::new(&w.paths).path().exists(),
+        "a completed run leaves no stop record"
+    );
+}
+
+#[tokio::test]
+async fn the_gap_between_images_is_a_waiting_state_that_goes_back_to_running_and_the_eta_follows_the_pace()
+ {
+    let w = world().await;
+    {
+        let mut s = w.settings.lock().unwrap();
+        s.delay_min_seconds = 40.0;
+        s.delay_max_seconds = 80.0; // random 0.5 -> 60 s
+    }
+    let dir = w.pictures(&["a.png", "b.png", "c.png", "d.png", "e.png"]);
+    w.match_every_image(5);
+    let (ch, seen) = channel(&w);
+    let mut entries = Vec::new();
+    w.run_with(Arc::new(ch), &dir, &mut entries).await;
+    let events = seen.lock().unwrap().clone();
+    let waits: Vec<&hatate_core::run_state::Wait> = events
+        .iter()
+        .filter_map(|e| match e {
+            RunEvent::State(RunState::Waiting(w)) => Some(w),
+            _ => None,
+        })
+        .collect();
+    assert!(!waits.is_empty());
+    assert!(
+        waits
+            .iter()
+            .all(|w| w.label == "Rate limit" && (w.total - 60.0).abs() < 1.0)
+    );
+    assert_eq!(waits[0].progress.done, 1);
+    // The wait ends with the clearing call, which is a running state again before the next image.
+    let shapes = shape(&events);
+    let last_wait = shapes
+        .iter()
+        .rposition(|s| s.starts_with("waiting"))
+        .unwrap();
+    assert!(shapes[last_wait + 1].starts_with("running"), "{shapes:?}");
+    // The pace is unknown for the first intervals (`eta_seconds` is `None`), then it is one gap of
+    // about 60 s per image: after the fourth image one is left.
+    let eta_at = |done: i64| {
+        events.iter().rev().find_map(|e| match e {
+            RunEvent::State(RunState::Running(p)) if p.done == done => Some(p.eta_seconds),
+            _ => None,
+        })
+    };
+    assert_eq!(eta_at(1), Some(None), "one signal is no pace");
+    let eta = eta_at(4)
+        .unwrap()
+        .expect("three intervals give an estimate");
+    assert!((eta - 60.0).abs() < 2.0, "eta {eta}");
+}
+
+#[tokio::test]
+async fn a_stop_says_interrupted_and_leaves_a_record_in_hatate_rs_json_only() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png", "b.png", "c.png"]);
+    w.match_every_image(3);
+    *w.reporter.stop_on.lock().unwrap() = Some(("(1/3)".to_owned(), w.stop.clone()));
+    let (ch, seen) = channel(&w);
+    let mut entries = Vec::new();
+    let (outcome, _) = w.run_with(Arc::new(ch), &dir, &mut entries).await;
+    assert_eq!(outcome.ending, Ending::Stopped);
+    let shapes = shape(&seen.lock().unwrap());
+    assert_eq!(shapes.last().unwrap(), "ended Interrupted", "{shapes:?}");
+    let StopRead::Valid(record) = StopRecordFile::new(&w.paths).read() else {
+        panic!("a stop writes the record");
+    };
+    assert_eq!(record.unsearched, 2);
+    assert_eq!(record.at, NOW);
+
+    // Rust-only: the Python files are what the run left them, byte for byte, after the record is
+    // written and again after it is cleared.
+    let python_files = |w: &World| {
+        [
+            w.paths.session_db(),
+            w.paths.session_json(),
+            w.paths.config_file(),
+        ]
+        .map(|p| std::fs::read(p).ok())
+    };
+    let before = python_files(&w);
+    let rec = StopRecordFile::new(&w.paths);
+    rec.write(&hatate_core::stop_record::StopRecord {
+        at: 1.0,
+        unsearched: 9,
+    })
+    .unwrap();
+    rec.clear().unwrap();
+    assert_eq!(python_files(&w), before);
+    assert!(!rec.path().exists());
+}
+
+#[tokio::test]
+async fn starting_a_run_clears_the_stop_record() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png", "b.png"]);
+    w.match_every_image(2);
+    let rec = StopRecordFile::new(&w.paths);
+    rec.write(&hatate_core::stop_record::StopRecord {
+        at: 5.0,
+        unsearched: 1,
+    })
+    .unwrap();
+    let (ch, _) = channel(&w);
+    let mut entries = Vec::new();
+    w.run_with(Arc::new(ch), &dir, &mut entries).await;
+    assert_eq!(
+        rec.read(),
+        StopRead::Absent,
+        "the first image of a run clears it"
+    );
+}
+
+#[tokio::test]
+async fn a_stop_that_cannot_be_recorded_is_still_a_stop() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png", "b.png"]);
+    w.match_every_image(2);
+    // `hatate-rs.json` is a directory: the write fails, and the run neither fails nor changes state.
+    std::fs::create_dir_all(w.paths.rust_settings_file()).unwrap();
+    *w.reporter.stop_on.lock().unwrap() = Some(("(1/2)".to_owned(), w.stop.clone()));
+    let (ch, seen) = channel(&w);
+    let mut entries = Vec::new();
+    let (outcome, _) = w.run_with(Arc::new(ch), &dir, &mut entries).await;
+    assert_eq!(outcome.ending, Ending::Stopped);
+    assert_eq!(
+        shape(&seen.lock().unwrap()).last().unwrap(),
+        "ended Interrupted"
+    );
+    assert!(!outcome.save_failed);
+}
+
+#[tokio::test]
+async fn an_exhausted_quota_is_a_paused_state_not_an_ending() {
+    let w = world().await;
+    w.settings.lock().unwrap().secondary_engine_mode = "always".to_owned();
+    let dir = w.pictures(&["a.png", "b.png", "c.png"]);
+    w.match_every_image(3);
+    w.quota_after_calls.store(1, Ordering::SeqCst);
+    let (ch, seen) = channel(&w);
+    let mut entries = Vec::new();
+    let (outcome, _) = w.run_with(Arc::new(ch.clone()), &dir, &mut entries).await;
+    assert!(matches!(outcome.ending, Ending::PausedForQuota { .. }));
+    let shapes = shape(&seen.lock().unwrap());
+    assert_eq!(shapes.last().unwrap(), "paused 1 2", "{shapes:?}");
+    assert_eq!(
+        shapes.iter().filter(|s| s.starts_with("paused")).count(),
+        1,
+        "said once, however many hooks heard it: {shapes:?}"
+    );
+    assert_eq!(
+        ch.state(),
+        RunState::PausedForQuota {
+            searched: 1,
+            remaining: 2
+        }
+    );
+    assert_eq!(StopRecordFile::new(&w.paths).read(), StopRead::Absent);
+}
+
+/// Failed: the staging directory cannot be made (a file is where it should be), so the worker
+/// dies before the first image. The state carries the path-free message and nothing is recorded.
+#[tokio::test]
+async fn a_worker_that_dies_is_failed_with_a_message_that_names_no_path() {
+    let w = world().await;
+    {
+        let mut s = w.settings.lock().unwrap();
+        s.auto_import_enabled = true;
+        s.auto_import_method = "download_send".to_owned();
+        s.hydrus.access_key = hatate_core::config::Secret::new("0123456789abcdef");
+    }
+    let staging = w.paths.auto_import_staging_dir();
+    std::fs::create_dir_all(staging.parent().unwrap()).unwrap();
+    std::fs::write(&staging, b"a file where the directory should be").unwrap();
+    let dir = w.pictures(&["a.png"]);
+    w.match_every_image(1);
+    let (ch, seen) = channel(&w);
+    let mut entries = Vec::new();
+    let (outcome, _) = w.run_with(Arc::new(ch.clone()), &dir, &mut entries).await;
+    let Ending::Failed(fault) = &outcome.ending else {
+        panic!("{:?}", outcome.ending);
+    };
+    let RunState::Ended(RunEnd::Failed(message)) = ch.state() else {
+        panic!("{:?}", ch.state());
+    };
+    assert_eq!(message, fault.user_message());
+    let path = staging.to_string_lossy().into_owned();
+    assert!(
+        !message.contains(&path) && !message.contains('/') && !message.contains("os error"),
+        "{message}"
+    );
+    assert!(
+        !shape(&seen.lock().unwrap())
+            .iter()
+            .any(|s| s.contains("Interrupted"))
+    );
+    assert_eq!(
+        StopRecordFile::new(&w.paths).read(),
+        StopRead::Absent,
+        "Failed is never persisted"
     );
 }

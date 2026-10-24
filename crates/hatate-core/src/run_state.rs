@@ -178,6 +178,12 @@ impl RunChannel {
     /// the window when it launches the worker; [`Reporter::searching`] does it by itself for a
     /// loop nobody announced.
     pub fn begin(&self, total: i64) {
+        let state = self.reset(total);
+        (self.sink)(RunEvent::State(state));
+    }
+
+    /// [`RunChannel::begin`] without announcing it.
+    fn reset(&self, total: i64) -> RunState {
         self.clear_stop_record();
         let mut inner = self.lock();
         inner.estimate.reset();
@@ -189,8 +195,7 @@ impl RunChannel {
         };
         let state = RunState::Running(inner.progress.clone());
         inner.state = state.clone();
-        drop(inner);
-        (self.sink)(RunEvent::State(state));
+        state
     }
 
     /// The run is over. Idempotent: the first ending of a run wins.
@@ -303,7 +308,8 @@ impl Reporter for RunChannel {
     fn searching(&self, entry: &Entry, done: usize, total: usize) {
         let starts = matches!(self.lock().state, RunState::Idle | RunState::Ended(_));
         if starts {
-            self.begin(total as i64);
+            // Silently: the state below is the first thing the run says.
+            self.reset(total as i64);
         }
         let state = {
             let mut inner = self.lock();
