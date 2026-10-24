@@ -124,6 +124,23 @@ impl ToolOutput {
         self
     }
 
+    /// The result as `json.dumps(default=str)` prints it into the audit log: an image value is
+    /// printed whole, its `bytes` entry as `str(bytes)`, wherever the key puts it (`outcome` is
+    /// the handler's dict, not the content blocks).
+    pub fn to_audit_json(&self) -> Value {
+        let mut map = Map::new();
+        for (key, value) in &self.fields {
+            map.insert(
+                key.clone(),
+                match value {
+                    ResultValue::Json(v) => v.clone(),
+                    ResultValue::Image(img) => Value::Object(img.as_printed()),
+                },
+            );
+        }
+        Value::Object(map)
+    }
+
     /// The JSON-only view, for the audit log: image fields show their metadata plus nothing
     /// else, the way `outcome` would show them without the bytes.
     pub fn to_json(&self) -> Value {

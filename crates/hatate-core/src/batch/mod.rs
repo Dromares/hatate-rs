@@ -10,6 +10,7 @@ pub mod auto_import;
 pub mod hashing;
 pub mod intake;
 pub mod matched_urls;
+pub mod research;
 pub mod run;
 pub mod staging;
 

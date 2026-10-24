@@ -59,6 +59,10 @@ pub enum ErrorKind {
     McpServerStart,
     /// The port the MCP server was asked to listen on is taken.
     McpPortBusy,
+    /// The window's list did not run a tool's request in time (`MainThreadTimeout`).
+    McpQueueTimeout,
+    /// The window's list ran a tool's request and it failed, or the channel was shut down.
+    McpQueueFailed,
     /// A search engine cannot run in this build or on this machine (Google Lens with no browser).
     /// Latched for the run: the next image would fail the same way.
     EngineUnavailable,
