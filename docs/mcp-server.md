@@ -17,7 +17,7 @@ starlette 1.7.0, requests 2.34.2, CPython 3.14.8).
 | `core/mcp_audit.py`: `AUDIT_LOG_FILE`, `REDACTED_KEYS`, `REDACTED_VALUE`, `_redact`, `record`, `_iso_now`, `_append`, `_rotate_if_needed` | `audit.rs` (path: `Paths::mcp_audit_log()`, `mcp_audit.jsonl` under the config dir) |
 | `core/mcp_content.py`: `to_content_blocks` and the `_image` key suffix rule | `content.rs` |
 | `core/mcp_server.py`: `HOST`, `BIND_TIMEOUT_SECONDS`, `_HANDLER_METHOD_NAMES`, `dispatch` | `mod.rs`, `server.rs`, `handlers.rs` |
-| `McpServerController` (`running`, `start`, `stop`, `restart`, `last_error`) | `server.rs` |
+| `McpServerController` (`running`, `start`, `stop`, `restart`, `last_error`, `last_error_kind`, `last_error_user_message`, `last_error_detail`) | `server.rs` |
 | `_build_asgi_app`, `_register_tools`, `_wrap_tool`, `_with_bearer_auth` | `protocol.rs` (the transport, as a function from a request to a reply), `schema.rs` (the registered tools and their `inputSchema`), `server.rs` (the hyper listener) |
 | FastMCP's argument validation (`FuncMetadata.pre_parse_json` and pydantic lax mode) | `pyvalidate.rs`, `schema.rs` |
 | `JSONRPCMessage.model_validate` and its error text | `envelope.rs` |
@@ -97,7 +97,11 @@ other methods are `405`, `/mcp/` is a `307`, any other path is `404`.
 `Blank bearer token: refusing to start the MCP server`, a token with a character beyond U+00FF is
 `Could not start the MCP server: 'latin-1' codec can't encode character ...`, an out-of-range port
 is `Could not start the MCP server: bind(): port must be 0-65535.`; `last_error_kind()` gives the
-kind (`ErrorKind::McpServerStart`, `McpPortBusy`).
+kind (`ErrorKind::McpServerStart`, `McpPortBusy`). `last_error` is Python's text and is kept for
+parity, but the latin-1 text carries the position and `\uXXXX` of a token character, so the
+Settings page shows `last_error_user_message()` instead (what failed and what to do; no token
+character, port-in-use OS text or path). `last_error_detail()` is the `last_error` string for a
+log (DAN-2116).
 
 ## Client configuration
 
@@ -185,17 +189,17 @@ while a tool call runs, and the bridge's own request headers `User-Agent` and `A
 | `TestRotation` (2) | `rotates_once_the_cap_is_reached_and_keeps_one_generation`, `a_write_failure_is_swallowed` |
 | `test_mcp_tools.py` `TestEveryToolIsAccountedFor` (3) | `tools::tests::tool_names_are_unique_and_findable`; "a gated tool names a real `McpSettings` field" is the `GateField` enum, checked by the compiler |
 | the review-action coverage tests (5) | `tools::tests::nothing_is_unaccounted_for_and_the_lists_do_not_overlap` |
-| `TestGating` (7) | `tools::tests::gating_follows_the_defaults_and_the_live_settings` |
+| `TestGating` (10) | `tools::tests::gating_follows_the_defaults_and_the_live_settings` (read and local-write ungated, research off by default and on when allowed, Hydrus writes on by default, destructive off by default, one tier on leaves another off, the live settings object) and `each_gate_setting_governs_exactly_its_own_tools` (`allow_destructive` on allows `remove_row`/`reset_result`; `allow_hydrus_writes` off refuses all three Hydrus-write tools; every gated tool follows its own setting and no other) |
 | `TestRefusalMessage` (4) | `tools::tests::refusal_text_matches_the_spec_verbatim_and_names_no_attribute` |
 | `TestDryRun` (3) | `tools::tests::dry_run_applies_to_the_three_write_tiers_only` |
 | `test_mcp_server.py` `TestHandlerMethodNamesAreComplete` (3) | `handlers::tests::every_tool_has_a_handler_method_name_and_no_stray_entries`; "exists on a real handlers object" is the trait |
 | `TestDispatch` (2) | `handlers::tests::dispatch_calls_the_matching_method_with_the_validated_arguments`, `every_registered_tool_dispatches_without_error` |
 | `TestServerLifecycle` (6) | `tests/mcp_server.rs`: `start_refuses_disabled_blank_and_unencodable_tokens`, `a_busy_port_is_reported_then_stop_and_restart_work`. The "missing optional package" test has no Rust counterpart (see `_mcp_top_level_import_succeeds`) |
 | `TestPortBusyDetection` (2) | `a_busy_port_is_reported_then_stop_and_restart_work` (a real busy socket; Python's test uses a fake uvicorn that raises, so its "Address already in use" text is the fake's) |
-| `TestMissingOrIncompatiblePackage` (4), `TestInstallCommandIsPinnedEverywhere` (2) | none: they test the optional `mcp` package and its pinned `pip install` command; the Rust server is part of the build |
+| `TestMissingOrIncompatiblePackage` (5), `TestInstallCommandIsPinnedEverywhere` (2) | none: they test the optional `mcp` package and its pinned `pip install` command; the Rust server is part of the build |
 | `TestRealToolRegistration` (1) | `tests/mcp_server.rs`: `every_tool_is_called_through_the_wire_and_a_raising_handler_is_an_error_result`, `initialize_and_tools_list_match_the_python_server` |
 | `TestContentBlocks` (3) | `content::tests` (`a_plain_result_becomes_one_text_block`, `an_image_key_becomes_an_image_block_plus_its_metadata`, `a_failed_fetch_with_no_bytes_produces_no_image_block`) |
 | `test_mcp_bridge.py`, `test_mcp_images.py` | 5.e (DAN-2167): `gui/mcp_bridge.py` and `core/mcp_images.py` |
 | `test_mcp_config.py` | `McpSettings` is already ported and tested (`config` tests) |
-| `test_mcp_settings_tab.py` and the MCP lines of `test_type_voice.py` | Phase 6 (the Settings > MCP page) |
+| `test_mcp_settings_tab.py`, the MCP lines of `test_type_voice.py`, and the MCP line of `test_gui_harness.py` (`mcp_bridge.MainThreadInvoker` listed as a non-visual widget) | Phase 6 (the Settings > MCP page and the GUI harness) |
 | none exists for `tools/mcp_stdio_bridge.py` | `tests/mcp_bridge.rs` and the bridge unit tests are new, written against the differential |

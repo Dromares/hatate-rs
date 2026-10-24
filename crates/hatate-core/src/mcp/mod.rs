@@ -40,6 +40,16 @@ impl McpError {
         }
     }
 
+    /// A server-start failure: `user_message` is what the Settings page can show, `detail` the
+    /// Python-matched text kept for the log.
+    pub(crate) fn start_failure(kind: ErrorKind, user_message: &str, detail: String) -> Self {
+        Self {
+            kind,
+            user_message: user_message.to_owned(),
+            detail,
+        }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         self.kind
     }

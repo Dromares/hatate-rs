@@ -23,7 +23,7 @@ use tokio::sync::watch;
 
 use super::protocol::{Core, MAX_BODY_BYTES, Reply, ReplyBody, Request};
 use super::tools::{TOOLS, gate};
-use super::{HOST, handlers::McpHandlers};
+use super::{HOST, McpError, handlers::McpHandlers};
 use crate::config::McpSettings;
 use crate::error::ErrorKind;
 
@@ -46,7 +46,7 @@ pub struct McpServerController {
     thread: Option<JoinHandle<()>>,
     shutdown: Option<watch::Sender<bool>>,
     last_error: Option<String>,
-    last_error_kind: Option<ErrorKind>,
+    last_failure: Option<McpError>,
 }
 
 impl McpServerController {
@@ -56,7 +56,7 @@ impl McpServerController {
             thread: None,
             shutdown: None,
             last_error: None,
-            last_error_kind: None,
+            last_failure: None,
         }
     }
 
@@ -67,7 +67,19 @@ impl McpServerController {
 
     /// The kind behind `last_error`, for a caller that decides what to show or retry.
     pub fn last_error_kind(&self) -> Option<ErrorKind> {
-        self.last_error_kind
+        self.last_failure.as_ref().map(McpError::kind)
+    }
+
+    /// What the Settings page should show for the last failure: what failed and what to do. No
+    /// token character, path or OS text (DAN-2116). `last_error` keeps Python's text for parity;
+    /// that text can carry a token character, so a UI shows this one.
+    pub fn last_error_user_message(&self) -> Option<String> {
+        self.last_failure.as_ref().map(McpError::user_message)
+    }
+
+    /// The raw text for a log: the same string as `last_error`.
+    pub fn last_error_detail(&self) -> Option<String> {
+        self.last_failure.as_ref().map(McpError::detail)
     }
 
     /// `running`.
@@ -75,10 +87,10 @@ impl McpServerController {
         self.thread.as_ref().is_some_and(|t| !t.is_finished())
     }
 
-    fn fail(&mut self, kind: ErrorKind, message: String) -> bool {
+    fn fail(&mut self, kind: ErrorKind, user_message: &str, message: String) -> bool {
         tracing::error!("{message}");
+        self.last_failure = Some(McpError::start_failure(kind, user_message, message.clone()));
         self.last_error = Some(message);
-        self.last_error_kind = Some(kind);
         false
     }
 
@@ -95,6 +107,7 @@ impl McpServerController {
         if token.is_empty() {
             return self.fail(
                 ErrorKind::McpServerStart,
+                "The MCP server needs a bearer token. Set one in Settings \u{2192} MCP.",
                 "Blank bearer token: refusing to start the MCP server".to_owned(),
             );
         }
@@ -110,6 +123,7 @@ impl McpServerController {
             };
             return self.fail(
                 ErrorKind::McpServerStart,
+                "The MCP bearer token has a character that cannot be sent in an HTTP header. Use a token of plain letters and digits in Settings \u{2192} MCP.",
                 format!(
                     "Could not start the MCP server: 'latin-1' codec can't encode character '{shown}' in position {index}: ordinal not in range(256)"
                 ),
@@ -119,6 +133,7 @@ impl McpServerController {
         let Ok(port16) = u16::try_from(port) else {
             return self.fail(
                 ErrorKind::McpServerStart,
+                "The MCP port is not valid. Pick a port between 1 and 65535 in Settings \u{2192} MCP.",
                 "Could not start the MCP server: bind(): port must be 0-65535.".to_owned(),
             );
         };
@@ -130,6 +145,7 @@ impl McpServerController {
                 tracing::debug!("MCP bind failed: {error}");
                 return self.fail(
                     ErrorKind::McpPortBusy,
+                    "The MCP port is already in use. Pick another port in Settings \u{2192} MCP.",
                     format!(
                         "MCP server did not start listening on port {port} within {BIND_TIMEOUT_SECONDS:.0}s (port already in use?)"
                     ),
@@ -147,6 +163,7 @@ impl McpServerController {
                 tracing::debug!("MCP thread failed: {error}");
                 return self.fail(
                     ErrorKind::McpServerStart,
+                    "The MCP server could not start. Try again, or restart Hatate.",
                     "Could not start the MCP server: could not start a thread".to_owned(),
                 );
             }
@@ -154,7 +171,7 @@ impl McpServerController {
         self.thread = Some(thread);
         self.shutdown = Some(tx);
         self.last_error = None;
-        self.last_error_kind = None;
+        self.last_failure = None;
         let mut enabled: Vec<&str> = TOOLS
             .iter()
             .filter(|t| gate(t.name, settings).is_ok_and(|g| g.is_none()))

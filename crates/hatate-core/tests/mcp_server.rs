@@ -602,3 +602,51 @@ fn start_refuses_disabled_blank_and_unencodable_tokens() {
     never.stop(true);
     never.stop(true);
 }
+
+#[test]
+fn a_start_failure_has_a_user_message_with_no_token_port_or_os_text() {
+    // A non-latin-1 token (its character would be echoed by Python's text).
+    let mut c = McpServerController::new(Arc::new(Scripted::default()));
+    let mut s = settings(free_port());
+    s.token = "zzmarker\u{2603}qq".into();
+    assert!(!c.start(&s));
+    assert_eq!(c.last_error_kind(), Some(ErrorKind::McpServerStart));
+    let user = c.last_error_user_message().unwrap();
+    assert!(!user.is_empty());
+    for bad in [
+        "zzmarker", "qq", "\u{2603}", "u2603", "latin-1", "position", "ordinal", "os error",
+    ] {
+        assert!(!user.contains(bad), "{bad:?} in {user:?}");
+    }
+    // The Python-matched text stays on `last_error` and in the detail.
+    assert_eq!(c.last_error_detail().as_deref(), c.last_error());
+
+    // A held port.
+    let held = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = held.local_addr().unwrap().port();
+    let mut busy = McpServerController::new(Arc::new(Scripted::default()));
+    assert!(!busy.start(&settings(port)));
+    assert_eq!(busy.last_error_kind(), Some(ErrorKind::McpPortBusy));
+    let user = busy.last_error_user_message().unwrap();
+    for bad in [TOKEN, "in use?", "os error", "Address", "within 5s"] {
+        assert!(!user.contains(bad), "{bad:?} in {user:?}");
+    }
+    assert!(busy.last_error_detail().unwrap().contains("within 5s"));
+
+    // A blank token, and a clean start clears all three accessors.
+    let mut blank = settings(free_port());
+    blank.token = "".into();
+    assert!(!busy.start(&blank));
+    assert_eq!(busy.last_error_kind(), Some(ErrorKind::McpServerStart));
+    assert!(
+        busy.last_error_user_message()
+            .unwrap()
+            .contains("bearer token")
+    );
+    drop(held);
+    assert!(busy.start(&settings(port)));
+    assert_eq!(busy.last_error_user_message(), None);
+    assert_eq!(busy.last_error_detail(), None);
+    assert_eq!(busy.last_error_kind(), None);
+    busy.stop(true);
+}

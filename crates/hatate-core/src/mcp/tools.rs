@@ -345,6 +345,51 @@ mod tests {
     }
 
     #[test]
+    fn each_gate_setting_governs_exactly_its_own_tools() {
+        let destructive = ["remove_row", "reset_result"];
+        let hydrus = ["send_upload", "send_url", "download_send"];
+        // `test_destructive_tools_are_allowed_once_turned_on`
+        let mut s = settings();
+        s.allow_destructive = true;
+        for name in destructive {
+            assert_eq!(gate(name, &s).unwrap(), None, "{name}");
+        }
+        assert!(
+            gate("research", &s).unwrap().is_some(),
+            "research stays off"
+        );
+        s.allow_destructive = false;
+        for name in destructive {
+            assert!(gate(name, &s).unwrap().is_some(), "{name}");
+        }
+        // `test_hydrus_write_tools_are_refused_once_turned_off`: every Hydrus-write tool.
+        s.allow_hydrus_writes = false;
+        for name in hydrus {
+            let msg = gate(name, &s).unwrap().unwrap();
+            assert!(msg.contains("Hydrus writes are off"), "{name}: {msg}");
+        }
+        s.allow_hydrus_writes = true;
+        for name in hydrus {
+            assert_eq!(gate(name, &s).unwrap(), None, "{name}");
+        }
+        // Every gated tool follows its own setting and no other one.
+        for t in TOOLS.iter().filter(|t| t.gate_field.is_some()) {
+            for on in [false, true] {
+                let mut s = settings();
+                s.allow_research = false;
+                s.allow_hydrus_writes = false;
+                s.allow_destructive = false;
+                match t.gate_field.unwrap() {
+                    GateField::AllowResearch => s.allow_research = on,
+                    GateField::AllowHydrusWrites => s.allow_hydrus_writes = on,
+                    GateField::AllowDestructive => s.allow_destructive = on,
+                }
+                assert_eq!(gate(t.name, &s).unwrap().is_none(), on, "{}", t.name);
+            }
+        }
+    }
+
+    #[test]
     fn refusal_text_matches_the_spec_verbatim_and_names_no_attribute() {
         let msg = refusal_message(tool("research").unwrap()).unwrap();
         assert_eq!(
