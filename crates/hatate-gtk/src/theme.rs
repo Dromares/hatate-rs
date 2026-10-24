@@ -138,7 +138,8 @@ dialog:focus:focus-visible, floating-sheet:focus:focus-visible, sheet:focus:focu
 dialog widget:focus:focus-visible { outline: none; }
 
 /* ---- cards: regions of a flat page, set off by a 1px hairline, not a fill (DAN-1160 / G-08) ---- */
-.card { background: transparent; }
+/* libadwaita's own `.card` draws a radius-12 outline and a shadow falloff; this one is a plain region */
+.card { background: transparent; border-radius: 0; box-shadow: none; }
 .card.framed { border: 1px solid @ink_18; }
 .section-label { font-size: %label%px; letter-spacing: %tracking_label%px; color: @ink_65; font-weight: 700; }
 .section-rule { background: @ink_18; min-height: 1px; }
@@ -150,12 +151,15 @@ dialog widget:focus:focus-visible { outline: none; }
 /* ---- the page chrome: top bar, mode switch, run strip ---- */
 .mark-glyph { font-family: %kanji%; font-size: 22px; color: @ink; }
 .mark-word { font-family: %mono%; font-size: %label%px; letter-spacing: %tracking_label%px; font-weight: 700; color: @ink; }
-.mode-switch { border: 1px solid @ink_18; }
-.mode-switch button { background: transparent; color: @ink_65; border: none; border-right: 1px solid @ink_18;
+/* a control whose border is its shape takes the border tier (`ink_46`, 3:1 on the page in both
+   schemes; `ink_45` is 2.68 in light) and `ink_58` on hover, as gui/theme.py does (DAN-224); cards,
+   the run strip, the frame hairline and rules stay `ink_18` on purpose */
+.mode-switch { border: 1px solid @ink_46; }
+.mode-switch button { background: transparent; color: @ink_65; border: none; border-right: 1px solid @ink_46;
   border-radius: 0; box-shadow: none; text-shadow: none; padding: %space_3%px %space_5%px; min-height: 0; min-width: 0;
   font-size: %label%px; letter-spacing: %tracking_label%px; font-weight: 700; }
 .mode-switch button:last-child { border-right: none; }
-.mode-switch button:hover { background: @ink_10; }
+.mode-switch button:hover { background: @ink_10; color: @ink; }
 .mode-switch button:checked { background: @stamp_bg; color: @stamp_fg; }
 .run-strip { background: @page; border: 1px solid @ink_18; padding: %space_3%px %space_5%px; }
 .readout { font-size: %label%px; letter-spacing: 0.08em; color: @ink_65; }
@@ -164,16 +168,18 @@ dialog widget:focus:focus-visible { outline: none; }
 .run-gauge progress { background: @ink; min-height: 2px; border-radius: 0; border: none; }
 
 /* ---- buttons: square, one outline weight, inversion for primary ---- */
-button.pill { background: transparent; color: @ink; border: 1px solid @ink_18; border-radius: 0; box-shadow: none;
+button.pill { background: transparent; color: @ink; border: 1px solid @ink_46; border-radius: 0; box-shadow: none;
   text-shadow: none; padding: %space_3%px %space_5%px; min-height: 0; font-size: %label%px;
   letter-spacing: %tracking_label%px; font-weight: 700; }
-button.pill:hover { background: @ink_10; }
+button.pill:hover { background: @ink_10; border-color: @ink_58; }
+button.pill:disabled { color: @ink_45; border-color: @ink_46; }
 button.pill.primary { background: @stamp_bg; color: @stamp_fg; border-color: @ink; }
-button.pill.primary:hover { background: @ink; }
+button.pill.primary:hover { background: @ink; border-color: @ink; }
 button.pill.plain { text-transform: none; letter-spacing: 0; }
-button.icon-boxed { background: transparent; color: @ink; border: 1px solid @ink_18; border-radius: 0; box-shadow: none;
+button.icon-boxed { background: transparent; color: @ink; border: 1px solid @ink_46; border-radius: 0; box-shadow: none;
   padding: %space_2%px %space_3%px; min-height: 0; min-width: 0; font-size: 15px; }
-button.icon-boxed:hover { background: @ink_10; }
+button.icon-boxed:hover { background: @ink_10; border-color: @ink_58; }
+button.icon-boxed:disabled { color: @ink_45; border-color: @ink_46; }
 button.link { background: none; border: none; box-shadow: none; padding: 0; min-height: 0; min-width: 0;
   color: @ink_65; font-family: %mono%; font-size: %label%px; letter-spacing: 0.06em; text-decoration: underline; }
 button.link:hover { color: @ink; }
@@ -200,17 +206,17 @@ button.disclosure { background: none; border: none; box-shadow: none; padding: 0
 .frame-caption { font-size: %label%px; letter-spacing: 0.08em; color: @ink_65; }
 
 /* ---- the ghost kanji: ink-05, 420px, bleeding off the top-right (design gate 2.9) ---- */
-.ghost-kanji { font-family: %kanji%; font-size: 420px; color: @ink_05; margin: -40px 40px 0 0; }
+.ghost-kanji { font-family: %kanji%; font-size: 420px; line-height: 1; color: @ink_05; margin: -40px 40px 0 0; }
 
 /* ---- banners (Crashed, quota pause) and the empty state ---- */
-.banner { background: transparent; border: 1px solid @ink_18; padding: %space_5%px; }
+.banner { background: @raised; border: 1px solid @ink_18; padding: %space_5%px; }
 .banner-glyph { font-family: %status%; font-size: 17px; color: @ink; }
 .banner-head { font-size: %label%px; letter-spacing: %tracking_label%px; font-weight: 700; color: @ink; }
 .banner-body { color: @ink_65; font-size: %body%px; }
 .meta-label { font-size: %label%px; letter-spacing: 0.08em; color: @ink_65; }
 .meta-figure { font-size: %label%px; letter-spacing: 0.08em; color: @ink; font-weight: 700; }
 .meta-figure.quiet { color: @ink_65; font-weight: 400; }
-.drop-zone { background: transparent; border: 1px solid @ink_18; }
+.drop-zone { background: @raised; border: 1px solid @ink_18; }
 .drop-copy { color: @ink_65; font-size: %body%px; }
 .survived-glyph { border: 1px solid @ink_28; min-width: 42px; min-height: 42px; font-size: 32px; color: @ink; }
 
@@ -235,6 +241,9 @@ popover modelbutton check, popover modelbutton radio { border-radius: 0; box-sha
 popover separator { background: @ink_18; min-height: 1px; margin: 0; }
 popover label, popover modelbutton label { font-family: %mono%; font-size: 12px; }
 popover modelbutton accelerator, popover modelbutton label.accelerator { color: @ink_65; }
+/* ink_65 on the hover wash is 4.25:1 in dark; a hovered or focused row reads its hint in ink */
+popover modelbutton:hover accelerator, popover modelbutton:hover label.accelerator,
+popover modelbutton:focus accelerator, popover modelbutton:focus label.accelerator { color: @ink; }
 
 /* ---- dialogs (libadwaita AlertDialog) flattened; the destructive response is the stamp, and the
    default response is Cancel (design gate 2.6) ---- */

@@ -25,6 +25,11 @@
   --ink-100:  rgba(205,196,186,1);
   --ink-65:   rgba(205,196,186,0.65);
   --ink-45:   rgba(205,196,186,0.45);
+  /* DAN-2213: the border tiers gui/theme.py has had since DAN-224 and this file lacked. ink-45 is the
+     disabled-text tier and sits at 3.03-3.09:1 as a border; these are the border tiers, 3.1:1 or more
+     against card and zebra. Additive: nothing existing reads them. */
+  --ink-46:   rgba(205,196,186,0.46);
+  --ink-58:   rgba(205,196,186,0.58);
   --ink-28:   rgba(205,196,186,0.28);
   --ink-18:   rgba(205,196,186,0.18);
   --ink-10:   rgba(205,196,186,0.10);
@@ -455,7 +460,7 @@ a { color: var(--ink-100); }
    addendum for the full reconciliation (DAN-1123). */
 .status--review .status__glyph,
 .status--notfound .status__glyph { font-family: var(--font-status); }
-.status--error        { color: var(--ink-100); font-weight: 700; border: 1px solid var(--ink-28); padding: 1px 6px; }
+.status--error        { color: var(--ink-100); font-weight: 700; border: 1px solid var(--ink-46); padding: 1px 6px; } /* DAN-2213: ink-46 as gui/table_delegates.py draws it; ink-28 was 1.93:1 dark */
 
 .diff { font-family: var(--font-mono); font-size: var(--text-label); white-space: nowrap; }
 .diff--up   { color: var(--ink-100); font-weight: 700; }
@@ -793,7 +798,7 @@ table.rows tbody tr[data-selected="true"] .muted {
        weight as row-level .status--searching ("transient, resolves
        on its own") — the headline text stays ink-100 bold regardless,
        so the banner is still noticed even though nothing is wrong.
-     --run-banner--failed   glyph ✕ boxed, ink-100, identical to
+     --run-banner--failed   glyph × boxed, ink-100, identical to
        row-level .status--error — the most severe tier, reused 1:1.
    No new glyphs, no new font subset: zero additional Qt font risk.
    ============================================================ */
@@ -812,7 +817,7 @@ table.rows tbody tr[data-selected="true"] .muted {
 }
 .run-banner__glyph--boxed {
   font-size: 22px;
-  border: 1px solid var(--ink-28);
+  border: 1px solid var(--ink-46); /* DAN-2213: was ink-28, 1.93:1 dark / 2.75:1 light; ink-46 is 3.19 / 3.23 on card */
   padding: 4px 10px;
 }
 .run-banner--crashed .run-banner__glyph { color: var(--ink-100); font-weight: 700; }
@@ -890,6 +895,8 @@ table.rows tbody tr[data-selected="true"] .muted {
   --ink-100:  rgba(33,29,23,1);
   --ink-65:   rgba(33,29,23,0.70);
   --ink-45:   rgba(33,29,23,0.50);
+  --ink-46:   rgba(33,29,23,0.51);   /* DAN-2213, as gui/theme.py LIGHT ink_46 */
+  --ink-58:   rgba(33,29,23,0.62);   /* DAN-2213, as gui/theme.py LIGHT ink_58 */
   --ink-28:   rgba(33,29,23,0.45);
   --ink-18:   rgba(33,29,23,0.32);
   --ink-10:   rgba(33,29,23,0.12);
