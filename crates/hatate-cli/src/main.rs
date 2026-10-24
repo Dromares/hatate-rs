@@ -1,7 +1,9 @@
-//! The `hatate` command. Work in progress: `batch` is experimental.
+//! The `hatate` command. Work in progress: `batch` is experimental, and `mcp-stdio-bridge` is a
+//! client of the MCP server (it does not start one).
 
 mod args;
 mod batch_cmd;
+mod bridge_cmd;
 
 use args::{Command, parse};
 
@@ -22,6 +24,7 @@ fn main() {
             println!("{}", args::USAGE);
         }
         Ok(Command::Batch(opts)) => std::process::exit(batch_cmd::run(opts)),
+        Ok(Command::McpStdioBridge(rest)) => std::process::exit(bridge_cmd::run(&rest)),
         Err(message) => {
             eprintln!("hatate: {message}");
             eprintln!("{}", args::USAGE);

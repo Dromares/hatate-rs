@@ -136,7 +136,7 @@ const DECIMAL_ZEROS: [u32; 76] = [
 ];
 
 /// The value of a decimal digit, whatever script it is in.
-fn decimal_value(c: char) -> Option<u32> {
+pub(crate) fn decimal_value(c: char) -> Option<u32> {
     let cp = c as u32;
     DECIMAL_ZEROS
         .iter()

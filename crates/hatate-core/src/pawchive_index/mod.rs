@@ -25,7 +25,7 @@
 
 mod crawl;
 mod db;
-mod json_error;
+pub(crate) mod json_error;
 
 pub use db::{ImageRow, SCHEMA};
 
