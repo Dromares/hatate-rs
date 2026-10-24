@@ -784,6 +784,7 @@ fn persisted_quota_pause(app: &adw::Application) {
         },
     );
     assert!(f.w.s.quota_banner.root.is_visible());
+    assert_eq!(f.script.count_shown(), 0, "a pause on disk raises no modal");
     let quota = hatate_gtk::text::describe_quota_pause(&fresh, NOW);
     // The restore status and the quota text join with a middle dot.
     assert_eq!(

@@ -81,7 +81,7 @@ that reads 740, which is too close for a floor, so the stated height is 790.
 | # | Difference | Why |
 |---|---|---|
 | D2 | A Yes/No question's default (and Escape) is **No**; Python leaves Qt's default, which is Yes. | Design gate 2.6 (a product call on DAN-2025): destructive confirmations default to Cancel. Counted in the differential. |
-| D3 | The palette is `tokens.css` only. Python's two extra border tiers (`ink-46`, `ink-58`, DAN-224) are not in the sheet. | The ticket says tokens only; non-text boundaries are judged by measured ratio in the shot set and any miss is written up there. |
+| D3 | Control borders and card edges use `ink-18` only. The mockup's `tokens.css` has carried Python's two extra border tiers (`ink-46`, `ink-58`, DAN-224) since [DAN-2213](/DAN/issues/DAN-2213), and the design read ruled it (question 1: controls take `ink-46`, containers keep `ink-18`). The copy vendored here (`@fff6302`) predates DAN-2213 and is not re-vendored by this ticket. | Re-vendoring `tokens.css` and painting control borders with `ink-46` is [DAN-2242](/DAN/issues/DAN-2242), non-blocking, to land before 6.d. Until then the measured misses in section 8 stand. |
 | D4 | Menu items carry no tooltips. | `GMenu` items have none; the text is the label. |
 | D5 | Session dialogs show `user_message()` where Python would show raw exception text; they still show the path the user chose, which is their own input. | The data contract (DAN-2116 item 1): no paths or OS text in a message; `detail()` goes to the log. |
 | D1 | **Python's incremental autosave can leave a stale `session.db` row**; Rust's autosave writes the whole list, so it saves what the window shows. | Ruled by Cloud on [DAN-2227](/DAN/issues/DAN-2227): accepted as a documented class, not ported (a Python data bug; matching it would add a `revision` field to `Entry` in `hatate-core`). One scenario of 300. See section 5. |
@@ -529,7 +529,7 @@ rows name the ticket that owns the def. Files wholly owned by one later ticket a
 
 ## 7. Python test map
 
-844 tests in the 20 files the ticket lists, at `76c85c4`. By owner: 6.b: 7, 6.c: 128, 6.d: 240, 6.d/6.e: 2, 6.d/6.f: 5, 6.e: 50, 6.f: 166, 6.g: 73, 6.h: 66, core: 73, n/a: 34.
+844 tests in the 20 files the ticket lists, at `76c85c4`. By owner: 6.b: 7, 6.c: 127, 6.d: 240, 6.d/6.e: 2, 6.d/6.f: 5, 6.e: 51, 6.f: 166, 6.g: 73, 6.h: 66, core: 73, n/a: 34.
 
 `6.c` rows name the Rust test that covers them (`smoke::<scenario>` is a scenario of `tests/smoke.rs`, run under
 Xvfb; `lib::<path>` is a unit test). `core` rows are ported and differentialed in earlier phases; the window's
@@ -542,16 +542,16 @@ set (section 8), and the row says so.
 
 | Line | Test | Disposition |
 |---|---|---|
-| 56 | `TestHeading.test_the_heading_is_serif_36px_with_the_full_stop` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
-| 68 | `TestHeading.test_it_is_not_a_second_screen_title` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
-| 78 | `TestFrame.test_the_label_is_a_numbered_section_label` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
-| 87 | `TestFrame.test_the_frame_fills_the_page_height` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
-| 105 | `TestFrame.test_the_frame_is_a_hairline_with_corner_brackets` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
-| 136 | `TestFrame.test_the_brackets_do_not_swallow_the_actions` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
-| 148 | `TestTopWeighted.test_the_headline_is_about_37_percent_down` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
-| 159 | `TestTopWeighted.test_the_block_is_above_the_centre_of_its_frame` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
-| 170 | `TestActions.test_the_actions_are_uppercase_mono` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
-| 180 | `TestActions.test_the_actions_are_12px_apart` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty.html layout: structure and copy asserted; pixel geometry (37% weighting, 12px gaps, hairline) is judged in the shot set, not in a test) |
+| 56 | `TestHeading.test_the_heading_is_serif_36px_with_the_full_stop` | **6.c**: `smoke::empty_state_and_idle_strip` asserts the copy: the `Queue.` heading, the `01 // Queue` section label, `Drop images here.` and the three action labels; the serif face, the 36 px size and the weighting are judged in the shot set, not in a test |
+| 68 | `TestHeading.test_it_is_not_a_second_screen_title` | **6.c**: `smoke::empty_state_and_idle_strip` asserts the copy: the `Queue.` heading, the `01 // Queue` section label, `Drop images here.` and the three action labels; that it is a different style from the screen title is judged in the shot set, not in a test |
+| 78 | `TestFrame.test_the_label_is_a_numbered_section_label` | **6.c**: `smoke::empty_state_and_idle_strip` asserts the copy: the `Queue.` heading, the `01 // Queue` section label, `Drop images here.` and the three action labels (the numbered label is the `01 // Queue` text) |
+| 87 | `TestFrame.test_the_frame_fills_the_page_height` | **6.c**: judged in the shot set, not in a test (frame geometry) |
+| 105 | `TestFrame.test_the_frame_is_a_hairline_with_corner_brackets` | **6.c**: judged in the shot set, not in a test (hairline and corner brackets) |
+| 136 | `TestFrame.test_the_brackets_do_not_swallow_the_actions` | **6.c**: judged in the shot set, not in a test (the brackets are drawn over the frame, not as an input layer) |
+| 148 | `TestTopWeighted.test_the_headline_is_about_37_percent_down` | **6.c**: judged in the shot set, not in a test (37% weighting) |
+| 159 | `TestTopWeighted.test_the_block_is_above_the_centre_of_its_frame` | **6.c**: judged in the shot set, not in a test (block position) |
+| 170 | `TestActions.test_the_actions_are_uppercase_mono` | **6.c**: `smoke::empty_state_and_idle_strip` asserts the copy: the `Queue.` heading, the `01 // Queue` section label, `Drop images here.` and the three action labels; the uppercase mono paint is the `caps` style, judged in the shot set |
+| 180 | `TestActions.test_the_actions_are_12px_apart` | **6.c**: judged in the shot set, not in a test (12 px gaps) |
 | 192 | `TestEmptyGhost.test_the_empty_queue_wears_the_empty_glyph` | **6.c**: `smoke::empty_state_and_idle_strip`, `smoke::add_files_hashes_and_dedupes` (空 on the drop zone, 力 once a list exists) |
 | 196 | `TestEmptyGhost.test_a_list_brings_the_queue_glyph_back_and_clearing_it_goes_again` | **6.c**: `smoke::empty_state_and_idle_strip`, `smoke::add_files_hashes_and_dedupes` (空 on the drop zone, 力 once a list exists) |
 | 208 | `TestEmptyGhost.test_the_other_modes_keep_their_own_glyph_while_the_list_is_empty` | **6.c**: `smoke::empty_state_and_idle_strip`, `smoke::add_files_hashes_and_dedupes` (空 on the drop zone, 力 once a list exists) |
@@ -1138,31 +1138,31 @@ set (section 8), and the row says so.
 
 | Line | Test | Disposition |
 |---|---|---|
-| 96 | `TestNoModal.test_a_quota_pause_raises_no_modal` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 116 | `TestNoModal.test_a_pause_with_nothing_recorded_still_raises_no_modal` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 124 | `TestBannerVariant.test_the_kicker_reads_run_paused_quota_exhausted` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 132 | `TestBannerVariant.test_the_kicker_clears_text_contrast` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 143 | `TestBannerVariant.test_it_wears_the_same_brackets_as_the_interrupted_banner` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 150 | `TestBannerVariant.test_the_prose_carries_the_counts` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 160 | `TestBannerVariant.test_the_prose_is_not_clipped_at_any_width` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 175 | `TestBannerVariant.test_the_prose_is_drawn_at_the_mockups_20px_leading` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 187 | `TestBannerVariant.test_the_banner_keeps_the_mockups_vertical_rhythm` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 196 | `TestBannerVariant.test_the_run_strip_puts_the_pause_note_after_the_counts` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 206 | `TestBannerVariant.test_the_meta_line_gives_the_time_the_count_and_the_reset` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 220 | `TestBannerVariant.test_without_a_list_the_prose_falls_back_to_the_workers_count` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
+| 96 | `TestNoModal.test_a_quota_pause_raises_no_modal` | **6.c**: `smoke::persisted_quota_pause` (the banner is shown with no dialog; `Fx` scripts a prompter and the scenario never reads a prompt) |
+| 116 | `TestNoModal.test_a_pause_with_nothing_recorded_still_raises_no_modal` | **6.c**: `smoke::persisted_quota_pause` (the stale-pause case: no banner, no dialog) |
+| 124 | `TestBannerVariant.test_the_kicker_reads_run_paused_quota_exhausted` | **6.c**: `smoke::persisted_quota_pause` asserts the banner is visible and its body text; the kicker wording is `widgets::quota_pause_banner` and is read in the shot set (`quota` shot), not asserted |
+| 132 | `TestBannerVariant.test_the_kicker_clears_text_contrast` | **6.c**: judged in the shot set (contrast table, section 8), not in a test |
+| 143 | `TestBannerVariant.test_it_wears_the_same_brackets_as_the_interrupted_banner` | **6.c**: judged in the shot set, not in a test (brackets) |
+| 150 | `TestBannerVariant.test_the_prose_carries_the_counts` | **6.c**: `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance`; `smoke::persisted_quota_pause` asserts the body contains `Nothing was lost.` and the status line carries the described pause |
+| 160 | `TestBannerVariant.test_the_prose_is_not_clipped_at_any_width` | **6.c**: `smoke::minimum_size_fits_every_state_in_both_schemes` (the quota banner fits at the stated minimum in both schemes) |
+| 175 | `TestBannerVariant.test_the_prose_is_drawn_at_the_mockups_20px_leading` | **6.c**: judged in the shot set, not in a test (leading) |
+| 187 | `TestBannerVariant.test_the_banner_keeps_the_mockups_vertical_rhythm` | **6.c**: judged in the shot set, not in a test (vertical rhythm) |
+| 196 | `TestBannerVariant.test_the_run_strip_puts_the_pause_note_after_the_counts` | **6.c**: `smoke::persisted_quota_pause` asserts the strip's note is literally `paused — quota exhausted`, its estimate `ETA paused` and its count `nothing queued` |
+| 206 | `TestBannerVariant.test_the_meta_line_gives_the_time_the_count_and_the_reset` | **6.c**: the meta line is built by `banners::show_persisted_quota_pause` (`Quota exhausted at`, `Images waiting`, `Resets`); the text pieces are `lib::text` unit tests, the line itself is read in the shot set, not asserted |
+| 220 | `TestBannerVariant.test_without_a_list_the_prose_falls_back_to_the_workers_count` | **6.c**: `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure` |
 | 228 | `TestActions.test_review_is_the_primary_and_continue_is_the_secondary` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
 | 241 | `TestActions.test_review_opens_review_on_the_first_waiting_row` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
 | 248 | `TestActions.test_review_is_hidden_when_nothing_is_waiting` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
 | 254 | `TestActions.test_continue_launches_without_saucenao_and_clears_the_banner` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
 | 270 | `TestActions.test_clearing_the_list_retires_the_banner` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
-| 281 | `TestPersistedAcrossRestart.test_a_pause_on_disk_shows_the_banner_not_just_a_status_line` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 291 | `TestPersistedAcrossRestart.test_a_stale_pause_shows_no_banner` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 297 | `TestPersistedAcrossRestart.test_no_pause_shows_no_banner` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 301 | `TestPersistedAcrossRestart.test_the_banner_sits_below_a_crash_recovery_banner_when_both_are_true` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 319 | `TestStrip.test_the_strip_reads_paused_the_count_and_eta_paused` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 327 | `TestStrip.test_the_run_ending_does_not_wipe_the_pause_from_the_strip` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 335 | `TestStrip.test_after_a_relaunch_the_strip_still_says_paused` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
-| 340 | `TestStrip.test_an_ordinary_idle_strip_is_unchanged` | **6.c**: `smoke::persisted_quota_pause`, `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure`, `lib::text::tests::a_pause_is_described_with_its_reset_time_and_distance` (banner, prose, meta line, strip note and `ETA paused`; geometry is the shot set) |
+| 281 | `TestPersistedAcrossRestart.test_a_pause_on_disk_shows_the_banner_not_just_a_status_line` | **6.c**: `smoke::persisted_quota_pause` (banner visible, and the status line joined with a middle dot) |
+| 291 | `TestPersistedAcrossRestart.test_a_stale_pause_shows_no_banner` | **6.c**: `smoke::persisted_quota_pause` (banner hidden, the stale file deleted) |
+| 297 | `TestPersistedAcrossRestart.test_no_pause_shows_no_banner` | **6.c**: `smoke::empty_state_and_idle_strip` (no quota banner on an ordinary start) |
+| 301 | `TestPersistedAcrossRestart.test_the_banner_sits_below_a_crash_recovery_banner_when_both_are_true` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner` and `smoke::persisted_quota_pause` show each banner; their order in the Queue page is the shot set (`quota` shot) |
+| 319 | `TestStrip.test_the_strip_reads_paused_the_count_and_eta_paused` | **6.c**: `smoke::persisted_quota_pause` asserts the note `paused — quota exhausted`, `ETA paused` and the count `nothing queued`, as literal text |
+| 327 | `TestStrip.test_the_run_ending_does_not_wipe_the_pause_from_the_strip` | 6.e: the run ending is 6.e's; `smoke::persisted_quota_pause` asserts the other half, that dismissing the pause clears the note and the estimate |
+| 335 | `TestStrip.test_after_a_relaunch_the_strip_still_says_paused` | **6.c**: `smoke::persisted_quota_pause` (the strip is read after a start with the pause on disk) |
+| 340 | `TestStrip.test_an_ordinary_idle_strip_is_unchanged` | **6.c**: `smoke::empty_state_and_idle_strip` (`nothing queued`, `ETA —`, no note) |
 
 ### `tests/test_review_commit_caption.py` (4)
 
@@ -1565,11 +1565,11 @@ border pixel against the surface on each side.
   outline on the page, whose ratio against the page is the `ink` text ratio (11.29 dark, 12.88 light).
 - **The hairlines do not reach 3:1, and this is a measured miss, not a pass.** Card edges, the run strip and
   the buttons' own borders use `ink-18` from `tokens.css` (design: "hairline, at rest"), which is 1.2 to 1.9:1
-  against the page. Python adds two tiers beyond the sheet (`ink-46` and `ink-58`, DAN-224) for exactly this;
-  the ticket says tokens only, so they are not carried over (D3). Every control that has only its border to
-  say it is a control also carries a text label that passes 4.5:1. The call whether a boundary this faint is
-  acceptable, or `ink-45` (3.1:1, a token) should be used for control borders, is the design read's. Nothing
-  here changes the colour without that call.
+  against the page. Python adds two tiers beyond the sheet (`ink-46` and `ink-58`, DAN-224) for exactly this. The mockup's
+  `tokens.css` has had them since DAN-2213, but the copy vendored at this head predates that, so they are not
+  carried (D3). The design read ruled it: controls take `ink-46`, containers keep `ink-18`; re-vendoring and
+  applying that is DAN-2242, non-blocking. Every control that has only its border to say it is a control also
+  carries a text label that passes 4.5:1. Nothing in this ticket changes the colour.
 - **Not judgeable from shots:** window chrome, the GPU renderer, the real compositor backdrop (inactive
   selection), HiDPI and hover wash. Owner: Cloud, on real hardware in Phase 7 (DAN-1999 F4).
 
