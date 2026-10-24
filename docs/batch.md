@@ -193,13 +193,15 @@ With `auto_import_enabled` on and an empty access key the run says so and import
    auto-import (`AttributeError`/`TypeError`, `docs/hydrus-import.md`). The differential compares
    the class of each and what was done up to that point.
 2. **Dependency:** `libc` in `hatate-core` for `kill(pid, 0)`. Already in `Cargo.lock` (tokio).
-3. **`Entry.stale_similarity_measured` and `Entry.stale_source_name`**, two more transient fields
-   in the style of section 5. A cached result whose matches have all died leaves `ImageEntry`
-   with the dead match's `similarity`, `similarity_measured` and `booru_name` (`select_candidate(-1)`
-   changes nothing); 3.i carried the URL, and the provenance note writes the other two. The
-   first differential run found 16 scenarios (of 1,500) whose notes lacked the `Site:` line or the
-   measured wording for such a row. `provenance_note` reads them through `Entry::booru_name` and
-   `Entry::similarity_measured`, which fall back to the stale fields; no stored byte changes.
+3. **`Entry.stale_similarity`, `Entry.stale_similarity_measured` and `Entry.stale_source_name`**,
+   three more transient fields in the style of section 5. A cached result whose matches have all
+   died leaves `ImageEntry` with the dead match's `similarity`, `similarity_measured` and
+   `booru_name` (`select_candidate(-1)` changes nothing); 3.i carried the URL, and 4.g carries the
+   other three, one field each. The auto-import threshold reads the score and the provenance note
+   writes all three. The first differential run found 16 scenarios (of 1,500) whose notes lacked
+   the `Site:` line or the measured wording for such a row. Callers read them through
+   `Entry::similarity`, `Entry::similarity_measured` and `Entry::booru_name`, which fall back to
+   the stale fields when no candidate is selected; no stored byte changes.
 4. **The countdown rounds halves to even** as Python's `round()` does (found by the differential;
    `the_countdown_reports_when_the_displayed_second_changes_with_halves_to_even`).
 
