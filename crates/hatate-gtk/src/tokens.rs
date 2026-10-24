@@ -1,5 +1,6 @@
 //! The design tokens, read from the mockup's own `tokens.css` (vendored as `assets/tokens.css`,
-//! `Dromares/hatate-ryoku-mockup@fff6302`). The stylesheet the window uses is generated from what
+//! `Dromares/hatate-ryoku-mockup@fff6302` plus the uncommitted DAN-2213 edits of its working tree: the
+//! `ink-46`/`ink-58` border tiers; see `docs/gtk-shell.md`). The stylesheet the window uses is generated from what
 //! this module parses, so a token changed in the vendored sheet changes the window, and a test
 //! pins the values the design gate measured (`docs/gtk-shell.md`).
 //!
@@ -229,6 +230,8 @@ pub struct Palette {
     pub sunken: Rgba,
     pub ink: Rgba,
     pub ink_65: Rgba,
+    pub ink_58: Rgba,
+    pub ink_46: Rgba,
     pub ink_45: Rgba,
     pub ink_28: Rgba,
     pub ink_18: Rgba,
@@ -248,6 +251,8 @@ impl Palette {
             sunken: t.color("charcoal-sunken"),
             ink: t.color("ink-100"),
             ink_65: t.color("ink-65"),
+            ink_58: t.color("ink-58"),
+            ink_46: t.color("ink-46"),
             ink_45: t.color("ink-45"),
             ink_28: t.color("ink-28"),
             ink_18: t.color("ink-18"),
@@ -288,6 +293,8 @@ impl Palette {
             ("zebra", self.zebra()),
             ("ink", self.ink),
             ("ink_65", self.ink_65),
+            ("ink_58", self.ink_58),
+            ("ink_46", self.ink_46),
             ("ink_45", self.ink_45),
             ("ink_28", self.ink_28),
             ("ink_18", self.ink_18),
