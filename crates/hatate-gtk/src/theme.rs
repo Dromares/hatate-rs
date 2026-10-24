@@ -403,6 +403,52 @@ mod tests {
         }
     }
 
+    /// DAN-2245: selected text is ink on the ink-18 wash, not libadwaita's accent blue (3.48:1 dark,
+    /// 3.40:1 light under the log viewer's path line), for every selectable widget the app has, and
+    /// the pair clears 4.5:1 over the surfaces a selection sits on (the page, the log's sunken fill).
+    #[test]
+    fn selected_text_is_ink_on_the_ink_18_wash() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let css = css(scheme);
+            let rule = css
+                .lines()
+                .skip_while(|l| !l.starts_with("selection, label > selection,"))
+                .take_while(|l| !l.starts_with("/* ----"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            for selector in [
+                "label > selection:focus-within",
+                "label > selection:backdrop",
+                "text > selection:focus-within",
+                "textview text selection:backdrop",
+            ] {
+                assert!(
+                    rule.contains(selector),
+                    "{scheme:?}: no selection rule for {selector}"
+                );
+            }
+            assert!(
+                rule.contains("{ background: @ink_18; color: @ink; }"),
+                "{scheme:?}: selection is not ink on the ink-18 wash: {rule}"
+            );
+            let pal = Palette::of(scheme);
+            for (surface, name) in [
+                (pal.page, "page"),
+                (pal.raised, "raised"),
+                (pal.sunken, "sunken"),
+            ] {
+                let ratio = contrast(
+                    pal.ink.over(pal.ink_18.over(surface)),
+                    pal.ink_18.over(surface),
+                );
+                assert!(
+                    ratio >= 4.5,
+                    "{scheme:?}: ink on the wash over {name} is {ratio:.2}:1"
+                );
+            }
+        }
+    }
+
     #[test]
     fn no_placeholder_is_left_in_the_sheet() {
         for scheme in [Scheme::Dark, Scheme::Light] {
