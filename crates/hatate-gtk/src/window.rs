@@ -1,12 +1,14 @@
 //! The main window (`gui/main_window.py` `MainWindow` at `76c85c4`): the frame, the menubar and
 //! its actions, the Queue page's shell (title, banners, drop zone), and the state the later
-//! tickets hang their screens on.
+//! tickets hang their screens on. The session, banner and close logic is in
+//! [`crate::session_ops`] and [`crate::banners`], on the same type.
 //!
 //! GTK's `PopoverMenuBar` takes a `gio::Menu` and the `win.*` actions it names. An action a later
 //! ticket owns is registered **disabled** (see [`crate::menu`]), so the menu reads like Python's
 //! and nothing in it can be clicked into an empty handler.
 
 use crate::dialogs::{AdwPrompter, Prompter};
+use crate::logview::{FileLogs, LogSource};
 use crate::menu::{self, Owner};
 use crate::shell::{self, Shell};
 use crate::theme;
@@ -18,18 +20,39 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use hatate_core::config::Settings;
+use hatate_core::crash_marker::RunSession;
 use hatate_core::paths::Paths;
 use hatate_core::queue::QueueModel;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use std::cell::{Cell, RefCell};
-use std::path::Path;
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
-/// The window title says what this is (work in progress, not a replacement). `setWindowTitle` at
-/// `main_window.py:422` reads "Hatate-linux - IQDB/SauceNAO tagger for Hydrus".
+/// The window title says what this is (work in progress, not a replacement). Python's
+/// `setWindowTitle` (`main_window.py:422`) reads "Hatate-linux - IQDB/SauceNAO tagger for Hydrus".
 pub const WINDOW_TITLE: &str = "Hatate (work in progress Rust rewrite)";
+
+/// `core/missing_files.find_missing_paths(paths, stop_check)`: the subset of `paths` that no
+/// longer exist. 6.b ports it; until it merges the shipped window is given a stand-in by
+/// [`default_missing_files`] and a test gives its own.
+pub type MissingFiles = Arc<dyn Fn(&[String], &AtomicBool) -> HashSet<String> + Send + Sync>;
+
+/// A check of existence only, directory by directory is 6.b's job.
+/// TODO(6.b): replace with `hatate_core::missing_files` once it merges.
+pub fn default_missing_files() -> MissingFiles {
+    Arc::new(|paths, stop| {
+        paths
+            .iter()
+            .take_while(|_| !stop.load(std::sync::atomic::Ordering::Relaxed))
+            .filter(|p| !Path::new(p).exists())
+            .cloned()
+            .collect()
+    })
+}
 
 /// Everything the window is given, so a test can stand in for each of them. The shipped binary
 /// builds this from the process environment and nothing else; no field is read from a flag or a
@@ -42,6 +65,13 @@ pub struct Env {
     pub prompter: Option<Rc<dyn Prompter>>,
     /// Seconds since the epoch (`time.time()`).
     pub clock: Rc<dyn Fn() -> f64>,
+    pub missing_files: MissingFiles,
+    /// `QDesktopServices.openUrl(QUrl.fromLocalFile(path))`.
+    pub open_path: Rc<dyn Fn(&Path)>,
+    /// The log viewer's source.
+    pub logs: Option<Rc<dyn LogSource>>,
+    /// This run's crash marker; consumed at a clean close (`mark_clean_shutdown`).
+    pub run_session: Option<RunSession>,
 }
 
 impl Env {
@@ -51,8 +81,26 @@ impl Env {
             unclean_shutdown,
             prompter: None,
             clock: Rc::new(hatate_core::session::now_epoch),
+            missing_files: default_missing_files(),
+            open_path: Rc::new(open_with_desktop),
+            logs: None,
+            run_session: None,
         }
     }
+}
+
+/// Hands a file or folder to the desktop's default handler.
+fn open_with_desktop(path: &Path) {
+    let file = gio::File::for_path(path);
+    gtk::FileLauncher::new(Some(&file)).launch(
+        None::<&gtk::Window>,
+        gio::Cancellable::NONE,
+        |r| {
+            if let Err(e) = r {
+                tracing::warn!("could not open a file with the desktop: {e}");
+            }
+        },
+    );
 }
 
 /// The window's state: what Python keeps on `self`.
@@ -63,8 +111,16 @@ pub struct State {
     pub workers: Workers,
     pub file_hash_worker: Slot,
     pub missing_file_worker: Slot,
+    pub autosave_worker: Slot,
+    /// Set while an autosave write is on the pool, so close can wait for it.
+    pub autosave_inflight: Arc<AtomicBool>,
+    pub autosave_timer: RefCell<Option<glib::SourceId>>,
     pub prompter: Rc<dyn Prompter>,
     pub clock: Rc<dyn Fn() -> f64>,
+    pub missing_files: MissingFiles,
+    pub open_path: Rc<dyn Fn(&Path)>,
+    pub logs: Rc<dyn LogSource>,
+    pub run_session: RefCell<Option<RunSession>>,
     pub shell: Rc<Shell>,
     pub queue_stack: gtk::Stack,
     pub drop_zone: gtk::Overlay,
@@ -76,16 +132,42 @@ pub struct State {
     pub unclean_shutdown: bool,
     /// `self._closing`: set at the top of close, so a worker finishing after it shows nothing.
     pub closing: Cell<bool>,
+    /// `self._pending_import_paths`.
+    pub pending_import_paths: RefCell<Vec<PathBuf>>,
+    /// `self._session_restore_status`: what the restore had to say, for the quota pause to join.
+    pub session_restore_status: RefCell<Option<String>>,
+    /// Paths the missing-file check found gone. 6.b adds `Entry.file_missing`; until then the
+    /// window keeps the set (it describes this run and is never stored).
+    pub missing: RefCell<HashSet<String>>,
+    /// `self._quota_paused`.
+    pub quota_paused: Cell<bool>,
     pub scheme: Cell<Scheme>,
     pub win: adw::ApplicationWindow,
-    /// A hook the Queue view (6.d) installs to learn the list changed.
-    pub on_list_changed: RefCell<Option<Box<dyn Fn()>>>,
+    /// The dialogs that are open (the log viewer), so a test can find them.
+    pub log_viewer: RefCell<Option<Rc<crate::logview::LogViewer>>>,
 }
 
 /// The window and its state.
+#[derive(Clone)]
 pub struct MainWindow {
     pub win: adw::ApplicationWindow,
     pub s: Rc<State>,
+}
+
+/// The weak handle the chrome's callbacks hold, so they cannot keep the window alive.
+#[derive(Clone)]
+pub struct MainWindowWeak {
+    win: glib::WeakRef<adw::ApplicationWindow>,
+    s: std::rc::Weak<State>,
+}
+
+impl MainWindowWeak {
+    pub fn upgrade(&self) -> Option<MainWindow> {
+        Some(MainWindow {
+            win: self.win.upgrade()?,
+            s: self.s.upgrade()?,
+        })
+    }
 }
 
 /// Settings > Theme: the scheme to draw for the stored setting, asking the desktop for `system`.
@@ -114,6 +196,10 @@ impl MainWindow {
             .prompter
             .clone()
             .unwrap_or_else(|| Rc::new(AdwPrompter::new(&win)));
+        let logs: Rc<dyn LogSource> = env
+            .logs
+            .clone()
+            .unwrap_or_else(|| Rc::new(FileLogs::new(&env.paths)));
 
         // -- the Queue page: title, the two banners, and the list or the empty state
         let queue_page = widgets::card(None, false);
@@ -132,38 +218,36 @@ impl MainWindow {
 
         let queue_stack = gtk::Stack::new();
         queue_stack.set_vexpand(true);
-        let rows = placeholder_rows();
-        queue_stack.add_named(&rows, Some("rows"));
+        queue_stack.add_named(&placeholder_rows(), Some("rows"));
         let drop_zone = build_drop_zone();
         queue_stack.add_named(&drop_zone, Some("empty"));
         queue_stack.set_visible_child_name("empty");
         queue_page.append(&queue_stack);
 
-        let review_page = review_frame();
-
-        let shell_cell: Rc<RefCell<Option<Rc<MainWindowWeak>>>> = Rc::new(RefCell::new(None));
-        let (mode_cell, search_cell, settings_cell) =
-            (shell_cell.clone(), shell_cell.clone(), shell_cell.clone());
+        let handle: Rc<OnceCell<MainWindowWeak>> = Rc::new(OnceCell::new());
+        let call = |handle: &Rc<OnceCell<MainWindowWeak>>, f: fn(&MainWindow)| {
+            let handle = handle.clone();
+            move || {
+                if let Some(w) = handle.get().and_then(MainWindowWeak::upgrade) {
+                    f(&w);
+                }
+            }
+        };
+        let mode_handle = handle.clone();
         let shell = Shell::new(
             &[
                 ("queue", queue_page.clone().upcast()),
-                ("review", review_page.upcast()),
+                ("review", review_frame()),
             ],
             move |key| {
-                if let Some(w) = mode_cell.borrow().as_ref().and_then(|w| w.upgrade()) {
-                    w.set_mode(key);
+                if let Some(w) = mode_handle.get().and_then(MainWindowWeak::upgrade) {
+                    if w.s.shell.current_mode() != key {
+                        w.set_mode(key);
+                    }
                 }
             },
-            move || {
-                if let Some(w) = search_cell.borrow().as_ref().and_then(|w| w.upgrade()) {
-                    w.activate_action("toggle-search");
-                }
-            },
-            move || {
-                if let Some(w) = settings_cell.borrow().as_ref().and_then(|w| w.upgrade()) {
-                    w.activate_action("preferences");
-                }
-            },
+            call(&handle, |w| w.activate_action("toggle-search")),
+            call(&handle, |w| w.activate_action("preferences")),
         );
 
         let menubar = gtk::PopoverMenuBar::from_model(Some(&menu::model()));
@@ -181,8 +265,15 @@ impl MainWindow {
             workers: Workers::new(),
             file_hash_worker: Slot::new(),
             missing_file_worker: Slot::new(),
+            autosave_worker: Slot::new(),
+            autosave_inflight: Arc::new(AtomicBool::new(false)),
+            autosave_timer: RefCell::new(None),
             prompter,
             clock: env.clock.clone(),
+            missing_files: env.missing_files.clone(),
+            open_path: env.open_path.clone(),
+            logs,
+            run_session: RefCell::new(env.run_session),
             shell,
             queue_stack,
             drop_zone,
@@ -191,22 +282,38 @@ impl MainWindow {
             nothing_survived: RefCell::new(None),
             unclean_shutdown: env.unclean_shutdown,
             closing: Cell::new(false),
+            pending_import_paths: RefCell::new(Vec::new()),
+            session_restore_status: RefCell::new(None),
+            missing: RefCell::new(HashSet::new()),
+            quota_paused: Cell::new(false),
             scheme: Cell::new(Scheme::Dark),
             win: win.clone(),
-            on_list_changed: RefCell::new(None),
+            log_viewer: RefCell::new(None),
         });
         let window = MainWindow {
             win: win.clone(),
             s: state,
         };
-        *shell_cell.borrow_mut() = Some(Rc::new(MainWindowWeak {
-            win: win.downgrade(),
-            s: Rc::downgrade(&window.s),
-        }));
+        let _ = handle.set(window.downgrade());
         window.install_actions(app);
-        window.apply_theme(&scheme_name(&window.s));
+        window.wire_banners();
+        window.apply_theme(&theme_setting(&window.s));
         window.refresh_queue_empty_state();
+        window.connect_close();
+        window.startup();
         window
+    }
+
+    pub fn downgrade(&self) -> MainWindowWeak {
+        MainWindowWeak {
+            win: self.win.downgrade(),
+            s: Rc::downgrade(&self.s),
+        }
+    }
+
+    /// `activate_action`: what a menu item or a shortcut does.
+    pub fn activate_action(&self, name: &str) {
+        let _ = gtk::prelude::WidgetExt::activate_action(&self.win, &format!("win.{name}"), None);
     }
 
     /// `action_set_theme(mode)`: switches the theme now, without a restart.
@@ -217,7 +324,9 @@ impl MainWindow {
         {
             let mut s = self.s.settings.lock().unwrap();
             s.theme = mode.to_owned();
-            let _ = s.save(&self.s.paths);
+            if let Err(e) = s.save(&self.s.paths) {
+                tracing::warn!("could not save the settings: {e}");
+            }
         }
         self.apply_theme(mode);
         if let Some(action) = self.win.lookup_action("theme") {
@@ -257,14 +366,14 @@ impl MainWindow {
     pub fn refresh_queue_empty_state(&self) {
         let has_rows = !self.s.queue.borrow().is_empty();
         if has_rows {
+            // Something to show: the notice has done its job, and a later emptied list is an
+            // ordinary empty one.
             self.dismiss_nothing_survived();
             self.s.queue_stack.set_visible_child_name("rows");
         } else {
             let survived = self.s.nothing_survived.borrow();
             match survived.as_ref() {
-                Some(p) => {
-                    self.s.queue_stack.set_visible_child(&p.root);
-                }
+                Some(p) => self.s.queue_stack.set_visible_child(&p.root),
                 None => self.s.queue_stack.set_visible_child_name("empty"),
             }
         }
@@ -274,16 +383,17 @@ impl MainWindow {
             let ghost = self.ghost_glyph_for("queue");
             self.s.shell.root.set_glyph(&ghost);
         }
+        if let Some(count) = self.s.queue_stack.child_by_name("rows") {
+            let n = self.s.queue.borrow().len();
+            if let Some(label) = count.first_child().and_downcast::<gtk::Label>() {
+                label.set_text(&rows_text(n));
+            }
+        }
     }
 
-    /// `_dismiss_nothing_survived`: back to the ordinary drop zone.
-    pub fn dismiss_nothing_survived(&self) {
-        let Some(panel) = self.s.nothing_survived.borrow_mut().take() else {
-            return;
-        };
-        self.s.queue_stack.remove(&panel.root);
-        self.s.shell.run_note_label.set_text("");
-        self.refresh_queue_empty_state();
+    /// `status_label.setText`.
+    pub fn say(&self, text: &str) {
+        self.s.shell.say(text);
     }
 
     /// Registers every action in the menus: the working ones with their handler, the later
@@ -294,27 +404,25 @@ impl MainWindow {
                 continue;
             }
             let action = gio::SimpleAction::new(name, None);
-            if let Owner::Later(_) = owner {
-                action.set_enabled(false);
+            match owner {
+                Owner::Later(_) => action.set_enabled(false),
+                Owner::Shell => self.connect_shell_action(&action, name),
             }
             self.win.add_action(&action);
         }
         // Settings > Theme: a stateful radio action holding the stored mode.
-        let current = self.s.settings.lock().unwrap().theme.clone();
+        let current = theme_setting(&self.s);
         let theme_action = gio::SimpleAction::new_stateful(
             "theme",
             Some(glib::VariantTy::STRING),
             &current.to_variant(),
         );
         {
-            let weak = Rc::downgrade(&self.s);
-            let win = self.win.downgrade();
+            let w = self.downgrade();
             theme_action.connect_activate(move |_, param| {
-                let (Some(s), Some(win)) = (weak.upgrade(), win.upgrade()) else {
-                    return;
-                };
-                if let Some(mode) = param.and_then(|p| p.get::<String>()) {
-                    MainWindow { win, s }.set_theme(&mode);
+                if let (Some(w), Some(mode)) = (w.upgrade(), param.and_then(|p| p.get::<String>()))
+                {
+                    w.set_theme(&mode);
                 }
             });
         }
@@ -328,42 +436,82 @@ impl MainWindow {
         );
         site.set_enabled(false);
         self.win.add_action(&site);
+        // `toggle-search` is the Start Search button's action (6.e wires it).
+        let toggle = gio::SimpleAction::new("toggle-search", None);
+        toggle.set_enabled(false); // DEFERRED(6.e)
+        self.win.add_action(&toggle);
 
         for (action, accel) in menu::accelerators() {
             app.set_accels_for_action(&action, &[accel]);
         }
+        self.s.shell.search_toggle_btn.set_action_name(Some("win.toggle-search"));
+        self.s.shell.settings_btn.set_action_name(Some("win.preferences"));
+    }
+
+    fn connect_shell_action(&self, action: &gio::SimpleAction, name: &str) {
+        let w = self.downgrade();
+        let name = name.to_owned();
+        action.connect_activate(move |_, _| {
+            let Some(w) = w.upgrade() else { return };
+            match name.as_str() {
+                "add-files" => w.action_add_files(),
+                "add-folder" => w.action_add_folder(),
+                "save-session-as" => w.action_save_session_as(),
+                "open-session" => w.action_open_session(),
+                "clear-session" => w.action_clear_session(),
+                "open-log" => w.action_open_log(),
+                "view-logs" => w.action_view_logs(),
+                "quit" => w.win.close(),
+                other => tracing::warn!("no handler for action {other}"),
+            }
+        });
+    }
+
+    /// The banner buttons Python wires in `_build_queue_page`. 6.e wires Resume Queue and the two
+    /// quota actions; the ones that belong to the shell are wired here.
+    fn wire_banners(&self) {
+        let w = self.downgrade();
+        self.s.run_banner.crash_log.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.open_crash_log();
+                }
+            }
+        });
+        self.s.run_banner.discard.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.action_clear_session();
+                }
+            }
+        });
+        // DEFERRED(6.e): Resume Queue, "Review the waiting", "Continue with other engines".
+        self.s.run_banner.resume.set_sensitive(false);
+        self.s.quota_banner.review.set_sensitive(false);
+        self.s.quota_banner.keep_going.set_sensitive(false);
+        // The empty state's three buttons. Query Hydrus follows its (disabled) action.
     }
 }
 
-/// The weak handle the chrome's callbacks hold, so they cannot keep the window alive.
-pub struct MainWindowWeak {
-    win: glib::WeakRef<adw::ApplicationWindow>,
-    s: std::rc::Weak<State>,
-}
-
-impl MainWindowWeak {
-    fn upgrade(&self) -> Option<MainWindow> {
-        Some(MainWindow {
-            win: self.win.upgrade()?,
-            s: self.s.upgrade()?,
-        })
-    }
-}
-
-impl MainWindow {
-    fn activate_action(&self, name: &str) {
-        let _ = gtk::prelude::WidgetExt::activate_action(&self.win, &format!("win.{name}"), None);
-    }
-}
-
-fn scheme_name(s: &State) -> String {
+/// The stored `theme` setting.
+fn theme_setting(s: &State) -> String {
     s.settings.lock().unwrap().theme.clone()
 }
 
-/// The Queue's list page until 6.d replaces it with the `ColumnView`.
+/// What the Queue's list page says until 6.d replaces it with the `ColumnView`.
+fn rows_text(n: usize) -> String {
+    if n == 0 {
+        "The list view arrives in 6.d.".to_owned()
+    } else {
+        format!("{n} image(s) in the list. The list view arrives in 6.d.")
+    }
+}
+
 fn placeholder_rows() -> gtk::Widget {
     let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let label = widgets::muted("The list view arrives in 6.d.");
+    let label = widgets::muted(&rows_text(0));
     label.set_halign(gtk::Align::Center);
     label.set_valign(gtk::Align::Center);
     label.set_vexpand(true);
@@ -431,15 +579,7 @@ fn build_drop_zone() -> gtk::Overlay {
         buttons.append(b);
     }
     block.append(&buttons);
-    inner.append(&widgets::top_weighted(
-        &block,
-        widgets::DROP_ZONE_BELOW_WEIGHT,
-    ));
+    inner.append(&widgets::top_weighted(&block, widgets::DROP_ZONE_BELOW_WEIGHT));
     panel.append(&inner);
     widgets::brackets(&panel)
-}
-
-/// Whether `path` is a file this build can put in a log dialog (exists and is a regular file).
-pub fn is_readable_file(path: &Path) -> bool {
-    path.is_file()
 }

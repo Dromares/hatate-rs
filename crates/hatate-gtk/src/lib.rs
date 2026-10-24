@@ -2,10 +2,16 @@
 //! for Hatate. The cut and the method map are in `docs/gtk-shell.md`.
 
 pub mod app;
+pub mod banners;
 pub mod dialogs;
+pub mod error;
 pub mod fonts;
+pub mod logview;
 pub mod menu;
+pub mod session_ops;
 pub mod shell;
+pub mod startup;
+pub mod text;
 pub mod theme;
 pub mod tokens;
 pub mod widgets;
