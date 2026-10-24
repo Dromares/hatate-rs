@@ -22,6 +22,7 @@ use hatate_core::batch::hashing::hash_files;
 use hatate_core::batch::intake::{self, filter_duplicate_paths, scan_folder};
 use hatate_core::batch::{Autosave, Silent};
 use hatate_core::crash_marker::CrashMarkers;
+use hatate_core::missing_files;
 use hatate_core::model::{Entry, MatchStatus};
 use hatate_core::queue::QueueModel;
 use hatate_core::session::{self, LoadOptions, SessionStore, named};
@@ -458,34 +459,29 @@ impl MainWindow {
             return;
         }
         let (affected, total) = {
-            let q = self.s.queue.borrow();
-            (
-                q.entries()
-                    .iter()
-                    .filter(|e| missing.contains(&e.path))
-                    .count(),
-                q.len(),
-            )
+            let mut q = self.s.queue.borrow_mut();
+            let total = q.len();
+            let ids: Vec<_> = (0..total as i64)
+                .filter(|&row| q.entry_at(row).is_some_and(|e| missing.contains(&e.path)))
+                .filter_map(|row| q.id_at(row))
+                .collect();
+            let affected = ids.len();
+            for id in ids {
+                if let Some(e) = q.entry_mut(id) {
+                    e.file_missing = true;
+                }
+            }
+            tracing::info!("Flagged {affected} entry(s) whose file is no longer on disk");
+            (affected, total)
         };
-        *self.s.missing.borrow_mut() = missing;
-        tracing::info!("Flagged {affected} entry(s) whose file is no longer on disk");
         self.list_changed();
-        self.say(&format!(
-            "{affected} image(s) in this list are no longer on disk - see the File column"
-        ));
+        self.say(&missing_files::missing_status_text(affected));
         // Said once, plainly, rather than left for the user to discover as a string of failures
         // later. The URL-importer note matters: those rows are still useful with the file gone.
         dialogs::information(
             &*self.s.prompter,
             "Missing files",
-            &format!(
-                "{affected} of {total} image(s) in this session are no longer on disk - most \
-                 likely deleted from Hydrus since the session was saved.\n\nThey're still \
-                 listed, marked \"missing\" in the File column, and their tags and matched URLs \
-                 are intact. Anything needing the file itself (searching, uploading, the \
-                 upscale check) will fail for them, but \"Send URL to Hydrus's URL Importer\" \
-                 still works - Hydrus re-downloads from the source and applies the tags."
-            ),
+            &missing_files::missing_dialog_text(affected, total),
         );
     }
 
@@ -652,7 +648,6 @@ impl MainWindow {
     /// Replaces the working list wholesale (Python rebinds `self.entries`).
     fn replace_entries(&self, entries: Vec<Entry>) {
         *self.s.queue.borrow_mut() = QueueModel::new(entries, self.s.settings.clone());
-        self.s.missing.borrow_mut().clear();
         self.list_changed();
     }
 

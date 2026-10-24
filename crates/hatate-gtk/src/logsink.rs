@@ -3,6 +3,7 @@
 //! log viewer (`logview.rs`) reads this file, so without this layer a production run would show
 //! it nothing.
 
+use hatate_core::applog::LogRing;
 use hatate_core::rotating_log::{Level as FileLevel, RotatingLog};
 use std::fmt::Write as _;
 use std::sync::Mutex;
@@ -13,6 +14,7 @@ use tracing_subscriber::layer::{Context, Layer};
 /// A `tracing` layer that writes every event it is given to a [`RotatingLog`].
 pub struct FileLayer {
     log: Mutex<RotatingLog>,
+    ring: Option<LogRing>,
     now: fn() -> f64,
 }
 
@@ -20,14 +22,22 @@ impl FileLayer {
     pub fn new(log: RotatingLog) -> FileLayer {
         FileLayer {
             log: Mutex::new(log),
+            ring: None,
             now: hatate_core::session::now_epoch,
         }
+    }
+
+    /// Every event also goes into `ring`, which the log viewer reads (`_RingHandler`).
+    pub fn with_ring(mut self, ring: LogRing) -> FileLayer {
+        self.ring = Some(ring);
+        self
     }
 
     /// The same layer with a fixed clock, for a test.
     pub fn with_clock(log: RotatingLog, now: fn() -> f64) -> FileLayer {
         FileLayer {
             log: Mutex::new(log),
+            ring: None,
             now,
         }
     }
@@ -66,14 +76,14 @@ impl<S: Subscriber> Layer<S> for FileLayer {
         let mut m = Message::default();
         event.record(&mut m);
         let meta = event.metadata();
+        let now = (self.now)();
+        let text = m.text.replace('\n', " | ");
+        if let Some(ring) = &self.ring {
+            ring.record(now, level(meta.level()), meta.target(), &text);
+        }
         if let Ok(mut log) = self.log.lock() {
             // A log that cannot be written must not take the app down with it.
-            let _ = log.record(
-                (self.now)(),
-                level(meta.level()),
-                meta.target(),
-                &m.text.replace('\n', " | "),
-            );
+            let _ = log.record(now, level(meta.level()), meta.target(), &text);
         }
     }
 }
@@ -100,5 +110,21 @@ mod tests {
         assert!(lines[0].ends_with("[INFO] hatate_gtk::window: Added 2 file(s)"));
         assert!(lines[1].ends_with("[WARNING] hatate_gtk::fonts: fonts not loaded"));
         assert!(lines[2].ends_with("[INFO] hatate_gtk::window: two | lines count=3"));
+    }
+
+    #[test]
+    fn the_ring_gets_the_lines_the_file_gets() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = RotatingLog::open(dir.path().join("hatate-rs.log"), 2_000_000, 3).unwrap();
+        let ring = LogRing::new();
+        let layer = FileLayer::with_clock(log, || 1_792_000_000.0).with_ring(ring.clone());
+        let sub = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::with_default(sub, || {
+            tracing::info!(target: "hatate_gtk::window", "one");
+            tracing::warn!(target: "hatate_gtk::window", "two");
+        });
+        let file = std::fs::read_to_string(dir.path().join("hatate-rs.log")).unwrap();
+        assert_eq!(ring.recent(), file.trim_end_matches('\n'));
+        assert_eq!(ring.len(), 2);
     }
 }

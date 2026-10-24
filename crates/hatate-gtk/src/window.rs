@@ -8,7 +8,7 @@
 //! and nothing in it can be clicked into an empty handler.
 
 use crate::dialogs::{AdwPrompter, Prompter};
-use crate::logview::{FileLogs, LogSource};
+use crate::logview::{LogSource, RingLogs};
 use crate::menu::{self, Owner};
 use crate::shell::{self, Shell};
 use crate::theme;
@@ -19,6 +19,7 @@ use gtk4 as gtk;
 use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
+use hatate_core::applog::LogRing;
 use hatate_core::config::Settings;
 use hatate_core::crash_marker::RunSession;
 use hatate_core::paths::Paths;
@@ -43,21 +44,18 @@ pub const WINDOW_TITLE: &str = "Hatate (work in progress Rust rewrite)";
 pub const MIN_WIDTH: i32 = 1010;
 pub const MIN_HEIGHT: i32 = 790;
 
-/// `core/missing_files.find_missing_paths(paths, stop_check)`: the subset of `paths` that no
-/// longer exist. 6.b ports it; until it merges the shipped window is given a stand-in by
-/// [`default_missing_files`] and a test gives its own.
+/// `workers/missing_file_worker.MissingFileWorker.run`: the subset of `paths` that no longer
+/// exist. The shipped window uses [`default_missing_files`] (`hatate_core::missing_files`, 6.b);
+/// a test gives its own.
 pub type MissingFiles = Arc<dyn Fn(&[String], &AtomicBool) -> HashSet<String> + Send + Sync>;
 
-/// A check of existence only, directory by directory is 6.b's job.
-/// TODO(6.b): replace with `hatate_core::missing_files` once it merges.
+/// The check over `hatate_core::missing_files::check_session_files`, which lists each directory
+/// once rather than stat-ing each file.
 pub fn default_missing_files() -> MissingFiles {
     Arc::new(|paths, stop| {
-        paths
-            .iter()
-            .take_while(|_| !stop.load(std::sync::atomic::Ordering::Relaxed))
-            .filter(|p| !Path::new(p).exists())
-            .cloned()
-            .collect()
+        hatate_core::missing_files::check_session_files(paths, &|| {
+            stop.load(std::sync::atomic::Ordering::Relaxed)
+        })
     })
 }
 
@@ -77,6 +75,8 @@ pub struct Env {
     pub open_path: Rc<dyn Fn(&Path)>,
     /// The log viewer's source.
     pub logs: Option<Rc<dyn LogSource>>,
+    /// The ring the log viewer reads when `logs` is not given; `main` fills it from the log layer.
+    pub log_ring: LogRing,
     /// This run's crash marker; consumed at a clean close (`mark_clean_shutdown`).
     pub run_session: Option<RunSession>,
 }
@@ -91,6 +91,7 @@ impl Env {
             missing_files: default_missing_files(),
             open_path: Rc::new(open_with_desktop),
             logs: None,
+            log_ring: LogRing::new(),
             run_session: None,
         }
     }
@@ -139,9 +140,6 @@ pub struct State {
     pub pending_import_paths: RefCell<Vec<PathBuf>>,
     /// `self._session_restore_status`: what the restore had to say, for the quota pause to join.
     pub session_restore_status: RefCell<Option<String>>,
-    /// Paths the missing-file check found gone. 6.b adds `Entry.file_missing`; until then the
-    /// window keeps the set (it describes this run and is never stored).
-    pub missing: RefCell<HashSet<String>>,
     /// `self._quota_paused`.
     pub quota_paused: Cell<bool>,
     /// The run strip's gauge as Qt keeps it: `(progress_bar.value(), progress_bar.maximum())`.
@@ -209,7 +207,7 @@ impl MainWindow {
         let logs: Rc<dyn LogSource> = env
             .logs
             .clone()
-            .unwrap_or_else(|| Rc::new(FileLogs::new(&env.paths)));
+            .unwrap_or_else(|| Rc::new(RingLogs::new(&env.paths, env.log_ring.clone())));
 
         // -- the Queue page: title, the two banners, and the list or the empty state
         let queue_page = widgets::card(None, false);
@@ -294,7 +292,6 @@ impl MainWindow {
             closing: Cell::new(false),
             pending_import_paths: RefCell::new(Vec::new()),
             session_restore_status: RefCell::new(None),
-            missing: RefCell::new(HashSet::new()),
             quota_paused: Cell::new(false),
             run_progress: Cell::new((0, 0)),
             run_active: Cell::new(false),

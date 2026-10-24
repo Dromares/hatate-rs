@@ -1,5 +1,6 @@
 //! The Hatate window. Work in progress, not yet a replacement for Hatate.
 
+use hatate_core::applog::LogRing;
 use hatate_core::crash_marker::CrashMarkers;
 use hatate_core::paths::Paths;
 use hatate_core::rotating_log::RotatingLog;
@@ -19,6 +20,7 @@ fn main() -> gtk4::glib::ExitCode {
     };
     // stderr as before, and `hatate-rs.log` (the file the log viewer reads). A profile that
     // cannot be written to leaves the app on stderr alone.
+    let ring = LogRing::new();
     let file = RotatingLog::start(&paths, hatate_core::session::now_epoch()).ok();
     let file_failed = file.is_none();
     tracing_subscriber::registry()
@@ -28,7 +30,7 @@ fn main() -> gtk4::glib::ExitCode {
                 .with_writer(std::io::stderr)
                 .with_target(false),
         )
-        .with(file.map(FileLayer::new))
+        .with(file.map(|f| FileLayer::new(f).with_ring(ring.clone())))
         .init();
     if file_failed {
         tracing::warn!("could not open hatate-rs.log; logging to stderr only");
@@ -44,6 +46,7 @@ fn main() -> gtk4::glib::ExitCode {
     if let Err(e) = fonts::load_default() {
         tracing::warn!("fonts not loaded: {e}");
     }
-    let env = Env::new(paths, started.previous_run_unclean);
+    let mut env = Env::new(paths, started.previous_run_unclean);
+    env.log_ring = ring;
     app::run_with(env, |_| {})
 }

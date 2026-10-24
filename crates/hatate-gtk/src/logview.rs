@@ -1,15 +1,15 @@
 //! Help > View Logs (`gui/log_viewer_dialog.py` at `76c85c4`): recent log lines, and `crash.log`
 //! behind a toggle.
 //!
-//! Python reads an in-memory ring of the last 4,000 records; that ring (and `get_recent_logs`) is
-//! 6.b's. Until it lands the dialog reads through the [`LogSource`] it is given, and [`FileLogs`]
-//! is the plain file tail. The Rust app's own log is `hatate-rs.log`, never `app.log` (the Python
-//! app reads that one), so the path label says so.
+//! Python reads an in-memory ring of the last 4,000 records (`get_recent_logs`); that ring is
+//! `hatate_core::applog::LogRing` (6.b), which [`RingLogs`] reads. The Rust app's own log is
+//! `hatate-rs.log`, never `app.log` (the Python app reads that one), so the path label says so.
 
-use crate::startup::{CRASH_LOG_TAIL_CHARS, LOG_TAIL_BYTES, tail_lossy};
+use crate::startup::CRASH_LOG_TAIL_CHARS;
 use crate::widgets;
 use gtk4 as gtk;
 use gtk4::prelude::*;
+use hatate_core::applog::LogRing;
 use hatate_core::paths::Paths;
 use std::cell::Cell;
 use std::path::{Path, PathBuf};
@@ -27,28 +27,28 @@ pub trait LogSource {
     fn recent_crash_log(&self) -> String;
 }
 
-/// The profile's files, read when asked.
-pub struct FileLogs {
+/// The ring the app's log layer fills, and the profile's `crash.log`, read when asked.
+pub struct RingLogs {
     paths: Paths,
+    ring: LogRing,
 }
 
-impl FileLogs {
-    pub fn new(paths: &Paths) -> FileLogs {
-        FileLogs {
+impl RingLogs {
+    pub fn new(paths: &Paths, ring: LogRing) -> RingLogs {
+        RingLogs {
             paths: paths.clone(),
+            ring,
         }
     }
 }
 
-impl LogSource for FileLogs {
+impl LogSource for RingLogs {
     fn log_path(&self) -> PathBuf {
         self.paths.rust_log_file()
     }
 
     fn recent_log(&self) -> String {
-        std::fs::read(self.log_path())
-            .map(|b| tail_lossy(&b, LOG_TAIL_BYTES))
-            .unwrap_or_default()
+        self.ring.recent()
     }
 
     fn crash_log_path(&self) -> PathBuf {
@@ -307,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn the_file_source_reads_the_tails() {
+    fn the_ring_source_reads_the_ring_and_the_crash_tail() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_path_buf();
         let paths = Paths::from_lookup(move |k| match k {
@@ -318,12 +318,14 @@ mod tests {
         })
         .unwrap();
         std::fs::create_dir_all(paths.config_dir()).unwrap();
-        let src = FileLogs::new(&paths);
+        let ring = LogRing::new();
+        let src = RingLogs::new(&paths, ring.clone());
         assert_eq!(src.recent_log(), "");
         assert_eq!(src.recent_crash_log(), "");
         std::fs::write(paths.crash_log(), "x".repeat(CRASH_LOG_TAIL_CHARS + 5)).unwrap();
         assert_eq!(src.recent_crash_log().chars().count(), CRASH_LOG_TAIL_CHARS);
-        std::fs::write(paths.rust_log_file(), "line\n").unwrap();
-        assert_eq!(src.recent_log(), "line\n");
+        ring.push("line".into());
+        ring.push("two".into());
+        assert_eq!(src.recent_log(), "line\ntwo");
     }
 }
