@@ -1509,7 +1509,7 @@ from scaled shots.
 
 Shots, dark and light each: `empty` (the empty state), `empty-min` (the empty state at the stated minimum),
 `rows` (a list with rows), `crashed` (the Crashed banner), `survived` ("Nothing survived."), `quota` (the
-SauceNAO pause banner), `logs` (the log viewer window), `dialog` (a Yes/No question, default No, ring showing),
+SauceNAO pause banner), `logs` (the log viewer window), `logs-selected` (its path line selected and focused) and `logs-selected-body` (its log text selected), `dialog` (a Yes/No question, default No, ring showing),
 `menu` and `menu-*-popover` (the Files menu open), `menu-hover` (the same with `Save Session As...` under the
 pointer), `focus` (the first control, the Queue mode switch, with the focus ring), `focus-files` (the
 stamp-filled Add files) and `focus-folder` (the hollow Add folder) with the ring showing, and `hover-folder`
@@ -1517,7 +1517,7 @@ stamp-filled Add files) and `focus-folder` (the hollow Add folder) with the ring
 
 **Text contrast.** `measure.py` (outside the repo: `worktrees/DAN-2215-tools/measure.py SHOTDIR`) takes each
 label's rectangle, the most common colour inside it as the background and the pixel farthest from it as the
-foreground (the extreme-pixel method), and reports the WCAG 2.x ratio. **690 labels, dark and light: 0 enabled
+foreground (the extreme-pixel method), and reports the WCAG 2.x ratio. **690 labels (the DAN-2242 set; the DAN-2245 set below is 732), dark and light: 0 enabled
 labels under 4.5:1.** The full per-label table is `worktrees/DAN-2215/shots/contrast-ci2242.md`; the table below
 groups it by (scheme, fg, bg). Disabled controls are exempt (`Start Search`, the gear, `Query Hydrus`,
 `Resume Queue`, ...; each is `DEFERRED(6.e/6.f/6.g/6.h)`). **Not measured:** the text inside the `dialog` shot
@@ -1531,7 +1531,6 @@ groups it by (scheme, fg, bg). Disabled controls are exempt (`Start Search`, the
 | dark | #111111 | #716c67 | 3.64 | disabled (exempt) | 2 | Resume Queue, Review the 4 waiting → |
 | dark | #8a857f | #141414 | 5.04 | pass | 4 | Crash log, 410, Resets |
 | dark | #87817b | #0d0d0d | 5.05 | pass | 13 | stopped, ETA —, 力 |
-| dark | #6f849c | #0d0d0d | 5.05 | pass | 1 | Log file: /tmp/.tmpTtH6td/config/hatate-linux/ha |
 | dark | #8b8680 | #141414 | 5.11 | pass | 2 | Last autosave, 00:00 UTC |
 | dark | #8c8680 | #141414 | 5.12 | pass | 24 | Hatate did not exit cleanly during this run. Eve, Discard &  |
 | dark | #88837d | #0d0d0d | 5.17 | pass | 10 | Ready, ETA paused |
@@ -1549,7 +1548,6 @@ groups it by (scheme, fg, bg). Disabled controls are exempt (`Start Search`, the
 | light | #89847b | #f2ede1 | 3.18 | disabled (exempt) | 9 | Query Hydrus…, Continue with other engines |
 | light | #f4efe3 | #8a857c | 3.20 | disabled (exempt) | 2 | Resume Queue, Review the 4 waiting → |
 | light | #efe9dc | #857f75 | 3.28 | disabled (exempt) | 12 | ▶ Start Search |
-| light | #50657b | #e8e1d2 | 4.62 | pass | 1 | Log file: /tmp/.tmpKJexVC/config/hatate-linux/ha |
 | light | #8c8680 | #141414 | 5.12 | pass | 3 | Ctrl+S, Ctrl+O |
 | light | #5f5b52 | #e8e1d2 | 5.20 | pass | 13 | stopped, ETA —, 力 |
 | light | #5e5950 | #e8e1d2 | 5.34 | pass | 10 | Ready, ETA paused |
@@ -1566,6 +1564,34 @@ groups it by (scheme, fg, bg). Disabled controls are exempt (`Start Search`, the
 | light | #211d17 | #e8e1d2 | 12.88 | pass | 58 | 力, 鏡, Hatate, 3, 1, 0s, Queue., 空, Refresh, Copy all, Open l |
 | light | #211d17 | #f2ede1 | 14.35 | pass | 38 | ◐, Run interrupted — partial results survived, 0s ago, no ne |
 | light | #f6f1e6 | #211d17 | 14.88 | pass | 23 | Queue, Add files…, Files, Start new search |
+
+**The `_ (_)` fragment under the dialog (DAN-2245 item 4).** In the GTK 4.14 / cairo shots (`dialog-dark.png`,
+`dialog-light.png`), 35 pixels at x 413 to 448, y 497 to 499 sit just under the dialog's bottom border (y 496): the
+lower three pixel rows of what look like glyph bottoms, centred on the `No` label (x 332 to 529), about 2:1. They
+do **not** reproduce on GTK 4.24 / libadwaita 1.10 (0 pixels outside the sheet; the layout differs, so the
+comparison is the band under the border). The widget tree of the 4.14 dialog (`dialog-*.tree`, new in the shot
+artifact) has no widget with a box there, so it is not a widget placed outside the sheet. Both shots use
+`GSK_RENDERER=cairo` under Xvfb, which no user runs; the cause is not found, and it is not fixed. Next step if it
+matters: the same shot on 4.14 with `ngl`, on a real display. Until then it is a P3 artefact of the shot harness.
+
+**Selected text, and the log viewer (DAN-2245).** The first sweep did not read a selected-text state, and its two
+`Log file:` rows above (`#6f849c` on `#0d0d0d` 5.05, `#50657b` on `#e8e1d2` 4.62) were the path line measured with
+libadwaita's accent-blue selection under it, against a box wider than the selection: 3.48:1 dark and 3.40:1 light
+by the design read. Selected text is now `ink` on an `ink-18` wash (`selection` rule in `theme.rs`, pinned by
+`theme::tests::selected_text_is_ink_on_the_ink_18_wash` and, where the toolkit paints one headlessly,
+`smoke::the_log_viewer_opens_on_close_and_selects_in_ink`), and the log viewer opens with focus on `Close`.
+`measure.py` now takes `logs`, `logs-selected` and `logs-selected-body` in both schemes as required input (exit 2
+if one is missing, exit 1 if any enabled row is under 4.5:1), and the renderer records a `selected` row for a
+selected label and for each line of the log text view. On the CI shots (GTK 4.14, run 40091650109 at `5d54419`):
+**732 labels, 0 enabled under 4.5:1; 8 selected-text rows, 0 under 4.5:1.** With the selection rule removed the
+same script reads 3.49:1 dark and 3.44:1 light on the path line (exit 1).
+
+| Shot | Element | scheme | fg | wash | ratio |
+|---|---|---|---|---|---|
+| logs-selected | path line | dark | #cdc4ba | #302e2c | 7.86 |
+| logs-selected | path line | light | #211d17 | #a8a396 | 6.66 |
+| logs-selected-body | log lines | dark | #cdc4ba | #2c2a28 | 8.31 |
+| logs-selected-body | log lines | light | #211d17 | #a19888 | 5.88 |
 
 **Non-text contrast (3:1) and the other DAN-2242 measures.** `worktrees/DAN-2242-tools/measure-2242.py SHOTDIR`
 (output `worktrees/DAN-2242-measure-ci.log`), extreme pixel on a short scan across each edge, against the
