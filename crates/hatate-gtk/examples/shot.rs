@@ -177,6 +177,26 @@ fn prepare(window: &MainWindow, state: &str) {
                 p.popup();
             }
         }
+        "tab" => {
+            // Walks Tab from the top and prints what takes focus, for the verdict's Tab order.
+            window.win.set_focus_visible(true);
+            let win = window.win.clone();
+            glib::idle_add_local_once(move || {
+                let mut seen: Vec<String> = Vec::new();
+                for i in 0..40 {
+                    win.child_focus(gtk4::DirectionType::TabForward);
+                    let Some(f) = GtkWindowExt::focus(&win) else {
+                        break;
+                    };
+                    let what = describe(&f);
+                    if seen.first() == Some(&what) && i > 0 {
+                        break;
+                    }
+                    println!("TAB {i} {what}");
+                    seen.push(what);
+                }
+            });
+        }
         "focus" => {
             window.win.set_focus_visible(true);
             if let Some(b) = first_button(window.win.upcast_ref()) {
@@ -212,6 +232,33 @@ fn label_rects(w: &gtk4::Widget, root: &gtk4::Widget, out: &mut String) {
     let mut c = w.first_child();
     while let Some(child) = c {
         label_rects(&child, root, out);
+        c = child.next_sibling();
+    }
+}
+
+/// A focused widget in words: its type and the first text under it.
+fn describe(w: &gtk4::Widget) -> String {
+    let mut text = String::new();
+    first_text(w, &mut text);
+    let classes = w.css_classes().join(".");
+    format!("{} [{}] {}", w.type_().name(), classes, text)
+}
+
+fn first_text(w: &gtk4::Widget, out: &mut String) {
+    if !out.is_empty() {
+        return;
+    }
+    if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+        out.push_str(&l.text());
+        return;
+    }
+    if let Some(t) = w.tooltip_text() {
+        out.push_str(&t);
+        return;
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        first_text(&child, out);
         c = child.next_sibling();
     }
 }
