@@ -4,7 +4,9 @@
 //!
 //! `STATE` is one of `empty` (default), `rows`, `crashed`, `survived`, `quota`, `dialog` (the
 //! Clear Session question), `logs` (the log viewer), `menu` (the first menu open) or `focus` (the
-//! first button focused with the ring showing). The size `min` is the window's stated minimum.
+//! first button focused with the ring showing), `focus-files` / `focus-folder` (the stamp-filled Add
+//! files, the hollow Add folder, focused with the ring showing) or `menu-hover` (the Files menu open
+//! with `Save Session As…` under the pointer). The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -116,11 +118,23 @@ fn main() -> glib::ExitCode {
         let win = window.win.clone();
         let frames = Rc::new(Cell::new(0u32));
         let out = out2.clone();
+        let state = state.clone();
         win.add_tick_callback(move |win, _| {
             frames.set(frames.get() + 1);
             if frames.get() < 14 {
                 return glib::ControlFlow::Continue;
             }
+            // The log viewer is its own window; its shot is that window's, not the main one's.
+            let logs_window = (state == "logs")
+                .then(|| {
+                    gtk4::Window::list_toplevels()
+                        .into_iter()
+                        .filter_map(|w| w.downcast::<gtk4::Window>().ok())
+                        .find(|w| w.title().as_deref() == Some("Logs") && w.is_mapped())
+                })
+                .flatten();
+            let main_app = win.application();
+            let win: &gtk4::Window = logs_window.as_ref().unwrap_or(win.upcast_ref());
             let paintable = gtk4::WidgetPaintable::new(Some(win));
             let snap = gtk4::Snapshot::new();
             paintable.snapshot(&snap, f64::from(win.width()), f64::from(win.height()));
@@ -157,7 +171,7 @@ fn main() -> glib::ExitCode {
                     );
                 }
             }
-            if let Some(app) = win.application() {
+            if let Some(app) = main_app {
                 app.quit();
             }
             glib::ControlFlow::Break
@@ -196,6 +210,34 @@ fn prepare(window: &MainWindow, state: &str) {
                     seen.push(what);
                 }
             });
+        }
+        "menu-hover" => {
+            if let Some(p) = first_popover_menu(window.win.upcast_ref()) {
+                p.popup();
+                // The popover builds its rows on popup; once they exist, put the hover state on
+                // the row there is no pointer in a headless session to put it on.
+                let root = window.win.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(400), move || {
+                    match find_row(root.upcast_ref(), "Save Session As\u{2026}") {
+                        Some(row) => row.set_state_flags(gtk4::StateFlags::PRELIGHT, false),
+                        None => eprintln!("menu-hover: no row 'Save Session As…'"),
+                    }
+                });
+            }
+        }
+        "focus-files" | "focus-folder" => {
+            window.win.set_focus_visible(true);
+            let want = if state == "focus-files" {
+                "Add files\u{2026}"
+            } else {
+                "Add folder\u{2026}"
+            };
+            match find_button_labelled(window.win.upcast_ref(), want) {
+                Some(b) => {
+                    b.grab_focus();
+                }
+                None => eprintln!("{state}: no button {want}"),
+            }
         }
         "focus" => {
             window.win.set_focus_visible(true);
@@ -271,6 +313,49 @@ fn first_popover_menu(w: &gtk4::Widget) -> Option<gtk4::PopoverMenu> {
     while let Some(child) = c {
         if let Some(p) = first_popover_menu(&child) {
             return Some(p);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
+/// The `modelbutton` row that holds a label reading `text`, anywhere under `w` (popovers
+/// included).
+fn find_row(w: &gtk4::Widget, text: &str) -> Option<gtk4::Widget> {
+    if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+        if l.text() == text {
+            let mut up = Some(w.clone());
+            while let Some(a) = up {
+                if a.css_name() == "modelbutton" {
+                    return Some(a);
+                }
+                up = a.parent();
+            }
+        }
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(r) = find_row(&child, text) {
+            return Some(r);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
+/// The focusable button whose first label reads `text`.
+fn find_button_labelled(w: &gtk4::Widget, text: &str) -> Option<gtk4::Button> {
+    if let Some(b) = w.downcast_ref::<gtk4::Button>() {
+        let mut t = String::new();
+        first_text(w, &mut t);
+        if b.is_focusable() && t == text {
+            return Some(b.clone());
+        }
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(b) = find_button_labelled(&child, text) {
+            return Some(b);
         }
         c = child.next_sibling();
     }

@@ -183,6 +183,10 @@ impl Prompter for AdwPrompter {
                 dialog.set_close_response("no");
             }
         }
+        // A keyboard-first app: the default button shows its focus ring the moment the dialog
+        // opens (GTK would draw it only after a key press), so the answer Enter gives is visible
+        // (design gate 2.6). The ring belongs to the root window, which an AdwDialog borrows.
+        self.parent.set_focus_visible(true);
         dialog.choose(Some(&self.parent), gio::Cancellable::NONE, move |answer| {
             done(match answer.as_str() {
                 "yes" => Response::Yes,
