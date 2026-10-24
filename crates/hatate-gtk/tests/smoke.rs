@@ -33,6 +33,10 @@ const SCENARIOS: &[Scenario] = &[
         window_menus_and_deferred_actions,
     ),
     ("empty_state_and_idle_strip", empty_state_and_idle_strip),
+    (
+        "run_strip_and_sent_count_follow_the_list",
+        run_strip_and_sent_count_follow_the_list,
+    ),
     ("add_files_hashes_and_dedupes", add_files_hashes_and_dedupes),
     (
         "add_folder_scans_and_drop_filters",
@@ -167,6 +171,50 @@ fn empty_state_and_idle_strip(app: &adw::Application) {
     assert_eq!(f.w.s.shell.run_eta_label.text(), IDLE_ETA);
     assert!(!f.w.s.run_banner.root.is_visible());
     assert!(!f.w.s.quota_banner.root.is_visible());
+    f.close();
+}
+
+/// `_refresh_sent_count_label`, `_idle_run_text` and the idle branch of
+/// `_refresh_run_progress_label`: the strip's count and the status bar's `N sent` read the list
+/// (found by the action differential: the first cut never refreshed them).
+fn run_strip_and_sent_count_follow_the_list(app: &adw::Application) {
+    let mut rows = vec![
+        entry("/p/a.png", MatchStatus::NotSearched),
+        entry("/p/b.png", MatchStatus::Good),
+        entry("/p/c.png", MatchStatus::Poor),
+        entry("/p/d.png", MatchStatus::NotFound),
+    ];
+    rows[1].sent_to_hydrus = true;
+    rows[1].hydrus_import_confirmed = true;
+    rows[2].sent_to_hydrus = true; // queued with Hydrus, not yet confirmed
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: rows,
+            ..Opts::default()
+        },
+    );
+    let sh = &f.w.s.shell;
+    assert_eq!(sh.run_progress_label.text(), "1 not searched");
+    assert_eq!(sh.sent_count_label.text(), "1 sent (1 queued)");
+    assert_eq!(sh.run_eta_label.text(), IDLE_ETA);
+    // Reviewing a row adds the "to review" figure, which is quiet until something is reviewed.
+    {
+        let mut q = f.w.s.queue.borrow_mut();
+        let id = q.id_at(0).unwrap();
+        q.entry_mut(id).unwrap().reviewed = true;
+    }
+    f.w.list_changed();
+    assert_eq!(
+        sh.sent_count_label.text(),
+        "1 sent (1 queued) \u{b7} 1 to review"
+    );
+    // An empty list: nothing queued, nothing sent.
+    *f.w.s.queue.borrow_mut() =
+        hatate_core::queue::QueueModel::new(Vec::new(), f.w.s.settings.clone());
+    f.w.list_changed();
+    assert_eq!(sh.run_progress_label.text(), IDLE_PROGRESS);
+    assert_eq!(sh.sent_count_label.text(), "");
     f.close();
 }
 
