@@ -232,7 +232,7 @@ mod tests {
         let locked = dir.path().join("locked");
         std::fs::create_dir(&locked).unwrap();
         std::fs::write(locked.join("a.png"), b"x").unwrap();
-        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0)).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
         let paths = [
             locked.join("a.png").to_string_lossy().into_owned(),
             locked.join("b.png").to_string_lossy().into_owned(),
