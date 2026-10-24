@@ -229,6 +229,12 @@ impl LensPage {
                 }
                 tokio::select! {
                     Some(event) = received.next() => {
+                        // A new document unloads the old page, and a response of the old page that
+                        // has not finished never will: Playwright's `response.text()` fails for it
+                        // and the handler moves on.
+                        if matches!(event.r#type, ResourceType::Document) {
+                            pending.retain(|id| done.contains_key(id.as_ref()));
+                        }
                         if matches!(event.r#type, ResourceType::Document | ResourceType::Xhr | ResourceType::Fetch)
                             && url_wanted(&event.response.url)
                         {
