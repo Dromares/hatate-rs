@@ -114,6 +114,11 @@ pub struct LensSettings {
     pub step: Arc<dyn SearchStep>,
     /// Flags a test adds to the launch (`--ozone-platform=headless`).
     pub extra_launch_args: Vec<String>,
+    /// How long a test lets a freshly launched browser settle before the first command. A cold
+    /// Chromium stalls a navigation, or a page timer, for about a second, and which of them depends
+    /// on the milliseconds the client takes to get going; the differential gives both clients the
+    /// same pause. Zero in the shipped settings.
+    pub settle_after_launch: Duration,
 }
 
 impl LensSettings {
@@ -132,6 +137,7 @@ impl LensSettings {
             attention: Arc::new(NoAttention),
             step: Arc::new(search::LensSearch::shipped()),
             extra_launch_args: Vec::new(),
+            settle_after_launch: Duration::ZERO,
         }
     }
 }
@@ -660,6 +666,7 @@ async fn run(core: &Arc<Core>) {
             Ok(session) => session,
             Err(failure) => break failure,
         };
+        tokio::time::sleep(core.settings.settle_after_launch).await;
         let outcome = serve(core, &session, retry.take()).await;
         session.close().await;
         match outcome {
