@@ -1323,6 +1323,25 @@ fn design_follow_ups_paint_as_specified(app: &adw::Application) {
             pal.ink_46.3,
             edge_alpha(&folder)
         );
+        // `.card` sets `border-radius: 0` for the framed variant: no 6.c page draws one, but
+        // `widgets::card(_, true)` is the API the later pages build on, and libadwaita's own
+        // `.card` would round its hairline to radius 12 (the corner pixel would then be clear).
+        {
+            let framed = hatate_gtk::widgets::card(Some("Framed"), true);
+            let host = gtk4::Window::new();
+            host.set_default_size(300, 120);
+            host.set_child(Some(&framed));
+            host.present();
+            pump_for(300);
+            let img = render(framed.upcast_ref(), 0);
+            let corner = f64::from(px(&img, 0, 0)[3]) / 255.0;
+            assert!(
+                (corner - pal.ink_18.3).abs() < 0.02,
+                "{name}: a framed card's corner is a square ink-18 hairline ({}), got alpha {corner}",
+                pal.ink_18.3
+            );
+            host.close();
+        }
         // D3 (DAN-2245): a disabled hollow control keeps its border at ink-46. libadwaita fades a
         // disabled button with `opacity` / `filter: opacity()`, which would take the edge to half of
         // this; the rule that cancels it (`opacity: 1; filter: none`) is what this reads.
