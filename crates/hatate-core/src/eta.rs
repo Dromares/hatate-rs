@@ -415,4 +415,20 @@ mod tests {
         assert_eq!(thousands(1000), "1,000");
         assert_eq!(thousands(-1234567), "-1,234,567");
     }
+
+    #[test]
+    fn a_finished_run_has_nothing_left() {
+        let mut run = RunEstimate::new();
+        feed(
+            &mut run,
+            &[(1, 4, 0.0), (2, 4, 10.0), (3, 4, 20.0), (4, 4, 30.0)],
+        );
+        assert_eq!(run.seconds_remaining(), 0.0);
+        feed(&mut run, &[(5, 4, 40.0)]);
+        assert_eq!(
+            run.seconds_remaining(),
+            0.0,
+            "done past total never goes negative"
+        );
+    }
 }

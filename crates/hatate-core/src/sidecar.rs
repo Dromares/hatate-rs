@@ -303,4 +303,43 @@ mod tests {
         assert_eq!(plan.missing_files.len(), 1);
         assert_eq!(plan.directories(), vec![std::path::PathBuf::from(d)]);
     }
+
+    #[test]
+    fn the_body_uses_display_names_and_the_same_filter_as_a_send() {
+        let mut e = Entry::new("/p/a.png");
+        e.tags = vec![
+            Tag {
+                name: "sam".to_owned(),
+                namespace: Some("creator".to_owned()),
+                source: TagSource::Booru,
+            },
+            Tag {
+                name: "solo".to_owned(),
+                namespace: None,
+                source: TagSource::User,
+            },
+        ];
+        assert_eq!(render(&e, None), "creator:sam\nsolo\n");
+        let mut s = test_settings();
+        s.filter_sent_tags_by_source = true;
+        s.enabled_tag_sources = vec!["User".to_owned()];
+        assert_eq!(render(&e, Some(&s)), "solo\n");
+    }
+
+    #[test]
+    fn planning_writes_nothing_and_the_shipped_defaults_are_the_safe_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().to_str().unwrap();
+        let e = tagged(&format!("{d}/a.png"), &["x"]);
+        let mut s = test_settings();
+        assert_eq!(style_of(Some(&s)), STYLE_APPEND);
+        assert_eq!(overwrite_policy_of(Some(&s)), OVERWRITE_ASK);
+        s.sidecar_filename_style = STYLE_REPLACE.to_owned();
+        let planned = plan([&e], Some(&s), DEFAULT_EXTENSION);
+        assert_eq!(
+            planned.writes[0].path,
+            std::path::PathBuf::from(format!("{d}/a.txt"))
+        );
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
 }

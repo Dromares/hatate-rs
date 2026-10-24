@@ -245,6 +245,9 @@ mod tests {
         assert!(action("compare").unwrap().needs_single_row);
         assert!(!action("next_row").unwrap().needs_single_row);
         assert_eq!(action("nope"), None);
+        for a in &REVIEW_ACTIONS {
+            assert!(!a.label.is_empty() && !a.default.is_empty(), "{}", a.id);
+        }
     }
 
     #[test]

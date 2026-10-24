@@ -504,4 +504,37 @@ mod tests {
         assert_eq!(float_str(f64::NAN), "nan");
         assert_eq!(float_str(f64::NEG_INFINITY), "-inf");
     }
+
+    #[test]
+    fn the_sent_upscale_and_similarity_columns_say_what_the_table_says() {
+        let col = |e: &Entry, key: &str| {
+            csv_value(
+                &row_values(e, None)
+                    .iter()
+                    .find(|(k, _)| *k == key)
+                    .unwrap()
+                    .1,
+            )
+        };
+        let mut e = Entry::new("/p/a.png");
+        assert_eq!(col(&e, "sent"), "");
+        e.sent_to_hydrus = true;
+        assert_eq!(col(&e, "sent"), "queued");
+        e.hydrus_import_confirmed = true;
+        assert_eq!(col(&e, "sent"), "sent");
+        e.upscale_verdict = Some("flagged".to_owned());
+        assert_eq!(col(&e, "upscale_verdict"), "flagged");
+        assert_eq!(col(&e, "similarity"), "");
+        assert_eq!(
+            col(&e, "similarity_measured"),
+            "",
+            "blank, not FALSE, with no match"
+        );
+        let measured = sample();
+        assert_eq!(col(&measured, "similarity_measured"), "TRUE");
+        let mut ranked = sample();
+        ranked.candidates[0].similarity_measured = false;
+        ranked.candidates[0].engine = "ascii2d".to_owned();
+        assert_eq!(col(&ranked, "similarity_measured"), "FALSE");
+    }
 }

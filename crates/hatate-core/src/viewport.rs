@@ -114,4 +114,28 @@ mod tests {
             (0, 1, 0)
         );
     }
+
+    #[test]
+    fn a_single_row_and_a_short_list_are_covered_whole() {
+        assert_eq!(visible_range_with_buffer(0, 0, 1, 15), Some((0, 0)));
+        assert_eq!(visible_range_with_buffer(0, 3, 4, 15), Some((0, 3)));
+        assert_eq!(
+            visible_range_with_buffer(5_000, 5_010, 1_000_000, 15),
+            Some((4_985, 5_025))
+        );
+    }
+
+    #[test]
+    fn every_row_is_accounted_for_once_and_identity_not_path_decides() {
+        // Two rows may share a path; they are two ids, so two units of work.
+        let rows = [10usize, 11, 12];
+        let cached: HashSet<usize> = [10].into();
+        let in_flight: HashSet<usize> = [11].into();
+        let work = entries_needing_thumbnails(rows, |r| *r, |id| cached.contains(&id), &in_flight);
+        assert_eq!(work.examined(), rows.len());
+        let empty =
+            entries_needing_thumbnails(Vec::<usize>::new(), |r| *r, |_| false, &HashSet::new());
+        assert_eq!(empty.examined(), 0);
+        assert!(empty.needed.is_empty());
+    }
 }

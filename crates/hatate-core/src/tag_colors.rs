@@ -114,4 +114,15 @@ mod tests {
             "an empty namespace is no namespace"
         );
     }
+
+    #[test]
+    fn every_default_is_a_six_digit_hex_string() {
+        for (_, color) in DEFAULT_NAMESPACE_COLORS
+            .iter()
+            .chain([&("", UNNAMESPACED_COLOR)])
+        {
+            assert!(color.len() == 7 && color.starts_with('#'));
+            assert!(color[1..].bytes().all(|b| b.is_ascii_hexdigit()));
+        }
+    }
 }

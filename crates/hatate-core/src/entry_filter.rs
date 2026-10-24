@@ -267,4 +267,22 @@ mod tests {
         e.upscale_verdict = Some("maybe".to_owned());
         assert_eq!(upscale_verdict_label(&e), UPSCALE_NOT_CHECKED);
     }
+
+    #[test]
+    fn only_the_selected_candidates_site_counts() {
+        let mut e = with_match("/a/x.png", "https://danbooru.donmai.us/posts/1", None);
+        e.candidates
+            .push(Candidate::new("https://safebooru.org/index.php?id=2"));
+        assert_eq!(site_of(&e), "Danbooru");
+        e.select_candidate(1);
+        assert_eq!(site_of(&e), "Safebooru");
+        let by_site = EntryFilter {
+            sites: set(["Danbooru".to_owned()]),
+            ..EntryFilter::default()
+        };
+        assert!(
+            !by_site.matches(&e),
+            "the first candidate's site is not shown, so not matched"
+        );
+    }
 }

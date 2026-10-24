@@ -224,4 +224,25 @@ mod tests {
         );
         assert!(missing_dialog_text(2, 3).starts_with("2 of 3 image(s) in this session"));
     }
+
+    #[test]
+    fn an_unreadable_directory_counts_all_its_files_and_nothing_is_nothing() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::write(locked.join("a.png"), b"x").unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0)).unwrap();
+        let paths = [
+            locked.join("a.png").to_string_lossy().into_owned(),
+            locked.join("b.png").to_string_lossy().into_owned(),
+        ];
+        let missing = find_missing_paths(paths.iter().map(String::as_str), None);
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
+        if std::fs::read_dir(&locked).is_ok() && missing.is_empty() {
+            return; // running as a user the mode does not bind (root): nothing to prove
+        }
+        assert_eq!(missing.len(), 2);
+        assert!(find_missing_paths(std::iter::empty::<&str>(), None).is_empty());
+    }
 }
