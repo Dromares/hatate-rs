@@ -201,6 +201,7 @@ async fn batch(opts: BatchOptions) -> i32 {
     };
 
     let outcome = run_batch(&env, &opts.dir, &mut entries).await;
+    live.shutdown();
 
     // The session is saved by now; the clean-exit marker says so.
     if let Err(e) = started.session.finish_clean(clock.wall()) {

@@ -4,11 +4,9 @@
 //! check, and surviving a window the user closed.
 //!
 //! **The cut.** The per-search half of Python's `LensBrowser` (`_search_area` through `_one`, and
-//! `fetch_results_payloads`) is 5.c's ([`SearchStep`]). This module owns everything around it, and
-//! hands a step the page and the three things `_one` calls on `self`: [`StepCtx::warm_up`],
-//! [`StepCtx::wait_out_challenge`] and [`StepCtx::is_challenged`]. The shipped step is
-//! [`UnportedSearch`]; `LiveEngines` still holds `NoBrowser`, so `hatate batch` prints what it
-//! printed before.
+//! `fetch_results_payloads`) is [`search::LensSearch`] ([`SearchStep`], 5.c). This module owns
+//! everything around it, and hands a step the page and the three things `_one` calls on `self`:
+//! [`StepCtx::warm_up`], [`StepCtx::wait_out_challenge`] and [`StepCtx::is_challenged`].
 //!
 //! **Threads.** Playwright's objects belong to the thread that made them, so Python hands every
 //! request to one thread. The CDP client does not need that, but Chromium's profile, its window
@@ -20,8 +18,10 @@
 //! the lifecycle makes. `docs/lens-browser.md` has what could not be matched.
 
 pub mod deps;
+pub mod elements;
 pub mod launch;
 pub mod page;
+pub mod search;
 
 use std::collections::VecDeque;
 use std::panic::AssertUnwindSafe;
@@ -118,7 +118,7 @@ pub struct LensSettings {
 
 impl LensSettings {
     /// The shipped settings: the real Google, the process environment, the real clock, the page
-    /// steps 5.c has not ported yet.
+    /// steps of [`search::LensSearch`].
     pub fn shipped(profile_dir: PathBuf) -> Self {
         LensSettings {
             env: BrowserEnv::from_process(),
@@ -130,7 +130,7 @@ impl LensSettings {
             answer_grace_seconds: ANSWER_GRACE_SECONDS,
             waits: Arc::new(SystemClock::default()),
             attention: Arc::new(NoAttention),
-            step: Arc::new(UnportedSearch),
+            step: Arc::new(search::LensSearch::shipped()),
             extra_launch_args: Vec::new(),
         }
     }
@@ -275,23 +275,6 @@ pub trait SearchStep: Send + Sync + 'static {
     ) -> BoxFuture<'_, Result<LensPayloads, StepError>>;
 }
 
-/// The step of a build that has not ported `_one` yet. It touches no page and no network.
-pub struct UnportedSearch;
-
-impl SearchStep for UnportedSearch {
-    fn one(
-        &self,
-        _: StepCtx,
-        _: Arc<JobRequest>,
-    ) -> BoxFuture<'_, Result<LensPayloads, StepError>> {
-        Box::pin(std::future::ready(Err(StepError::Lens(
-            LensFetchError::Browser(
-                "the Lens page steps are not part of this build yet".to_owned(),
-            ),
-        ))))
-    }
-}
-
 /// What `_one` has to hand: the page, and `self._warm_up`, `self._wait_out_challenge` and
 /// `self._is_challenged`.
 #[derive(Clone)]
@@ -303,6 +286,11 @@ pub struct StepCtx {
 impl StepCtx {
     pub fn page(&self) -> &LensPage {
         &self.page
+    }
+
+    /// `desktop_attention.quiet(WINDOW_CLASS)`.
+    pub fn quiet_attention(&self) {
+        self.core.settings.attention.quiet(WINDOW_CLASS);
     }
 
     /// `_warm_up`: once per `LensBrowser`, set SafeSearch to Off and make two ordinary searches.

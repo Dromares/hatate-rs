@@ -80,7 +80,7 @@ impl PageError {
         &self.message
     }
 
-    fn from_cdp(api: &str, error: &CdpError) -> Self {
+    pub(super) fn from_cdp(api: &str, error: &CdpError) -> Self {
         let text = error.to_string();
         let gone = match error {
             CdpError::Ws(_)
@@ -115,11 +115,13 @@ impl std::error::Error for PageError {}
 /// A Playwright `Page`.
 #[derive(Clone)]
 pub struct LensPage {
-    page: chromiumoxide::Page,
+    pub(super) page: chromiumoxide::Page,
     /// Set when the connection to the browser has closed.
-    gone: Arc<AtomicBool>,
+    pub(super) gone: Arc<AtomicBool>,
     /// `page.wait_for_timeout(ms)` sleeps on this, so a test sees every wait that was asked for.
     waits: Arc<dyn Clock>,
+    /// `page.mouse`: where the pointer is and whether the left button is down.
+    pub(super) mouse: Arc<std::sync::Mutex<super::elements::MouseState>>,
 }
 
 impl LensPage {
@@ -128,7 +130,12 @@ impl LensPage {
         gone: Arc<AtomicBool>,
         waits: Arc<dyn Clock>,
     ) -> Self {
-        LensPage { page, gone, waits }
+        LensPage {
+            page,
+            gone,
+            waits,
+            mouse: Arc::default(),
+        }
     }
 
     /// The CDP page, for the steps that need more than this wrapper offers.
@@ -136,7 +143,7 @@ impl LensPage {
         &self.page
     }
 
-    fn check(&self, api: &str) -> Result<(), PageError> {
+    pub(super) fn check(&self, api: &str) -> Result<(), PageError> {
         if self.gone.load(Ordering::SeqCst) {
             Err(PageError::target_closed(api))
         } else {
@@ -291,9 +298,10 @@ impl LensPage {
 
     /// `page.locator(selector)`.
     pub fn locator(&self, selector: &str) -> Locator {
+        let quoted = serde_json::to_string(selector).unwrap_or_else(|_| "\"\"".to_owned());
         Locator {
             page: self.clone(),
-            selector: selector.to_owned(),
+            all: format!("{QUERY_ALL}({quoted})"),
             index: None,
         }
     }
@@ -302,37 +310,27 @@ impl LensPage {
 /// A Playwright `Locator`: a CSS selector, optionally narrowed to one match.
 #[derive(Clone)]
 pub struct Locator {
-    page: LensPage,
-    selector: String,
-    index: Option<usize>,
+    pub(super) page: LensPage,
+    /// A JavaScript expression that yields every match as an array.
+    pub(super) all: String,
+    pub(super) index: Option<usize>,
 }
 
 /// Every match of the selector, descending into open shadow roots as Playwright's CSS engine does.
-const QUERY_ALL: &str = "((sel) => { const out = []; const walk = (root) => { \
+pub(super) const QUERY_ALL: &str = "((sel) => { const out = []; const walk = (root) => { \
     out.push(...root.querySelectorAll(sel)); \
     for (const el of root.querySelectorAll('*')) { if (el.shadowRoot) walk(el.shadowRoot); } }; \
     walk(document); return out; })";
 
 impl Locator {
-    fn quoted(&self) -> String {
-        serde_json::to_string(&self.selector).unwrap_or_else(|_| "\"\"".to_owned())
-    }
-
     fn target(&self) -> String {
-        format!(
-            "{QUERY_ALL}({})[{}]",
-            self.quoted(),
-            self.index.unwrap_or(0)
-        )
+        format!("{}[{}]", self.all, self.index.unwrap_or(0))
     }
 
     /// `locator.count()`.
     pub async fn count(&self) -> Result<usize, PageError> {
         self.page
-            .evaluate(
-                "Locator.count",
-                &format!("{QUERY_ALL}({}).length", self.quoted()),
-            )
+            .evaluate("Locator.count", &format!("{}.length", self.all))
             .await
     }
 

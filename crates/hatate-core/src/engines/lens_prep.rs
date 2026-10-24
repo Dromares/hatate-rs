@@ -272,11 +272,43 @@ const UPLOAD_JS: &str = "
 })(%s, %s, %s, %s)
 ";
 
+/// `EXACT_TILES_JS`: read out of the rendered page rather than off its markup. A result is always
+/// an anchor to somewhere that isn't Google, and the DOM has already resolved every relative href
+/// and lazy-loaded thumbnail. The Exact matches tab's tiles carry no link and no thumbnail in the
+/// response body (the image there is a 1x1 placeholder filled in by script after render), so this
+/// is the only way an exact match gets a picture to be compared against. Kept deliberately dumb: it
+/// collects, and the ranking decides what counts. Ported from Python's constant.
+pub const EXACT_TILES_JS: &str = "
+(function () {
+  var out = [];
+  var images = document.querySelectorAll('img');
+  for (var i = 0; i < images.length; i++) {
+    var img = images[i], src = img.src || '';
+    if (src.length < 80) continue;              // a placeholder, not a picture
+    var node = img, text = '';
+    for (var up = 0; up < 8 && node; up++) {
+      node = node.parentElement;
+      if (!node) break;
+      var t = (node.innerText || '').replace(/\\s+/g, ' ').trim();
+      if (t.length > 3) { text = t.slice(0, 300); break; }
+    }
+    if (text) out.push({text: text, thumb: src});
+  }
+  return out;
+})()
+";
+
 /// `upload_script`: the JavaScript that uploads one image from inside the page. The arguments go
 /// in as JSON strings (`json.dumps`, ASCII only) rather than by string interpolation: a filename
 /// comes off the user's disk, and a stray quote in it would otherwise turn into broken, or
 /// injected, script.
 pub fn upload_script(image_bytes: &[u8], filename: &str) -> String {
+    upload_script_to(image_bytes, filename, SEARCH_BY_IMAGE_URL)
+}
+
+/// [`upload_script`] with the form posted to `action` instead: how a test points the page at a
+/// local site. The shipped build only ever passes [`SEARCH_BY_IMAGE_URL`].
+pub fn upload_script_to(image_bytes: &[u8], filename: &str, action: &str) -> String {
     let json = |text: &str| {
         let mut out = String::new();
         pyjson::string(&mut out, text);
@@ -285,7 +317,7 @@ pub fn upload_script(image_bytes: &[u8], filename: &str) -> String {
     let args = [
         json(&b64encode(image_bytes)),
         json(filename),
-        json(SEARCH_BY_IMAGE_URL),
+        json(action),
         json(media_type(image_bytes).unwrap_or("image/jpeg")),
     ];
     let mut parts = UPLOAD_JS.split("%s");

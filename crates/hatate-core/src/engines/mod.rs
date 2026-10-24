@@ -43,6 +43,7 @@ pub mod iqdb;
 pub mod lens_prep;
 pub mod lens_rank;
 pub mod lens_search;
+pub mod lens_sites;
 pub mod pawchive_lookup;
 pub mod saucenao;
 pub(crate) mod session;
