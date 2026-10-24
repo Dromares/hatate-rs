@@ -172,14 +172,16 @@ button.pill { background: transparent; color: @ink; border: 1px solid @ink_46; b
   text-shadow: none; padding: %space_3%px %space_5%px; min-height: 0; font-size: %label%px;
   letter-spacing: %tracking_label%px; font-weight: 700; }
 button.pill:hover { background: @ink_10; border-color: @ink_58; }
-button.pill:disabled { color: @ink_45; border-color: @ink_46; }
+/* a disabled hollow control is ink-45 text in an ink-46 border, as gui/theme.py draws it, not libadwaita's
+   50% fade of the whole control (which would take the border to 1.4:1); a disabled stamp keeps the fade */
+button.pill:disabled, button.icon-boxed:disabled { color: @ink_45; border-color: @ink_46; opacity: 1; filter: none; }
+button.pill.primary:disabled { opacity: 0.5; }
 button.pill.primary { background: @stamp_bg; color: @stamp_fg; border-color: @ink; }
 button.pill.primary:hover { background: @ink; border-color: @ink; }
 button.pill.plain { text-transform: none; letter-spacing: 0; }
 button.icon-boxed { background: transparent; color: @ink; border: 1px solid @ink_46; border-radius: 0; box-shadow: none;
   padding: %space_2%px %space_3%px; min-height: 0; min-width: 0; font-size: 15px; }
 button.icon-boxed:hover { background: @ink_10; border-color: @ink_58; }
-button.icon-boxed:disabled { color: @ink_45; border-color: @ink_46; }
 button.link { background: none; border: none; box-shadow: none; padding: 0; min-height: 0; min-width: 0;
   color: @ink_65; font-family: %mono%; font-size: %label%px; letter-spacing: 0.06em; text-decoration: underline; }
 button.link:hover { color: @ink; }
@@ -205,8 +207,10 @@ button.disclosure { background: none; border: none; box-shadow: none; padding: 0
 .corner.br { border-bottom: 2px solid @ink_65; border-right: 2px solid @ink_65; }
 .frame-caption { font-size: %label%px; letter-spacing: 0.08em; color: @ink_65; }
 
-/* ---- the ghost kanji: ink-05, 420px, bleeding off the top-right (design gate 2.9) ---- */
-.ghost-kanji { font-family: %kanji%; font-size: 420px; line-height: 1; color: @ink_05; margin: -40px 40px 0 0; }
+/* ---- the ghost kanji: ink-05, 420px, bleeding off the top-right (design gate 2.9). `line-height: 100%`
+   makes the label box 420 px tall, as `tokens.css` `.kanji-ghost` (`line-height: 1`) does in a browser;
+   GTK reads a bare `1` as a factor of the font's own line height, 604 px for this face ---- */
+.ghost-kanji { font-family: %kanji%; font-size: 420px; line-height: 100%; color: @ink_05; margin: -40px 40px 0 0; }
 
 /* ---- banners (Crashed, quota pause) and the empty state ---- */
 .banner { background: @raised; border: 1px solid @ink_18; padding: %space_5%px; }
