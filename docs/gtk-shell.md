@@ -529,7 +529,7 @@ rows name the ticket that owns the def. Files wholly owned by one later ticket a
 
 ## 7. Python test map
 
-844 tests in the 20 files the ticket lists, at `76c85c4`. By owner: 6.b: 7, 6.c: 127, 6.d: 240, 6.d/6.e: 2, 6.d/6.f: 5, 6.e: 51, 6.f: 166, 6.g: 73, 6.h: 66, core: 73, n/a: 34.
+844 tests in the 20 files the ticket lists, at `76c85c4`. By owner: 6.b: 7, 6.c: 118, 6.d: 240, 6.d/6.e: 2, 6.d/6.f: 5, 6.e: 53, 6.f: 166, 6.g: 73, 6.h: 66, core: 75, DAN-2242: 5, n/a: 34.
 
 `6.c` rows name the Rust test that covers them (`smoke::<scenario>` is a scenario of `tests/smoke.rs`, run under
 Xvfb; `lib::<path>` is a unit test). `core` rows are ported and differentialed in earlier phases; the window's
@@ -537,6 +537,9 @@ use of them is covered by the session scenarios. `6.b` rows are 6.b's. A later t
 map; they are listed so 6.j can check the union. `n/a` rows give the reason. A Python assertion about pixel
 geometry (a 20 px leading, a 37% weighting) is not asserted in Rust: the design gate judges those from the shot
 set (section 8), and the row says so.
+A row that says `not asserted` names a Python test that no Rust test in the suite checks. Where the action
+differential (section 5) compares the same field with Python's after every step, the row says so; that is
+evidence from a run, not a test that stays in the tree, and CI does not run it.
 
 ### `tests/test_empty_state.py` (13)
 
@@ -552,9 +555,9 @@ set (section 8), and the row says so.
 | 159 | `TestTopWeighted.test_the_block_is_above_the_centre_of_its_frame` | **6.c**: judged in the shot set, not in a test (block position) |
 | 170 | `TestActions.test_the_actions_are_uppercase_mono` | **6.c**: `smoke::empty_state_and_idle_strip` asserts the copy: the `Queue.` heading, the `01 // Queue` section label, `Drop images here.` and the three action labels; the uppercase mono paint is the `caps` style, judged in the shot set |
 | 180 | `TestActions.test_the_actions_are_12px_apart` | **6.c**: judged in the shot set, not in a test (12 px gaps) |
-| 192 | `TestEmptyGhost.test_the_empty_queue_wears_the_empty_glyph` | **6.c**: `smoke::empty_state_and_idle_strip`, `smoke::add_files_hashes_and_dedupes` (空 on the drop zone, 力 once a list exists) |
-| 196 | `TestEmptyGhost.test_a_list_brings_the_queue_glyph_back_and_clearing_it_goes_again` | **6.c**: `smoke::empty_state_and_idle_strip`, `smoke::add_files_hashes_and_dedupes` (空 on the drop zone, 力 once a list exists) |
-| 208 | `TestEmptyGhost.test_the_other_modes_keep_their_own_glyph_while_the_list_is_empty` | **6.c**: `smoke::empty_state_and_idle_strip`, `smoke::add_files_hashes_and_dedupes` (空 on the drop zone, 力 once a list exists) |
+| 192 | `TestEmptyGhost.test_the_empty_queue_wears_the_empty_glyph` | **6.c**: `smoke::empty_state_and_idle_strip` (the empty page's glyph, compared with `EMPTY_GHOST_GLYPH`; a test does not pin the constant to 空), and the action differential compares `ghost` |
+| 196 | `TestEmptyGhost.test_a_list_brings_the_queue_glyph_back_and_clearing_it_goes_again` | **6.c**: `smoke::add_files_hashes_and_dedupes` asserts 力 once a list exists; the return to 空 after the list is emptied is checked only by the action differential (`ghost`), not by a Rust test |
+| 208 | `TestEmptyGhost.test_the_other_modes_keep_their_own_glyph_while_the_list_is_empty` | **6.c**: not asserted: no `smoke` scenario switches mode, so the per-mode glyph (`shell::GHOST_GLYPHS`) has no 6.c test; named here for 6.j |
 
 ### `tests/test_fonts.py` (4)
 
@@ -598,7 +601,7 @@ set (section 8), and the row says so.
 | 272 | `TestMainWindowSignalHandlers.test_search_progress_handlers` | 6.e |
 | 282 | `TestMainWindowSignalHandlers.test_progress_label_shows_the_count_then_the_estimate` | 6.e: live run strip (the idle branch is S run_strip_and_sent_count_follow_the_list) |
 | 303 | `TestMainWindowSignalHandlers.test_a_finished_run_keeps_the_count_and_drops_the_estimate` | 6.e: live run strip (the idle branch is S run_strip_and_sent_count_follow_the_list) |
-| 322 | `TestMainWindowSignalHandlers.test_hash_and_thumbnail_progress_handlers` | **6.c**: `smoke::add_files_hashes_and_dedupes` (the hash half (gauge and `~Nm left`); the thumbnail half is 6.d) |
+| 322 | `TestMainWindowSignalHandlers.test_hash_and_thumbnail_progress_handlers` | **6.c**: not asserted for the hash half: `smoke::add_files_hashes_and_dedupes` fills the hashes and reads the status strings, but not the gauge or `~Nm left` (the duration text is `lib::text::tests::durations_round_to_even_and_pad_on_request`); the thumbnail half is 6.d's |
 | 328 | `TestMainWindowSignalHandlers.test_auto_import_handler` | 6.g |
 | 336 | `TestMainWindowSignalHandlers.test_row_refresh_paths` | 6.d |
 | 343 | `TestMainWindowSignalHandlers.test_selection_and_preview_handlers` | 6.d/6.f |
@@ -631,7 +634,7 @@ set (section 8), and the row says so.
 | 810 | `TestWorkerRetirement.test_running_worker_is_kept_referenced` | n/a: a QThread must not be destroyed while running, so Python parks it; a tokio task is not a QThread and nothing is parked |
 | 816 | `TestWorkerRetirement.test_pruning_never_releases_a_running_worker` | n/a: a QThread must not be destroyed while running, so Python parks it; a tokio task is not a QThread and nothing is parked |
 | 823 | `TestWorkerRetirement.test_finished_worker_is_released` | n/a: a QThread must not be destroyed while running, so Python parks it; a tokio task is not a QThread and nothing is parked |
-| 831 | `TestWorkerRetirement.test_retiring_none_is_safe` | **6.c**: `lib::worker::tests::a_slot_holds_one_job_and_replacing_silences_the_old_one` (an empty Slot retires safely) |
+| 831 | `TestWorkerRetirement.test_retiring_none_is_safe` | **6.c**: not asserted: `Slot::retire` on an empty slot has no test; `lib::worker::tests::a_slot_holds_one_job_and_replacing_silences_the_old_one` covers a slot that holds a job |
 | 834 | `TestWorkerRetirement.test_replacing_a_running_candidate_worker_does_not_orphan_it` | n/a: a QThread must not be destroyed while running, so Python parks it; a tokio task is not a QThread and nothing is parked |
 | 848 | `TestContextMenuLabels.test_one_row_reads_in_the_singular` | 6.d: Queue table, filters, context menu, export, tag files |
 | 852 | `TestContextMenuLabels.test_several_rows_carry_the_count` | 6.d: Queue table, filters, context menu, export, tag files |
@@ -654,7 +657,7 @@ set (section 8), and the row says so.
 | 1085 | `TestSessionAutosaverOnItsOwn.test_a_failed_save_does_not_advance_the_revision_map` | n/a: revision bookkeeping of the incremental save is not ported: class D1, DAN-2227 |
 | 1093 | `TestSessionAutosaverOnItsOwn.test_a_successful_save_records_what_was_written` | n/a: revision bookkeeping of the incremental save is not ported: class D1, DAN-2227 |
 | 1097 | `TestSessionAutosaverOnItsOwn.test_a_non_dict_revision_map_is_refused` | n/a: revision bookkeeping of the incremental save is not ported: class D1, DAN-2227 |
-| 1103 | `TestSessionAutosaverOnItsOwn.test_shutdown_stops_the_timer_with_no_worker_running` | **6.c**: `smoke::close_saves_and_marks_a_clean_exit` (close removes the timer, waits, and writes the final save) |
+| 1103 | `TestSessionAutosaverOnItsOwn.test_shutdown_stops_the_timer_with_no_worker_running` | **6.c**: `smoke::close_saves_and_marks_a_clean_exit` asserts the closing flag, the final save and the markers; that the timer is removed is not asserted |
 | 1140 | `TestE621LoginTest.test_half_filled_credentials_are_refused_before_any_request` | 6.h: Preferences |
 | 1152 | `TestE621LoginTest.test_it_sends_the_typed_credentials_not_the_saved_ones` | 6.h: Preferences |
 | 1163 | `TestE621LoginTest.test_it_uses_the_apps_own_header_builder` | 6.h: Preferences |
@@ -670,18 +673,18 @@ set (section 8), and the row says so.
 | 1238 | `TestFilterLabelText.test_the_count_says_hidden_not_removed` | 6.d: Queue table, filters, context menu, export, tag files |
 | 1301 | `TestWorkerRegistryOnItsOwn.test_a_running_worker_is_parked` | n/a: a QThread must not be destroyed while running, so Python parks it; a tokio task is not a QThread and nothing is parked |
 | 1307 | `TestWorkerRegistryOnItsOwn.test_a_finished_worker_is_released_on_prune` | n/a: a QThread must not be destroyed while running, so Python parks it; a tokio task is not a QThread and nothing is parked |
-| 1314 | `TestWorkerRegistryOnItsOwn.test_retiring_none_is_safe` | **6.c**: `lib::worker::tests::a_slot_holds_one_job_and_replacing_silences_the_old_one` (an empty Slot retires safely) |
+| 1314 | `TestWorkerRegistryOnItsOwn.test_retiring_none_is_safe` | **6.c**: not asserted: `Slot::retire` on an empty slot has no test; `lib::worker::tests::a_slot_holds_one_job_and_replacing_silences_the_old_one` covers a slot that holds a job |
 | 1318 | `TestWorkerRegistryOnItsOwn.test_a_worker_that_finishes_within_the_grace_is_never_parked` | **6.c**: `lib::worker::tests::a_stop_is_visible_to_the_job_and_its_result_is_still_delivered`, `lib::worker::tests::shutdown_retires_every_job` (stop reaches the job; the grace is Workers::shutdown) |
 | 1324 | `TestWorkerRegistryOnItsOwn.test_stop_is_called_when_the_worker_offers_one` | **6.c**: `lib::worker::tests::a_stop_is_visible_to_the_job_and_its_result_is_still_delivered`, `lib::worker::tests::shutdown_retires_every_job` (stop reaches the job; the grace is Workers::shutdown) |
 | 1337 | `TestWorkerRegistryOnItsOwn.test_retire_attrs_walks_named_attributes` | **6.c**: `lib::worker::tests::a_retired_job_is_never_heard_again`, `lib::worker::tests::shutdown_retires_every_job` (one Slot per attribute; close retires them all) |
 | 1347 | `TestWorkerRegistryOnItsOwn.test_retire_attrs_can_clear_the_attribute` | **6.c**: `lib::worker::tests::a_retired_job_is_never_heard_again`, `lib::worker::tests::shutdown_retires_every_job` (one Slot per attribute; close retires them all) |
 | 1357 | `TestWorkerRegistryOnItsOwn.test_wait_for_ignores_a_worker_that_is_not_running` | n/a: Qt test hygiene / the parked-thread registry; every Rust fixture builds its window on its own temp profile and there is no parked-thread list |
 | 1360 | `TestWorkerRegistryOnItsOwn.test_a_queued_prune_survives_the_registry_being_collected` | n/a: a QThread must not be destroyed while running, so Python parks it; a tokio task is not a QThread and nothing is parked |
-| 1443 | `TestSessionStoreIsIsolatedPerTest.test_a_closing_a_window_autosaves_its_entries` | **6.c**: `smoke::close_saves_and_marks_a_clean_exit` (close removes the timer, waits, and writes the final save) |
+| 1443 | `TestSessionStoreIsIsolatedPerTest.test_a_closing_a_window_autosaves_its_entries` | **6.c**: `smoke::close_saves_and_marks_a_clean_exit` (the final save wrote the list), `smoke::close_writes_an_empty_list_over_the_old_rows` |
 | 1453 | `TestSessionStoreIsIsolatedPerTest.test_b_a_later_test_never_sees_it` | n/a: Qt test hygiene / the parked-thread registry; every Rust fixture builds its window on its own temp profile and there is no parked-thread list |
-| 1485 | `TestWorkerCallbacksDuringClose.test_missing_files_checked_is_a_no_op_while_closing` | **6.c**: `smoke::close_saves_and_marks_a_clean_exit` (same, for the missing-file check) |
+| 1485 | `TestWorkerCallbacksDuringClose.test_missing_files_checked_is_a_no_op_while_closing` | **6.c**: `lib::worker::tests::a_retired_job_is_never_heard_again` (close retires the check's job); `smoke::close_saves_and_marks_a_clean_exit` sets the closing flag |
 | 1491 | `TestWorkerCallbacksDuringClose.test_availability_finished_is_a_no_op_while_closing` | 6.e: availability worker |
-| 1499 | `TestWorkerCallbacksDuringClose.test_file_hash_finished_is_a_no_op_while_closing` | **6.c**: `smoke::close_saves_and_marks_a_clean_exit`, `lib::worker::tests::a_retired_job_is_never_heard_again` (a continuation never runs after close began (`closing`)) |
+| 1499 | `TestWorkerCallbacksDuringClose.test_file_hash_finished_is_a_no_op_while_closing` | **6.c**: `lib::worker::tests::a_retired_job_is_never_heard_again` (close retires the hash job); `smoke::close_saves_and_marks_a_clean_exit` sets the closing flag |
 | 1508 | `TestWorkerCallbacksDuringClose.test_hydrus_import_poll_finished_is_a_no_op_while_closing` | 6.g: import poll |
 | 1538 | `TestMessageBoxSurvivesDeletionDuringItsOwnExec.test_deleting_the_parent_mid_exec_does_not_abort` | n/a: Qt's native-dialog and nested-exec() hazards; a GTK dialog never blocks and has no native-dialog path (the Prompter takes a continuation) |
 | 1563 | `TestDisplayHelpers.test_duration_formatting` | **6.c**: `lib::text::tests::durations_round_to_even_and_pad_on_request` (_format_duration) |
@@ -689,8 +692,8 @@ set (section 8), and the row says so.
 | 1578 | `TestDisplayHelpers.test_finish_time_phrasing_follows_the_distance` | 6.d: Queue table, filters, context menu, export, tag files |
 | 1589 | `TestDisplayHelpers.test_an_absurd_horizon_yields_no_finish_time` | 6.d: Queue table, filters, context menu, export, tag files |
 | 1595 | `TestDisplayHelpers.test_entry_labels_handle_unsearched_entries` | 6.d: Queue table, filters, context menu, export, tag files |
-| 1674 | `TestAutosaveIsOffTheGuiThread.test_the_call_returns_immediately_and_writes_in_the_background` | **6.c**: `smoke::autosave_writes_the_list_off_the_main_thread` (the write is on the pool; a running write is not stacked) |
-| 1684 | `TestAutosaveIsOffTheGuiThread.test_a_second_tick_does_not_stack_another_write` | **6.c**: `smoke::autosave_writes_the_list_off_the_main_thread` (the write is on the pool; a running write is not stacked) |
+| 1674 | `TestAutosaveIsOffTheGuiThread.test_the_call_returns_immediately_and_writes_in_the_background` | **6.c**: `smoke::autosave_writes_the_list_off_the_main_thread` asserts the write lands while the loop is pumped; that the call returns before the write is not asserted |
+| 1684 | `TestAutosaveIsOffTheGuiThread.test_a_second_tick_does_not_stack_another_write` | **6.c**: not asserted: nothing tests that a tick during a running write is skipped (`autosave_worker.is_running()` in `session_ops::autosave_now`) |
 | 1692 | `TestAutosaveIsOffTheGuiThread.test_an_empty_list_is_never_written` | **6.c**: `smoke::autosave_writes_the_list_off_the_main_thread` (an empty list is skipped) |
 | 1734 | `TestDeleteFromHydrus.test_confirmed_delete_removes_only_what_hydrus_confirmed` | 6.g |
 | 1747 | `TestDeleteFromHydrus.test_saying_no_deletes_nothing` | 6.g |
@@ -751,7 +754,7 @@ set (section 8), and the row says so.
 | 2750 | `TestTableFollowsEntryListReplacement.test_thumbnails_follow_their_entries_after_a_removal` | 6.d: Queue table, filters, context menu, export, tag files |
 | 2775 | `TestTableFollowsEntryListReplacement.test_removing_every_entry_empties_the_table` | 6.d: Queue table, filters, context menu, export, tag files |
 | 2780 | `TestTableFollowsEntryListReplacement.test_the_model_tracks_the_current_list_object` | 6.d: Queue table, filters, context menu, export, tag files |
-| 2786 | `TestTableFollowsEntryListReplacement.test_replacing_the_list_wholesale_is_picked_up` | **6.c**: `smoke::open_session`, `smoke::clear_session_matches_the_empty_list_quirk` (the autosave reads the current list) |
+| 2786 | `TestTableFollowsEntryListReplacement.test_replacing_the_list_wholesale_is_picked_up` | **6.c**: `smoke::autosave_writes_the_list_off_the_main_thread` (the queue is pushed to and then replaced; the autosave reads the current list) |
 | 2796 | `TestTableFollowsEntryListReplacement.test_clearing_the_list_wholesale_is_picked_up` | 6.d: Queue table, filters, context menu, export, tag files |
 | 2802 | `TestTableFollowsEntryListReplacement.test_in_place_removal_still_works` | 6.d: Queue table, filters, context menu, export, tag files |
 | 2888 | `TestSendFilesToHydrus.test_nothing_selected_asks_for_a_selection` | 6.g |
@@ -905,10 +908,10 @@ set (section 8), and the row says so.
 | 4759 | `TestBatchCarriesOnWithoutSauceNao.test_the_later_images_are_searched_without_saucenao` | 6.e: search run, pacing, engine alerts, parser health |
 | 4765 | `TestBatchCarriesOnWithoutSauceNao.test_those_results_are_marked_provisional` | 6.e: search run, pacing, engine alerts, parser health |
 | 4770 | `TestBatchCarriesOnWithoutSauceNao.test_it_says_so_once_rather_than_per_image` | 6.e: search run, pacing, engine alerts, parser health |
-| 4799 | `TestPersistedQuotaPauseShownOnStartup.test_a_fresh_pause_is_shown` | **6.c**: `smoke::persisted_quota_pause`, `smoke::restore_after_a_crash_shows_the_banner` (persisted pause: shown / stale cleared / none / beside the run banner) |
-| 4816 | `TestPersistedQuotaPauseShownOnStartup.test_a_stale_pause_past_its_reset_time_is_cleared_and_silent` | **6.c**: `smoke::persisted_quota_pause`, `smoke::restore_after_a_crash_shows_the_banner` (persisted pause: shown / stale cleared / none / beside the run banner) |
-| 4836 | `TestPersistedQuotaPauseShownOnStartup.test_no_persisted_pause_is_the_ordinary_silent_startup` | **6.c**: `smoke::persisted_quota_pause`, `smoke::restore_after_a_crash_shows_the_banner` (persisted pause: shown / stale cleared / none / beside the run banner) |
-| 4847 | `TestPersistedQuotaPauseShownOnStartup.test_a_persisted_pause_does_not_clobber_the_run_banner` | **6.c**: `smoke::persisted_quota_pause`, `smoke::restore_after_a_crash_shows_the_banner` (persisted pause: shown / stale cleared / none / beside the run banner) |
+| 4799 | `TestPersistedQuotaPauseShownOnStartup.test_a_fresh_pause_is_shown` | **6.c**: `smoke::persisted_quota_pause` (a fresh pause: banner visible, no dialog, status line) |
+| 4816 | `TestPersistedQuotaPauseShownOnStartup.test_a_stale_pause_past_its_reset_time_is_cleared_and_silent` | **6.c**: `smoke::persisted_quota_pause` (a stale pause: banner hidden, file deleted) |
+| 4836 | `TestPersistedQuotaPauseShownOnStartup.test_no_persisted_pause_is_the_ordinary_silent_startup` | **6.c**: `smoke::empty_state_and_idle_strip` (no banner and `Ready` on an ordinary start) |
+| 4847 | `TestPersistedQuotaPauseShownOnStartup.test_a_persisted_pause_does_not_clobber_the_run_banner` | **6.c**: not asserted with both set: no 6.c scenario starts with a crash and a pause together (the two banners are separate widgets, `run_banner` and `quota_banner`, each shown by its own scenario) |
 | 4899 | `TestPauseIsPersistedWhenTheBatchStops.test_pausing_records_the_counts` | 6.e: search run, pacing, engine alerts, parser health |
 | 4948 | `TestPausedBannerContinueButton.test_continue_actually_launches_a_search_without_saucenao` | 6.e |
 | 5002 | `TestResumeWithoutSaucenaoOverride.test_without_the_override_it_still_pauses` | 6.e: search run, pacing, engine alerts, parser health |
@@ -1048,31 +1051,31 @@ set (section 8), and the row says so.
 
 | Line | Test | Disposition |
 |---|---|---|
-| 55 | `TestPreviousRunStoppedAt.test_it_is_the_last_line_before_this_runs_start` | **6.c**: `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start`, `lib::startup::tests::no_run_start_or_no_earlier_stamp_is_unknown`, `smoke::close_saves_and_marks_a_clean_exit` (the clean-exit marker is hatate_core::crash_marker (merged); the log scan is startup) |
-| 64 | `TestPreviousRunStoppedAt.test_continuation_lines_do_not_count` | **6.c**: `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start`, `lib::startup::tests::no_run_start_or_no_earlier_stamp_is_unknown`, `smoke::close_saves_and_marks_a_clean_exit` (the clean-exit marker is hatate_core::crash_marker (merged); the log scan is startup) |
-| 73 | `TestPreviousRunStoppedAt.test_a_first_ever_run_has_no_previous_run` | **6.c**: `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start`, `lib::startup::tests::no_run_start_or_no_earlier_stamp_is_unknown`, `smoke::close_saves_and_marks_a_clean_exit` (the clean-exit marker is hatate_core::crash_marker (merged); the log scan is startup) |
-| 76 | `TestPreviousRunStoppedAt.test_a_log_with_no_start_line_or_no_file_is_unknown` | **6.c**: `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start`, `lib::startup::tests::no_run_start_or_no_earlier_stamp_is_unknown`, `smoke::close_saves_and_marks_a_clean_exit` (the clean-exit marker is hatate_core::crash_marker (merged); the log scan is startup) |
-| 93 | `TestLastCleanExit.test_a_clean_shutdown_records_when` | **6.c**: `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start`, `lib::startup::tests::no_run_start_or_no_earlier_stamp_is_unknown`, `smoke::close_saves_and_marks_a_clean_exit` (the clean-exit marker is hatate_core::crash_marker (merged); the log scan is startup) |
-| 98 | `TestLastCleanExit.test_a_crash_does_not_overwrite_it` | **6.c**: `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start`, `lib::startup::tests::no_run_start_or_no_earlier_stamp_is_unknown`, `smoke::close_saves_and_marks_a_clean_exit` (the clean-exit marker is hatate_core::crash_marker (merged); the log scan is startup) |
-| 103 | `TestLastCleanExit.test_none_ever_recorded_is_unknown_not_guessed` | **6.c**: `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start`, `lib::startup::tests::no_run_start_or_no_earlier_stamp_is_unknown`, `smoke::close_saves_and_marks_a_clean_exit` (the clean-exit marker is hatate_core::crash_marker (merged); the log scan is startup) |
-| 153 | `TestFrameAndKicker.test_the_banner_wears_the_four_corner_brackets` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 162 | `TestFrameAndKicker.test_the_kicker_reads_run_interrupted_partial_results_survived` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 172 | `TestFrameAndKicker.test_the_kicker_is_the_loudest_ink_and_clears_contrast` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 185 | `TestProse.test_it_reassures_and_carries_the_counts` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 196 | `TestProse.test_the_wrapped_prose_is_not_clipped` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 214 | `TestProse.test_counts_by_category` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 233 | `TestProse.test_nothing_queued_is_not_announced` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 245 | `TestMetaLine.test_it_reads_autosave_clean_exit_and_crash_log` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 254 | `TestMetaLine.test_it_paints_as_the_mockups_uppercase_mono_line` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 260 | `TestMetaLine.test_it_sits_flush_left_under_the_prose` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 268 | `TestMetaLine.test_an_unknown_clean_exit_or_autosave_is_left_out_not_invented` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 272 | `TestMetaLine.test_two_faults_pluralise` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 281 | `TestActionsUnchanged.test_resume_is_the_one_primary_and_view_crash_log_is_not` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 287 | `TestActionsUnchanged.test_discard_is_still_a_link_not_a_button` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 294 | `TestActionsUnchanged.test_discard_is_uppercase_mono_tracked_and_still_underlined` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 306 | `TestActionsUnchanged.test_the_glyph_has_its_own_column_and_the_prose_starts_66px_in` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 319 | `TestActionsUnchanged.test_the_actions_sit_below_the_prose_in_one_row_discard_last` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
-| 338 | `TestActionsUnchanged.test_discard_is_not_louder_than_it_was` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (kicker, counts, meta line, actions; widths and leading are the shot set) |
+| 55 | `TestPreviousRunStoppedAt.test_it_is_the_last_line_before_this_runs_start` | **6.c**: `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start` (its fixture has a continuation line) |
+| 64 | `TestPreviousRunStoppedAt.test_continuation_lines_do_not_count` | **6.c**: `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start` (its fixture has a continuation line) |
+| 73 | `TestPreviousRunStoppedAt.test_a_first_ever_run_has_no_previous_run` | **6.c**: `lib::startup::tests::no_run_start_or_no_earlier_stamp_is_unknown` (empty log, no start line, only this run's start line) |
+| 76 | `TestPreviousRunStoppedAt.test_a_log_with_no_start_line_or_no_file_is_unknown` | **6.c**: `lib::startup::tests::no_run_start_or_no_earlier_stamp_is_unknown` (empty log, no start line, only this run's start line) |
+| 93 | `TestLastCleanExit.test_a_clean_shutdown_records_when` | **6.c**: `smoke::close_saves_and_marks_a_clean_exit` asserts the clean-exit file is written at close (the marker itself is `hatate_core::crash_marker`, merged earlier) |
+| 98 | `TestLastCleanExit.test_a_crash_does_not_overwrite_it` | core: `hatate_core::crash_marker` (merged earlier); 6.c adds no test that a crash leaves the clean-exit stamp alone |
+| 103 | `TestLastCleanExit.test_none_ever_recorded_is_unknown_not_guessed` | core: `hatate_core::crash_marker` (merged earlier); the window leaves the `Last clean exit` item out when none is recorded, which only the action differential compares (`run_banner.meta`) |
+| 153 | `TestFrameAndKicker.test_the_banner_wears_the_four_corner_brackets` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 162 | `TestFrameAndKicker.test_the_kicker_reads_run_interrupted_partial_results_survived` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 172 | `TestFrameAndKicker.test_the_kicker_is_the_loudest_ink_and_clears_contrast` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 185 | `TestProse.test_it_reassures_and_carries_the_counts` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner` asserts the whole body text literally (the reassurance and the counts), and `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` |
+| 196 | `TestProse.test_the_wrapped_prose_is_not_clipped` | **6.c**: `smoke::minimum_size_fits_every_state_in_both_schemes` (the `queue-crashed-banner` state fits at the stated minimum in both schemes) |
+| 214 | `TestProse.test_counts_by_category` | **6.c**: `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` (sent / still queued / waiting / never reached) and the literal body in `smoke::restore_after_a_crash_shows_the_banner` |
+| 233 | `TestProse.test_nothing_queued_is_not_announced` | **6.c**: `lib::text::tests::the_interrupted_prose_leaves_out_a_zero_queued_count` |
+| 245 | `TestMetaLine.test_it_reads_autosave_clean_exit_and_crash_log` | **6.c**: `lib::banners::tests::the_crash_log_figure_is_a_count_or_none` (the crash-log figure); the assembled meta line (`Last autosave`, `Last clean exit`, `Crash log`) is compared with Python's by the action differential (`run_banner.meta`), and no Rust test in the suite asserts it |
+| 254 | `TestMetaLine.test_it_paints_as_the_mockups_uppercase_mono_line` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 260 | `TestMetaLine.test_it_sits_flush_left_under_the_prose` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 268 | `TestMetaLine.test_an_unknown_clean_exit_or_autosave_is_left_out_not_invented` | **6.c**: the action differential (section 5) compares `run_banner.meta` with Python's after every step; no Rust test in the suite asserts it (an unknown item is left out) |
+| 272 | `TestMetaLine.test_two_faults_pluralise` | **6.c**: `lib::banners::tests::the_crash_log_figure_is_a_count_or_none` (`no new entry` / `1 new entry` / `3 new entries`) and `lib::startup::tests::faults_are_counted_in_the_section_before_the_last` |
+| 281 | `TestActionsUnchanged.test_resume_is_the_one_primary_and_view_crash_log_is_not` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 287 | `TestActionsUnchanged.test_discard_is_still_a_link_not_a_button` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 294 | `TestActionsUnchanged.test_discard_is_uppercase_mono_tracked_and_still_underlined` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 306 | `TestActionsUnchanged.test_the_glyph_has_its_own_column_and_the_prose_starts_66px_in` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 319 | `TestActionsUnchanged.test_the_actions_sit_below_the_prose_in_one_row_discard_last` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 338 | `TestActionsUnchanged.test_discard_is_not_louder_than_it_was` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
 | 362 | `TestRowMarker.test_the_restore_flags_the_row_that_was_in_flight_and_resets_it` | 6.d: the per-row `interrupted` marker in the Engine column (the flag itself is core: mark_interrupted_mid_search, merged) |
 | 370 | `TestRowMarker.test_a_clean_restore_leaves_a_stale_row_alone` | 6.d: the per-row `interrupted` marker in the Engine column (the flag itself is core: mark_interrupted_mid_search, merged) |
 | 374 | `TestRowMarker.test_only_that_rows_engine_cell_says_so_in_italic` | 6.d: the per-row `interrupted` marker in the Engine column (the flag itself is core: mark_interrupted_mid_search, merged) |
@@ -1082,23 +1085,23 @@ set (section 8), and the row says so.
 | 431 | `TestRowMarker.test_the_flag_is_not_saved` | 6.d: the per-row `interrupted` marker in the Engine column (the flag itself is core: mark_interrupted_mid_search, merged) |
 | 436 | `TestRowMarker.test_flagging_does_not_make_an_entry_look_changed` | 6.d: the per-row `interrupted` marker in the Engine column (the flag itself is core: mark_interrupted_mid_search, merged) |
 | 442 | `TestRowMarker.test_the_search_worker_spends_the_flag` | 6.d: the per-row `interrupted` marker in the Engine column (the flag itself is core: mark_interrupted_mid_search, merged) |
-| 451 | `TestStripNote.test_the_strip_says_how_long_ago_it_stopped` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant`, `smoke::clear_session_matches_the_empty_list_quirk` (`stopped Xh Ym ago`, cleared by Discard; `starting a search clears it` is 6.e) |
-| 457 | `TestStripNote.test_the_figure_is_the_bold_part` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant`, `smoke::clear_session_matches_the_empty_list_quirk` (`stopped Xh Ym ago`, cleared by Discard; `starting a search clears it` is 6.e) |
-| 462 | `TestStripNote.test_with_no_log_to_read_the_autosave_is_the_fallback` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant`, `smoke::clear_session_matches_the_empty_list_quirk` (`stopped Xh Ym ago`, cleared by Discard; `starting a search clears it` is 6.e) |
-| 466 | `TestStripNote.test_nothing_known_says_nothing` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant`, `smoke::clear_session_matches_the_empty_list_quirk` (`stopped Xh Ym ago`, cleared by Discard; `starting a search clears it` is 6.e) |
-| 470 | `TestStripNote.test_a_clean_restore_has_no_note` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant`, `smoke::clear_session_matches_the_empty_list_quirk` (`stopped Xh Ym ago`, cleared by Discard; `starting a search clears it` is 6.e) |
-| 474 | `TestStripNote.test_discarding_the_session_clears_it` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant`, `smoke::clear_session_matches_the_empty_list_quirk` (`stopped Xh Ym ago`, cleared by Discard; `starting a search clears it` is 6.e) |
-| 483 | `TestStripNote.test_starting_a_search_clears_it` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant`, `smoke::clear_session_matches_the_empty_list_quirk` (`stopped Xh Ym ago`, cleared by Discard; `starting a search clears it` is 6.e) |
+| 451 | `TestStripNote.test_the_strip_says_how_long_ago_it_stopped` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner` asserts only that the strip note starts `stopped `; the figure comes from `lib::startup::tests::the_stop_time_is_the_last_stamped_line_before_this_runs_start` and `lib::text::tests::durations_round_to_even_and_pad_on_request`, and the action differential compares `run_note` |
+| 457 | `TestStripNote.test_the_figure_is_the_bold_part` | **6.c**: judged in the shot set, not in a test (the `crashed` shots, dark and light; contrast in section 8) |
+| 462 | `TestStripNote.test_with_no_log_to_read_the_autosave_is_the_fallback` | **6.c**: the action differential (section 5) compares `run_note` with Python's after every step; no Rust test in the suite asserts it (the autosave fallback) |
+| 466 | `TestStripNote.test_nothing_known_says_nothing` | **6.c**: the action differential (section 5) compares `run_note` with Python's after every step; no Rust test in the suite asserts it |
+| 470 | `TestStripNote.test_a_clean_restore_has_no_note` | **6.c**: the action differential (section 5) compares `run_note` with Python's after every step; no Rust test in the suite asserts it (`smoke::restore_clean_session` asserts only that the run banner is hidden) |
+| 474 | `TestStripNote.test_discarding_the_session_clears_it` | **6.c**: `smoke::nothing_survived_variant` asserts the note clears when its New-search button is pressed; the Discard link's own clear is compared only by the action differential (`run_note`) |
+| 483 | `TestStripNote.test_starting_a_search_clears_it` | 6.e: starting a search is 6.e's |
 
 ### `tests/test_log_viewer_dialog.py` (5)
 
 | Line | Test | Disposition |
 |---|---|---|
-| 47 | `TestCrashLogToggle.test_starts_on_the_app_log` | **6.c**: `smoke::log_viewer_and_open_log`, `lib::logview::tests::a_log_shows_its_text`, `lib::logview::tests::an_empty_log_says_so_in_pythons_words` (app log first, crash log toggle, missing crash log says so) |
-| 51 | `TestCrashLogToggle.test_missing_crash_log_says_so_instead_of_showing_app_log_content` | **6.c**: `smoke::log_viewer_and_open_log`, `lib::logview::tests::a_log_shows_its_text`, `lib::logview::tests::an_empty_log_says_so_in_pythons_words` (app log first, crash log toggle, missing crash log says so) |
-| 55 | `TestCrashLogToggle.test_toggle_shows_crash_log_contents` | **6.c**: `smoke::log_viewer_and_open_log`, `lib::logview::tests::a_log_shows_its_text`, `lib::logview::tests::an_empty_log_says_so_in_pythons_words` (app log first, crash log toggle, missing crash log says so) |
-| 62 | `TestCrashLogToggle.test_toggle_back_returns_to_the_app_log` | **6.c**: `smoke::log_viewer_and_open_log`, `lib::logview::tests::a_log_shows_its_text`, `lib::logview::tests::an_empty_log_says_so_in_pythons_words` (app log first, crash log toggle, missing crash log says so) |
-| 68 | `TestCrashLogToggle.test_show_crash_log_opens_preswitched` | **6.c**: `smoke::log_viewer_and_open_log`, `lib::logview::tests::a_log_shows_its_text`, `lib::logview::tests::an_empty_log_says_so_in_pythons_words` (app log first, crash log toggle, missing crash log says so) |
+| 47 | `TestCrashLogToggle.test_starts_on_the_app_log` | **6.c**: `smoke::log_viewer_and_open_log` asserts the title, the `Log file: ` path and the empty-log text on open, and `lib::logview::tests::an_empty_log_says_so_in_pythons_words` |
+| 51 | `TestCrashLogToggle.test_missing_crash_log_says_so_instead_of_showing_app_log_content` | **6.c**: `smoke::log_viewer_and_open_log` asserts the crash view reads `(no crash log yet - nothing has crashed)` |
+| 55 | `TestCrashLogToggle.test_toggle_shows_crash_log_contents` | **6.c**: `lib::logview::tests::a_log_shows_its_text` (a log's contents); `smoke::log_viewer_and_open_log` toggles to the crash view with an absent crash log only |
+| 62 | `TestCrashLogToggle.test_toggle_back_returns_to_the_app_log` | **6.c**: not asserted: `smoke::log_viewer_and_open_log` toggles to the crash log and reads the button as `View App Log`, but never toggles back |
+| 68 | `TestCrashLogToggle.test_show_crash_log_opens_preswitched` | **6.c**: `smoke::log_viewer_and_open_log` (`open_crash_log` then `showing_crash_log()`) |
 
 ### `tests/test_mcp_settings_tab.py` (29)
 
@@ -1138,8 +1141,8 @@ set (section 8), and the row says so.
 
 | Line | Test | Disposition |
 |---|---|---|
-| 96 | `TestNoModal.test_a_quota_pause_raises_no_modal` | **6.c**: `smoke::persisted_quota_pause` (the banner is shown with no dialog; `Fx` scripts a prompter and the scenario never reads a prompt) |
-| 116 | `TestNoModal.test_a_pause_with_nothing_recorded_still_raises_no_modal` | **6.c**: `smoke::persisted_quota_pause` (the stale-pause case: no banner, no dialog) |
+| 96 | `TestNoModal.test_a_quota_pause_raises_no_modal` | **6.c**: `smoke::persisted_quota_pause` asserts the restore path only (a pause on disk at start: banner visible, `count_shown() == 0`); the live `_on_paused_out_of_quota` handler Python's test drives is 6.e's |
+| 116 | `TestNoModal.test_a_pause_with_nothing_recorded_still_raises_no_modal` | 6.e: the live `_on_paused_out_of_quota` handler with nothing recorded, which expects the banner visible; `smoke::persisted_quota_pause` covers the restore path only (a stale pause: no banner, file deleted) and does not assert it |
 | 124 | `TestBannerVariant.test_the_kicker_reads_run_paused_quota_exhausted` | **6.c**: `smoke::persisted_quota_pause` asserts the banner is visible and its body text; the kicker wording is `widgets::quota_pause_banner` and is read in the shot set (`quota` shot), not asserted |
 | 132 | `TestBannerVariant.test_the_kicker_clears_text_contrast` | **6.c**: judged in the shot set (contrast table, section 8), not in a test |
 | 143 | `TestBannerVariant.test_it_wears_the_same_brackets_as_the_interrupted_banner` | **6.c**: judged in the shot set, not in a test (brackets) |
@@ -1150,19 +1153,19 @@ set (section 8), and the row says so.
 | 196 | `TestBannerVariant.test_the_run_strip_puts_the_pause_note_after_the_counts` | **6.c**: `smoke::persisted_quota_pause` asserts the strip's note is literally `paused — quota exhausted`, its estimate `ETA paused` and its count `nothing queued` |
 | 206 | `TestBannerVariant.test_the_meta_line_gives_the_time_the_count_and_the_reset` | **6.c**: the meta line is built by `banners::show_persisted_quota_pause` (`Quota exhausted at`, `Images waiting`, `Resets`); the text pieces are `lib::text` unit tests, the line itself is read in the shot set, not asserted |
 | 220 | `TestBannerVariant.test_without_a_list_the_prose_falls_back_to_the_workers_count` | **6.c**: `lib::text::tests::the_quota_prose_counts_or_falls_back_to_the_workers_figure` |
-| 228 | `TestActions.test_review_is_the_primary_and_continue_is_the_secondary` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
-| 241 | `TestActions.test_review_opens_review_on_the_first_waiting_row` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
-| 248 | `TestActions.test_review_is_hidden_when_nothing_is_waiting` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
-| 254 | `TestActions.test_continue_launches_without_saucenao_and_clears_the_banner` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
-| 270 | `TestActions.test_clearing_the_list_retires_the_banner` | 6.e: Review / Continue buttons' handlers (the visibility of Review is S persisted_quota_pause) |
+| 228 | `TestActions.test_review_is_the_primary_and_continue_is_the_secondary` | 6.e: Review / Continue buttons' handlers and their visibility; the action differential compares `quota_banner.review` and `review_visible` on the restore path |
+| 241 | `TestActions.test_review_opens_review_on_the_first_waiting_row` | 6.e: Review / Continue buttons' handlers and their visibility; the action differential compares `quota_banner.review` and `review_visible` on the restore path |
+| 248 | `TestActions.test_review_is_hidden_when_nothing_is_waiting` | 6.e: Review / Continue buttons' handlers and their visibility; the action differential compares `quota_banner.review` and `review_visible` on the restore path |
+| 254 | `TestActions.test_continue_launches_without_saucenao_and_clears_the_banner` | 6.e: Review / Continue buttons' handlers and their visibility; the action differential compares `quota_banner.review` and `review_visible` on the restore path |
+| 270 | `TestActions.test_clearing_the_list_retires_the_banner` | 6.e: Review / Continue buttons' handlers and their visibility; the action differential compares `quota_banner.review` and `review_visible` on the restore path |
 | 281 | `TestPersistedAcrossRestart.test_a_pause_on_disk_shows_the_banner_not_just_a_status_line` | **6.c**: `smoke::persisted_quota_pause` (banner visible, and the status line joined with a middle dot) |
-| 291 | `TestPersistedAcrossRestart.test_a_stale_pause_shows_no_banner` | **6.c**: `smoke::persisted_quota_pause` (banner hidden, the stale file deleted) |
+| 291 | `TestPersistedAcrossRestart.test_a_stale_pause_shows_no_banner` | **6.c**: `smoke::persisted_quota_pause` (banner hidden, the stale file deleted); the strip note after a stale pause is not asserted |
 | 297 | `TestPersistedAcrossRestart.test_no_pause_shows_no_banner` | **6.c**: `smoke::empty_state_and_idle_strip` (no quota banner on an ordinary start) |
-| 301 | `TestPersistedAcrossRestart.test_the_banner_sits_below_a_crash_recovery_banner_when_both_are_true` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner` and `smoke::persisted_quota_pause` show each banner; their order in the Queue page is the shot set (`quota` shot) |
-| 319 | `TestStrip.test_the_strip_reads_paused_the_count_and_eta_paused` | **6.c**: `smoke::persisted_quota_pause` asserts the note `paused — quota exhausted`, `ETA paused` and the count `nothing queued`, as literal text |
+| 301 | `TestPersistedAcrossRestart.test_the_banner_sits_below_a_crash_recovery_banner_when_both_are_true` | **6.c**: not asserted with both set: `smoke::restore_after_a_crash_shows_the_banner` and `smoke::persisted_quota_pause` each show their own banner, no scenario starts with both, and the order is not asserted |
+| 319 | `TestStrip.test_the_strip_reads_paused_the_count_and_eta_paused` | **6.c**: `smoke::persisted_quota_pause` asserts, on the restore path, the note `paused — quota exhausted`, `ETA paused` and the count `nothing queued`, as literal text; the live path through `_refresh_saucenao_quota_label` is 6.e's |
 | 327 | `TestStrip.test_the_run_ending_does_not_wipe_the_pause_from_the_strip` | 6.e: the run ending is 6.e's; `smoke::persisted_quota_pause` asserts the other half, that dismissing the pause clears the note and the estimate |
 | 335 | `TestStrip.test_after_a_relaunch_the_strip_still_says_paused` | **6.c**: `smoke::persisted_quota_pause` (the strip is read after a start with the pause on disk) |
-| 340 | `TestStrip.test_an_ordinary_idle_strip_is_unchanged` | **6.c**: `smoke::empty_state_and_idle_strip` (`nothing queued`, `ETA —`, no note) |
+| 340 | `TestStrip.test_an_ordinary_idle_strip_is_unchanged` | **6.c**: `smoke::empty_state_and_idle_strip` compares the strip with `IDLE_PROGRESS` (`nothing queued`) and `IDLE_ETA` (`ETA —`) as constants; the note label is not asserted there, and the action differential compares `run_note` and `run_progress` |
 
 ### `tests/test_review_commit_caption.py` (4)
 
@@ -1254,14 +1257,14 @@ set (section 8), and the row says so.
 
 | Line | Test | Disposition |
 |---|---|---|
-| 44 | `TestRunBanner.test_hidden_on_clean_restore` | **6.c**: `smoke::restore_clean_session`, `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant` |
-| 56 | `TestRunBanner.test_hidden_when_nothing_survived` | **6.c**: `smoke::restore_clean_session`, `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant` |
-| 62 | `TestRunBanner.test_shown_on_unclean_restore_with_entries` | **6.c**: `smoke::restore_clean_session`, `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant` |
-| 69 | `TestRunBanner.test_body_counts_per_category` | **6.c**: `smoke::restore_clean_session`, `smoke::restore_after_a_crash_shows_the_banner`, `smoke::nothing_survived_variant` |
+| 44 | `TestRunBanner.test_hidden_on_clean_restore` | **6.c**: `smoke::restore_clean_session` (the run banner stays hidden) |
+| 56 | `TestRunBanner.test_hidden_when_nothing_survived` | **6.c**: `smoke::nothing_survived_variant` (the run banner stays hidden) |
+| 62 | `TestRunBanner.test_shown_on_unclean_restore_with_entries` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner` |
+| 69 | `TestRunBanner.test_body_counts_per_category` | **6.c**: `smoke::restore_after_a_crash_shows_the_banner` (the body text, literally) |
 | 89 | `TestRunBanner.test_resume_button_routes_to_action_start_search` | 6.e: Resume starts a search |
-| 105 | `TestRunBanner.test_crash_log_button_routes_to_open_crash_log` | **6.c**: `smoke::log_viewer_and_open_log`, `smoke::clear_session_matches_the_empty_list_quirk` |
-| 116 | `TestRunBanner.test_crash_log_action_opens_dialog_preswitched` | **6.c**: `smoke::log_viewer_and_open_log`, `smoke::clear_session_matches_the_empty_list_quirk` |
-| 124 | `TestRunBanner.test_discard_label_routes_to_action_clear_session` | **6.c**: `smoke::log_viewer_and_open_log`, `smoke::clear_session_matches_the_empty_list_quirk` |
+| 105 | `TestRunBanner.test_crash_log_button_routes_to_open_crash_log` | **6.c**: not asserted: `smoke::log_viewer_and_open_log` calls `open_crash_log` directly; clicking the banner's button is not exercised |
+| 116 | `TestRunBanner.test_crash_log_action_opens_dialog_preswitched` | **6.c**: `smoke::log_viewer_and_open_log` (`open_crash_log` opens the viewer on the crash log) |
+| 124 | `TestRunBanner.test_discard_label_routes_to_action_clear_session` | **6.c**: not asserted: `smoke::clear_session_matches_the_empty_list_quirk` drives the `clear-session` action; clicking the Discard link is not exercised |
 
 ### `tests/test_sent_tag_filter.py` (23)
 
@@ -1444,11 +1447,11 @@ set (section 8), and the row says so.
 | 619 | `TestFontWeightsMatchTheRegisteredFace.test_every_declared_weight_is_a_weight_the_family_ships` | **6.c**: `smoke::fonts_cover_the_status_glyphs_and_kanji`, `lib::fonts::tests::nine_faces_are_bundled_and_none_is_woff2` (the Ryoku Status face and the weights shipped) |
 | 667 | `TestStatusGlyphFontCoverage.test_every_status_glyph_is_covered_by_its_routed_font` | **6.c**: `smoke::fonts_cover_the_status_glyphs_and_kanji`, `lib::fonts::tests::nine_faces_are_bundled_and_none_is_woff2` (the Ryoku Status face and the weights shipped) |
 | 757 | `TestStatusWeightContrast.test_every_status_weight_clears_aa_against_card` | 6.d: the Status column's weights |
-| 790 | `TestBorderTierContrast.test_border_tiers_clear_non_text_floor` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (tokens only: Python's two extra border tiers are not in tokens.css (D3); boundaries are judged by measured ratio in the shot set) |
-| 807 | `TestBorderTierContrast.test_hover_focus_tier_is_louder_than_resting_tier` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (tokens only: Python's two extra border tiers are not in tokens.css (D3); boundaries are judged by measured ratio in the shot set) |
-| 816 | `TestBorderTierContrast.test_ink_18_itself_is_unchanged` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (tokens only: Python's two extra border tiers are not in tokens.css (D3); boundaries are judged by measured ratio in the shot set) |
-| 835 | `TestBorderTierContrast.test_header_section_border_clears_non_text_floor` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (tokens only: Python's two extra border tiers are not in tokens.css (D3); boundaries are judged by measured ratio in the shot set) |
-| 857 | `TestBorderTierContrast.test_status_bar_border_is_documented_quiet_exception` | **6.c**: `lib::tokens::tests::contrast_matches_the_published_ratios`, `lib::theme::tests::the_ring_clears_three_to_one_on_every_surface_it_sits_on` (tokens only: Python's two extra border tiers are not in tokens.css (D3); boundaries are judged by measured ratio in the shot set) |
+| 790 | `TestBorderTierContrast.test_border_tiers_clear_non_text_floor` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
+| 807 | `TestBorderTierContrast.test_hover_focus_tier_is_louder_than_resting_tier` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
+| 816 | `TestBorderTierContrast.test_ink_18_itself_is_unchanged` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
+| 835 | `TestBorderTierContrast.test_header_section_border_clears_non_text_floor` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
+| 857 | `TestBorderTierContrast.test_status_bar_border_is_documented_quiet_exception` | DAN-2242: not asserted in 6.c. Python's border tiers (`ink-46`, `ink-58`) are not in the vendored `tokens.css` (D3), so this ticket paints `ink-18` only and the measured ratios are section 8's; re-vendoring with `ink-46` is DAN-2242, and the tests of the tiers land with it |
 | 1294 | `TestGenericContrastSweep.test_every_rendered_pair_clears_its_floor_or_is_exempt` | **6.c**: `lib::theme::tests::body_text_tiers_stay_above_four_and_a_half`, `lib::tokens::tests::contrast_matches_the_published_ratios` (text tiers; the rendered-pair sweep is the verifier's shot set) |
 
 ### `tests/test_thumbnail_worker.py` (26)
