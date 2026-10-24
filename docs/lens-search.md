@@ -60,7 +60,7 @@ both driving the same Helium 156, headed, in Xvfb, a fresh temp profile under a 
 one scripted fake-Lens site on 127.0.0.1 built from synthetic pages; nothing is captured from Google).
 Each case is compared on the returned payloads and tiles (or the error class and message), the
 request log the site records, the page events the pages report back (mouse down/up/move/click),
-the launch argv, `navigator.webdriver`, and every wait requested. Seed 101: 65 scenarios, 0 differing
+the launch argv, `navigator.webdriver`, and every wait requested. Seeds 101, 202 and 303: 65, 68 and 68 scenarios, 0 differing in every one
 (whole-image search, a partial area that needs widening, the explicit-results notice, the Visual
 matches tab, a rule34 search tile, empty results, "can't read file", the browser closed mid-search
 and relaunched, an unanswered upload, a challenge on each page, extra fetches, and 40 generated
@@ -129,3 +129,22 @@ which `LensFetchError` carries into `LensError` (5.a); a site lookup that lets a
 `kind()`, `user_message()` and `detail()` are 5.a's and 5.b's, and the test that keeps paths and OS
 text out of the message is `lens_browser::the_error_shape_keeps_paths_and_os_text_out_of_the_user_message`.
 `Entry.error_message` and `MatchStatus` are unchanged on disk.
+
+## 7. Live smoke (author, once, 2026-10-24 03:59 to 04:01 UTC)
+
+One public image (`docs/screenshots/review-light.png` from the Python repo), one Lens search per app, a
+minute apart, with the same Helium 156, a fresh temp profile and a temp `HOME` each, in Xvfb. The
+Python side is `google_lens.search` at `76c85c4`; the Rust side is `LensClient::search` over the
+shipped `LensBrowser` and `OnlineSites`.
+
+| | Python | Rust |
+|---|---|---|
+| consent page or challenge | none seen | none seen |
+| payloads, tiles | 6, 2 | 6, 2 |
+| matches parsed | 8 | 8 |
+
+Seven of the eight matches (url, similarity, title, source) are identical and in the same order. The
+eighth, at similarity 66, is a different YouTube video. Two live searches a minute apart need not get
+the same list from Google, and the run captured no payloads to show which side the difference is on, so
+this is recorded as not identical and unexplained, not as a defect. The scripted differentials above
+are what compare the two parsers on the same input. The smoke is not repeated: no retry, no other client.
