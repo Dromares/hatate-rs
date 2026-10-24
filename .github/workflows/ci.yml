@@ -36,3 +36,27 @@ jobs:
           GSK_RENDERER: cairo
           NO_AT_BRIDGE: "1"
         run: xvfb-run -a -s "-screen 0 1440x900x24" cargo test --workspace
+      # The shot set on this toolkit (GTK 4.14 / libadwaita 1.5), dark and light, for the design
+      # read: `examples/shot.rs` renders the real window over a synthetic temp profile. The
+      # numbers in `docs/gtk-shell.md` and the contrast table come from these, not from a host
+      # with a newer toolkit.
+      - name: Shot set (under Xvfb)
+        env:
+          GDK_BACKEND: x11
+          GSK_RENDERER: cairo
+          NO_AT_BRIDGE: "1"
+        run: |
+          cargo build -p hatate-gtk --example shot
+          mkdir -p shots
+          shot() { xvfb-run -a -s "-screen 0 1440x900x24" target/debug/examples/shot "$@"; }
+          for s in dark light; do
+            for st in empty rows crashed survived quota dialog logs menu focus; do
+              shot "shots/$st-$s.png" "$s" 1100x800 "$st"
+            done
+            shot "shots/empty-min-$s.png" "$s" min empty
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shots
+          path: shots
+          retention-days: 14
