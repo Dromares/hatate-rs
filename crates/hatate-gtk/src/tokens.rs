@@ -344,7 +344,11 @@ mod tests {
 
     #[test]
     fn a_changed_token_changes_the_palette() {
-        let css = TOKENS_CSS.replacen("--charcoal:        #0d0d0d;", "--charcoal:        #101010;", 1);
+        let css = TOKENS_CSS.replacen(
+            "--charcoal:        #0d0d0d;",
+            "--charcoal:        #101010;",
+            1,
+        );
         let p = Palette::from_tokens(Scheme::Dark, &Tokens::parse(&css, Scheme::Dark));
         assert_eq!(p.page.hex(), "#101010");
     }

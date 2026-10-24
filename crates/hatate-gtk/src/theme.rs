@@ -123,6 +123,9 @@ window.csd { border-radius: 0; box-shadow: none; }
   font-family: %mono%;
 }
 
+/* an uppercase voice: the string stays sentence case, the sheet draws it in capitals */
+.caps, .caps label { text-transform: uppercase; }
+
 /* ---- the one focus ring (design gate 1.1): 2px ink; on a stamp-filled surface the ring is the
    stamp's text colour, because ink on ink is 1:1 ---- */
 *:focus:focus-visible { outline: 2px solid @ink; outline-offset: 2px; }
@@ -407,7 +410,11 @@ mod tests {
             ("bogus", Some(false), Scheme::Light),
             ("", None, Scheme::Dark),
         ] {
-            assert_eq!(resolve_scheme(setting, system), want, "{setting} {system:?}");
+            assert_eq!(
+                resolve_scheme(setting, system),
+                want,
+                "{setting} {system:?}"
+            );
         }
     }
 

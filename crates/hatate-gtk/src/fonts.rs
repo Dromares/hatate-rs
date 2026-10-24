@@ -60,7 +60,7 @@ pub const STATUS_GLYPHS: [char; 6] = [
 ];
 
 /// The four ghost kanji, one per mode: Queue 力, Review 鏡, Activity 動, Empty 空.
-pub const KANJI_GLYPHS: [char; 4] = ['\u{529B}', '\u{955C}', '\u{52D5}', '\u{7A7A}'];
+pub const KANJI_GLYPHS: [char; 4] = ['\u{529B}', '\u{93E1}', '\u{52D5}', '\u{7A7A}'];
 
 #[link(name = "fontconfig")]
 unsafe extern "C" {

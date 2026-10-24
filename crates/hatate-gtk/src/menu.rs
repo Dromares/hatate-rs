@@ -1,0 +1,439 @@
+//! The menubar: every menu Python has (`MainWindow._build_menu`, `_build_hydrus_menu` and
+//! `_build_sites_menu`, `gui/main_window.py:571,726,756` at `76c85c4`).
+//!
+//! The menus are data ([`menus`]) so one table builds the `gio::Menu`, registers the actions and
+//! is read by the tests that pin the structure against Python's. An item whose action a later
+//! ticket owns is registered as a **disabled** action; the `owner` column names that ticket, and
+//! every one of them is also marked `DEFERRED(6.x)` in a comment below so 6.j can find any that
+//! are left (`grep -n 'DEFERRED(' crates/hatate-gtk/src/menu.rs`).
+
+use gtk4::gio;
+
+/// Who implements the action.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Owner {
+    /// This ticket (6.c): the action works.
+    Shell,
+    /// A later ticket: the action exists and is disabled until that ticket wires it.
+    Later(&'static str),
+}
+
+/// A menu entry.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Entry {
+    /// A plain item: label, action name (`win.<name>`), accelerator, owner.
+    Item {
+        label: &'static str,
+        action: &'static str,
+        accel: Option<&'static str>,
+        owner: Owner,
+    },
+    /// A checkable item bound to a stateful action `win.<action>` taking a string target.
+    Check {
+        label: String,
+        action: &'static str,
+        target: String,
+        owner: Owner,
+    },
+    Separator,
+    /// A submenu of radio items (Settings > Theme).
+    Radio {
+        title: &'static str,
+        action: &'static str,
+        choices: Vec<(&'static str, &'static str)>,
+        owner: Owner,
+    },
+}
+
+/// One top-level menu. `title` uses `_` for the mnemonic (Qt's `&`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Menu {
+    pub title: &'static str,
+    pub entries: Vec<Entry>,
+}
+
+fn item(label: &'static str, action: &'static str, owner: Owner) -> Entry {
+    Entry::Item {
+        label,
+        action,
+        accel: None,
+        owner,
+    }
+}
+
+fn keyed(label: &'static str, action: &'static str, accel: &'static str, owner: Owner) -> Entry {
+    Entry::Item {
+        label,
+        action,
+        accel: Some(accel),
+        owner,
+    }
+}
+
+/// `ALL_SITE_OPTIONS` (`core/sites.py:126`): every site, sorted case-insensitively, then `Other`.
+/// It is the default of `enabled_sites`.
+pub fn all_site_options() -> Vec<String> {
+    // The default of `enabled_sites` is every site; the paths only fill `log_file_path`.
+    let paths = hatate_core::paths::Paths::from_lookup(|_| Some("/".into()))
+        .expect("a lookup that always answers");
+    hatate_core::config::Settings::with_defaults(&paths).enabled_sites
+}
+
+/// The menubar, in Python's order: Files, Hydrus, Sites, Settings, Help.
+pub fn menus() -> Vec<Menu> {
+    use Owner::{Later, Shell};
+    // DEFERRED(6.g): Query Hydrus, Re-check Queued Imports, Pawchive Index, the two Send items.
+    // DEFERRED(6.d): Export Results, Write Tag Files, Clear Search Cache.
+    // DEFERRED(6.e): Parser Health, the Sites menu.
+    // DEFERRED(6.f): Edit Match Conditions.
+    // DEFERRED(6.h): Preferences.
+    let files = Menu {
+        title: "_Files",
+        entries: vec![
+            item("Add Files\u{2026}", "add-files", Shell),
+            item("Add Folder\u{2026}", "add-folder", Shell),
+            item("Query Hydrus\u{2026}", "query-hydrus", Later("6.g")),
+            item("Re-check Queued Imports", "reconcile", Later("6.g")),
+            item("Pawchive Index\u{2026}", "pawchive-index", Later("6.g")),
+            Entry::Separator,
+            keyed(
+                "Save Session As\u{2026}",
+                "save-session-as",
+                "<Ctrl>s",
+                Shell,
+            ),
+            keyed("Open Session\u{2026}", "open-session", "<Ctrl>o", Shell),
+            Entry::Separator,
+            item("Export Results\u{2026}", "export-results", Later("6.d")),
+            item("Write Tag Files\u{2026}", "write-tag-files", Later("6.d")),
+            Entry::Separator,
+            item("Open Matched URLs Log", "open-log", Shell),
+            Entry::Separator,
+            item("Exit", "quit", Shell),
+        ],
+    };
+    let hydrus = Menu {
+        title: "_Hydrus",
+        entries: vec![
+            item(
+                "Send File + URL + Tags to Hydrus (upload)",
+                "send-to-hydrus",
+                Later("6.g"),
+            ),
+            item(
+                "Send URL to Hydrus's URL Importer\u{2026}",
+                "import-url-to-hydrus",
+                Later("6.g"),
+            ),
+            Entry::Separator,
+            // The same action the Files menu holds: one action, two homes.
+            item("Re-check Queued Imports", "reconcile", Later("6.g")),
+        ],
+    };
+    let mut sites_entries = vec![
+        item("Select All", "sites-select-all", Later("6.e")),
+        item("Select None", "sites-select-none", Later("6.e")),
+        Entry::Separator,
+    ];
+    for site in all_site_options() {
+        sites_entries.push(Entry::Check {
+            label: site.clone(),
+            action: "site",
+            target: site,
+            owner: Later("6.e"),
+        });
+    }
+    let sites = Menu {
+        title: "Si_tes",
+        entries: sites_entries,
+    };
+    let settings = Menu {
+        title: "_Settings",
+        entries: vec![
+            item("Preferences\u{2026}", "preferences", Later("6.h")),
+            item(
+                "Edit Match Conditions\u{2026}",
+                "edit-conditions",
+                Later("6.f"),
+            ),
+            Entry::Separator,
+            Entry::Radio {
+                title: "Theme",
+                action: "theme",
+                choices: vec![
+                    ("system", "Follow the desktop"),
+                    ("dark", "Dark"),
+                    ("light", "Light"),
+                ],
+                owner: Shell,
+            },
+        ],
+    };
+    let help = Menu {
+        title: "_Help",
+        entries: vec![
+            item("View Logs\u{2026}", "view-logs", Shell),
+            item("Parser Health\u{2026}", "parser-health", Later("6.e")),
+            item(
+                "Clear Search Cache\u{2026}",
+                "clear-search-cache",
+                Later("6.d"),
+            ),
+            item(
+                "Clear List and Saved Session\u{2026}",
+                "clear-session",
+                Shell,
+            ),
+        ],
+    };
+    vec![files, hydrus, sites, settings, help]
+}
+
+/// Every `(action, owner)` pair in the menus, once each, in first-appearance order.
+pub fn actions() -> Vec<(&'static str, Owner)> {
+    let mut seen: Vec<(&'static str, Owner)> = Vec::new();
+    for menu in menus() {
+        for e in &menu.entries {
+            let (name, owner) = match e {
+                Entry::Item { action, owner, .. }
+                | Entry::Check { action, owner, .. }
+                | Entry::Radio { action, owner, .. } => (*action, *owner),
+                Entry::Separator => continue,
+            };
+            if !seen.iter().any(|(n, _)| *n == name) {
+                seen.push((name, owner));
+            }
+        }
+    }
+    seen
+}
+
+/// The actions a later ticket owns, with the ticket: what 6.j must find gone.
+pub fn deferred() -> Vec<(&'static str, &'static str)> {
+    actions()
+        .into_iter()
+        .filter_map(|(n, o)| match o {
+            Owner::Later(t) => Some((n, t)),
+            Owner::Shell => None,
+        })
+        .collect()
+}
+
+/// The accelerators: `(action with target, accelerator)`.
+pub fn accelerators() -> Vec<(String, &'static str)> {
+    let mut out = Vec::new();
+    for menu in menus() {
+        for e in menu.entries {
+            if let Entry::Item {
+                action,
+                accel: Some(a),
+                ..
+            } = e
+            {
+                out.push((format!("win.{action}"), a));
+            }
+        }
+    }
+    out
+}
+
+/// The `gio::Menu` for the menubar.
+pub fn model() -> gio::Menu {
+    let bar = gio::Menu::new();
+    for menu in menus() {
+        let m = gio::Menu::new();
+        let mut section = gio::Menu::new();
+        for e in &menu.entries {
+            match e {
+                Entry::Item { label, action, .. } => {
+                    section.append(Some(label), Some(&format!("win.{action}")));
+                }
+                Entry::Check {
+                    label,
+                    action,
+                    target,
+                    ..
+                } => {
+                    let it = gio::MenuItem::new(Some(label), None);
+                    it.set_action_and_target_value(
+                        Some(&format!("win.{action}")),
+                        Some(&gtk4::glib::Variant::from(target.as_str())),
+                    );
+                    section.append_item(&it);
+                }
+                Entry::Radio {
+                    title,
+                    action,
+                    choices,
+                    ..
+                } => {
+                    let sub = gio::Menu::new();
+                    for (value, label) in choices {
+                        let it = gio::MenuItem::new(Some(label), None);
+                        it.set_action_and_target_value(
+                            Some(&format!("win.{action}")),
+                            Some(&gtk4::glib::Variant::from(*value)),
+                        );
+                        sub.append_item(&it);
+                    }
+                    section.append_submenu(Some(title), &sub);
+                }
+                Entry::Separator => {
+                    m.append_section(None, &section);
+                    section = gio::Menu::new();
+                }
+            }
+        }
+        m.append_section(None, &section);
+        bar.append_submenu(Some(menu.title), &m);
+    }
+    bar
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn labels(menu: &Menu) -> Vec<String> {
+        menu.entries
+            .iter()
+            .map(|e| match e {
+                Entry::Item { label, .. } => (*label).to_owned(),
+                Entry::Check { label, .. } => format!("[x] {label}"),
+                Entry::Radio { title, .. } => format!("{title} >"),
+                Entry::Separator => "-".to_owned(),
+            })
+            .collect()
+    }
+
+    /// `_build_menu` at `76c85c4`: the Files menu, entry for entry.
+    #[test]
+    fn the_files_menu_is_pythons() {
+        let m = &menus()[0];
+        assert_eq!(m.title, "_Files");
+        assert_eq!(
+            labels(m),
+            [
+                "Add Files\u{2026}",
+                "Add Folder\u{2026}",
+                "Query Hydrus\u{2026}",
+                "Re-check Queued Imports",
+                "Pawchive Index\u{2026}",
+                "-",
+                "Save Session As\u{2026}",
+                "Open Session\u{2026}",
+                "-",
+                "Export Results\u{2026}",
+                "Write Tag Files\u{2026}",
+                "-",
+                "Open Matched URLs Log",
+                "-",
+                "Exit",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_other_menus_are_pythons() {
+        let all = menus();
+        let titles: Vec<_> = all.iter().map(|m| m.title).collect();
+        assert_eq!(
+            titles,
+            ["_Files", "_Hydrus", "Si_tes", "_Settings", "_Help"]
+        );
+        assert_eq!(
+            labels(&all[1]),
+            [
+                "Send File + URL + Tags to Hydrus (upload)",
+                "Send URL to Hydrus's URL Importer\u{2026}",
+                "-",
+                "Re-check Queued Imports",
+            ]
+        );
+        assert_eq!(
+            labels(&all[3]),
+            [
+                "Preferences\u{2026}",
+                "Edit Match Conditions\u{2026}",
+                "-",
+                "Theme >"
+            ]
+        );
+        assert_eq!(
+            labels(&all[4]),
+            [
+                "View Logs\u{2026}",
+                "Parser Health\u{2026}",
+                "Clear Search Cache\u{2026}",
+                "Clear List and Saved Session\u{2026}",
+            ]
+        );
+        let sites = labels(&all[2]);
+        assert_eq!(&sites[..3], ["Select All", "Select None", "-"]);
+        assert_eq!(sites.len(), 3 + all_site_options().len());
+        assert_eq!(sites.last().unwrap(), "[x] Other");
+    }
+
+    #[test]
+    fn the_theme_choices_are_pythons_labels() {
+        let Entry::Radio { choices, .. } = &menus()[3].entries[3] else {
+            panic!("no theme submenu");
+        };
+        assert_eq!(
+            choices,
+            &[
+                ("system", "Follow the desktop"),
+                ("dark", "Dark"),
+                ("light", "Light")
+            ]
+        );
+    }
+
+    #[test]
+    fn only_two_items_carry_an_accelerator() {
+        assert_eq!(
+            accelerators(),
+            [
+                ("win.save-session-as".to_owned(), "<Ctrl>s"),
+                ("win.open-session".to_owned(), "<Ctrl>o"),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_same_action_in_two_menus_is_registered_once() {
+        let names: Vec<_> = actions().iter().map(|(n, _)| *n).collect();
+        assert_eq!(names.iter().filter(|n| **n == "reconcile").count(), 1);
+    }
+
+    #[test]
+    fn every_deferred_action_names_a_ticket() {
+        let d = deferred();
+        assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
+        for want in [
+            "query-hydrus",
+            "export-results",
+            "parser-health",
+            "preferences",
+            "edit-conditions",
+            "clear-search-cache",
+            "sites-select-all",
+            "site",
+        ] {
+            assert!(d.iter().any(|(n, _)| *n == want), "{want} not deferred");
+        }
+        for working in [
+            "add-files",
+            "add-folder",
+            "save-session-as",
+            "open-session",
+            "open-log",
+            "quit",
+            "view-logs",
+            "clear-session",
+            "theme",
+        ] {
+            assert!(!d.iter().any(|(n, _)| *n == working), "{working} is 6.c's");
+        }
+    }
+}
