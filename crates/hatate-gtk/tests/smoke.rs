@@ -1274,19 +1274,36 @@ fn design_follow_ups_paint_as_specified(app: &adw::Application) {
         );
         assert_eq!(px(&img, 16, img.1 - 16)[3], 255, "{name}: and opaque");
 
-        // The card: libadwaita's own `.card` draws a 1 px ring and a shadow outside its box.
+        // The card: libadwaita's own `.card` draws a ring and a shadow outside its box, which a
+        // paintable of the card alone does not hold. Read the margin around it from its parent.
         let card = find_class(&root, "card").expect("the Queue card");
-        let img = render(&card, 6);
-        for (x, y) in [
-            (5, img.1 / 2),
-            (img.0 - 6, img.1 / 2),
-            (img.0 / 2, 5),
-            (img.0 / 2, img.1 - 6),
-        ] {
+        // The nearest ancestor with room around the card.
+        let mut up = card.parent();
+        let (parent, cx, cy) = loop {
+            let p = up.expect("an ancestor with room around the card");
+            let at = card
+                .compute_point(&p, &gtk4::graphene::Point::new(0.0, 0.0))
+                .expect("the card's place in its ancestor");
+            if at.x() >= 20.0 && at.y() >= 20.0 {
+                break (p, at.x() as usize, at.y() as usize);
+            }
+            up = p.parent();
+        };
+        let img = render(&parent, 0);
+        let mid_y = cy + card.height() as usize / 2;
+        let right = cx + card.width() as usize;
+        assert!(right + 20 <= img.0, "{name}: room right of the card");
+        let (ref_l, ref_r) = (px(&img, cx - 18, mid_y), px(&img, right + 18, mid_y));
+        for d in 1..=8 {
             assert_eq!(
-                px(&img, x, y)[3],
-                0,
-                "{name}: nothing is drawn outside the card's box at ({x},{y})"
+                px(&img, cx - d, mid_y),
+                ref_l,
+                "{name}: the page is plain {d}px left of the card (no outline or shadow)"
+            );
+            assert_eq!(
+                px(&img, right + d - 1, mid_y),
+                ref_r,
+                "{name}: the page is plain {d}px right of the card"
             );
         }
 
