@@ -3,7 +3,8 @@
 //! the shipped binary has no way to do this. Shows only the synthetic profile it creates.
 //!
 //! `STATE` is one of `empty` (default), `rows`, `crashed`, `survived`, `quota`, `dialog` (the
-//! Clear Session question), `logs` (the log viewer), `menu` (the first menu open) or `focus` (the
+//! Clear Session question), `logs` (the log viewer), `logs-selected` (the log viewer with the path
+//! line selected and focused) or `logs-selected-body` (the log body selected and focused), `menu` (the first menu open) or `focus` (the
 //! first button focused with the ring showing), `focus-files` / `focus-folder` (the stamp-filled Add
 //! files, the hollow Add folder, focused with the ring showing) or `hover-folder` (Add folder under
 //! the pointer) or `menu-hover` (the Files menu open with `Save Session As…` under the pointer). The size `min` is the window's stated minimum.
@@ -102,6 +103,16 @@ fn main() -> glib::ExitCode {
     }
 
     let mut env = Env::new(paths, unclean);
+    if state.starts_with("logs") {
+        // A few synthetic records, so the log body has text to measure.
+        for line in [
+            "2026-10-24T11:00:00Z  INFO hatate_gtk::app: window up (synthetic)",
+            "2026-10-24T11:00:01Z  INFO hatate_gtk::session_ops: session restored, 3 rows (synthetic)",
+            "2026-10-24T11:00:02Z  WARN hatate_gtk::startup: previous run did not close cleanly (synthetic)",
+        ] {
+            env.log_ring.push(line.into());
+        }
+    }
     env.clock = Rc::new(|| NOW);
     let out2 = out.clone();
     let code = app::run_with(env, move |window| {
@@ -125,7 +136,8 @@ fn main() -> glib::ExitCode {
                 return glib::ControlFlow::Continue;
             }
             // The log viewer is its own window; its shot is that window's, not the main one's.
-            let logs_window = (state == "logs")
+            let logs_window = state
+                .starts_with("logs")
                 .then(|| {
                     gtk4::Window::list_toplevels()
                         .into_iter()
@@ -178,6 +190,29 @@ fn prepare(window: &MainWindow, state: &str) {
     match state {
         "dialog" => window.activate_action("clear-session"),
         "logs" => window.activate_action("view-logs"),
+        "logs-selected" | "logs-selected-body" => {
+            window.activate_action("view-logs");
+            let viewer = window
+                .s
+                .log_viewer
+                .borrow()
+                .clone()
+                .expect("the log viewer");
+            let body = state == "logs-selected-body";
+            // The state a person meets when they tab onto the path line: focus on it selects it.
+            // After the window is mapped: a selection made before that is cleared by the map.
+            glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || {
+                // Only one selection exists at a time (the other widget gives it up).
+                if body {
+                    let buffer = viewer.text.buffer();
+                    viewer.text.grab_focus();
+                    buffer.select_range(&buffer.start_iter(), &buffer.end_iter());
+                } else {
+                    viewer.path_label.grab_focus();
+                    viewer.path_label.select_region(0, -1);
+                }
+            });
+        }
         "menu" => {
             if let Some(p) = first_popover_menu(window.win.upcast_ref()) {
                 p.popup();
@@ -257,22 +292,79 @@ fn label_rects(w: &gtk4::Widget, root: &gtk4::Widget, out: &mut String) {
         let text = l.text();
         if l.is_mapped() && !text.is_empty() {
             if let Some(b) = w.compute_bounds(root) {
+                // A selected label's box is cut to its text: past it is the page, and the farthest
+                // pixel from the wash would be the page, not a glyph (two pixels in: the selection ends short of the
+                // layout's rounded width).
+                let selected = l.selection_bounds().is_some();
+                let width = if selected {
+                    (l.layout().pixel_extents().1.width() - 2) as f32
+                } else {
+                    b.width()
+                };
                 out.push_str(&format!(
                     "{:.0}\t{:.0}\t{:.0}\t{:.0}\t{}\t{}\n",
                     b.x(),
                     b.y(),
-                    b.width(),
+                    width,
                     b.height(),
-                    if w.is_sensitive() { "on" } else { "disabled" },
+                    if selected {
+                        "selected"
+                    } else if w.is_sensitive() {
+                        "on"
+                    } else {
+                        "disabled"
+                    },
                     text.replace(['\t', '\n'], " ")
                 ));
             }
+        }
+    }
+    // The log body is a text view, not a label: one box per line, `selected` where the selection
+    // covers it, so the sweep reads the selected-text state too.
+    if let Some(tv) = w.downcast_ref::<gtk4::TextView>() {
+        if tv.is_mapped() {
+            text_view_rects(tv, root, out);
         }
     }
     let mut c = w.first_child();
     while let Some(child) = c {
         label_rects(&child, root, out);
         c = child.next_sibling();
+    }
+}
+
+/// One `<x y w h state text>` line per text line of `tv`: `selected` when the selection touches it.
+fn text_view_rects(tv: &gtk4::TextView, root: &gtk4::Widget, out: &mut String) {
+    let buffer = tv.buffer();
+    let sel = buffer.selection_bounds();
+    let origin = tv
+        .compute_point(root, &gtk4::graphene::Point::new(0.0, 0.0))
+        .expect("the text view's place");
+    for line in 0..buffer.line_count() {
+        let Some(start) = buffer.iter_at_line(line) else {
+            break;
+        };
+        let mut end = start;
+        if !end.ends_line() {
+            end.forward_to_line_end();
+        }
+        let text = buffer.text(&start, &end, false);
+        if text.is_empty() {
+            continue;
+        }
+        let (a, b) = (tv.iter_location(&start), tv.iter_location(&end));
+        let (wx, wy) = tv.buffer_to_window_coords(gtk4::TextWindowType::Widget, a.x(), a.y());
+        let selected = sel
+            .is_some_and(|(s0, s1)| s0.offset() <= start.offset() && end.offset() <= s1.offset());
+        out.push_str(&format!(
+            "{:.0}\t{:.0}\t{}\t{}\t{}\t{}\n",
+            f64::from(wx) + f64::from(origin.x()),
+            f64::from(wy) + f64::from(origin.y()),
+            (b.x() - a.x()).max(1),
+            a.height(),
+            if selected { "selected" } else { "on" },
+            text
+        ));
     }
 }
 
