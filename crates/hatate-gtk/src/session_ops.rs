@@ -873,12 +873,11 @@ impl MainWindow {
         }
     }
 
-    /// `save_session(self.entries)`: the final save of the automatic session.
+    /// `save_session(self.entries)`: the final save of the automatic session. A full write, and
+    /// not skipped for an empty list (unlike the autosave): Python writes the empty list too, so
+    /// a list emptied since the last save leaves an empty session behind, not the old rows.
     fn save_session_now(&self) {
         let entries: Vec<Entry> = self.s.queue.borrow().entries().to_vec();
-        if entries.is_empty() {
-            return;
-        }
         match SessionStore::new(&self.s.paths).open_writer() {
             Ok(writer) => {
                 if let Err(e) = writer.save(&entries, (self.s.clock)()) {
