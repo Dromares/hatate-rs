@@ -164,7 +164,7 @@ async fn a_search_ranks_exact_matches_by_position_and_reports_ready() {
     );
     assert_eq!(
         *rig.connections.lock().unwrap(),
-        vec![LensConnection::Ready]
+        vec![LensConnection::WaitingForLens, LensConnection::Ready]
     );
     assert_eq!(rig.client.connection(), Some(LensConnection::Ready));
     assert!(!rig.client.is_blocked());
@@ -191,9 +191,18 @@ async fn three_failed_images_in_a_row_stand_the_engine_down_until_a_search_start
     assert!(text.starts_with("the browser could not read the results (page crashed) That has now happened to 3 images in a row,"));
     assert!(rig.client.is_blocked());
     assert!(!rig.client.is_resting(), "a stand-down is not a rest");
+    // Each image waits on Lens; the first two fall back to what the state was (nothing, so
+    // `Ready`: the browser answered, only the image did not), the third stands the engine down.
     assert_eq!(
         *rig.connections.lock().unwrap(),
-        vec![LensConnection::Blocked]
+        vec![
+            LensConnection::WaitingForLens,
+            LensConnection::Ready,
+            LensConnection::WaitingForLens,
+            LensConnection::Ready,
+            LensConnection::WaitingForLens,
+            LensConnection::Blocked
+        ]
     );
 
     rig.client.reset_blocked_flag();
@@ -515,4 +524,72 @@ async fn a_picture_over_the_upload_budget_is_re_encoded_before_it_goes_up() {
     let (len, name, _, _) = rig.script.asked().remove(0);
     assert_eq!(name, "big.jpg");
     assert!((len as u64) <= 2 * 1024 * 1024);
+}
+
+/// A fetch that reports what the sink has heard while Lens is "answering".
+struct Watching {
+    heard: Arc<Mutex<Vec<LensConnection>>>,
+    during: Arc<Mutex<Option<Vec<LensConnection>>>>,
+}
+
+impl LensFetch for Watching {
+    fn fetch_results_payloads<'a>(
+        &'a self,
+        _: &'a [u8],
+        _: &'a str,
+        _: f64,
+        _: bool,
+    ) -> BoxFuture<'a, Result<LensPayloads, LensFetchError>> {
+        *self.during.lock().unwrap() = Some(self.heard.lock().unwrap().clone());
+        Box::pin(std::future::ready(Err(LensFetchError::Browser(
+            "page crashed".to_owned(),
+        ))))
+    }
+}
+
+#[tokio::test]
+async fn a_search_under_way_waits_on_lens_and_a_failed_image_does_not_leave_it_waiting() {
+    let heard = Arc::new(Mutex::new(Vec::new()));
+    let during = Arc::new(Mutex::new(None));
+    let seen = Arc::clone(&heard);
+    let client = LensClient::with_fetch(Arc::new(Watching {
+        heard: Arc::clone(&heard),
+        during: Arc::clone(&during),
+    }))
+    .with_connection_sink(Arc::new(move |c| seen.lock().unwrap().push(c)));
+    let rig = rig();
+    let path = rig.png("a.png");
+    let result = client.search(&path, 90.0, None, true).await;
+    assert!(matches!(result, Err(LensError::Failed(_))));
+    assert_eq!(
+        *during.lock().unwrap(),
+        Some(vec![LensConnection::WaitingForLens]),
+        "reported before the browser is asked, so a UI shows it while the page loads"
+    );
+    assert_eq!(
+        *heard.lock().unwrap(),
+        vec![LensConnection::WaitingForLens, LensConnection::Ready],
+        "one failed image is not a verdict on Lens"
+    );
+    assert_eq!(client.connection(), Some(LensConnection::Ready));
+}
+
+#[tokio::test]
+async fn a_browser_that_cannot_start_is_not_reachable_and_stays_so_for_the_run() {
+    let rig = rig();
+    let path = rig.png("a.png");
+    rig.script.then(Err(LensFetchError::Unavailable {
+        message: "no browser".to_owned(),
+        missing: Some(LensMissing::Chromium),
+    }));
+    assert!(matches!(
+        rig.search(&path).await,
+        Err(LensError::Unavailable(_))
+    ));
+    assert_eq!(
+        *rig.connections.lock().unwrap(),
+        vec![LensConnection::WaitingForLens, LensConnection::NotReachable]
+    );
+    assert_eq!(rig.client.connection(), Some(LensConnection::NotReachable));
+    assert!(rig.client.is_blocked(), "latched, as before");
 }

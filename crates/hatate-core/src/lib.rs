@@ -24,6 +24,7 @@ pub mod hydrus_url;
 pub mod image_compare;
 pub mod image_diff;
 pub mod image_prep;
+pub mod lens_browser;
 pub mod localtime;
 pub mod lru;
 pub mod mcp;
