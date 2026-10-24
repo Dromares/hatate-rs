@@ -105,11 +105,25 @@ more than once). Totals over the three seeds:
 |---|---|---|---|
 | D | dependency message copy (section 2) | 6 | **granted** by the ticket |
 | P3 | a browser on `PATH`: Python says missing, Rust finds it | 95 | **granted** (plan decision: `PATH` lookup) |
-| A | the transport flag: Playwright launches with `--remote-debugging-pipe`, `chromiumoxide` with `--remote-debugging-port=0`; the rest of the argv is equal | 153 | not granted; brought to Cloud |
-| B | launch-failure text after the `The browser could not be started: ` prefix: Playwright's call log vs the process output | 6 | not granted; brought to Cloud |
-| E | a failed navigation (`net::ERR_*`): Playwright's next `goto` is "interrupted by another navigation to chrome-error://chromewebdata/", so one more wait is requested by the Rust side (`[3000, 3000]` vs `[3000, 3000, 2000]`, and `[]` vs `[2000, 2000]`) | 6 | not granted; brought to Cloud |
-| P1 | `PLAYWRIGHT_BROWSERS_PATH=0`: Python cannot tell where the browsers are and carries on to the launch; Rust has no browser | 14 | not granted; brought to Cloud |
-| P2 | a `chromium-*` directory with no executable inside: Python's check says present, Rust's says missing | 13 | not granted; brought to Cloud |
+| A | the transport flag: Playwright launches with `--remote-debugging-pipe`, `chromiumoxide` with `--remote-debugging-port=0`; the rest of the argv is equal | 153 | **granted** on DAN-2192 |
+| B | launch-failure text after the `The browser could not be started: ` prefix: Playwright's call log vs the process output | 6 | **granted** on DAN-2192 |
+| E | a failed navigation (`net::ERR_*`): Playwright's next `goto` is "interrupted by another navigation to chrome-error://chromewebdata/", so one more wait is requested by the Rust side (`[3000, 3000]` vs `[3000, 3000, 2000]`, and `[]` vs `[2000, 2000]`) | 6 | **granted** on DAN-2192 |
+| P1 | `PLAYWRIGHT_BROWSERS_PATH=0`: Python cannot tell where the browsers are and carries on to the launch; Rust has no Playwright package to look inside | 14 | **granted** on DAN-2192 |
+| P2 | a `chromium-*` directory with no executable inside: Python's check says present, Rust's says missing | 13 | **granted** on DAN-2192: Rust's behaviour is kept |
+
+### Granted on DAN-2192
+
+Cloud granted classes A, B, E, P1 and P2 on [DAN-2192](/DAN/issues/DAN-2192) (2026-10-23), each with a
+condition. The totals above are over seeds 101, 202 and 303 (473 cases, 0 unexplained). The conditions
+and where they are checked:
+
+| class | condition | where it holds |
+|---|---|---|
+| A | Apart from the one flag, argv is byte-equal. The debugging port binds to loopback only. `navigator.webdriver`, window class, size, locale and profile stay exact. | argv, `navigator.webdriver`, class, size, locale and profile are compared exactly in every one of the browser cases, and none of them differs. Loopback: `ss -ltnp` sampled every 0.2 s through `the_warm_up_turns_safesearch_off_once_and_runs_both_searches` (7 samples) shows one listener of the browser, `127.0.0.1:<port>`, and none on `0.0.0.0` or `[::]` (`worktrees/DAN-2164-ss.log`). |
+| B | `The browser could not be started: ` and the `missing` classification are equal on both sides. The raw process output or spawn error is in `detail()`; `user_message()` has no path, profile path or `os error` text. | The prefix and `missing` are compared in every launch-failure case. `the_error_shape_keeps_paths_and_os_text_out_of_the_user_message` asserts the `user_message` of the browser-error answers contains neither a profile path, a URL query, a key nor `os error`, and that `detail()` still carries the OS text. |
+| E | In the 6 cases the returned error class and message, the request log and the module state are equal; only the wait list differs. | The harness counts a case into E only after every other compared field matched. |
+| P1 | Rust then falls through to `PATH`, or reports Chromium missing with the new copy. It does not crash and does not hang. | 62 `PLAYWRIGHT_BROWSERS_PATH=0` rows over the three seeds: in 31 Rust finds the `PATH` browser, in 31 it reports Chromium missing with the new copy (14 of those are the P1 count). None crashed or hung; every case in the log finished inside its budget. |
+| P2 | At least one case has a working browser on `PATH`, and Rust picks it up. Rust keeps its behaviour: a stale directory must not hide a good browser. | The 13 counted P2 cases are the ones where Rust has nowhere else to look (no `PATH` browser, or the AppImage, which never uses `PATH`). Where the stale directory sits next to a working `PATH` browser outside the AppImage, Rust picks the `PATH` browser: 25 such rows over the three seeds (for example seed 101 `deps-3`, `deps-9`, `deps-51`), reported as `path:<name>`; both sides say "ok", so they are not counted as differences. |
 
 ## 4. Python tests that exercise this code
 
