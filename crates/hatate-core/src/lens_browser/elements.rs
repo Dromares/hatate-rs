@@ -12,7 +12,6 @@
 //! whitespace-normalised text is the label and none of whose children's is, outside `<script>`,
 //! `<style>`, `<noscript>` and `<head>`, descending into open shadow roots.
 
-use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -24,11 +23,12 @@ use chromiumoxide::cdp::browser_protocol::network::{
     EventLoadingFailed, EventLoadingFinished, EventResponseReceived, GetResponseBodyParams,
     ResourceType,
 };
+use chromiumoxide::cdp::browser_protocol::page::EventLoadEventFired;
 use chromiumoxide::cdp::js_protocol::runtime::{
     CallArgument, CallFunctionOnParams, EvaluateParams, ReleaseObjectGroupParams, RemoteObjectId,
 };
 use chromiumoxide::error::CdpError;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tokio::task::JoinHandle;
@@ -163,6 +163,14 @@ impl Drop for ResponseCapture {
 /// Playwright's `Mouse` button mask for the left button.
 const LEFT_MASK: i64 = 1;
 
+/// A response whose body the capture is after: a document, XHR or fetch with a URL the caller wants.
+fn is_wanted(url_wanted: &impl Fn(&str) -> bool, event: &EventResponseReceived) -> bool {
+    matches!(
+        event.r#type,
+        ResourceType::Document | ResourceType::Xhr | ResourceType::Fetch
+    ) && url_wanted(&event.response.url)
+}
+
 impl LensPage {
     /// Starts listening for responses. `want(resource_type_is_document_xhr_or_fetch_url, body)`:
     /// the URL test and the body test are the caller's (`"/search" in response.url` and
@@ -194,61 +202,53 @@ impl LensPage {
         let sink = Arc::clone(&bodies);
         let page = self.page.clone();
         let task = tokio::spawn(async move {
-            // Responses waiting for their body, oldest first; the ids that finished or failed.
-            let mut pending: VecDeque<chromiumoxide::cdp::browser_protocol::network::RequestId> =
-                VecDeque::new();
-            let mut done: std::collections::HashMap<String, bool> = Default::default();
+            // Playwright runs one `response.text()` per response, each waiting on its own
+            // response to finish: a fetch the page never reads to the end (so it never finishes)
+            // must not hold up the bodies of the responses after it. A body is read when its
+            // response finishes, in the order they finish.
+            let mut wanted: std::collections::HashSet<String> = Default::default();
             loop {
-                // Read the oldest response whose outcome is known, before listening again.
-                while let Some(id) = pending.front().cloned() {
-                    let Some(&loaded) = done.get(id.as_ref()) else {
-                        break;
-                    };
-                    pending.pop_front();
-                    done.remove(id.as_ref());
-                    if !loaded {
-                        continue;
-                    }
-                    let Ok(reply) = page.execute(GetResponseBodyParams::new(id)).await else {
-                        continue;
-                    };
-                    let bytes = if reply.result.base64_encoded {
-                        match base64::engine::general_purpose::STANDARD.decode(&reply.result.body) {
-                            Ok(bytes) => bytes,
-                            Err(_) => continue,
-                        }
-                    } else {
-                        reply.result.body.clone().into_bytes()
-                    };
-                    let Ok(text) = String::from_utf8(bytes) else {
-                        continue;
-                    };
-                    if body_wanted(&text) {
-                        sink.lock().unwrap_or_else(|p| p.into_inner()).push(text);
-                    }
-                }
                 tokio::select! {
-                    Some(event) = received.next() => {
-                        // A new document unloads the old page, and a response of the old page that
-                        // has not finished never will: Playwright's `response.text()` fails for it
-                        // and the handler moves on.
-                        if matches!(event.r#type, ResourceType::Document) {
-                            pending.retain(|id| done.contains_key(id.as_ref()));
-                        }
-                        if matches!(event.r#type, ResourceType::Document | ResourceType::Xhr | ResourceType::Fetch)
-                            && url_wanted(&event.response.url)
-                        {
-                            pending.push_back(event.request_id.clone());
-                        }
-                    }
-                    Some(event) = finished.next() => {
-                        done.insert(event.request_id.as_ref().to_owned(), true);
-                    }
-                    Some(event) = failed.next() => {
-                        done.insert(event.request_id.as_ref().to_owned(), false);
-                    }
-                    else => return,
+                                   Some(event) = received.next() => {
+                                       if is_wanted(&url_wanted, &event) {
+                wanted.insert(event.request_id.as_ref().to_owned());
                 }
+                                   }
+                                   Some(event) = finished.next() => {
+                                       // The channels are polled in no fixed order: take the responses that
+                                       // arrived before this outcome first.
+                                       while let Some(Some(event)) = received.next().now_or_never() {
+                                           if is_wanted(&url_wanted, &event) {
+                wanted.insert(event.request_id.as_ref().to_owned());
+                }
+                                       }
+                                       if !wanted.remove(event.request_id.as_ref()) {
+                                           continue;
+                                       }
+                                       // A response of a page that has since been unloaded has no body to read.
+                                       let Ok(reply) = page.execute(GetResponseBodyParams::new(event.request_id.clone())).await else {
+                                           continue;
+                                       };
+                                       let bytes = if reply.result.base64_encoded {
+                                           match base64::engine::general_purpose::STANDARD.decode(&reply.result.body) {
+                                               Ok(bytes) => bytes,
+                                               Err(_) => continue,
+                                           }
+                                       } else {
+                                           reply.result.body.clone().into_bytes()
+                                       };
+                                       let Ok(text) = String::from_utf8(bytes) else {
+                                           continue;
+                                       };
+                                       if body_wanted(&text) {
+                                           sink.lock().unwrap_or_else(|p| p.into_inner()).push(text);
+                                       }
+                                   }
+                                   Some(event) = failed.next() => {
+                                       wanted.remove(event.request_id.as_ref());
+                                   }
+                                   else => return,
+                               }
             }
         });
         Ok(ResponseCapture { bodies, task })
@@ -290,23 +290,28 @@ impl LensPage {
     ) -> Result<(), PageError> {
         const API: &str = "Page.wait_for_url";
         self.check(API)?;
+        // Woken by the page's `load` event as Playwright is, with a poll as the fallback: a
+        // client that notices a load tens of milliseconds late starts its settle with bodies that
+        // Python's settle sees arrive.
+        let mut loaded = self
+            .page
+            .event_listener::<EventLoadEventFired>()
+            .await
+            .map_err(|e| PageError::from_cdp(API, &e))?;
         let work = async {
             loop {
                 self.check(API)?;
-                if matches(&self.url().await) {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-            // The `load` event of the page that matched.
-            loop {
-                self.check(API)?;
-                if let Ok(Value::String(state)) = self.evaluate_value("document.readyState").await
+                if matches(&self.url().await)
+                    && let Ok(Value::String(state)) =
+                        self.evaluate_value("document.readyState").await
                     && state == "complete"
                 {
                     return Ok(());
                 }
-                tokio::time::sleep(Duration::from_millis(20)).await;
+                tokio::select! {
+                    _ = loaded.next() => {}
+                    _ = tokio::time::sleep(Duration::from_millis(20)) => {}
+                }
             }
         };
         match tokio::time::timeout(Duration::from_millis(timeout_ms), work).await {
