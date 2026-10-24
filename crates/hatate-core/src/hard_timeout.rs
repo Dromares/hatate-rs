@@ -34,6 +34,23 @@ impl fmt::Display for HardTimeoutError {
 
 impl std::error::Error for HardTimeoutError {}
 
+impl HardTimeoutError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        crate::error::ErrorKind::Timeout
+    }
+
+    /// What failed and what to do. Python's text names the call and its address, so none of it is
+    /// shown.
+    pub fn user_message(&self) -> String {
+        "A request took too long and was given up. Try again.".to_owned()
+    }
+
+    /// Python's message.
+    pub fn detail(&self) -> String {
+        self.0.clone()
+    }
+}
+
 /// Python's `f"{seconds:.0f}"`: round half to even, no point. Rust's float formatting rounds the
 /// exact decimal value the same way.
 fn whole_seconds(timeout: Duration) -> String {

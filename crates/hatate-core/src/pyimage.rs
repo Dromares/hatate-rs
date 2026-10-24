@@ -66,6 +66,22 @@ impl std::fmt::Display for DecompressionBomb {
     }
 }
 
+impl DecompressionBomb {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        crate::error::ErrorKind::ImageTooLarge
+    }
+
+    /// What failed and what to do; no path.
+    pub fn user_message(&self) -> String {
+        "This image is too large for Hatate to open, so it was skipped.".to_owned()
+    }
+
+    /// Pillow's message, with the pixel count.
+    pub fn detail(&self) -> String {
+        self.to_string()
+    }
+}
+
 /// [`image_size`], with the decompression-bomb check as an error instead of "not an image".
 pub fn image_size_checked(data: &[u8]) -> Result<Option<(u32, u32)>, DecompressionBomb> {
     let Some((w, h)) = header_size(data) else {

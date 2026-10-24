@@ -77,4 +77,8 @@ pub enum ErrorKind {
     /// A failure that is not one the engine reports for itself: Python lets such an exception
     /// escape the engine's `except` clauses.
     Unexpected,
+    /// A call did not finish inside its hard wall-clock deadline (`HardTimeoutError`).
+    Timeout,
+    /// A URL could not be read: `urlparse` refused it (`ValueError`).
+    InvalidUrl,
 }

@@ -338,6 +338,38 @@ impl std::fmt::Display for YandexError {
 
 impl std::error::Error for YandexError {}
 
+impl YandexError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        match self {
+            YandexError::Failed(_) => crate::error::ErrorKind::EngineFailed,
+            YandexError::Blocked(_) => crate::error::ErrorKind::EngineBlocked,
+            YandexError::Unexpected(raised) => raised.kind(),
+        }
+    }
+
+    /// What failed and what to do; the engine's own text can carry an address, so none of it is
+    /// shown.
+    pub fn user_message(&self) -> String {
+        match self {
+            YandexError::Failed(_) => {
+                "Yandex could not search this image. Try again, or use the other engines."
+                    .to_owned()
+            }
+            YandexError::Blocked(_) => {
+                "Yandex asked for a robot check or failed on several images in a row, so it was \
+                 skipped for now. Try again later, or turn it off in Settings."
+                    .to_owned()
+            }
+            YandexError::Unexpected(raised) => raised.user_message(),
+        }
+    }
+
+    /// The engine's text, for a log.
+    pub fn detail(&self) -> String {
+        self.to_string()
+    }
+}
+
 impl From<UnexpectedInput> for YandexError {
     fn from(raised: UnexpectedInput) -> Self {
         YandexError::Unexpected(raised)

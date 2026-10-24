@@ -86,6 +86,36 @@ impl std::fmt::Display for Ascii2dError {
 
 impl std::error::Error for Ascii2dError {}
 
+impl Ascii2dError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        match self {
+            Ascii2dError::Failed(_) => crate::error::ErrorKind::EngineFailed,
+            Ascii2dError::Blocked => crate::error::ErrorKind::EngineBlocked,
+        }
+    }
+
+    /// What failed and what to do; the engine's own text can carry an address, so none of it is
+    /// shown.
+    pub fn user_message(&self) -> String {
+        match self {
+            Ascii2dError::Failed(_) => {
+                "ascii2d could not search this image. Try again, or use the other engines."
+            }
+            Ascii2dError::Blocked => {
+                "ascii2d is behind a bot check and will not take uploads from this app. It was \
+                 skipped for this run; turn it off under Settings > Engine until the site stops \
+                 challenging."
+            }
+        }
+        .to_owned()
+    }
+
+    /// The engine's text, for a log.
+    pub fn detail(&self) -> String {
+        self.to_string()
+    }
+}
+
 static COLOR_HASH_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)/search/color/([0-9a-f]+)").expect("colour hash regex"));
 static ANY_ELEMENT: LazyLock<Selector> = LazyLock::new(|| Selector::parse("*").expect("selector"));

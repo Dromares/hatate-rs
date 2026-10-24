@@ -81,6 +81,9 @@ pub mod timeutil;
 pub mod upscale_detect;
 pub mod viewport;
 
+#[cfg(test)]
+mod error_shape_tests;
+
 /// Crate name, used by the placeholder test below.
 pub const NAME: &str = "hatate-core";
 

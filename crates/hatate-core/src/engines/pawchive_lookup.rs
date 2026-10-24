@@ -62,6 +62,24 @@ impl std::fmt::Display for PawchiveLookupError {
 
 impl std::error::Error for PawchiveLookupError {}
 
+impl PawchiveLookupError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        crate::error::ErrorKind::EngineFailed
+    }
+
+    /// What failed and what to do; the engine's own text can carry an address, so none of it is
+    /// shown.
+    pub fn user_message(&self) -> String {
+        "The Pawchive lookup could not search this image. Try again, or use the other engines."
+            .to_owned()
+    }
+
+    /// The engine's text, for a log.
+    pub fn detail(&self) -> String {
+        self.0.clone()
+    }
+}
+
 /// The timeout `lookup` is given when the caller says none (`timeout: float = 15.0`).
 pub const DEFAULT_TIMEOUT_SECONDS: f64 = 15.0;
 
@@ -102,6 +120,31 @@ impl fmt::Display for PawchiveError {
 }
 
 impl std::error::Error for PawchiveError {}
+
+impl PawchiveError {
+    pub fn kind(&self) -> crate::error::ErrorKind {
+        match self {
+            PawchiveError::Lookup(e) => e.kind(),
+            PawchiveError::HardTimeout(e) => e.kind(),
+        }
+    }
+
+    /// What failed and what to do; no address.
+    pub fn user_message(&self) -> String {
+        match self {
+            PawchiveError::Lookup(e) => e.user_message(),
+            PawchiveError::HardTimeout(e) => e.user_message(),
+        }
+    }
+
+    /// The exception's text, for a log.
+    pub fn detail(&self) -> String {
+        match self {
+            PawchiveError::Lookup(e) => e.detail(),
+            PawchiveError::HardTimeout(e) => e.detail(),
+        }
+    }
+}
 
 impl From<PawchiveLookupError> for PawchiveError {
     fn from(e: PawchiveLookupError) -> Self {
