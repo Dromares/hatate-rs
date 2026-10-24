@@ -24,7 +24,9 @@ use super::tools::{self, TOOLS};
 use crate::batch::staging::rmtree_ignore_errors;
 use crate::config::{HydrusSettings, McpSettings, Settings};
 use crate::hydrus_client::{HydrusClient, HydrusError};
-use crate::hydrus_import::{ImportResult, download_and_send, send_file_upload, send_url_or_download};
+use crate::hydrus_import::{
+    ImportResult, download_and_send, send_file_upload, send_url_or_download,
+};
 use crate::mcp_images;
 use crate::model::Entry;
 use crate::pycase::casefold;
@@ -43,8 +45,29 @@ use crate::search_engine::SearchEngine;
 pub type HydrusClientFactory =
     Arc<dyn Fn(&HydrusSettings) -> Result<HydrusClient, HydrusError> + Send + Sync>;
 
+/// The limits on a marshaled call, in seconds. Python's constants; a test shortens them.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Timeouts {
+    pub default: f64,
+    pub hydrus_send: f64,
+    pub research_per_image: f64,
+    pub research_floor: f64,
+}
+
+impl Default for Timeouts {
+    fn default() -> Self {
+        Timeouts {
+            default: DEFAULT_TIMEOUT_SECONDS,
+            hydrus_send: HYDRUS_SEND_TIMEOUT_SECONDS,
+            research_per_image: RESEARCH_TIMEOUT_PER_IMAGE_SECONDS,
+            research_floor: RESEARCH_TIMEOUT_FLOOR_SECONDS,
+        }
+    }
+}
+
 /// Everything a handler set needs besides the queue.
 pub struct HandlerEnv {
+    pub timeouts: Timeouts,
     /// `window.settings`: the one object the GUI edits; read on every call.
     pub settings: Arc<Mutex<Settings>>,
     pub engine: Arc<SearchEngine>,
@@ -87,9 +110,11 @@ impl McpToolHandlers {
         perform: impl FnOnce() -> HandlerResult,
     ) -> HandlerResult {
         let settings = self.mcp_settings();
-        let spec = tools::tool(tool_name).ok_or_else(|| HandlerError::new(format!("{tool_name:?}")))?;
+        let spec =
+            tools::tool(tool_name).ok_or_else(|| HandlerError::new(format!("{tool_name:?}")))?;
         let tier = spec.tier.as_str();
-        let refusal = tools::gate(tool_name, &settings).map_err(|e| HandlerError::new(e.detail()))?;
+        let refusal =
+            tools::gate(tool_name, &settings).map_err(|e| HandlerError::new(e.detail()))?;
         if let Some(reason) = refusal {
             let mut entry = AuditEntry::new(tool_name, tier, false);
             entry.arguments = Some(&arguments);
@@ -127,7 +152,10 @@ impl McpToolHandlers {
         audit::record(&entry, &self.env.audit_path, settings.audit_log_max_bytes);
         result.fields.insert(
             0,
-            ("allowed".to_owned(), super::content::ResultValue::Json(json!(true))),
+            (
+                "allowed".to_owned(),
+                super::content::ResultValue::Json(json!(true)),
+            ),
         );
         Ok(result)
     }
@@ -150,7 +178,7 @@ impl McpToolHandlers {
         row: i64,
         candidate_index: i64,
     ) -> Result<Option<(EntryId, String, crate::model::Candidate)>, HandlerError> {
-        self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
+        self.on_model(self.env.timeouts.default, move |m| {
             let Some(id) = m.id_at(row) else {
                 return Ok(None);
             };
@@ -174,17 +202,24 @@ impl McpToolHandlers {
         candidate_index: i64,
         mut candidate: crate::model::Candidate,
     ) -> Result<mcp_images::FullResolutionMatch, HandlerError> {
-        let fetched = self.env.runtime.block_on(mcp_images::fetch_full_resolution_match(
-            &mut candidate,
-            &self.env.engine,
-            &self.env.settings,
-            Some(path),
-        ));
+        let fetched = self
+            .env
+            .runtime
+            .block_on(mcp_images::fetch_full_resolution_match(
+                &mut candidate,
+                &self.env.engine,
+                &self.env.settings,
+                Some(path),
+            ));
         let url = candidate.url.clone();
         self.channel.post(move |m| {
             if let Some(slot) = m
                 .entry_mut(id)
-                .and_then(|e| usize::try_from(candidate_index).ok().and_then(|i| e.candidates.get_mut(i)))
+                .and_then(|e| {
+                    usize::try_from(candidate_index)
+                        .ok()
+                        .and_then(|i| e.candidates.get_mut(i))
+                })
                 .filter(|c| c.url == url)
             {
                 *slot = candidate;
@@ -213,10 +248,11 @@ impl McpToolHandlers {
                 let _ = tx.send(job.run());
             })
             .map_err(|e| HandlerError::new(e.to_string()))?;
-        match rx.recv_timeout(secs(HYDRUS_SEND_TIMEOUT_SECONDS)) {
+        let limit = self.env.timeouts.hydrus_send;
+        match rx.recv_timeout(secs(limit)) {
             Ok(result) => result,
             Err(_) => Err(HandlerError::new(format!(
-                "Timed out after {HYDRUS_SEND_TIMEOUT_SECONDS:.0}s waiting for the GUI thread"
+                "Timed out after {limit:.0}s waiting for the GUI thread"
             ))),
         }
     }
@@ -242,7 +278,7 @@ impl McpHandlers for McpToolHandlers {
             ("filter", json!(filter_text)),
         ]);
         self.run_tool("list_queue", arguments, None, None, || {
-            self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
+            self.on_model(self.env.timeouts.default, move |m| {
                 let mut rows: Vec<Value> = Vec::new();
                 let mut matched: i64 = 0;
                 for (index, entry) in m.entries().iter().enumerate() {
@@ -273,7 +309,7 @@ impl McpHandlers for McpToolHandlers {
     fn get_entry(&self, row: i64) -> HandlerResult {
         let arguments = Self::args(vec![("row", json!(row))]);
         self.run_tool("get_entry", arguments, Some(row), None, || {
-            self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
+            self.on_model(self.env.timeouts.default, move |m| {
                 let Some(entry) = m.entry_at(row) else {
                     return Ok(ToolOutput::new().push(
                         "error",
@@ -292,7 +328,7 @@ impl McpHandlers for McpToolHandlers {
     fn get_candidates(&self, row: i64) -> HandlerResult {
         let arguments = Self::args(vec![("row", json!(row))]);
         self.run_tool("get_candidates", arguments, Some(row), None, || {
-            self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
+            self.on_model(self.env.timeouts.default, move |m| {
                 let Some(entry) = m.entry_at(row) else {
                     return Ok(ToolOutput::new().push(
                         "error",
@@ -301,11 +337,8 @@ impl McpHandlers for McpToolHandlers {
                 };
                 let mut scored: Vec<(f64, Map<String, Value>)> = Vec::new();
                 for (index, candidate) in entry.candidates.iter().enumerate() {
-                    let b = ranking::score_breakdown(
-                        candidate,
-                        entry.local_width,
-                        entry.local_height,
-                    );
+                    let b =
+                        ranking::score_breakdown(candidate, entry.local_width, entry.local_height);
                     let mut item = Map::new();
                     item.insert("candidate_index".into(), json!(index));
                     item.insert("url".into(), json!(candidate.url));
@@ -334,7 +367,11 @@ impl McpHandlers for McpToolHandlers {
                     scored.push((b.score, item));
                 }
                 // `scored.sort(key=lambda item: -item["score"])`: stable, best first.
-                scored.sort_by(|a, b| (-a.0).partial_cmp(&(-b.0)).unwrap_or(std::cmp::Ordering::Equal));
+                scored.sort_by(|a, b| {
+                    (-a.0)
+                        .partial_cmp(&(-b.0))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
                 Ok(ToolOutput::new().push("row", json!(row)).push(
                     "candidates",
                     Value::Array(scored.into_iter().map(|(_, i)| Value::Object(i)).collect()),
@@ -348,38 +385,53 @@ impl McpHandlers for McpToolHandlers {
             ("row", json!(row)),
             ("candidate_index", json!(candidate_index)),
         ]);
-        self.run_tool("get_images", arguments, Some(row), Some(candidate_index), || {
-            let Some((id, path, candidate)) = self.lookup_candidate(row, candidate_index)? else {
-                return Self::done(vec![(
-                    "error",
-                    json!(format!("No row {row} / candidate {candidate_index} to fetch")),
-                )]);
-            };
-            let local_bytes = mcp_images::local_image_bytes(&path);
-            let matched = self.fetch_match(id, &path, candidate_index, candidate)?;
-            Ok(ToolOutput::new()
-                .push("row", json!(row))
-                .push("candidate_index", json!(candidate_index))
-                .push_image(
-                    "local_image",
-                    ImageValue::new(local_bytes, vec![("mime_type".into(), json!(guess_mime(&path)))]),
-                )
-                .push_image(
-                    "match_image",
-                    ImageValue::new(
-                        matched.data,
-                        vec![
-                            (
-                                "mime_type".into(),
-                                json!(guess_mime(matched.url.as_deref().unwrap_or(""))),
-                            ),
-                            ("url".into(), json!(matched.url)),
-                            ("is_full_resolution".into(), json!(matched.is_full_resolution)),
-                            ("fallback_reason".into(), json!(matched.fallback_reason)),
-                        ],
-                    ),
-                ))
-        })
+        self.run_tool(
+            "get_images",
+            arguments,
+            Some(row),
+            Some(candidate_index),
+            || {
+                let Some((id, path, candidate)) = self.lookup_candidate(row, candidate_index)?
+                else {
+                    return Self::done(vec![(
+                        "error",
+                        json!(format!(
+                            "No row {row} / candidate {candidate_index} to fetch"
+                        )),
+                    )]);
+                };
+                let local_bytes = mcp_images::local_image_bytes(&path);
+                let matched = self.fetch_match(id, &path, candidate_index, candidate)?;
+                Ok(ToolOutput::new()
+                    .push("row", json!(row))
+                    .push("candidate_index", json!(candidate_index))
+                    .push_image(
+                        "local_image",
+                        ImageValue::new(
+                            local_bytes,
+                            vec![("mime_type".into(), json!(guess_mime(&path)))],
+                        ),
+                    )
+                    .push_image(
+                        "match_image",
+                        ImageValue::new(
+                            matched.data,
+                            vec![
+                                (
+                                    "mime_type".into(),
+                                    json!(guess_mime(matched.url.as_deref().unwrap_or(""))),
+                                ),
+                                ("url".into(), json!(matched.url)),
+                                (
+                                    "is_full_resolution".into(),
+                                    json!(matched.is_full_resolution),
+                                ),
+                                ("fallback_reason".into(), json!(matched.fallback_reason)),
+                            ],
+                        ),
+                    ))
+            },
+        )
     }
 
     fn get_diff(&self, row: i64, candidate_index: i64) -> HandlerResult {
@@ -387,32 +439,45 @@ impl McpHandlers for McpToolHandlers {
             ("row", json!(row)),
             ("candidate_index", json!(candidate_index)),
         ]);
-        self.run_tool("get_diff", arguments, Some(row), Some(candidate_index), || {
-            let Some((id, path, candidate)) = self.lookup_candidate(row, candidate_index)? else {
-                return Self::done(vec![(
-                    "error",
-                    json!(format!("No row {row} / candidate {candidate_index} to compare")),
-                )]);
-            };
-            let local_bytes = mcp_images::local_image_bytes(&path);
-            let matched = self.fetch_match(id, &path, candidate_index, candidate)?;
-            let diff = mcp_images::compute_diff(local_bytes.as_deref(), matched.data.as_deref())
-                .map_err(|e| HandlerError::new(e.detail()))?;
-            Ok(ToolOutput::new()
-                .push("row", json!(row))
-                .push("candidate_index", json!(candidate_index))
-                .push_image(
-                    "diff_image",
-                    ImageValue::new(
-                        diff.png_bytes,
-                        vec![("mime_type".into(), json!("image/png"))],
-                    ),
-                )
-                .push("changed_percent", num(diff.changed_percent))
-                .push("verdict", json!(diff.verdict))
-                .push("reliable", json!(diff.reliable))
-                .push("match_is_full_resolution", json!(matched.is_full_resolution)))
-        })
+        self.run_tool(
+            "get_diff",
+            arguments,
+            Some(row),
+            Some(candidate_index),
+            || {
+                let Some((id, path, candidate)) = self.lookup_candidate(row, candidate_index)?
+                else {
+                    return Self::done(vec![(
+                        "error",
+                        json!(format!(
+                            "No row {row} / candidate {candidate_index} to compare"
+                        )),
+                    )]);
+                };
+                let local_bytes = mcp_images::local_image_bytes(&path);
+                let matched = self.fetch_match(id, &path, candidate_index, candidate)?;
+                let diff =
+                    mcp_images::compute_diff(local_bytes.as_deref(), matched.data.as_deref())
+                        .map_err(|e| HandlerError::new(e.detail()))?;
+                Ok(ToolOutput::new()
+                    .push("row", json!(row))
+                    .push("candidate_index", json!(candidate_index))
+                    .push_image(
+                        "diff_image",
+                        ImageValue::new(
+                            diff.png_bytes,
+                            vec![("mime_type".into(), json!("image/png"))],
+                        ),
+                    )
+                    .push("changed_percent", num(diff.changed_percent))
+                    .push("verdict", json!(diff.verdict))
+                    .push("reliable", json!(diff.reliable))
+                    .push(
+                        "match_is_full_resolution",
+                        json!(matched.is_full_resolution),
+                    ))
+            },
+        )
     }
 
     fn list_actions(&self) -> HandlerResult {
@@ -420,8 +485,8 @@ impl McpHandlers for McpToolHandlers {
             let settings = self.mcp_settings();
             let mut listed = Vec::new();
             for spec in &TOOLS {
-                let refusal = tools::gate(spec.name, &settings)
-                    .map_err(|e| HandlerError::new(e.detail()))?;
+                let refusal =
+                    tools::gate(spec.name, &settings).map_err(|e| HandlerError::new(e.detail()))?;
                 listed.push(json!({
                     "tool": spec.name,
                     "tier": spec.tier.as_str(),
@@ -442,32 +507,38 @@ impl McpHandlers for McpToolHandlers {
             ("row", json!(row)),
             ("candidate_index", json!(candidate_index)),
         ]);
-        self.run_tool("select_candidate", arguments, Some(row), Some(candidate_index), || {
-            self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
-                let Some(id) = m.id_at(row) else {
-                    return Ok(ToolOutput::new().push("error", json!(format!("No row {row}"))));
-                };
-                let count = m.entry(id).map_or(0, |e| e.candidates.len());
-                let Some(index) = usize::try_from(candidate_index).ok().filter(|i| *i < count)
-                else {
-                    return Ok(ToolOutput::new().push(
-                        "error",
-                        json!(format!("No candidate {candidate_index} for row {row}")),
-                    ));
-                };
-                m.select_candidate(id, index);
-                let selected = m.entry(id).map_or(0, |e| e.selected_candidate_index);
-                Ok(ToolOutput::new()
-                    .push("row", json!(row))
-                    .push("selected_candidate_index", json!(selected)))
-            })
-        })
+        self.run_tool(
+            "select_candidate",
+            arguments,
+            Some(row),
+            Some(candidate_index),
+            || {
+                self.on_model(self.env.timeouts.default, move |m| {
+                    let Some(id) = m.id_at(row) else {
+                        return Ok(ToolOutput::new().push("error", json!(format!("No row {row}"))));
+                    };
+                    let count = m.entry(id).map_or(0, |e| e.candidates.len());
+                    let Some(index) = usize::try_from(candidate_index).ok().filter(|i| *i < count)
+                    else {
+                        return Ok(ToolOutput::new().push(
+                            "error",
+                            json!(format!("No candidate {candidate_index} for row {row}")),
+                        ));
+                    };
+                    m.select_candidate(id, index);
+                    let selected = m.entry(id).map_or(0, |e| e.selected_candidate_index);
+                    Ok(ToolOutput::new()
+                        .push("row", json!(row))
+                        .push("selected_candidate_index", json!(selected)))
+                })
+            },
+        )
     }
 
     fn toggle_reviewed(&self, row: i64, reviewed: bool) -> HandlerResult {
         let arguments = Self::args(vec![("row", json!(row)), ("reviewed", json!(reviewed))]);
         self.run_tool("toggle_reviewed", arguments, Some(row), None, || {
-            self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
+            self.on_model(self.env.timeouts.default, move |m| {
                 let Some(id) = m.id_at(row) else {
                     return Ok(ToolOutput::new().push("error", json!(format!("No row {row}"))));
                 };
@@ -512,7 +583,7 @@ impl McpHandlers for McpToolHandlers {
     fn remove_row(&self, row: i64) -> HandlerResult {
         let arguments = Self::args(vec![("row", json!(row))]);
         self.run_tool("remove_row", arguments, Some(row), None, || {
-            self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
+            self.on_model(self.env.timeouts.default, move |m| {
                 let Some(id) = m.id_at(row) else {
                     return Ok(ToolOutput::new().push("error", json!(format!("No row {row}"))));
                 };
@@ -529,7 +600,7 @@ impl McpHandlers for McpToolHandlers {
         let arguments = Self::args(vec![("row", json!(row))]);
         let engine = self.env.engine.clone();
         self.run_tool("reset_result", arguments, Some(row), None, || {
-            self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
+            self.on_model(self.env.timeouts.default, move |m| {
                 let Some(id) = m.id_at(row) else {
                     return Ok(ToolOutput::new().push("error", json!(format!("No row {row}"))));
                 };
@@ -563,7 +634,7 @@ impl McpToolHandlers {
         let channel = self.channel.clone();
         let launcher = self.env.launcher.clone();
         let wanted = rows.clone();
-        let started = self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
+        let started = self.on_model(self.env.timeouts.default, move |m| {
             Ok(start_research(m, &channel, launcher.as_ref(), &wanted))
         })?;
         let (filenames, flag) = match started {
@@ -575,8 +646,10 @@ impl McpToolHandlers {
             }
             ResearchStart::Started { filenames, flag } => (filenames, flag),
         };
-        let timeout = RESEARCH_TIMEOUT_FLOOR_SECONDS
-            .max(filenames.len() as f64 * RESEARCH_TIMEOUT_PER_IMAGE_SECONDS);
+        let t = self.env.timeouts;
+        let timeout = t
+            .research_floor
+            .max(filenames.len() as f64 * t.research_per_image);
         if !flag.wait(timeout) {
             return Self::done(vec![
                 ("research_started", json!(true)),
@@ -590,7 +663,7 @@ impl McpToolHandlers {
                 ),
             ]);
         }
-        let results = self.on_model(DEFAULT_TIMEOUT_SECONDS, move |m| {
+        let results = self.on_model(self.env.timeouts.default, move |m| {
             let mut results = Vec::new();
             for row in rows {
                 if let Some(entry) = m.entry_at(row) {
@@ -645,7 +718,7 @@ impl SendJob {
         F: FnOnce(&mut QueueModel) -> Result<T, String> + Send + 'static,
     {
         self.channel
-            .call(f, HYDRUS_SEND_TIMEOUT_SECONDS)
+            .call(f, self.env.timeouts.hydrus_send)
             .map_err(|e| HandlerError::new(e.text()))
     }
 
@@ -683,14 +756,25 @@ impl SendJob {
         let client = (self.env.hydrus_client)(&settings.hydrus)
             .map_err(|e| HandlerError::new(e.message().to_owned()))?;
         let engine = &self.env.engine;
-        let remove_after_import = || self.env.settings.lock().expect("settings lock").remove_after_import;
+        let remove_after_import = || {
+            self.env
+                .settings
+                .lock()
+                .expect("settings lock")
+                .remove_after_import
+        };
 
         match self.kind {
             SendKind::Upload => {
                 let result = self
                     .env
                     .runtime
-                    .block_on(send_file_upload(&mut entry, &client, Some(&settings), &*engine.clock))
+                    .block_on(send_file_upload(
+                        &mut entry,
+                        &client,
+                        Some(&settings),
+                        &*engine.clock,
+                    ))
                     .map_err(|e| HandlerError::new(e.message().to_owned()))?;
                 let after = if result.success && remove_after_import() {
                     After::Remove("sent-to-Hydrus")
@@ -707,7 +791,8 @@ impl SendJob {
             SendKind::Url | SendKind::Download => {
                 let tmp = TempDir::new("hatate-linux-mcp-")
                     .map_err(|e| HandlerError::new(e.to_string()))?;
-                let sent: Result<ImportResult, HandlerError> = if matches!(self.kind, SendKind::Url) {
+                let sent: Result<ImportResult, HandlerError> = if matches!(self.kind, SendKind::Url)
+                {
                     self.env
                         .runtime
                         .block_on(send_url_or_download(
@@ -856,7 +941,10 @@ fn entry_detail(entry: &Entry) -> Map<String, Value> {
     out.insert("matched_url".into(), json!(entry.matched_url()));
     out.insert("booru_name".into(), json!(entry.booru_name()));
     out.insert("similarity".into(), json!(entry.similarity().map(num)));
-    out.insert("similarity_measured".into(), json!(entry.similarity_measured()));
+    out.insert(
+        "similarity_measured".into(),
+        json!(entry.similarity_measured()),
+    );
     out.insert("candidate_count".into(), json!(entry.candidates.len()));
     out.insert(
         "selected_candidate_index".into(),
@@ -865,9 +953,15 @@ fn entry_detail(entry: &Entry) -> Map<String, Value> {
     out.insert("local_width".into(), json!(entry.local_width));
     out.insert("local_height".into(), json!(entry.local_height));
     out.insert("match_width".into(), json!(selected.and_then(|c| c.width)));
-    out.insert("match_height".into(), json!(selected.and_then(|c| c.height)));
+    out.insert(
+        "match_height".into(),
+        json!(selected.and_then(|c| c.height)),
+    );
     out.insert("upscale_verdict".into(), json!(entry.upscale_verdict));
-    out.insert("upscale_check_detail".into(), json!(entry.upscale_check_detail));
+    out.insert(
+        "upscale_check_detail".into(),
+        json!(entry.upscale_check_detail),
+    );
     out.insert("error_message".into(), json!(entry.error_message));
     out.insert(
         "tags".into(),
@@ -945,8 +1039,16 @@ mod tests {
         assert_eq!(guess_mime("https://x/y/z.jpeg"), "image/jpeg");
         assert_eq!(guess_mime("https://x/y/"), "image/jpeg");
         assert_eq!(guess_mime("noext"), "image/jpeg");
-        assert_eq!(guess_mime(".png"), "image/jpeg", "a leading dot is not a suffix");
-        assert_eq!(guess_mime("a.png/"), "image/png", "a trailing slash is not part of the name");
+        assert_eq!(
+            guess_mime(".png"),
+            "image/jpeg",
+            "a leading dot is not a suffix"
+        );
+        assert_eq!(
+            guess_mime("a.png/"),
+            "image/png",
+            "a trailing slash is not part of the name"
+        );
         assert_eq!(guess_mime("a.bmp/./."), "image/bmp");
         assert_eq!(guess_mime("a.gif."), "image/jpeg");
         assert_eq!(guess_mime(""), "image/jpeg");
@@ -965,6 +1067,9 @@ mod tests {
         assert!(!matches_filter(&e, "sent"));
         assert!(matches_filter(&e, "   "), "blank text matches everything");
         assert!(matches_filter(&Entry::new("/q/Strasse.png"), "STRASSE"));
-        assert!(matches_filter(&Entry::new("/q/STRASSE.png"), "straße"), "casefold, not lowercase");
+        assert!(
+            matches_filter(&Entry::new("/q/STRASSE.png"), "straße"),
+            "casefold, not lowercase"
+        );
     }
 }

@@ -92,8 +92,8 @@ pub async fn fetch_full_resolution_match(
     };
 
     let timeout = settings.lock().expect("settings lock").hydrus.timeout;
-    let referer = (Some(url.as_str()) == candidate.direct_file_url.as_deref())
-        .then(|| candidate.url.clone());
+    let referer =
+        (Some(url.as_str()) == candidate.direct_file_url.as_deref()).then(|| candidate.url.clone());
     let data = remote::download_bytes(
         &engine.net,
         Some(&url),
@@ -147,7 +147,12 @@ pub fn compute_diff(
     let png_bytes = diff.mask.as_deref().map(|mask| {
         let mut out = Vec::new();
         PngEncoder::new(&mut out)
-            .write_image(mask, diff.width as u32, diff.height as u32, ExtendedColorType::L8)
+            .write_image(
+                mask,
+                diff.width as u32,
+                diff.height as u32,
+                ExtendedColorType::L8,
+            )
             .expect("a grayscale mask encodes");
         out
     });

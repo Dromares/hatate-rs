@@ -130,7 +130,9 @@ impl QueueModel {
 
     /// The id of the entry at `row`.
     pub fn id_at(&self, row: i64) -> Option<EntryId> {
-        usize::try_from(row).ok().and_then(|r| self.ids.get(r).copied())
+        usize::try_from(row)
+            .ok()
+            .and_then(|r| self.ids.get(r).copied())
     }
 
     /// The position of an entry still in the list.
@@ -233,7 +235,8 @@ impl QueueModel {
             .collect();
         let keep: Vec<bool> = self.ids.iter().map(|i| !doomed.contains(i)).collect();
         let mut flags = keep.iter();
-        self.entries.retain(|_| *flags.next().expect("one flag per entry"));
+        self.entries
+            .retain(|_| *flags.next().expect("one flag per entry"));
         self.ids.retain(|i| !doomed.contains(i));
         match reason {
             RemoveReason::Requested => {
@@ -289,7 +292,10 @@ impl QueueModel {
             }
         }
         if !removed.is_empty() {
-            self.remove(removed, RemoveReason::After("downloaded-and-sent-to-Hydrus"));
+            self.remove(
+                removed,
+                RemoveReason::After("downloaded-and-sent-to-Hydrus"),
+            );
         }
         self.set_search_running(false);
     }
@@ -424,9 +430,8 @@ impl QueueChannel {
         }
         let (reply_tx, reply_rx) = mpsc::sync_channel::<Result<T, String>>(1);
         let job: Job = Box::new(move |model| {
-            let outcome = catch_unwind(AssertUnwindSafe(|| f(model))).unwrap_or_else(|p| {
-                Err(panic_text(&*p))
-            });
+            let outcome = catch_unwind(AssertUnwindSafe(|| f(model)))
+                .unwrap_or_else(|p| Err(panic_text(&*p)));
             let _ = reply_tx.send(outcome);
         });
         let timed_out = || {
@@ -683,7 +688,13 @@ mod tests {
 
     fn model(n: usize) -> QueueModel {
         let entries = (0..n).map(|i| Entry::new(format!("/q/{i}.png"))).collect();
-        QueueModel::new(entries, Arc::new(Mutex::new(Settings::default())))
+        let home: std::ffi::OsString = "/tmp/hatate-dan2167-unit".into();
+        let paths = crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| home.clone()))
+            .expect("paths from a HOME");
+        QueueModel::new(
+            entries,
+            Arc::new(Mutex::new(Settings::with_defaults(&paths))),
+        )
     }
 
     #[test]
@@ -712,11 +723,11 @@ mod tests {
         let (owner, ch) = spawn_owner_thread(model(2));
         let n = ch.call(|m| Ok(m.len()), 5.0).unwrap();
         assert_eq!(n, 2);
-        let err = ch.call::<(), _>(|_| Err("bad".to_owned()), 5.0).unwrap_err();
-        assert_eq!(err, InvokeError::Failed("bad".to_owned()));
         let err = ch
-            .call::<(), _>(|_| panic!("exploded"), 5.0)
+            .call::<(), _>(|_| Err("bad".to_owned()), 5.0)
             .unwrap_err();
+        assert_eq!(err, InvokeError::Failed("bad".to_owned()));
+        let err = ch.call::<(), _>(|_| panic!("exploded"), 5.0).unwrap_err();
         assert_eq!(err.text(), "exploded");
         drop(owner.stop());
     }

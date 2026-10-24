@@ -89,8 +89,7 @@ struct Run {
     reporter: Arc<dyn Reporter>,
     unit_random: Arc<dyn Fn() -> f64 + Send + Sync>,
     reset_run_state: Arc<dyn Fn() + Send + Sync>,
-    hydrus_client:
-        Arc<dyn Fn(&HydrusSettings) -> Result<HydrusClient, HydrusError> + Send + Sync>,
+    hydrus_client: Arc<dyn Fn(&HydrusSettings) -> Result<HydrusClient, HydrusError> + Send + Sync>,
     runtime: tokio::runtime::Handle,
 }
 
