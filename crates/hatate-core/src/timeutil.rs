@@ -14,7 +14,7 @@ pub fn now_epoch() -> f64 {
 }
 
 /// Days since 1970-01-01 to (year, month, day), proleptic Gregorian (Hinnant's algorithm).
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
+pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z.rem_euclid(146_097);

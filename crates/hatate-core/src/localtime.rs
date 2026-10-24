@@ -26,6 +26,63 @@ pub fn local_stamp(epoch: f64) -> String {
     crate::timeutil::format_stamp((secs + zone.utc_offset(secs)) as f64)
 }
 
+/// A wall-clock moment: the fields `strftime` reads from a naive `datetime` (DAN-2214).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WallClock {
+    pub year: i64,
+    pub month: u32,
+    pub day: u32,
+    pub hour: u32,
+    pub minute: u32,
+    pub second: u32,
+    /// Monday is 0, as `datetime.weekday()`.
+    pub weekday: u32,
+}
+
+impl WallClock {
+    /// The clock as read off a naive timestamp: seconds since 1970-01-01 00:00 on the wall,
+    /// with no zone applied.
+    pub fn from_naive_secs(secs: i64) -> WallClock {
+        let days = secs.div_euclid(86_400);
+        let rem = secs.rem_euclid(86_400);
+        let (year, month, day) = crate::timeutil::civil_from_days(days);
+        WallClock {
+            year,
+            month,
+            day,
+            hour: (rem / 3600) as u32,
+            minute: (rem % 3600 / 60) as u32,
+            second: (rem % 60) as u32,
+            weekday: (days + 3).rem_euclid(7) as u32,
+        }
+    }
+
+    /// The calendar day as a count of days, for `(finish.date() - start.date()).days`.
+    pub fn day_number(&self) -> i64 {
+        days_from_civil(self.year, i64::from(self.month), i64::from(self.day))
+    }
+
+    /// `%a`, in the C locale.
+    pub fn weekday_abbr(&self) -> &'static str {
+        ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][self.weekday as usize]
+    }
+
+    /// `%b`, in the C locale.
+    pub fn month_abbr(&self) -> &'static str {
+        [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        ][self.month as usize - 1]
+    }
+}
+
+/// `time.localtime(epoch)` (the fields of `datetime.now()` when `epoch` is the present) in the
+/// process's local zone.
+pub fn local_wall_clock(epoch: f64) -> WallClock {
+    let zone = Zone::from_environment();
+    let secs = epoch.floor() as i64;
+    WallClock::from_naive_secs(secs + zone.utc_offset(secs))
+}
+
 /// `"%H:%M"` of `epoch` in `zone`.
 fn hhmm(epoch: f64, zone: &Zone) -> String {
     let local = epoch.floor() as i64 + zone.utc_offset(epoch.floor() as i64);

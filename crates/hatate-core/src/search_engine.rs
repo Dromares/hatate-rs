@@ -581,6 +581,8 @@ impl SearchEngine {
         entry.stale_similarity = None;
         entry.stale_similarity_measured = false;
         entry.stale_source_name = None;
+        entry.stale_match_width = None;
+        entry.stale_match_height = None;
 
         let s = Arc::new(settings.lock().unwrap().clone());
         let path = entry.path.clone();
@@ -620,6 +622,7 @@ impl SearchEngine {
                     let selected_similarity = entry.selected_candidate().map(|c| c.similarity);
                     let selected_measured = entry.similarity_measured();
                     let selected_site = entry.booru_name().map(str::to_owned);
+                    let selected_size = (entry.match_width(), entry.match_height());
                     let mut cleaned =
                         drop_structurally_dead(std::mem::take(&mut entry.candidates), &filename);
                     if s.drop_dead_matches {
@@ -640,6 +643,8 @@ impl SearchEngine {
                         entry.stale_similarity = selected_similarity;
                         entry.stale_similarity_measured = selected_measured;
                         entry.stale_source_name = selected_site;
+                        entry.stale_match_width = selected_size.0;
+                        entry.stale_match_height = selected_size.1;
                     }
                     entry.candidates = cleaned;
                     if changed {
