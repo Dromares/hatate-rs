@@ -27,6 +27,7 @@ pub mod image_prep;
 pub mod lens_browser;
 pub mod localtime;
 pub mod lru;
+pub mod mcp;
 pub mod model;
 pub mod multipage;
 pub mod multipage_resolve;

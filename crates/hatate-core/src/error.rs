@@ -53,6 +53,12 @@ pub enum ErrorKind {
     DownloadInvalid,
     /// Hydrus stored a file whose hash is not the hash of the bytes Hatate sent.
     HashMismatch,
+    /// A name that is not in the MCP tool registry reached a registry lookup.
+    McpUnknownTool,
+    /// The MCP server could not start (blank token, unusable settings).
+    McpServerStart,
+    /// The port the MCP server was asked to listen on is taken.
+    McpPortBusy,
     /// A search engine cannot run in this build or on this machine (Google Lens with no browser).
     /// Latched for the run: the next image would fail the same way.
     EngineUnavailable,

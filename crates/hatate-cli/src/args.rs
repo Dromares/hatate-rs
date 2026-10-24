@@ -1,9 +1,10 @@
-//! The command line: `hatate [--help] | hatate batch [-v] <dir>`.
+//! The command line: `hatate [--help] | hatate batch [-v] <dir> | hatate mcp-stdio-bridge [--port N] [--token T]`.
 
 use std::path::PathBuf;
 
 pub const USAGE: &str = "\
 usage: hatate batch [-v|-vv] <dir>
+       hatate mcp-stdio-bridge [--port PORT] [--token TOKEN]
        hatate --help
 
   batch <dir>   (experimental) add every image under <dir> to the saved session, search the
@@ -12,6 +13,11 @@ usage: hatate batch [-v|-vv] <dir>
                 Progress goes to stderr. Stop with Ctrl-C or SIGTERM: the session is saved
                 first. Hydrus auto-import is not in this build.
   -v, -vv       log at info / debug level to stderr
+  mcp-stdio-bridge
+                relay one JSON-RPC message per line from stdin to the Hatate MCP server on
+                127.0.0.1 and its replies to stdout, for MCP clients that only speak stdio.
+                --port defaults to $HATATE_MCP_PORT or 8787, --token to $HATATE_MCP_TOKEN.
+                It is a client of the server and does not start it.
 
 exit status: 0 finished, 1 error, 2 usage, 3 paused (SauceNAO's daily allowance ran out),
              130 stopped by SIGINT, 143 stopped by SIGTERM";
@@ -22,6 +28,8 @@ pub enum Command {
     Banner,
     Help,
     Batch(BatchOptions),
+    /// The raw arguments after the command; `hatate_core::mcp::bridge::parse_args` reads them.
+    McpStdioBridge(Vec<String>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -60,6 +68,7 @@ pub fn parse(argv: &[String]) -> Result<Command, String> {
                 None => Err("batch: which folder?".to_owned()),
             }
         }
+        "mcp-stdio-bridge" => Ok(Command::McpStdioBridge(argv[1..].to_vec())),
         other => Err(format!("unknown command {other}")),
     }
 }
@@ -70,6 +79,21 @@ mod tests {
 
     fn p(args: &[&str]) -> Result<Command, String> {
         parse(&args.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn the_bridge_command_passes_its_arguments_through() {
+        assert_eq!(
+            p(&["mcp-stdio-bridge", "--port", "9"]),
+            Ok(Command::McpStdioBridge(vec![
+                "--port".to_owned(),
+                "9".to_owned()
+            ]))
+        );
+        assert_eq!(
+            p(&["mcp-stdio-bridge"]),
+            Ok(Command::McpStdioBridge(vec![]))
+        );
     }
 
     #[test]
