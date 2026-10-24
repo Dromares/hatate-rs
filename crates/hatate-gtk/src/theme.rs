@@ -399,7 +399,13 @@ mod tests {
     fn no_placeholder_is_left_in_the_sheet() {
         for scheme in [Scheme::Dark, Scheme::Light] {
             let css = css(scheme);
-            assert!(!css.contains('%'), "unreplaced placeholder in {scheme:?}");
+            // `100%` is a CSS value; `%name%` is a placeholder.
+            let mut parts = css.split('%').peekable();
+            while let (Some(_), Some(between)) = (parts.next(), parts.peek()) {
+                let is_name = !between.is_empty()
+                    && between.chars().all(|c| c.is_ascii_lowercase() || c == '_');
+                assert!(!is_name, "unreplaced placeholder %{between}% in {scheme:?}");
+            }
         }
     }
 
@@ -473,5 +479,46 @@ mod tests {
                 assert!(c >= 4.5, "{scheme:?} ink-65 on {}: {c:.2}", surface.hex());
             }
         }
+    }
+
+    /// DAN-2242 fix 4: a control whose border is its shape clears 3:1 on the page and on the raised
+    /// fill in both schemes, at rest (`ink-46`) and under the pointer (`ink-58`); `ink-45` would
+    /// not (2.68:1 on the light page). Containers stay on `ink-18`, deliberately under 3:1.
+    #[test]
+    fn the_border_tier_clears_three_to_one_where_a_control_sits() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            for (tier, c) in [("ink-46", p.ink_46), ("ink-58", p.ink_58)] {
+                for (name, surface) in [("page", p.page), ("raised", p.raised)] {
+                    let r = contrast(c.over(surface), surface);
+                    assert!(r >= 3.0, "{scheme:?} {tier} on {name}: {r:.2}:1");
+                }
+            }
+            assert!(
+                contrast(p.ink_46.over(p.page), p.page) > contrast(p.ink_45.over(p.page), p.page)
+            );
+            assert!(
+                contrast(p.ink_18.over(p.page), p.page) < 3.0,
+                "ink-18 is the quiet tier"
+            );
+        }
+    }
+
+    /// DAN-2242 fix 5: the shortcut hint on a hovered or focused menu row reads in `ink`, which
+    /// clears 4.5:1 on the hover wash; `ink-65` did not (4.25:1 in dark).
+    #[test]
+    fn a_hovered_menu_hint_in_ink_clears_four_and_a_half() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            let wash = p.ink_10.over(p.raised);
+            let r = contrast(p.ink, wash);
+            assert!(r >= 4.5, "{scheme:?} ink on the hover wash: {r:.2}:1");
+        }
+        let sheet = css(Scheme::Dark);
+        assert!(
+            sheet.contains("popover modelbutton:hover label.accelerator")
+                && sheet.contains("popover modelbutton:focus label.accelerator"),
+            "the hint rule names hover and focus"
+        );
     }
 }
