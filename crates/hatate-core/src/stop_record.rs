@@ -321,7 +321,7 @@ impl LaunchBanner {
 ///
 /// - `previous_run_unclean` wins over the record (decision 2, point 4); the record is cleared.
 /// - Unclean and a session file with no rows: `FailedEmpty` (`main_window.py:1414-1420`).
-/// - Unclean and no session file: nothing (Python shows nothing; parity).
+/// - Unclean and no session file: nothing (Python shows nothing, and so does this).
 /// - Clean: a valid record plus at least one `NotSearched` row is `Interrupted`. Any other clean
 ///   launch has no banner, and a record that is there (valid or not) is cleared.
 pub fn launch_banner(
