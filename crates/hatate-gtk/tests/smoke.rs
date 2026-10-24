@@ -1521,7 +1521,7 @@ fn first_model_button_text(w: &gtk4::Widget) -> Option<String> {
 /// `menubar_keys` adds F10 (open the first menu, again to close) and the return of focus to the
 /// widget that had it before the bar was entered.
 fn menubar_keyboard_path(app: &adw::Application) {
-    use common::xtest::{Key, Xtest};
+    use common::xtest::{Key, Mod, Xtest};
     let mut keys = match Xtest::connect() {
         Ok(x) => x,
         Err(why) => {
@@ -1562,38 +1562,60 @@ fn menubar_keyboard_path(app: &adw::Application) {
     add.grab_focus();
     pump_for(200);
     let add_widget = add.clone().upcast::<gtk4::Widget>();
-    assert_eq!(focus().as_ref(), Some(&add_widget), "Add files starts with focus");
+    assert_eq!(
+        focus().as_ref(),
+        Some(&add_widget),
+        "Add files starts with focus"
+    );
 
-    let mut press = |key: Key, alt: bool| {
-        keys.tap(key, alt).expect("inject");
+    let mut press = |key: Key, mods: &[Mod]| {
+        keys.tap(key, mods).expect("inject");
         pump_for(400);
     };
 
     // The keys reach the window at all: Alt+F is GTK's own, and opens Files.
-    press(Key::Char('f'), true);
+    press(Key::Char('f'), &[Mod::Alt]);
     assert_eq!(open_menus(), [files.clone()], "Alt+F opens Files");
-    press(Key::Escape, false);
+    press(Key::Escape, &[]);
     assert!(open_menus().is_empty(), "Escape closes it");
-    assert_eq!(focus().as_ref(), Some(&add_widget), "and focus returns to Add files");
+    assert_eq!(
+        focus().as_ref(),
+        Some(&add_widget),
+        "and focus returns to Add files"
+    );
+
+    // Shift+F10 is the context-menu key and Ctrl+F10 is not ours: neither opens a menu.
+    press(Key::F10, &[Mod::Shift]);
+    assert!(open_menus().is_empty(), "Shift+F10 does not open a menu");
+    press(Key::F10, &[Mod::Ctrl]);
+    assert!(open_menus().is_empty(), "Ctrl+F10 does not open a menu");
 
     // F10 opens the first menu.
-    press(Key::F10, false);
+    press(Key::F10, &[]);
     assert_eq!(open_menus(), [files.clone()], "F10 opens Files");
     // Right moves to the next menu, Left back.
-    press(Key::Right, false);
-    assert_eq!(open_menus(), [hydrus.clone()], "Right opens Hydrus and closes Files");
-    press(Key::Left, false);
+    press(Key::Right, &[]);
+    assert_eq!(
+        open_menus(),
+        [hydrus.clone()],
+        "Right opens Hydrus and closes Files"
+    );
+    press(Key::Left, &[]);
     assert_eq!(open_menus(), [files.clone()], "Left goes back to Files");
     // F10 again closes, and focus goes back to where it was before F10.
-    press(Key::F10, false);
+    press(Key::F10, &[]);
     assert!(open_menus().is_empty(), "F10 a second time closes the menu");
-    assert_eq!(focus().as_ref(), Some(&add_widget), "focus returns to Add files after F10, F10");
+    assert_eq!(
+        focus().as_ref(),
+        Some(&add_widget),
+        "focus returns to Add files after F10, F10"
+    );
 
     // Escape does the same after a trip through two menus.
-    press(Key::F10, false);
-    press(Key::Right, false);
+    press(Key::F10, &[]);
+    press(Key::Right, &[]);
     assert_eq!(open_menus(), [hydrus.clone()]);
-    press(Key::Escape, false);
+    press(Key::Escape, &[]);
     assert!(open_menus().is_empty(), "Escape closes the Hydrus menu");
     assert_eq!(
         focus().as_ref(),

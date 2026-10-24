@@ -16,6 +16,8 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
 const KEYSYM_ALT_L: u32 = 0xffe9;
+const KEYSYM_SHIFT_L: u32 = 0xffe1;
+const KEYSYM_CONTROL_L: u32 = 0xffe3;
 const KEYSYM_F10: u32 = 0xffc7;
 const KEYSYM_ESCAPE: u32 = 0xff1b;
 const KEYSYM_LEFT: u32 = 0xff51;
@@ -29,6 +31,14 @@ pub struct Xtest {
     first_keycode: u8,
     per_keycode: usize,
     keysyms: Vec<u32>,
+}
+
+/// A modifier held while a key is tapped.
+#[derive(Clone, Copy, Debug)]
+pub enum Mod {
+    Alt,
+    Shift,
+    Ctrl,
 }
 
 /// A key, by what the keyboard map is asked for.
@@ -245,25 +255,32 @@ impl Xtest {
     /// A round trip (`GetInputFocus`): returns once the server has handled every request before
     /// it, and surfaces any X error those raised.
     fn sync(&mut self) -> Result<(), String> {
-        self.sock.write_all(&[43, 0, 1, 0]).map_err(|e| e.to_string())?;
+        self.sock
+            .write_all(&[43, 0, 1, 0])
+            .map_err(|e| e.to_string())?;
         self.reply().map(|_| ())
     }
 
-    /// Presses and releases `key` with the modifiers held (only Alt is needed here).
-    pub fn tap(&mut self, key: Key, alt: bool) -> Result<(), String> {
+    /// Presses and releases `key` with `mods` held.
+    pub fn tap(&mut self, key: Key, mods: &[Mod]) -> Result<(), String> {
         let code = self.keycode(key.keysym())?;
-        let alt_code = if alt {
-            Some(self.keycode(KEYSYM_ALT_L)?)
-        } else {
-            None
-        };
-        if let Some(a) = alt_code {
-            self.fake(2, a, 0, 0)?;
+        let held = mods
+            .iter()
+            .map(|m| {
+                self.keycode(match m {
+                    Mod::Alt => KEYSYM_ALT_L,
+                    Mod::Shift => KEYSYM_SHIFT_L,
+                    Mod::Ctrl => KEYSYM_CONTROL_L,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for m in &held {
+            self.fake(2, *m, 0, 0)?;
         }
         self.fake(2, code, 0, 0)?;
         self.fake(3, code, 0, 0)?;
-        if let Some(a) = alt_code {
-            self.fake(3, a, 0, 0)?;
+        for m in held.iter().rev() {
+            self.fake(3, *m, 0, 0)?;
         }
         self.sync()
     }
