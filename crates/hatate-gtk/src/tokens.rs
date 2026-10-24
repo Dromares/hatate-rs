@@ -1,6 +1,6 @@
 //! The design tokens, read from the mockup's own `tokens.css` (vendored as `assets/tokens.css`,
-//! `Dromares/hatate-ryoku-mockup@fff6302` plus the uncommitted DAN-2213 edits of its working tree: the
-//! `ink-46`/`ink-58` border tiers; see `docs/gtk-shell.md`). The stylesheet the window uses is generated from what
+//! `Dromares/hatate-ryoku-mockup@0ef6e0c`, byte for byte, which commits the DAN-2213 `ink-46`/`ink-58`
+//! border tiers on top of `fff6302`; see `docs/gtk-shell.md`). The stylesheet the window uses is generated from what
 //! this module parses, so a token changed in the vendored sheet changes the window, and a test
 //! pins the values the design gate measured (`docs/gtk-shell.md`).
 //!

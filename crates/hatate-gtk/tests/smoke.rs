@@ -1374,7 +1374,15 @@ fn the_log_viewer_opens_on_close_and_selects_in_ink(app: &adw::Application) {
         // What a selection looks like: the background pixel is the wash over the surface under it,
         // and the pixel farthest from it (a glyph) clears 4.5:1.
         // The widget's own render has no surface under it: lay each pixel over the one it sits on.
-        let check = |what: &str, w: &gtk4::Widget, surface: Rgba, crop: (usize, usize)| {
+        // An unfocused selection is not painted at all by every toolkit (GTK 4.14 draws none for a label
+        // that is not focused), so it is only read when something is painted; a focused one must be.
+        // Every state is read before the scenario fails, so one run on a new toolkit lists them all.
+        let problems = std::cell::RefCell::new(Vec::<String>::new());
+        let check = |what: &str,
+                     w: &gtk4::Widget,
+                     surface: Rgba,
+                     crop: (usize, usize),
+                     must_paint: bool| {
             let to_rgba = |p: [u8; 4]| {
                 Rgba(
                     f64::from(p[0]),
@@ -1394,21 +1402,30 @@ fn the_log_viewer_opens_on_close_and_selects_in_ink(app: &adw::Application) {
                 *seen.entry(px(&img, i % cw, i / cw)).or_default() += 1;
             }
             let bg = to_rgba(*seen.iter().max_by_key(|(_, n)| **n).expect("pixels").0);
-            assert!(
-                (bg.0 - wash.0).abs() <= 1.0
-                    && (bg.1 - wash.1).abs() <= 1.0
-                    && (bg.2 - wash.2).abs() <= 1.0,
-                "{name}: {what}: the selection is the ink-18 wash {}, got {}",
-                wash.hex(),
-                bg.hex()
-            );
+            if !must_paint && bg.hex() == surface.hex() {
+                eprintln!(
+                    "note: {name}: {what}: no selection is painted unfocused on this toolkit"
+                );
+                return;
+            }
+            if (bg.0 - wash.0).abs() > 1.0
+                || (bg.1 - wash.1).abs() > 1.0
+                || (bg.2 - wash.2).abs() > 1.0
+            {
+                problems.borrow_mut().push(format!(
+                    "{name}: {what}: the selection is the ink-18 wash {}, got {}",
+                    wash.hex(),
+                    bg.hex()
+                ));
+            }
             let worst = (0..cw * ch)
                 .map(|i| contrast(to_rgba(px(&img, i % cw, i / cw)), wash))
                 .fold(0.0_f64, f64::max);
-            assert!(
-                worst >= 4.5,
-                "{name}: {what}: selected text reaches {worst:.2}:1, below 4.5"
-            );
+            if worst < 4.5 {
+                problems.borrow_mut().push(format!(
+                    "{name}: {what}: selected text reaches {worst:.2}:1, below 4.5"
+                ));
+            }
         };
         // The log body is one short line in a tall view: read the first line's box only.
         // The path line, selected while Close holds focus (the window is never active under Xvfb,
@@ -1419,6 +1436,7 @@ fn the_log_viewer_opens_on_close_and_selects_in_ink(app: &adw::Application) {
             viewer.path_label.upcast_ref(),
             pal.page,
             (usize::MAX, usize::MAX),
+            false,
         );
         viewer.path_label.grab_focus();
         viewer.path_label.select_region(0, -1);
@@ -1427,11 +1445,18 @@ fn the_log_viewer_opens_on_close_and_selects_in_ink(app: &adw::Application) {
             viewer.path_label.upcast_ref(),
             pal.page,
             (usize::MAX, usize::MAX),
+            true,
         );
         // The log body.
         let buffer = viewer.text.buffer();
         buffer.select_range(&buffer.start_iter(), &buffer.end_iter());
-        check("log body", viewer.text.upcast_ref(), pal.sunken, (130, 14));
+        check(
+            "log body",
+            viewer.text.upcast_ref(),
+            pal.sunken,
+            (130, 14),
+            false,
+        );
         viewer.text.grab_focus();
         buffer.select_range(&buffer.start_iter(), &buffer.end_iter());
         check(
@@ -1439,6 +1464,12 @@ fn the_log_viewer_opens_on_close_and_selects_in_ink(app: &adw::Application) {
             viewer.text.upcast_ref(),
             pal.sunken,
             (130, 14),
+            true,
+        );
+        assert!(
+            problems.borrow().is_empty(),
+            "{}",
+            problems.borrow().join("; ")
         );
         viewer.window.close();
         f.close();

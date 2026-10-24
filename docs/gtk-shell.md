@@ -86,6 +86,12 @@ that reads 740, which is too close for a floor, so the stated height is 790.
 | D5 | Session dialogs show `user_message()` where Python would show raw exception text; they still show the path the user chose, which is their own input. | The data contract (DAN-2116 item 1): no paths or OS text in a message; `detail()` goes to the log. |
 | D1 | **Python's incremental autosave can leave a stale `session.db` row**; Rust's autosave writes the whole list, so it saves what the window shows. | Ruled by Cloud on [DAN-2227](/DAN/issues/DAN-2227): accepted as a documented class, not ported (a Python data bug; matching it would add a `revision` field to `Entry` in `hatate-core`). One scenario of 300. See section 5. |
 
+**The vendored `assets/tokens.css` is pinned to `Dromares/hatate-ryoku-mockup@0ef6e0c`** (`spec(DAN-2213)`, on
+top of `fff6302`), byte for byte: `git show 0ef6e0c:tokens.css | cmp - crates/hatate-gtk/assets/tokens.css` prints
+nothing. The file carries no header of its own, so that `cmp` stays exact; this paragraph and the `tokens.rs`
+module comment are the cite. Until the PR #60 reads, the cite was `fff6302` plus uncommitted edits of the
+mockup's working tree.
+
 Matched on purpose even though it looks like a bug: with an **empty** list, Python's Clear Session discards
 the saved session *before* it asks, so answering No still leaves the saved session discarded
 (`action_clear_session`, `main_window.py:1921`). Likewise the final save at close writes an empty list
