@@ -395,11 +395,15 @@ impl Locator {
         let Some(object_id) = reply.result.result.object_id.clone() else {
             return Ok(None);
         };
-        let mut scroll = ScrollIntoViewIfNeededParams::default();
-        scroll.object_id = Some(object_id.clone());
+        let scroll = ScrollIntoViewIfNeededParams {
+            object_id: Some(object_id.clone()),
+            ..Default::default()
+        };
         let _ = self.page.page.execute(scroll).await;
-        let mut quads = GetContentQuadsParams::default();
-        quads.object_id = Some(object_id);
+        let quads = GetContentQuadsParams {
+            object_id: Some(object_id),
+            ..Default::default()
+        };
         let Ok(quads) = self.page.page.execute(quads).await else {
             return Ok(None);
         };
