@@ -1627,8 +1627,8 @@ fn menubar_keyboard_path(app: &adw::Application) {
         open_menu_first_entries(&root, &mut v);
         v
     };
-    let files = "Add Files\u{2026}".to_owned();
-    let hydrus = "Send File + URL + Tags to Hydrus (upload)".to_owned();
+    let files = "Add Files\u{2026}";
+    let hydrus = "Send File + URL + Tags to Hydrus (upload)";
 
     // No window manager under xvfb: the pointer and the X focus put the keys on this window.
     keys.focus_window_at(300, 300).expect("focus the window");
@@ -1649,7 +1649,7 @@ fn menubar_keyboard_path(app: &adw::Application) {
 
     // The keys reach the window at all: Alt+F is GTK's own, and opens Files.
     press(Key::Char('f'), &[Mod::Alt]);
-    assert_eq!(open_menus(), [files.clone()], "Alt+F opens Files");
+    assert_eq!(open_menus(), [files], "Alt+F opens Files");
     press(Key::Escape, &[]);
     assert!(open_menus().is_empty(), "Escape closes it");
     assert_eq!(
@@ -1666,16 +1666,16 @@ fn menubar_keyboard_path(app: &adw::Application) {
 
     // F10 opens the first menu.
     press(Key::F10, &[]);
-    assert_eq!(open_menus(), [files.clone()], "F10 opens Files");
+    assert_eq!(open_menus(), [files], "F10 opens Files");
     // Right moves to the next menu, Left back.
     press(Key::Right, &[]);
     assert_eq!(
         open_menus(),
-        [hydrus.clone()],
+        [hydrus],
         "Right opens Hydrus and closes Files"
     );
     press(Key::Left, &[]);
-    assert_eq!(open_menus(), [files.clone()], "Left goes back to Files");
+    assert_eq!(open_menus(), [files], "Left goes back to Files");
     // F10 again closes, and focus goes back to where it was before F10.
     press(Key::F10, &[]);
     assert!(open_menus().is_empty(), "F10 a second time closes the menu");
@@ -1688,7 +1688,7 @@ fn menubar_keyboard_path(app: &adw::Application) {
     // Escape does the same after a trip through two menus.
     press(Key::F10, &[]);
     press(Key::Right, &[]);
-    assert_eq!(open_menus(), [hydrus.clone()]);
+    assert_eq!(open_menus(), [hydrus]);
     press(Key::Escape, &[]);
     assert!(open_menus().is_empty(), "Escape closes the Hydrus menu");
     assert_eq!(

@@ -1641,8 +1641,18 @@ button sits in the raised frame, so the surface it has to clear is the frame's.
 **Tab order of the shell** (state `tab` of `shot.rs`, walking `child_focus(TabForward)` from the top): on the
 empty Queue, `Queue`, `Review`, `Activity`, `Add files`, `Add folder`. `Start Search`, the gear and
 `Query Hydrus` are disabled and are skipped. The order is printed by the shot renderer in a live Xvfb
-session (hosted `ci` log, step "Shot set (under Xvfb)"). The menubar's own keyboard path (F10 opens Files, Right moves to Hydrus, Escape returns focus) is **not
-covered**: a smoke scenario that sends real key events (`xdotool`, XTEST, under Xvfb with no window manager)
-was tried for DAN-2242 and the keys never reached GTK (Tab, Ctrl+O, Alt+F and F10 were all no-ops with the
-window active and X focus on it), so it is not in the suite; whether F10 is handled at all for an
-`AdwApplicationWindow` (which, unlike `GtkApplicationWindow`, does not own the menubar) is unproven.
+session (hosted `ci` log, step "Shot set (under Xvfb)").
+
+**The menubar's keyboard path** (DAN-2246, smoke scenario `menubar_keyboard_path`, `menubar_keys.rs`). The
+scenario sends real X key events from Rust: `tests/common/xtest.rs` is a minimal X11 client (wire protocol
+over the display socket, XTEST `FakeInput`; no crate, no `xdotool`, test-only), so GTK receives them as it
+would from a keyboard. Measured on the real window: GTK's own `PopoverMenuBar` already opens Files on Alt+F,
+moves with Left and Right, and closes on Escape. It did **not** (a) open anything on F10, which only moved
+focus onto the first bar item, or (b) give focus back on Escape, which left it on the bar. `menubar_keys.rs`
+adds F10 (opens the first menu through the route an Alt mnemonic takes, so Left and Right keep working; F10
+again closes; Shift+F10 and Ctrl+F10 are left alone) and returns focus to the widget that had it before the
+bar once no menu is open. The earlier "keys never reach GTK" result (DAN-2242) was the log viewer windows of
+earlier scenarios, which stay mapped and hold the keyboard; the scenario destroys other toplevels first.
+Not covered: Alt alone (Qt's underline reveal), mnemonics for menus other than Files, and the keyboard path
+on Wayland (the injector is X11 only; with `CI` set a missing XTEST fails the scenario, without it the
+scenario skips).
