@@ -1576,5 +1576,5 @@ border pixel against the surface on each side.
 **Tab order of the shell** (state `tab` of `shot.rs`, walking `child_focus(TabForward)` from the top): on the
 empty Queue, `Queue`, `Review`, `Activity`, `Add files`, `Add folder`. `Start Search`, the gear and
 `Query Hydrus` are disabled and are skipped. The order is printed by the shot renderer in a live Xvfb
-session (hosted `ci` log, step "shots"). The menubar's own keyboard path (Files, Hydrus, Sites, Settings,
+session (hosted `ci` log, step "Shot set (under Xvfb)"). The menubar's own keyboard path (Files, Hydrus, Sites, Settings,
 Help) is not covered by a shot or a scenario here and is left to the design read.
