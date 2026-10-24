@@ -55,7 +55,8 @@ pub fn install(win: &adw::ApplicationWindow, bar: &gtk::PopoverMenuBar) {
         let before = before.clone();
         let bar = bar.downgrade();
         window.connect_focus_widget_notify(move |w| {
-            let (Some(focus), Some(bar)) = (gtk::prelude::GtkWindowExt::focus(w), bar.upgrade()) else {
+            let (Some(focus), Some(bar)) = (gtk::prelude::GtkWindowExt::focus(w), bar.upgrade())
+            else {
                 return;
             };
             if !focus.is_ancestor(&bar) && focus != bar.clone().upcast::<gtk::Widget>() {
@@ -81,8 +82,9 @@ pub fn install(win: &adw::ApplicationWindow, bar: &gtk::PopoverMenuBar) {
                 }
                 let window: &gtk::Window = win.upcast_ref();
                 // Only if focus is still on the bar: a click elsewhere has moved it on already.
-                let on_bar = gtk::prelude::GtkWindowExt::focus(window)
-                    .is_none_or(|f| f.is_ancestor(&bar) || f == bar.clone().upcast::<gtk::Widget>());
+                let on_bar = gtk::prelude::GtkWindowExt::focus(window).is_none_or(|f| {
+                    f.is_ancestor(&bar) || f == bar.clone().upcast::<gtk::Widget>()
+                });
                 if !on_bar {
                     return;
                 }
