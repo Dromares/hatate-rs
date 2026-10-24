@@ -1,6 +1,6 @@
 [package]
 name = "hatate-gtk"
-description = "GUI front end placeholder for the Hatate Rust rewrite (work in progress)"
+description = "GTK4 + libadwaita window for the Hatate Rust rewrite (work in progress, not yet a replacement for Hatate)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,4 +8,35 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[lib]
+name = "hatate_gtk"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hatate-gtk"
+path = "src/main.rs"
+
 [dependencies]
+hatate-core = { path = "../hatate-core" }
+# Aligned with Dromares/rv-rs crates/rv-gtk (gtk4 0.11.5). The feature level is the oldest toolkit
+# the CI image has: GTK 4.14 / libadwaita 1.5 (Ubuntu 24.04), so `v4_12` and `v1_5`.
+gtk4 = { version = "0.11.5", features = ["v4_12"] }
+libadwaita = { version = "0.9", features = ["v1_5"] }
+# The channel from the worker threads back to the GTK main loop (`glib::spawn_future_local` awaits
+# its receiver). gtk-rs 0.11 has no `MainContext::channel`.
+async-channel = "2"
+# The one runtime the app owns (`worker::Workers`).
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "sync", "macros"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+# Needs a display, so it is its own program: it runs under `xvfb-run` with HATATE_GTK_SMOKE=1, and
+# GTK must be on the main thread, which the default test harness does not give a test. With `CI`
+# set a missing flag or display fails the test (DAN-1974 item 1).
+[[test]]
+name = "smoke"
+path = "tests/smoke.rs"
+harness = false
