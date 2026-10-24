@@ -41,7 +41,7 @@ pub const WINDOW_TITLE: &str = "Hatate (work in progress Rust rewrite)";
 /// (GTK 4.14 / libadwaita 1.5) in both schemes by the `minimum_size_*` scenarios of
 /// `tests/smoke.rs`, which fail if any state needs more. `docs/gtk-shell.md` has the table.
 pub const MIN_WIDTH: i32 = 1010;
-pub const MIN_HEIGHT: i32 = 750;
+pub const MIN_HEIGHT: i32 = 790;
 
 /// `core/missing_files.find_missing_paths(paths, stop_check)`: the subset of `paths` that no
 /// longer exist. 6.b ports it; until it merges the shipped window is given a stand-in by
