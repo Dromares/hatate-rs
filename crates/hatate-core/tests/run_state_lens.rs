@@ -149,8 +149,11 @@ async fn an_unanswered_robot_check_and_a_run_of_failures_are_blocked_on_the_chan
         rig.heard(),
         [LensConnection::WaitingForLens, LensConnection::Blocked]
     );
+}
 
-    // And the other road to Blocked: the stand-down after several failures in a row.
+/// The other road to Blocked: the stand-down after several failures in a row.
+#[tokio::test]
+async fn a_run_of_failures_is_blocked_on_the_channel() {
     let rig = rig();
     let path = rig.png();
     for _ in 0..MAX_CONSECUTIVE_FAILURES {
