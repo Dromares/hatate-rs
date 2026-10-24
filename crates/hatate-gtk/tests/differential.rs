@@ -331,7 +331,8 @@ fn digest(
             json!({
                 "kind": kind(d.kind), "title": d.title, "text": d.text,
                 "buttons": if d.buttons == Buttons::YesNo { "yes_no" } else { "ok" },
-                "default": button(d.default), "result": button(*r),
+                "default": button(d.default),
+                "result": if d.buttons == Buttons::Ok { "ok" } else { button(*r) },
             })
         })
         .collect();
@@ -352,7 +353,8 @@ fn digest(
                 default_name,
                 filter,
             } => json!({"kind": "save_file", "title": title,
-                        "default_name": default_name, "filter": filter}),
+                        "default_name": Path::new(default_name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                        "filter": filter}),
         })
         .collect();
     let rb = &s.run_banner;
