@@ -156,6 +156,13 @@ fn main() -> glib::ExitCode {
             let mut rects = String::new();
             label_rects(win.upcast_ref(), win.upcast_ref(), &mut rects);
             std::fs::write(out.with_extension("rects"), rects).expect("rects");
+            // The dialog's widget tree, for reading a toolkit-specific paint artefact (DAN-2245
+            // item 4): type, css classes, border box in window coordinates, mapped, first text.
+            if state == "dialog" {
+                let mut tree = String::new();
+                tree_dump(win.upcast_ref(), win.upcast_ref(), 0, &mut tree);
+                std::fs::write(out.with_extension("tree"), tree).expect("tree");
+            }
             // A popover is its own surface, so the window's snapshot does not hold it.
             if let Some(p) = first_popover_menu(win.upcast_ref()).filter(|p| p.is_visible()) {
                 if let Some(tex) = texture_of(p.upcast_ref(), &renderer) {
@@ -365,6 +372,36 @@ fn text_view_rects(tv: &gtk4::TextView, root: &gtk4::Widget, out: &mut String) {
             if selected { "selected" } else { "on" },
             text
         ));
+    }
+}
+
+/// One line per widget, indented by depth.
+fn tree_dump(w: &gtk4::Widget, root: &gtk4::Widget, depth: usize, out: &mut String) {
+    let b = w.compute_bounds(root);
+    let mut text = String::new();
+    if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+        text = format!(" label={:?}", l.label());
+    }
+    out.push_str(&format!(
+        "{}{} [{}] {} mapped={} visible={}{}\n",
+        "  ".repeat(depth),
+        w.type_().name(),
+        w.css_classes().join("."),
+        b.map_or("-".to_owned(), |b| format!(
+            "x={:.0} y={:.0} w={:.0} h={:.0}",
+            b.x(),
+            b.y(),
+            b.width(),
+            b.height()
+        )),
+        w.is_mapped(),
+        w.is_visible(),
+        text
+    ));
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        tree_dump(&child, root, depth + 1, out);
+        c = child.next_sibling();
     }
 }
 
