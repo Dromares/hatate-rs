@@ -21,7 +21,7 @@ and the status bar's sent count; the minimum size; and the CI display smoke test
 
 | Ticket | Owns |
 |---|---|
-| 6.b | `missing_files` (the check itself) and the log ring buffer; the window reaches them through two injected seams, marked `TODO(6.b)` |
+| 6.b | merged (PR #58) before this PR's verify ticket opens. The window uses its `missing_files` (`check_session_files`, `missing_status_text`, `missing_dialog_text`, `Entry.file_missing`) and `applog::LogRing`; nothing of 6.b is re-implemented here |
 | 6.d | the Queue table, filters, sort, columns, thumbnails, context menu, Export, Write Tag Files, Clear Search Cache |
 | 6.e | starting and stopping a search, the Sites menu, the live run strip (pace estimate, rate-limit wait), live banners, availability and upscale checks, Parser Health, engine alerts |
 | 6.f | Review and compare, the tag rail, Edit Match Conditions, mark reviewed |
@@ -84,7 +84,7 @@ that reads 740, which is too close for a floor, so the stated height is 790.
 | D3 | The palette is `tokens.css` only. Python's two extra border tiers (`ink-46`, `ink-58`, DAN-224) are not in the sheet. | The ticket says tokens only; non-text boundaries are judged by measured ratio in the shot set and any miss is written up there. |
 | D4 | Menu items carry no tooltips. | `GMenu` items have none; the text is the label. |
 | D5 | Session dialogs show `user_message()` where Python would show raw exception text; they still show the path the user chose, which is their own input. | The data contract (DAN-2116 item 1): no paths or OS text in a message; `detail()` goes to the log. |
-| D1 | **Python's incremental autosave can leave a stale row**; Rust's autosave writes the whole list. | Pending a ruling: [DAN-2227](/DAN/issues/DAN-2227). One scenario of 300. See section 5. |
+| D1 | **Python's incremental autosave can leave a stale `session.db` row**; Rust's autosave writes the whole list, so it saves what the window shows. | Ruled by Cloud on [DAN-2227](/DAN/issues/DAN-2227): accepted as a documented class, not ported (a Python data bug; matching it would add a `revision` field to `Entry` in `hatate-core`). One scenario of 300. See section 5. |
 
 Matched on purpose even though it looks like a bug: with an **empty** list, Python's Clear Session discards
 the saved session *before* it asks, so answering No still leaves the saved session discarded
@@ -117,12 +117,12 @@ an empty list, a missing path), clear session, set theme (including an invalid o
 and open log; each step carries 0 to 2 scripted Yes/No answers. Harness, generator and comparer live outside
 the repo (`worktrees/DAN-2215-tools`); the log is `worktrees/DAN-2215-differential.log`.
 
-**Result at `38ac99c`** (seed `20261024`): **300 scenarios, 2477 steps, 10 field differences, every one of them class D1 below**; no other difference.
+**Result** (seed `20261024`, built at `38ac99c`, re-run on the Rust half at the merged head `8e5764a` against the same Python digests): **300 scenarios, 2477 steps, 10 field differences in 5 steps, every one of them class D1 below**; no other difference. The 303 Yes/No boxes differ only in class D2. Log: `worktrees/DAN-2215-differential.log` (both runs).
 
 | Class | Count | Disposition |
 |---|---|---|
 | D2: a Yes/No box defaults to No (design gate 2.6) | 303 of 303 Yes/No boxes (default field only) | documented, on purpose |
-| D1: Python's incremental autosave leaves a stale `session.db` row after Open Session when the path is already in the saved list | 1 scenario (`s0181`), 5 steps, 10 field differences (`status`, `hydrus_hash` of one row) | cannot be matched without a core change; brought to Cloud on [DAN-2227](/DAN/issues/DAN-2227) |
+| D1: Python's incremental autosave leaves a stale `session.db` row after Open Session when the path is already in the saved list | 1 scenario (`s0181`), 5 steps, 10 field differences (`status`, `hydrus_hash` of one row) | **accepted** by Cloud on [DAN-2227](/DAN/issues/DAN-2227). Mechanism: Python's incremental autosave skips a row whose path is unchanged and whose revision is equal (0 == 0 after a load), so `session.db` keeps stale content. A future incremental save in `hatate-core` must bump `revision` on every mutation so that it never carries this quirk. This ticket keeps the full write per tick. **A difference outside D1 and D2 at the verified head is a FAIL, not a new class.** |
 
 Normalised in the comparer, and why: `config.json`'s `log_file_path` (carries the side's temp root) and
 `table_header_columns` / `table_header_state` (the Queue table's layout, written at close by a widget this
@@ -196,7 +196,7 @@ rows name the ticket that owns the def. Files wholly owned by one later ticket a
 | 1533 | `action_reconcile_with_hydrus` | 6.g: Hydrus reconcile |
 | 1541 | `_start_hydrus_reconcile` | 6.g: Hydrus reconcile |
 | 1560 | `_on_hydrus_reconciled` | 6.g: Hydrus reconcile |
-| 1569 | `_start_missing_file_check` | **port**: `session_ops::start_missing_file_check (the check itself is 6.b's missing_files; injected seam)` |
+| 1569 | `_start_missing_file_check` | **port**: `session_ops::start_missing_file_check` (runs 6.b's `missing_files::check_session_files` on the worker bridge) |
 | 1589 | `_on_missing_files_checked` | **port**: `session_ops::on_missing_files_checked` |
 | 1627 | `action_save_session_as` | **port**: `session_ops::action_save_session_as` |
 | 1657 | `action_export_results` | 6.d: Export |
@@ -1484,6 +1484,97 @@ set (section 8), and the row says so.
 
 ## 8. Shots and contrast
 
-The shot set (dark and light, same window size per pair), the measured contrast table and the Tab order are
-added with the shot set; see the PR. The renderer is `examples/shot.rs` (test-only); the measuring script
-lives outside the repo.
+**Where the shots come from.** The hosted `ci` run renders them on the CI toolkit (GTK 4.14 / libadwaita 1.5,
+Xvfb, cairo renderer, temp profile, bundled fonts) with `examples/shot.rs` (test-only) and uploads them as the
+artifact `shots` (run 40079596495 at `8e5764a`; `gh run download 40079596495 -n shots`). Every shot is
+synthetic: no real session, file or image. Each shot has a `.rects` sidecar (label rectangles in window
+coordinates) that the measuring script reads. Window size is 1090x790 in every shot except `empty-min`, which
+is the stated minimum (1010x790).
+
+Shots, dark and light each: `empty` (the empty state), `empty-min` (the empty state at the stated minimum),
+`rows` (a list with rows), `crashed` (the Crashed banner), `survived` ("Nothing survived."), `quota` (the
+SauceNAO pause banner), `logs` (the log viewer), `dialog` (a Yes/No question, default No), `menu` and
+`menu-*-popover` (the Files menu open), `focus` (the first control with the focus ring showing).
+
+**Text contrast.** `measure.py` (outside the repo: `worktrees/DAN-2215-tools/measure.py SHOTDIR`) takes each
+label's rectangle, the most common colour inside it as the background and the pixel farthest from it as the
+foreground (the extreme-pixel method), and reports the WCAG 2.x ratio. **508 labels, dark and light: 0 enabled
+labels under 4.5:1.** The full per-label table is `worktrees/DAN-2215/shots/contrast-ci.md`; the table below
+groups it by (scheme, fg, bg). Disabled controls are exempt (`Start Search`, the gear, `Query Hydrus`,
+`Resume Queue`, ...; each is `DEFERRED(6.e/6.f/6.g/6.h)`). **Not measured:** the text inside the `dialog` shot
+(the scrim dims the window and the dialog's own labels are not in the widget tree the renderer records).
+
+| scheme | fg | bg | ratio | verdict | labels | example |
+|---|---|---|---|---|---|---|
+| dark | #0d0d0d | #6d6863 | 3.53 | disabled (exempt) | 11 | ▶ Start Search, Resume Queue, Review the 4 waiting |
+| dark | #6d6964 | #0d0d0d | 3.57 | disabled (exempt) | 15 | ⚙, Query Hydrus…, Continue with other  |
+| dark | #817b75 | #0d0d0d | 4.65 | pass | 1 | 410 |
+| dark | #827d77 | #0d0d0d | 4.77 | pass | 8 | ETA — |
+| dark | #85807a | #0d0d0d | 4.97 | pass | 1 | Crash log |
+| dark | #87827c | #0d0d0d | 5.10 | pass | 1 | ETA paused |
+| dark | #88827c | #0d0d0d | 5.12 | pass | 3 | Last autosave, paused — quota exhau, Resets |
+| dark | #88837d | #0d0d0d | 5.17 | pass | 2 | ago, Crash log |
+| dark | #89847e | #0d0d0d | 5.24 | pass | 4 | Sites, Quota exhausted at, Images waiting, 00:00 UTC |
+| dark | #8a847e | #0d0d0d | 5.26 | pass | 103 | Files, Hydrus, Sites, Settings, Help, Review, Activity, 00 / |
+| dark | #8d8680 | #0d0d0d | 5.42 | pass | 10 | Hatate did not exit , Or add them from a f, Hatate stopped h |
+| dark | #8f8983 | #0d0d0d | 5.62 | pass | 1 | 力 |
+| dark | #cbc2b8 | #0d0d0d | 11.06 | pass | 1 | 1 |
+| dark | #cdc4ba | #0d0d0d | 11.29 | pass | 64 | 力, 鏡, Hatate, 3, 0s, Queue., ◐, Run interrupted — pa, 0s ago |
+| dark | #0d0d0d | #cdc4ba | 11.29 | pass | 16 | Queue, Add files…, Files, Start new search |
+| light | #3e3c3a | #141414 | 1.68 | disabled (exempt) | 5 | Query Hydrus…, Re-check Queued Impo, Pawchive Index…, Export |
+| light | #bdb9af | #f2ede1 | 1.68 | disabled (exempt) | 5 | Query Hydrus…, Re-check Queued Impo, Pawchive Index…, Export |
+| light | #857f75 | #e8e1d2 | 3.05 | disabled (exempt) | 15 | ⚙, Query Hydrus…, Continue with other  |
+| light | #efe9dc | #857f75 | 3.28 | disabled (exempt) | 11 | ▶ Start Search, Resume Queue, Review the 4 waiting |
+| light | #666258 | #e8e1d2 | 4.67 | pass | 1 | 410 |
+| light | #656057 | #e8e1d2 | 4.80 | pass | 8 | ETA — |
+| light | #8c8680 | #141414 | 5.12 | pass | 2 | Ctrl+S, Ctrl+O |
+| light | #615b53 | #e8e1d2 | 5.15 | pass | 1 | Crash log |
+| light | #605a53 | #e8e1d2 | 5.23 | pass | 1 | ETA paused |
+| light | #5f5a51 | #e8e1d2 | 5.26 | pass | 3 | Last autosave, paused — quota exhau, Resets |
+| light | #5e5950 | #e8e1d2 | 5.34 | pass | 2 | ago, Crash log |
+| light | #5d584f | #e8e1d2 | 5.42 | pass | 4 | Sites, Quota exhausted at, Images waiting, 00:00 UTC |
+| light | #5c574f | #e8e1d2 | 5.50 | pass | 102 | Files, Hydrus, Sites, Settings, Help, Review, Activity, 00 / |
+| light | #5c564e | #e8e1d2 | 5.57 | pass | 1 | Last saved session |
+| light | #5f5b53 | #f2ede1 | 5.78 | pass | 2 | Ctrl+S, Ctrl+O |
+| light | #57524a | #e8e1d2 | 5.95 | pass | 10 | Hatate did not exit , Or add them from a f, Hatate stopped h |
+| light | #514d45 | #e8e1d2 | 6.46 | pass | 1 | 力 |
+| light | #cdc4ba | #262524 | 8.89 | pass | 1 | Add Files… |
+| light | #cdc4ba | #141414 | 10.70 | pass | 5 | Add Folder…, Save Session As…, Open Session…, Open Matched U |
+| light | #211d17 | #ddd8cd | 11.80 | pass | 1 | Add Files… |
+| light | #242019 | #e8e1d2 | 12.45 | pass | 1 | 1 |
+| light | #211d17 | #e8e1d2 | 12.88 | pass | 64 | 力, 鏡, Hatate, 3, 0s, Queue., ◐, Run interrupted — pa, 0s ago |
+| light | #211d17 | #f2ede1 | 14.35 | pass | 5 | Add Folder…, Save Session As…, Open Session…, Open Matched U |
+| light | #f6f1e6 | #211d17 | 14.88 | pass | 16 | Queue, Add files…, Files, Start new search |
+
+**Non-text contrast (3:1).** `nontext.py` (same directory): one pixel line across each boundary, ring or
+border pixel against the surface on each side.
+
+| Shot | Boundary | boundary px | surface A | surface B | ratio vs A | ratio vs B | scheme | 3:1 |
+|---|---|---|---|---|---|---|---|---|
+| focus-dark | focus ring, Queue (checked mode switch): ring px vs the fill it sits in | #0d0d0d | #cdc4ba | #cdc4ba | 11.29 | 11.29 | dark | pass |
+| empty-dark | card hairline (top edge) vs page / vs card | #2d2c2a | #0d0d0d | #0d0d0d | 1.39 | 1.39 | dark | BELOW |
+| empty-dark | Add folder button border (left edge) vs page / vs button | #2e2c2a | #0d0d0d | #0d0d0d | 1.40 | 1.40 | dark | BELOW |
+| empty-dark | run strip border (top edge) vs page / vs strip | #1f1e1d | #0d0d0d | #0d0d0d | 1.17 | 1.17 | dark | BELOW |
+| focus-light | focus ring, Queue (checked mode switch): ring px vs the fill it sits in | #f6f1e6 | #211d17 | #211d17 | 14.88 | 14.88 | light | pass |
+| empty-light | card hairline (top edge) vs page / vs card | #ada79b | #e8e1d2 | #e8e1d2 | 1.84 | 1.84 | light | BELOW |
+| empty-light | Add folder button border (left edge) vs page / vs button | #aca69a | #e8e1d2 | #e8e1d2 | 1.86 | 1.86 | light | BELOW |
+| empty-light | run strip border (top edge) vs page / vs strip | #c8c2b4 | #e8e1d2 | #e8e1d2 | 1.36 | 1.36 | light | BELOW |
+
+- **The focus ring passes in both schemes** (one ring token: 2 px `ink`, or `stamp_fg` on a stamp-filled
+  control). Only the checked mode-switch ring is on a shot; every other control's ring is the same `ink`
+  outline on the page, whose ratio against the page is the `ink` text ratio (11.29 dark, 12.88 light).
+- **The hairlines do not reach 3:1, and this is a measured miss, not a pass.** Card edges, the run strip and
+  the buttons' own borders use `ink-18` from `tokens.css` (design: "hairline, at rest"), which is 1.2 to 1.9:1
+  against the page. Python adds two tiers beyond the sheet (`ink-46` and `ink-58`, DAN-224) for exactly this;
+  the ticket says tokens only, so they are not carried over (D3). Every control that has only its border to
+  say it is a control also carries a text label that passes 4.5:1. The call whether a boundary this faint is
+  acceptable, or `ink-45` (3.1:1, a token) should be used for control borders, is the design read's. Nothing
+  here changes the colour without that call.
+- **Not judgeable from shots:** window chrome, the GPU renderer, the real compositor backdrop (inactive
+  selection), HiDPI and hover wash. Owner: Cloud, on real hardware in Phase 7 (DAN-1999 F4).
+
+**Tab order of the shell** (state `tab` of `shot.rs`, walking `child_focus(TabForward)` from the top): on the
+empty Queue, `Queue`, `Review`, `Activity`, `Add files`, `Add folder`. `Start Search`, the gear and
+`Query Hydrus` are disabled and are skipped. The order is printed by the shot renderer in a live Xvfb
+session (hosted `ci` log, step "shots"). The menubar's own keyboard path (Files, Hydrus, Sites, Settings,
+Help) is not covered by a shot or a scenario here and is left to the design read.
