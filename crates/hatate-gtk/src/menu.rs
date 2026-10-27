@@ -8,6 +8,7 @@
 //! are left (`grep -n 'DEFERRED(' crates/hatate-gtk/src/menu.rs`).
 
 use gtk4::gio;
+use gtk4::prelude::*;
 
 /// Who implements the action.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -83,7 +84,6 @@ pub fn all_site_options() -> Vec<String> {
 pub fn menus() -> Vec<Menu> {
     use Owner::{Later, Shell};
     // DEFERRED(6.g): Query Hydrus, Re-check Queued Imports, Pawchive Index, the two Send items.
-    // DEFERRED(6.d): Export Results, Write Tag Files, Clear Search Cache.
     // DEFERRED(6.f): Edit Match Conditions.
     // DEFERRED(6.h): Preferences.
     let files = Menu {
@@ -103,8 +103,8 @@ pub fn menus() -> Vec<Menu> {
             ),
             keyed("Open Session\u{2026}", "open-session", "<Ctrl>o", Shell),
             Entry::Separator,
-            item("Export Results\u{2026}", "export-results", Later("6.d")),
-            item("Write Tag Files\u{2026}", "write-tag-files", Later("6.d")),
+            item("Export Results\u{2026}", "export-results", Shell),
+            item("Write Tag Files\u{2026}", "write-tag-files", Shell),
             Entry::Separator,
             item("Open Matched URLs Log", "open-log", Shell),
             Entry::Separator,
@@ -173,11 +173,7 @@ pub fn menus() -> Vec<Menu> {
         entries: vec![
             item("View Logs\u{2026}", "view-logs", Shell),
             item("Parser Health\u{2026}", "parser-health", Shell),
-            item(
-                "Clear Search Cache\u{2026}",
-                "clear-search-cache",
-                Later("6.d"),
-            ),
+            item("Clear Search Cache\u{2026}", "clear-search-cache", Shell),
             item(
                 "Clear List and Saved Session\u{2026}",
                 "clear-session",
@@ -241,8 +237,32 @@ pub fn site_action(index: usize) -> String {
     format!("site-{index}")
 }
 
-/// The `gio::Menu` for the menubar.
-pub fn model() -> gio::Menu {
+/// Where the Clear Search Cache item sits, so its label (which carries the cache size) can be
+/// replaced when the Help menu is about to be shown (`_update_clear_cache_action_label`).
+pub struct ClearCacheItem {
+    section: gio::Menu,
+    position: i32,
+}
+
+impl ClearCacheItem {
+    /// The label the menu shows now.
+    pub fn label(&self) -> String {
+        self.section
+            .item_attribute_value(self.position, "label", None)
+            .and_then(|v| v.str().map(str::to_owned))
+            .unwrap_or_default()
+    }
+
+    pub fn set_label(&self, label: &str) {
+        self.section.remove(self.position);
+        let item = gio::MenuItem::new(Some(label), Some("win.clear-search-cache"));
+        self.section.insert_item(self.position, &item);
+    }
+}
+
+/// The `gio::Menu` for the menubar, and the handle to the item whose label changes.
+pub fn model() -> (gio::Menu, ClearCacheItem) {
+    let mut clear_cache = None;
     let bar = gio::Menu::new();
     let mut site_index = 0usize;
     for menu in menus() {
@@ -251,6 +271,12 @@ pub fn model() -> gio::Menu {
         for e in &menu.entries {
             match e {
                 Entry::Item { label, action, .. } => {
+                    if *action == "clear-search-cache" {
+                        clear_cache = Some(ClearCacheItem {
+                            section: section.clone(),
+                            position: section.n_items(),
+                        });
+                    }
                     section.append(Some(label), Some(&format!("win.{action}")));
                 }
                 Entry::Check { label, .. } => {
@@ -287,7 +313,10 @@ pub fn model() -> gio::Menu {
         m.append_section(None, &section);
         bar.append_submenu(Some(menu.title), &m);
     }
-    bar
+    (
+        bar,
+        clear_cache.expect("the Help menu has Clear Search Cache"),
+    )
 }
 
 #[cfg(test)]
@@ -412,10 +441,8 @@ mod tests {
         assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
         for want in [
             "query-hydrus",
-            "export-results",
             "preferences",
             "edit-conditions",
-            "clear-search-cache",
         ] {
             assert!(d.iter().any(|(n, _)| *n == want), "{want} not deferred");
         }
@@ -434,8 +461,11 @@ mod tests {
             "site",
             "parser-health",
             "toggle-search",
+            "export-results",
+            "write-tag-files",
+            "clear-search-cache",
         ] {
-            assert!(!d.iter().any(|(n, _)| *n == working), "{working} is 6.c's");
+            assert!(!d.iter().any(|(n, _)| *n == working), "{working} is wired");
         }
     }
 }

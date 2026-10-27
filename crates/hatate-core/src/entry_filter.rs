@@ -134,10 +134,91 @@ pub fn upscale_verdicts_present(entries: &[Entry]) -> Vec<&'static str> {
         .collect()
 }
 
+/// `summarise_selection` (`gui/filter_bar.py`): the text of a filter button, `"Status: All"`,
+/// `"Site: Danbooru"`, `"Status: 3 selected"`. `chosen` of `None` means "not filtering", and so
+/// does a chosen set that covers everything present.
+pub fn summarise_selection(
+    prefix: &str,
+    chosen: Option<&HashSet<String>>,
+    present: &HashSet<String>,
+) -> String {
+    match chosen {
+        Some(chosen) if !chosen.is_superset(present) => match chosen.len() {
+            1 => format!("{prefix}: {}", chosen.iter().next().unwrap()),
+            n => format!("{prefix}: {n} selected"),
+        },
+        _ => format!("{prefix}: All"),
+    }
+}
+
+/// `describe_hidden`: says plainly that the rest are hidden, not gone (the count's tooltip).
+pub fn describe_hidden(shown: usize, total: usize) -> String {
+    format!(
+        "showing {} of {} (the rest are hidden, not removed)",
+        crate::eta::thousands(shown as i64),
+        crate::eta::thousands(total as i64)
+    )
+}
+
+/// `hidden_count_text`: the reading on the right of the bar, `"3 hidden"`.
+pub fn hidden_count_text(shown: usize, total: usize) -> String {
+    format!(
+        "{} hidden",
+        crate::eta::thousands(total.saturating_sub(shown) as i64)
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::Candidate;
+
+    fn strs(items: &[&str]) -> HashSet<String> {
+        items.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_filter_button_says_all_for_none_and_for_everything_ticked() {
+        let present = strs(&["Danbooru", "Safebooru"]);
+        assert_eq!(summarise_selection("Site", None, &present), "Site: All");
+        assert_eq!(
+            summarise_selection(
+                "Site",
+                Some(&strs(&["Danbooru", "Safebooru", "Gone"])),
+                &present
+            ),
+            "Site: All"
+        );
+        assert_eq!(
+            summarise_selection("Site", Some(&strs(&["Danbooru"])), &present),
+            "Site: Danbooru"
+        );
+        assert_eq!(
+            summarise_selection("Status", Some(&HashSet::new()), &present),
+            "Status: 0 selected"
+        );
+        assert_eq!(
+            summarise_selection("Status", Some(&strs(&["a", "b"])), &strs(&["a", "b", "c"])),
+            "Status: 2 selected"
+        );
+        // Nothing present and nothing chosen is still "everything covered".
+        assert_eq!(
+            summarise_selection("Status", Some(&HashSet::new()), &HashSet::new()),
+            "Status: All"
+        );
+    }
+
+    #[test]
+    fn the_hidden_count_is_total_minus_shown_with_thousands() {
+        assert_eq!(hidden_count_text(3, 5), "2 hidden");
+        assert_eq!(hidden_count_text(5, 5), "0 hidden");
+        assert_eq!(hidden_count_text(2, 5_000), "4,998 hidden");
+        assert_eq!(hidden_count_text(9, 3), "0 hidden");
+        assert_eq!(
+            describe_hidden(1_200, 5_000),
+            "showing 1,200 of 5,000 (the rest are hidden, not removed)"
+        );
+    }
 
     fn entry(path: &str, status: MatchStatus) -> Entry {
         let mut e = Entry::new(path);

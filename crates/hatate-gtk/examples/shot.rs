@@ -8,12 +8,18 @@
 //! first button focused with the ring showing), `failed` (the Failed banner), `activity` (the
 //! Activity page) or `parser-health` (the Parser Health dialog), `focus-files` / `focus-folder` (the stamp-filled Add
 //! files, the hollow Add folder, focused with the ring showing) or `hover-folder` (Add folder under
-//! the pointer) or `menu-hover` (the Files menu open with `Save Session As…` under the pointer). The size `min` is the window's stated minimum.
+//! the pointer) or `menu-hover` (the Files menu open with `Save Session As…` under the pointer). The Queue states (6.d) are `queue` (24 rows
+//! with real pictures, all six statuses), `queue-selected` (two rows selected), `queue-sorted` (by
+//! Status, the chevron showing), `queue-filter` (a filename filter with the hidden count),
+//! `queue-filter-empty` (a filter that hides every row), `queue-menu` (the row context menu over a
+//! selected row), `queue-remove` (the Remove question), `queue-focus` (the first row focused with
+//! the ring showing) and `queue-focus-selected` (the same row, selected), `queue-5000` (5,000 rows, scrolled into the middle) and `queue-5000-scroll`
+//! (the same, printing the scroll frame timing). The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
 use hatate_core::config::Settings;
-use hatate_core::model::{Entry, MatchStatus};
+use hatate_core::model::{Candidate, Entry, MatchStatus};
 use hatate_core::paths::Paths;
 use hatate_core::quota_pause::{QuotaPause, QuotaPauseFile};
 use hatate_core::session::SessionStore;
@@ -24,6 +30,43 @@ use std::ffi::OsString;
 use std::rc::Rc;
 
 const NOW: f64 = 1_792_000_000.0;
+
+/// The Queue's synthetic rows: small real pictures (so the thumbnail column has something to
+/// decode), the six statuses in turn, and a measured similarity on the searched ones.
+fn queue_rows(pics: &std::path::Path, n: usize) -> Vec<Entry> {
+    (0..n)
+        .map(|i| {
+            let path = pics.join(format!("synthetic-{i:04}.png"));
+            let hue = (i as u8).wrapping_mul(40);
+            image::RgbaImage::from_fn(96, 64, |x, y| {
+                image::Rgba([
+                    hue.wrapping_add(x as u8),
+                    60 + y as u8,
+                    200u8.wrapping_sub(hue),
+                    255,
+                ])
+            })
+            .save(&path)
+            .expect("synthetic picture");
+            let mut e = Entry::new(path.to_string_lossy().into_owned());
+            e.status = MatchStatus::ALL[i % MatchStatus::ALL.len()];
+            if matches!(e.status, MatchStatus::Good | MatchStatus::Poor) {
+                let mut c = Candidate::new(format!("https://example.invalid/post/{i}"));
+                c.similarity = if e.status == MatchStatus::Good {
+                    94.0
+                } else {
+                    71.0
+                };
+                c.similarity_measured = true;
+                c.width = Some(1200);
+                c.height = Some(800);
+                e.candidates.push(c);
+            }
+            e.hydrus_hash = Some(format!("{i:064x}"));
+            e
+        })
+        .collect()
+}
 
 fn main() -> glib::ExitCode {
     let mut args = std::env::args().skip(1);
@@ -79,6 +122,14 @@ fn main() -> glib::ExitCode {
     match state.as_str() {
         "rows" | "dialog" | "dialog-nolabel" | "failed" | "activity" | "parser-health"
         | "tab-failed" | "tab-activity" => save(&rows(12)),
+        st if st.starts_with("queue") => save(&queue_rows(
+            &pics,
+            if st.starts_with("queue-5000") {
+                5000
+            } else {
+                24
+            },
+        )),
         "crashed" => {
             unclean = true;
             let mut r = rows(8);
@@ -134,7 +185,12 @@ fn main() -> glib::ExitCode {
         let state = state.clone();
         win.add_tick_callback(move |win, _| {
             frames.set(frames.get() + 1);
-            if frames.get() < if state == "menu-hover" { 60 } else { 14 } {
+            let settle = match state.as_str() {
+                "menu-hover" => 60,
+                "queue-5000-scroll" => 400,
+                _ => 14,
+            };
+            if frames.get() < settle {
                 return glib::ControlFlow::Continue;
             }
             // The log viewer is its own window; its shot is that window's, not the main one's.
@@ -170,7 +226,7 @@ fn main() -> glib::ExitCode {
                 std::fs::write(out.with_extension("tree"), tree).expect("tree");
             }
             // A popover is its own surface, so the window's snapshot does not hold it.
-            if let Some(p) = first_popover_menu(win.upcast_ref()).filter(|p| p.is_visible()) {
+            if let Some(p) = visible_popover_menu(win.upcast_ref()) {
                 if let Some(tex) = texture_of(p.upcast_ref(), &renderer) {
                     let popover_png = out.with_file_name(format!(
                         "{}-popover.png",
@@ -201,6 +257,7 @@ fn main() -> glib::ExitCode {
 /// What the state does once the window is up.
 fn prepare(window: &MainWindow, state: &str) {
     match state {
+        st if st.starts_with("queue") => prepare_queue(window, st),
         "dialog" => window.activate_action("clear-session"),
         // The control for the glyph fragment under the dialog (DAN-2256): the same shot with the
         // Queue page's placeholder label hidden, so any pixel under the dialog's border that
@@ -480,6 +537,104 @@ fn texture_of(w: &gtk4::Widget, renderer: &gtk4::gsk::Renderer) -> Option<gdk::T
         ah as f32,
     );
     Some(renderer.render_texture(&node, Some(&view)))
+}
+
+/// A popover menu that is open now (the menubar's closed ones are in the tree too).
+fn visible_popover_menu(w: &gtk4::Widget) -> Option<gtk4::PopoverMenu> {
+    if let Some(p) = w
+        .downcast_ref::<gtk4::PopoverMenu>()
+        .filter(|p| p.is_visible())
+    {
+        return Some(p.clone());
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(p) = visible_popover_menu(&child) {
+            return Some(p);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
+/// What a Queue state does once the window is up.
+fn prepare_queue(window: &MainWindow, state: &str) {
+    use hatate_core::table_cells::Column;
+    let view = window.s.queue_view.clone();
+    let ids = view.visible_ids();
+    match state {
+        "queue-selected" => view.select_ids(&ids[1..3]),
+        "queue-sorted" => view.on_header_clicked(Column::Status),
+        "queue-filter" => window.s.filter_bar.text.set_text("synthetic-001"),
+        "queue-filter-empty" => window.s.filter_bar.text.set_text("no such file"),
+        "queue-menu" => {
+            view.select_ids(&ids[1..3]);
+            window.show_table_context_menu(80.0, 120.0);
+        }
+        "queue-remove" => {
+            view.select_ids(&ids[1..3]);
+            window.remove_rows(&ids[1..3]);
+        }
+        "queue-focus" | "queue-focus-selected" => {
+            window.win.set_focus_visible(true);
+            if state == "queue-focus-selected" {
+                view.select_row(0);
+            }
+            view.view.grab_focus();
+            // What holds focus, for the verdict (and for a ring that does not show).
+            let win = window.win.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
+                if let Some(f) = GtkWindowExt::focus(&win) {
+                    let b = f.compute_bounds(&win);
+                    println!(
+                        "FOCUS {} classes={:?} focus_visible={} bounds={:?}",
+                        describe(&f),
+                        f.css_classes(),
+                        f.has_visible_focus(),
+                        b.map(|b| (b.x(), b.y(), b.width(), b.height()))
+                    );
+                }
+            });
+        }
+        "queue-5000" => {
+            let adj = view.scroller.vadjustment();
+            glib::idle_add_local_once(move || adj.set_value(adj.upper() / 2.0));
+        }
+        "queue-5000-scroll" => {
+            // Scroll frame timing, as the spike measured it: 240 frames of a steady scroll
+            // down the list; report the frames over 16.7 ms and the 95th percentile.
+            let adj = view.scroller.vadjustment();
+            let last = Cell::new(0i64);
+            let times = std::cell::RefCell::new(Vec::<f64>::new());
+            view.view.add_tick_callback(move |w, clock| {
+                let now = clock.frame_time();
+                if last.get() != 0 {
+                    times.borrow_mut().push((now - last.get()) as f64 / 1000.0);
+                }
+                last.set(now);
+                let n = times.borrow().len();
+                adj.set_value(adj.value() + 40.0);
+                if n >= 240 {
+                    let mut t = times.borrow().clone();
+                    t.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    let over = t.iter().filter(|ms| **ms > 16.7).count();
+                    println!(
+                        "SCROLL frames={} over_16.7ms={} p95={:.2}ms max={:.2}ms rows={} scrolled_to={:.0}/{:.0}",
+                        t.len(),
+                        over,
+                        t[(t.len() * 95 / 100).min(t.len() - 1)],
+                        t[t.len() - 1],
+                        w.height(),
+                        adj.value(),
+                        adj.upper()
+                    );
+                    return glib::ControlFlow::Break;
+                }
+                glib::ControlFlow::Continue
+            });
+        }
+        _ => {}
+    }
 }
 
 fn first_popover_menu(w: &gtk4::Widget) -> Option<gtk4::PopoverMenu> {

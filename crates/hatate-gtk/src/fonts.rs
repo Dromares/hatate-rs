@@ -182,4 +182,33 @@ mod tests {
         );
         assert_eq!(default_dir(env(&[])), None);
     }
+
+    /// `test_every_status_glyph_is_covered_by_its_routed_font`: a glyph routed to the bundled face
+    /// is one it carries, and a glyph routed to the mono face is not one of the six it ships for.
+    #[test]
+    fn every_glyph_the_queue_draws_is_in_the_face_it_is_routed_to() {
+        use hatate_core::status_tier::{GlyphFont, SentTier, StatusTier};
+        let tiers = [
+            StatusTier::Good,
+            StatusTier::Review,
+            StatusTier::NotFound,
+            StatusTier::Error,
+            StatusTier::Searching,
+            StatusTier::Unsearched,
+        ];
+        let mut routed = tiers.map(|t| (t.glyph(), t.glyph_font())).to_vec();
+        for t in [SentTier::Queued, SentTier::Sent] {
+            routed.push((t.glyph().expect("a sent state has a glyph"), t.glyph_font()));
+        }
+        assert!(SentTier::NotSent.glyph().is_none());
+        for (glyph, font) in routed {
+            match font {
+                GlyphFont::RyokuStatus => assert!(
+                    STATUS_GLYPHS.contains(&glyph),
+                    "{glyph:?} is routed to Ryoku Status but the face does not carry it"
+                ),
+                GlyphFont::Mono => {}
+            }
+        }
+    }
 }

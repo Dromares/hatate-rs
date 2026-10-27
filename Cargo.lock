@@ -1123,6 +1123,7 @@ dependencies = [
  "async-channel",
  "gtk4",
  "hatate-core",
+ "image",
  "libadwaita",
  "rusqlite",
  "serde_json",

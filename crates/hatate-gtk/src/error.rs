@@ -78,6 +78,76 @@ impl fmt::Display for SessionError {
 
 impl std::error::Error for SessionError {}
 
+/// A results file could not be written (Export Results).
+#[derive(Debug)]
+pub struct ExportError {
+    error: std::io::Error,
+    path: std::path::PathBuf,
+}
+
+impl ExportError {
+    pub fn new(path: &Path, error: std::io::Error) -> ExportError {
+        ExportError {
+            error,
+            path: path.to_owned(),
+        }
+    }
+
+    pub fn kind(&self) -> ErrorKind {
+        ErrorKind::Io
+    }
+
+    pub fn user_message(&self) -> String {
+        "The results could not be written. Check that the folder exists and has room, then try \
+         again."
+            .to_owned()
+    }
+
+    pub fn detail(&self) -> String {
+        format!("{}: {}", self.path.display(), self.error)
+    }
+}
+
+impl fmt::Display for ExportError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.user_message())
+    }
+}
+
+impl std::error::Error for ExportError {}
+
+/// The search cache could not be cleared.
+#[derive(Debug)]
+pub struct CacheError {
+    error: std::io::Error,
+}
+
+impl CacheError {
+    pub fn new(error: std::io::Error) -> CacheError {
+        CacheError { error }
+    }
+
+    pub fn kind(&self) -> ErrorKind {
+        ErrorKind::Io
+    }
+
+    pub fn user_message(&self) -> String {
+        "The search cache could not be cleared. See Help > View Logs for details.".to_owned()
+    }
+
+    pub fn detail(&self) -> String {
+        self.error.to_string()
+    }
+}
+
+impl fmt::Display for CacheError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.user_message())
+    }
+}
+
+impl std::error::Error for CacheError {}
+
 /// The bundled fonts could not be put where fontconfig can see them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontError {
@@ -161,6 +231,18 @@ mod tests {
             clean(&e.user_message(), "UNIQUE");
             assert!(!e.detail().is_empty());
         }
+    }
+
+    #[test]
+    fn an_export_or_cache_failure_hides_the_path_and_the_os_text() {
+        let os = std::io::Error::from_raw_os_error(2);
+        let e = ExportError::new(Path::new("/home/someone/out.csv"), os);
+        assert_eq!(e.kind(), ErrorKind::Io);
+        clean(&e.user_message(), "/home/someone");
+        assert!(e.detail().contains("/home/someone/out.csv") && e.detail().contains("os error 2"));
+        let c = CacheError::new(std::io::Error::from_raw_os_error(13));
+        clean(&c.user_message(), "denied");
+        assert!(c.detail().contains("os error 13"));
     }
 
     #[test]

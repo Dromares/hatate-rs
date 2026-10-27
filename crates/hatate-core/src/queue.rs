@@ -123,6 +123,29 @@ impl QueueModel {
         id
     }
 
+    /// `self.entries.sort(...)` (`_apply_sort`): puts the list in a new order in place. `order[i]`
+    /// is the current position of the entry that becomes row `i`; anything that is not a
+    /// permutation of `0..len()` leaves the list as it was and returns `false`.
+    pub fn reorder(&mut self, order: &[usize]) -> bool {
+        let n = self.entries.len();
+        let mut seen = vec![false; n];
+        if order.len() != n
+            || order
+                .iter()
+                .any(|&p| p >= n || std::mem::replace(&mut seen[p], true))
+        {
+            return false;
+        }
+        let mut old: Vec<Option<Entry>> = std::mem::take(&mut self.entries)
+            .into_iter()
+            .map(Some)
+            .collect();
+        self.entries = order.iter().filter_map(|&p| old[p].take()).collect();
+        self.ids = order.iter().map(|&p| self.ids[p]).collect();
+        self.events.push(QueueEvent::TableRefreshed);
+        true
+    }
+
     /// `_entry_at(row)`: a row by its index into the FULL queue, `None` outside it.
     pub fn entry_at(&self, row: i64) -> Option<&Entry> {
         usize::try_from(row).ok().and_then(|r| self.entries.get(r))
@@ -696,6 +719,22 @@ mod tests {
             entries,
             Arc::new(Mutex::new(Settings::with_defaults(&paths))),
         )
+    }
+
+    #[test]
+    fn reorder_moves_entries_and_ids_together_and_refuses_a_non_permutation() {
+        let mut m = model(3);
+        let ids: Vec<EntryId> = (0..3).map(|i| m.id_at(i).unwrap()).collect();
+        assert!(m.reorder(&[2, 0, 1]));
+        assert_eq!(m.entry_at(0).unwrap().path, "/q/2.png");
+        assert_eq!(m.id_at(0), Some(ids[2]));
+        assert_eq!(m.position_of(ids[0]), Some(1));
+        assert_eq!(m.take_events(), vec![QueueEvent::TableRefreshed]);
+        for bad in [&[0usize, 0, 1][..], &[0, 1], &[0, 1, 3]] {
+            assert!(!m.reorder(bad));
+        }
+        assert_eq!(m.entry_at(0).unwrap().path, "/q/2.png");
+        assert!(m.take_events().is_empty());
     }
 
     #[test]

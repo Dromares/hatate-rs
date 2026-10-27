@@ -313,7 +313,8 @@ section! {
         theme: String = "system".to_owned(),
         /// Declared and never used by the Python app. Kept, always `""` by default (spec 2.6).
         window_geometry: String = String::new(),
-        /// Qt header state (base64). The Rust GUI cannot read it and must keep it verbatim (rule 6.1.6).
+        /// Python writes a Qt header state here (base64); the Rust GUI writes `hatate-rs:1:` and the widths
+        /// and never parses a Qt blob (ruling on DAN-2293), so it resets one it finds to `""`.
         table_header_state: String = String::new(),
         table_header_columns: i64 = 0,
     }

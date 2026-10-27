@@ -172,10 +172,13 @@ fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
     for (i, step) in spec["steps"].as_array().unwrap().iter().enumerate() {
         let op = step["op"].as_str().unwrap();
         for a in step["msg"].as_array().into_iter().flatten() {
-            script.push(Answer::Msg(if a.as_str() == Some("yes") {
-                Response::Yes
-            } else {
-                Response::No
+            script.push(Answer::Msg(match a.as_str() {
+                Some("yes") => Response::Yes,
+                Some("keep") => Response::Keep,
+                Some("replace") => Response::Replace,
+                Some("cancel") => Response::Cancel,
+                Some("remove") => Response::Remove,
+                _ => Response::No,
             }));
         }
         do_step(ctx, &w, &script, &search, step);
@@ -264,6 +267,86 @@ fn do_step(
         } else {
             "sites-select-none"
         }),
+        "filter_text" => w.s.filter_bar.text.set_text(step["text"].as_str().unwrap()),
+        "filter_isolate" | "filter_toggle" | "filter_all" => {
+            let bar = &w.s.filter_bar;
+            let (prefix, group) = match step["kind"].as_str().unwrap() {
+                "status" => ("Status", "fstatus"),
+                "site" => ("Site", "fsite"),
+                _ => ("Upscale", "fupscale"),
+            };
+            let label = step["label"].as_str().unwrap();
+            let hit = bar.present(prefix).iter().position(|l| l == label);
+            if op == "filter_all" {
+                bar.set_all_named(prefix, true);
+            } else if let Some(i) = hit {
+                if op == "filter_isolate" {
+                    bar.set_all_named(prefix, false);
+                }
+                bar.button(prefix)
+                    .activate_action(&format!("{group}.v{i}"), None)
+                    .unwrap();
+            }
+        }
+        "filter_clear" => w.s.filter_bar.clear_all(),
+        "sort" => {
+            for _ in 0..step["times"].as_u64().unwrap_or(1) {
+                w.s.queue_view.on_header_clicked(
+                    hatate_core::table_cells::Column::ALL
+                        [step["column"].as_u64().unwrap() as usize],
+                );
+            }
+        }
+        "select" => {
+            let ids = w.s.queue_view.visible_ids();
+            let pick: Vec<_> = step["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|r| ids.get(r.as_u64().unwrap() as usize).copied())
+                .collect();
+            w.s.queue_view.select_ids(&pick);
+        }
+        "select_status" => {
+            let st = hatate_core::model::MatchStatus::ALL
+                .into_iter()
+                .find(|s| s.as_str() == step["status"].as_str().unwrap())
+                .expect("status");
+            w.select_rows_by_status(st);
+        }
+        "reset" => w.reset_rows(&w.s.queue_view.selected_ids()),
+        "reviewed" => w.set_rows_reviewed(
+            &w.s.queue_view.selected_ids(),
+            step["value"].as_bool().unwrap(),
+        ),
+        "remove" => w.remove_rows(&w.s.queue_view.selected_ids()),
+        "export" => {
+            std::fs::create_dir_all(ctx.files.join("out")).unwrap();
+            let filter = match step["filter"].as_str().unwrap() {
+                "csv" => "CSV spreadsheet (*.csv)",
+                "json" => "JSON (*.json)",
+                "all" => "All files (*)",
+                _ => "",
+            };
+            script.push(Answer::Save(
+                step["path"]
+                    .as_str()
+                    .map(|p| (abs(ctx, p), filter.to_owned())),
+            ));
+            if step["scope"] == "all" {
+                w.action_export_results(None);
+            } else {
+                w.action_export_results(Some(&w.s.queue_view.selected_ids()));
+            }
+        }
+        "write_tags" => {
+            if step["scope"] == "all" {
+                w.action_write_tag_files(None);
+            } else {
+                w.action_write_tag_files(Some(&w.s.queue_view.selected_ids()));
+            }
+        }
+        "clear_cache" => w.action_clear_search_cache(),
         other => panic!("unknown op {other}"),
     }
 }
@@ -433,6 +516,10 @@ fn button(r: Response) -> &'static str {
         Response::Ok => "ok",
         Response::Yes => "yes",
         Response::No => "no",
+        Response::Keep => "keep",
+        Response::Replace => "replace",
+        Response::Remove => "remove",
+        Response::Cancel => "cancel",
     }
 }
 
@@ -472,7 +559,12 @@ fn digest(
         .map(|(d, r)| {
             json!({
                 "kind": kind(d.kind), "title": d.title, "text": d.text,
-                "buttons": if d.buttons == Buttons::YesNo { "yes_no" } else { "ok" },
+                "buttons": match d.buttons {
+                    Buttons::YesNo => "yes_no",
+                    Buttons::KeepReplaceCancel => "keep_replace_cancel",
+                    Buttons::RemoveCancel => "remove_cancel",
+                    Buttons::Ok => "ok",
+                },
                 "default": button(d.default),
                 "result": if d.buttons == Buttons::Ok { "ok" } else { button(*r) },
             })
@@ -539,6 +631,11 @@ fn digest(
             "meta": quota_meta,
         },
         "survived_meta": survived_meta,
+        "table": table_text(w),
+        "selected": selected_paths(w),
+        "sort": s.queue_view.sort_state().map_or(Value::Null, |(c, asc)| json!([c as u8, asc])),
+        "filter": filter_state(w),
+        "tree": tree_state(ctx),
         "dialogs": dialogs,
         "choosers": choosers,
         "opened": opened.borrow().iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
@@ -613,4 +710,120 @@ fn profile_files(ctx: &Ctx, paths: &Paths) -> Value {
         }
     }
     json!({"session_rows": session_rows, "config": config, "named": named})
+}
+
+/// Each row's display text (`data(DisplayRole)`, so the model's text and not the chip drawn from
+/// it, which the pure differential covers), Thumb left out, in screen order.
+fn table_text(w: &MainWindow) -> Value {
+    use hatate_core::table_cells::{Column, cell_text};
+    let view = &w.s.queue_view;
+    let q = w.s.queue.borrow();
+    Value::Array(
+        view.visible_ids()
+            .into_iter()
+            .filter_map(|id| q.entry(id))
+            .map(|e| {
+                Value::Array(
+                    Column::ALL[1..]
+                        .iter()
+                        .map(|c| json!(cell_text(e, *c)))
+                        .collect(),
+                )
+            })
+            .collect(),
+    )
+}
+
+/// The selected rows' paths, in screen order.
+fn selected_paths(w: &MainWindow) -> Value {
+    let view = &w.s.queue_view;
+    let q = w.s.queue.borrow();
+    let mut rows: Vec<(u32, String)> = view
+        .selected_ids()
+        .into_iter()
+        .filter_map(|id| Some((view.row_of(id)?, q.entry(id)?.path.clone())))
+        .collect();
+    rows.sort();
+    json!(rows.into_iter().map(|(_, p)| p).collect::<Vec<_>>())
+}
+
+fn filter_state(w: &MainWindow) -> Value {
+    let bar = &w.s.filter_bar;
+    let menu = |prefix: &str| -> (Vec<String>, Vec<bool>) {
+        let names = bar.present(prefix);
+        let ticks = (0..names.len()).map(|i| bar.ticked(prefix, i)).collect();
+        (names, ticks)
+    };
+    let (status_menu, status_checked) = menu("Status");
+    let (site_menu, site_checked) = menu("Site");
+    let (upscale_menu, upscale_checked) = menu("Upscale");
+    json!({
+        "text": bar.text.text().to_string(),
+        "status": bar.button("Status").label().map(|l| l.to_string()),
+        "site": bar.button("Site").label().map(|l| l.to_string()),
+        "upscale": bar.button("Upscale").label().map(|l| l.to_string()),
+        "count": bar.count.label().to_string(),
+        "count_tip": bar.count.tooltip_text().map(|t| t.to_string()).unwrap_or_default(),
+        "clear_enabled": bar.clear.is_sensitive(),
+        "status_menu": status_menu, "status_checked": status_checked,
+        "site_menu": site_menu, "site_checked": site_checked,
+        "upscale_menu": upscale_menu, "upscale_checked": upscale_checked,
+    })
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut crc = 0xffff_ffffu32;
+    for b in data {
+        crc ^= u32::from(*b);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xedb8_8320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
+
+/// Every file under the scenario's directory (size, crc, mode), the named sessions apart.
+fn tree_state(ctx: &Ctx) -> Value {
+    use std::os::unix::fs::PermissionsExt;
+    fn walk(base: &Path, dir: &Path, out: &mut BTreeMap<String, Value>) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(base, &p, out);
+            } else if let Ok(data) = std::fs::read(&p) {
+                let rel = p.strip_prefix(base).unwrap();
+                if rel.components().any(|c| c.as_os_str() == "named") {
+                    continue;
+                }
+                let mode = std::fs::metadata(&p)
+                    .map(|m| m.permissions().mode() & 0o777)
+                    .unwrap_or(0);
+                out.insert(
+                    rel.to_string_lossy().into_owned(),
+                    json!([data.len(), crc32(&data), mode]),
+                );
+                if rel
+                    .components()
+                    .next()
+                    .is_some_and(|c| c.as_os_str() == "out")
+                {
+                    let head = &data[..data.len().min(700)];
+                    out.insert(
+                        format!("{}#text", rel.to_string_lossy()),
+                        json!(String::from_utf8_lossy(head)),
+                    );
+                }
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    walk(&ctx.files, &ctx.files, &mut out);
+    json!(out)
 }

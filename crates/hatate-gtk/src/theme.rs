@@ -194,6 +194,19 @@ button.link { background: none; border: none; box-shadow: none; padding: 0; min-
   color: @ink_65; font-family: %mono%; font-size: %label%px; letter-spacing: 0.06em; text-decoration: underline; }
 button.link:hover { color: @ink; }
 
+/* ---- the filter band over the Queue (gui/filter_bar.py; the mockup's .field): a hairline band, mono
+   fields on the border tier, the hidden count on the label tier (the mockup's ink_45 is under 4.5:1) ---- */
+.filter-band { border: 1px solid @ink_18; }
+entry.field, menubutton.field > button { background: transparent; color: @ink; border: 1px solid @ink_46;
+  border-radius: 0; box-shadow: none; font-family: %mono%; font-size: %label%px; letter-spacing: 0.04em;
+  min-height: 0; min-width: 0; }
+entry.field { padding: 7px 10px; }
+menubutton.field > button { padding: 6px 14px; }
+entry.field:hover, menubutton.field > button:hover { border-color: @ink_58; }
+entry.field:focus-within { border-color: @ink; }
+entry.field text > placeholder { color: @ink_65; opacity: 1; }
+.filter-count { font-family: %mono%; font-size: %label%px; color: @ink_65; }
+
 /* ---- keycaps (the mockup's .kbd) and the key-hint bar ---- */
 .keycap { border: 1px solid @ink_28; color: @ink_65; padding: 0 5px; font-size: %micro%px; letter-spacing: 0.08em; }
 button.pill.primary .keycap { border-color: @stamp_fg; color: @stamp_fg; }
@@ -288,10 +301,42 @@ dialog.alert separator { background: @ink_18; min-width: 1px; min-height: 1px; }
 textview.log, textview.log text { background: @sunken; color: @ink; font-family: %mono%; font-size: 12px; }
 .log-path { font-family: %mono%; font-size: %label%px; color: @ink_65; }
 
+/* ---- the Queue table (DAN-2217). Ink tiers are classes the cell renderer sets; the status glyphs
+   take the bundled face through Pango markup, so no rule names it here ---- */
+.queue-frame { background: @raised; border: 1px solid @ink_18; }
+.queue { background: @raised; color: @ink; }
+.queue > header { background: @raised; border-bottom: 1px solid @ink_28; }
+.queue > header > button { border-radius: 0; background: transparent; color: @ink_65; padding: 0 %space_3%px;
+  min-height: 28px; font-family: %mono%; font-size: %micro%px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; }
+.queue > header > button:hover { background: @ink_10; color: @ink; }
+.queue > header > button label { opacity: 1; color: @ink_65; }
+.queue > header > button:hover label { color: @ink; }
+.queue > header > button sort-indicator { color: @ink; min-width: 10px; min-height: 10px; }
+.queue > listview > row { min-height: 48px; border-bottom: 1px solid @ink_18; background: @raised; padding: 0; }
+.queue > listview > row:selected { background: @stamp_bg; color: @stamp_fg; }
+.queue > listview > row:selected label { color: @stamp_fg; }
+/* the row is clipped by the list, so the global 2px ring at offset 2 falls outside it and never shows;
+   draw it inside, in ink on the row and in the stamp's own ink on a selected one (design gate 1.1) */
+.queue > listview > row:focus:focus-visible { outline-offset: -4px; }
+.queue > listview > row:selected:focus:focus-visible { outline-color: @stamp_fg; }
+.queue-cell { padding: 0 %space_3%px; font-size: %body%px; color: @ink; }
+.queue-cell.ink-45 { color: @ink_45; }
+.queue-cell.ink-65 { color: @ink_65; }
+.queue-cell.ink-100 { color: @ink; }
+.queue-cell.tier-bold { font-weight: 700; }
+.queue-cell.tier-italic { font-style: italic; }
+.queue-cell.chip-boxed { border: 1px solid @ink_46; padding: 1px %space_2%px; margin: 0 %space_3%px; }
+.queue-cell.cell-mono, .queue-cell.cell-mono-bold { font-family: %mono%; font-size: 11px; }
+.queue-cell.cell-mono { font-weight: 500; }
+.queue-cell.cell-mono-bold { font-weight: 700; }
+.queue .thumb { margin: 0 %space_3%px; border: 1px solid @ink_58; background: @sunken; }
+.queue .thumb.thumb-failed { border-color: @ink_46; }
+
 /* scrolled windows draw soft edge gradients where content continues; flat has none */
 undershoot, overshoot, undershoot.top, undershoot.bottom, undershoot.left, undershoot.right {
   background: none; background-image: none; box-shadow: none; }
-scrollbar slider { background: @ink_28; border-radius: 0; min-width: 6px; min-height: 6px; }
+scrollbar slider { background: @ink_58; border-radius: 0; min-width: 6px; min-height: 6px; }
 scrollbar, scrollbar trough { background: transparent; }
 "#;
 
@@ -591,6 +636,29 @@ mod tests {
         }
     }
 
+    /// DAN-2217: the Queue's non-text boundaries (thumbnail frame, scrollbar thumb) clear 3:1 on the
+    /// row and on the page, and the two libadwaita rules that dim text below 4.5:1 are overridden.
+    #[test]
+    fn queue_boundaries_clear_three_to_one_and_header_and_placeholder_are_not_dimmed() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            for ground in [p.raised, p.page] {
+                let r = contrast(p.ink_58.over(ground), ground);
+                assert!(r >= 3.0, "{scheme:?} ink-58 on {ground:?}: {r:.2}:1");
+            }
+            let sheet = css(scheme);
+            assert!(
+                sheet.contains(".queue > header > button label { opacity: 1;"),
+                "the header label is dimmed by the toolkit again"
+            );
+            assert!(
+                sheet.contains("entry.field text > placeholder { color:")
+                    && sheet.contains("opacity: 1; }\n.filter-count"),
+                "the placeholder is dimmed by the toolkit again"
+            );
+        }
+    }
+
     /// DAN-2242 fix 5: the shortcut hint on a hovered or focused menu row reads in `ink`, which
     /// clears 4.5:1 on the hover wash; `ink-65` did not (4.25:1 in dark).
     #[test]
@@ -607,5 +675,26 @@ mod tests {
                 && sheet.contains("popover modelbutton:focus label.accelerator"),
             "the hint rule names hover and focus"
         );
+    }
+
+    /// `test_the_zebra_stripe_is_quiet_but_visible` and
+    /// `test_ink_tiers_resolve_to_distinct_colours_per_theme`.
+    #[test]
+    fn the_zebra_is_quiet_but_visible_and_the_ink_tiers_are_distinct() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            assert_ne!(p.zebra(), p.raised, "{scheme:?}: the stripe is invisible");
+            let ratio = contrast(p.zebra(), p.raised);
+            assert!(
+                ratio > 1.0 && ratio < 1.2,
+                "{scheme:?}: a zebra of {ratio:.3}:1 is noise or nothing"
+            );
+            let tiers = [p.ink, p.ink_65, p.ink_58, p.ink_46].map(|c| c.over(p.raised));
+            for (i, a) in tiers.iter().enumerate() {
+                for b in &tiers[i + 1..] {
+                    assert_ne!(a, b, "{scheme:?}: two ink tiers paint the same colour");
+                }
+            }
+        }
     }
 }

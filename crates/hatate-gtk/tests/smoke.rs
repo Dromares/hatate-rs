@@ -156,6 +156,66 @@ const SCENARIOS: &[Scenario] = &[
         "the_log_viewer_opens_on_close_and_selects_in_ink",
         the_log_viewer_opens_on_close_and_selects_in_ink,
     ),
+    (
+        "queue_view_holds_5000_rows_and_filters_without_touching_the_queue",
+        queue_view_holds_5000_rows_and_filters_without_touching_the_queue,
+    ),
+    (
+        "queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears",
+        queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears,
+    ),
+    (
+        "queue_select_by_status_under_a_filter_never_selects_a_hidden_row",
+        queue_select_by_status_under_a_filter_never_selects_a_hidden_row,
+    ),
+    (
+        "queue_clear_re_ticks_every_filter_menu_so_the_ticks_summary_and_count_agree",
+        queue_clear_re_ticks_every_filter_menu_so_the_ticks_summary_and_count_agree,
+    ),
+    (
+        "queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row",
+        queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row,
+    ),
+    (
+        "queue_view_thumbnails_load_fail_and_stay_off_the_main_loop",
+        queue_view_thumbnails_load_fail_and_stay_off_the_main_loop,
+    ),
+    (
+        "queue_view_thumbnails_stay_off_when_the_source_is_off",
+        queue_view_thumbnails_stay_off_when_the_source_is_off,
+    ),
+    (
+        "queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded",
+        queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded,
+    ),
+    (
+        "queue_header_titles_are_not_clipped_at_the_minimum_window_size",
+        queue_header_titles_are_not_clipped_at_the_minimum_window_size,
+    ),
+    (
+        "clear_search_cache_label_carries_the_cache_size",
+        clear_search_cache_label_carries_the_cache_size,
+    ),
+    (
+        "queue_context_menu_selects_marks_resets_and_removes",
+        queue_context_menu_selects_marks_resets_and_removes,
+    ),
+    (
+        "queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order",
+        queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order,
+    ),
+    (
+        "export_results_writes_the_format_the_name_says",
+        export_results_writes_the_format_the_name_says,
+    ),
+    (
+        "write_tag_files_asks_then_writes_and_keeps_what_is_there",
+        write_tag_files_asks_then_writes_and_keeps_what_is_there,
+    ),
+    (
+        "clear_search_cache_asks_then_removes_the_saved_results",
+        clear_search_cache_asks_then_removes_the_saved_results,
+    ),
 ];
 
 fn main() {
@@ -2697,6 +2757,850 @@ fn the_log_viewer_opens_on_close_and_selects_in_ink(app: &adw::Application) {
             problems.borrow().join("; ")
         );
         viewer.window.close();
+        f.close();
+    }
+}
+
+fn queue_view_holds_5000_rows_and_filters_without_touching_the_queue(app: &adw::Application) {
+    use hatate_core::entry_filter::EntryFilter;
+    use hatate_core::table_cells::Column;
+    let mut seed = seeded(5000, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % MatchStatus::ALL.len()];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    assert_eq!(view.total_count(), 5000);
+    assert_eq!(view.visible_count(), 5000);
+    assert_eq!(view.cell(0, Column::File).unwrap().text, "img0.png");
+    assert_eq!(view.cell(1, Column::Status).unwrap().text, "\u{25cf} Good");
+    // A filter hides rows from the table, never from the queue.
+    view.set_filter(EntryFilter {
+        statuses: Some([MatchStatus::Good].into_iter().collect()),
+        ..EntryFilter::default()
+    });
+    assert_eq!(view.visible_count(), 5000 / 6 + usize::from(5000 % 6 > 1));
+    assert_eq!(f.w.s.queue.borrow().len(), 5000);
+    assert_eq!(view.cell(0, Column::File).unwrap().text, "img1.png");
+    // The selection resolves through the screen, so a hidden row cannot be reached.
+    view.select_row(0);
+    let id = view.selected_ids()[0];
+    assert_eq!(
+        f.w.s.queue.borrow().entry(id).unwrap().path,
+        "/lib/img1.png"
+    );
+    view.set_filter(EntryFilter::default());
+    assert_eq!(
+        view.selected_ids(),
+        vec![id],
+        "the selection survives a reset"
+    );
+    assert_eq!(view.row_of(id), Some(1));
+    f.close();
+}
+
+fn queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears(app: &adw::Application) {
+    let mut seed = seeded(12, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % 3];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let bar = f.w.s.filter_bar.clone();
+    assert_eq!(view.visible_count(), 12);
+    assert_eq!(bar.count.label().as_str(), "", "no filter, no reading");
+    assert!(!bar.clear.is_sensitive());
+    assert_eq!(
+        bar.button("Status").label().unwrap().as_str(),
+        "Status: All"
+    );
+
+    // Typing narrows the list by filename and the reading says how many are held back.
+    bar.text.set_text("img1");
+    assert_eq!(view.visible_count(), 3, "img1, img10 and img11");
+    assert_eq!(bar.count.label().as_str(), "9 hidden");
+    assert!(bar.clear.is_sensitive());
+    assert_eq!(
+        bar.count.tooltip_text().unwrap().as_str(),
+        "showing 3 of 12 (the rest are hidden, not removed)"
+    );
+    bar.clear.emit_clicked();
+    assert_eq!(view.visible_count(), 12);
+    assert_eq!(bar.text.text().as_str(), "");
+    assert_eq!(bar.count.label().as_str(), "");
+
+    // The Status menu: None empties the list, ticking one back isolates it, All restores it.
+    let status = bar.button("Status");
+    status.activate_action("fstatus.none", None).unwrap();
+    assert_eq!(view.visible_count(), 0);
+    assert_eq!(status.label().unwrap().as_str(), "Status: 0 selected");
+    status.activate_action("fstatus.v0", None).unwrap();
+    assert_eq!(view.visible_count(), 4);
+    assert_eq!(status.label().unwrap().as_str(), "Status: Not searched");
+    status.activate_action("fstatus.all", None).unwrap();
+    assert_eq!(view.visible_count(), 12);
+    assert_eq!(status.label().unwrap().as_str(), "Status: All");
+    // A filter hides rows from the table, never from the queue.
+    assert_eq!(f.w.s.queue.borrow().len(), 12);
+    f.close();
+}
+
+fn queue_select_by_status_under_a_filter_never_selects_a_hidden_row(app: &adw::Application) {
+    // DAN-2310 class 1: Python selects the rows its filter hides, and Remove / Reset / Mark
+    // reviewed then act on rows nobody can see. Here a hidden row is never selected.
+    let mut seed = seeded(12, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % 3];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let bar = f.w.s.filter_bar.clone();
+    // What a save would write: the rows, their statuses and their reviewed marks.
+    let snapshot = |f: &Fx| -> Vec<(String, MatchStatus, bool)> {
+        f.w.s
+            .queue
+            .borrow()
+            .entries()
+            .iter()
+            .map(|e| (e.path.clone(), e.status, e.reviewed))
+            .collect()
+    };
+    let before = snapshot(&f);
+
+    // "img1" shows img1, img10 and img11 (statuses 1, 1, 2); the four rows of status 0 are hidden.
+    bar.text.set_text("img1");
+    assert_eq!(view.visible_count(), 3);
+    let hidden_status = MatchStatus::ALL[0];
+    f.w.select_rows_by_status(hidden_status);
+    assert!(view.selected_ids().is_empty(), "a hidden row was selected");
+    assert_eq!(
+        f.say(),
+        format!(
+            "No visible images matching status \"{}\" (4 hidden by the filter)",
+            hidden_status.label()
+        )
+    );
+    // Remove and Mark reviewed act on the (empty) selection and change nothing.
+    let none = view.selected_ids();
+    f.w.remove_rows(&none);
+    f.w.set_rows_reviewed(&none, true);
+    assert_eq!(
+        snapshot(&f),
+        before,
+        "the queue changed under an empty selection"
+    );
+
+    // A status that is partly visible selects only the visible rows and counts only those.
+    let part = MatchStatus::ALL[1];
+    f.w.select_rows_by_status(part);
+    assert_eq!(
+        view.selected_ids().len(),
+        2,
+        "img1 and img10, not img4 or img7"
+    );
+    assert_eq!(
+        f.say(),
+        format!("Selected 2 image(s) matching status \"{}\"", part.label())
+    );
+    // Reset on every visible row leaves the hidden ones as they were
+    // (`test_resetting_only_resets_visible_rows`).
+    f.w.select_rows_by_predicate("every visible row", |_| true);
+    let shown_ids = view.selected_ids();
+    assert_eq!(shown_ids.len(), 3, "img1, img10 and img11");
+    let before_reset = snapshot(&f);
+    f.script.push(Answer::Msg(Response::Yes));
+    f.w.reset_rows(&shown_ids);
+    for ((path, status, _), (_, old_status, _)) in snapshot(&f).iter().zip(&before_reset) {
+        if path.contains("img1") {
+            assert_eq!(*status, MatchStatus::NotSearched, "{path} is visible");
+        } else {
+            assert_eq!(
+                status, old_status,
+                "reset a row the filter had hidden: {path}"
+            );
+        }
+    }
+    // With no filter nothing is hidden, so the old wording stands.
+    bar.clear.emit_clicked();
+    f.w.select_rows_by_predicate("nothing", |_| false);
+    assert_eq!(f.say(), "No images matching nothing");
+    f.close();
+}
+
+fn queue_clear_re_ticks_every_filter_menu_so_the_ticks_summary_and_count_agree(
+    app: &adw::Application,
+) {
+    // DAN-2310 class 2: Python's Clear leaves the Status / Site / Upscale ticks as they were,
+    // so toggling a stale tick does the opposite of what it shows. Here the ticks follow the filter.
+    let mut seed = seeded(12, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % 3];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let bar = f.w.s.filter_bar.clone();
+    let status = bar.button("Status");
+    status.activate_action("fstatus.v0", None).unwrap();
+    assert!(!bar.ticked("Status", 0), "the tick was not removed");
+    assert_eq!(view.visible_count(), 8);
+    assert_eq!(bar.count.label().as_str(), "4 hidden");
+    bar.text.set_text("img1");
+    assert!(bar.clear.is_sensitive());
+
+    bar.clear.emit_clicked();
+    for prefix in ["Status", "Site", "Upscale"] {
+        for n in 0..bar.present(prefix).len() {
+            assert!(
+                bar.ticked(prefix, n),
+                "{prefix} entry {n} is still unticked after Clear"
+            );
+        }
+    }
+    assert_eq!(status.label().unwrap().as_str(), "Status: All");
+    assert_eq!(bar.text.text().as_str(), "");
+    assert_eq!(view.visible_count(), 12);
+    assert_eq!(bar.count.label().as_str(), "");
+    assert!(!bar.clear.is_sensitive());
+    f.close();
+}
+
+fn queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row(
+    app: &adw::Application,
+) {
+    use hatate_core::table_cells::Column;
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: seeded(5, MatchStatus::Good),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let ids = view.visible_ids();
+    let path_of = |id| f.w.s.queue.borrow().entry(id).unwrap().path.clone();
+
+    // `_successor_surviving`: removing the selected row selects the one that followed it.
+    view.select_row(1);
+    f.script.push(Answer::Msg(Response::Remove));
+    f.w.remove_rows(&[ids[1]]);
+    assert_eq!(
+        view.selected_ids()
+            .iter()
+            .map(|i| path_of(*i))
+            .collect::<Vec<_>>(),
+        ["/lib/img2.png"]
+    );
+    // The last row has nothing below it, so the nearest one above is taken.
+    view.select_row(3);
+    f.script.push(Answer::Msg(Response::Remove));
+    f.w.remove_rows(&[ids[4]]);
+    assert_eq!(
+        view.selected_ids()
+            .iter()
+            .map(|i| path_of(*i))
+            .collect::<Vec<_>>(),
+        ["/lib/img3.png"]
+    );
+    // A selection that survives is left as it is.
+    view.select_row(0);
+    f.script.push(Answer::Msg(Response::Remove));
+    f.w.remove_rows(&[ids[2]]);
+    assert_eq!(
+        view.selected_ids()
+            .iter()
+            .map(|i| path_of(*i))
+            .collect::<Vec<_>>(),
+        ["/lib/img0.png"]
+    );
+
+    // `_apply_sort`: the top selected row is the current one and the only one left selected.
+    let top = view.visible_ids();
+    view.select_ids(&[top[0], top[1]]);
+    view.on_header_clicked(Column::File);
+    assert_eq!(view.selected_ids().len(), 1);
+    assert_eq!(path_of(view.selected_ids()[0]), "/lib/img0.png");
+    f.close();
+}
+
+fn queue_view_thumbnails_load_fail_and_stay_off_the_main_loop(app: &adw::Application) {
+    use hatate_core::thumb::{FAILED_TOOLTIP, ThumbState};
+    let pics = tempfile::tempdir().unwrap();
+    let good = pics.path().join("good.png");
+    image::RgbaImage::from_pixel(640, 320, image::Rgba([10, 120, 200, 255]))
+        .save(&good)
+        .unwrap();
+    let text = pics.path().join("text.png");
+    std::fs::write(&text, b"not a picture").unwrap();
+    let mut seed = seeded(3, MatchStatus::Good);
+    seed[0].path = good.to_string_lossy().into_owned();
+    seed[1].path = text.to_string_lossy().into_owned();
+    seed[2].path = pics
+        .path()
+        .join("missing.png")
+        .to_string_lossy()
+        .into_owned();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let ids = view.visible_ids();
+    // Every drawn row asks, so all three settle: one picture, two failures.
+    assert!(
+        pump_until(10_000, || ids.iter().all(|id| view.thumb_known(*id))),
+        "the drawn rows were never decoded"
+    );
+    assert_eq!(
+        ids.iter()
+            .map(|id| view.thumb_state(*id))
+            .collect::<Vec<_>>(),
+        [ThumbState::Loaded, ThumbState::Failed, ThumbState::Failed]
+    );
+    assert_eq!(f.w.s.thumbs.in_flight(), 0);
+    assert!(FAILED_TOOLTIP.len() > 10);
+    // A row rebuilt from the cache keeps its picture without a second decode.
+    view.rebuild();
+    assert_eq!(view.thumb_state(ids[0]), ThumbState::Loaded);
+    assert!(!f.w.s.thumbs.is_running());
+    f.close();
+}
+
+fn queue_view_thumbnails_stay_off_when_the_source_is_off(app: &adw::Application) {
+    // `test_off_reads_no_files_at_all_but_still_finishes`: no file is read, no pass is left
+    // running, and the progress strip is not left showing a pass that never ends.
+    let pics = tempfile::tempdir().unwrap();
+    let good = pics.path().join("good.png");
+    image::RgbaImage::from_pixel(64, 64, image::Rgba([10, 120, 200, 255]))
+        .save(&good)
+        .unwrap();
+    let mut seed = seeded(2, MatchStatus::Good);
+    seed[0].path = good.to_string_lossy().into_owned();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            tweak: Some(Box::new(|s| s.thumbnail_source = "off".into())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    pump_for(500);
+    for id in view.visible_ids() {
+        assert!(
+            !view.thumb_known(id),
+            "a picture was decoded with the source off"
+        );
+    }
+    assert_eq!(f.w.s.thumbs.in_flight(), 0);
+    assert!(!f.w.s.thumbs.is_running());
+    f.close();
+}
+
+fn queue_context_menu_selects_marks_resets_and_removes(app: &adw::Application) {
+    use hatate_core::table_menu::Predicate;
+    let mut seed = seeded(12, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % MatchStatus::ALL.len()];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    // Nothing selected: only the four "Select by" menus.
+    assert!(f.w.table_menu(&[]).rows.is_none());
+
+    f.w.select_rows_by_status(MatchStatus::Good);
+    assert_eq!(view.selected_ids().len(), 2);
+    assert_eq!(
+        f.say(),
+        "Selected 2 image(s) matching status \"Found (good)\""
+    );
+    f.w.select_rows_by_predicate(Predicate::MissingFromDisk.description(), |e| {
+        Predicate::MissingFromDisk.test(e)
+    });
+    assert!(
+        view.selected_ids().is_empty(),
+        "a new selection replaces the old one"
+    );
+    assert_eq!(f.say(), "No images matching Missing from disk");
+
+    // The menu over those two rows says "2", and its wired entries have handlers.
+    f.w.select_rows_by_status(MatchStatus::Good);
+    let ids = view.selected_ids();
+    let rows = f.w.table_menu(&ids).rows.unwrap();
+    assert!(rows.tail.iter().any(|l| matches!(l,
+        hatate_core::table_menu::Line::Item(i) if i.label == "Remove 2 selected files")));
+
+    // Reviewed: no question, the status line counts what is left to review.
+    f.w.set_rows_reviewed(&ids, true);
+    assert!(
+        f.say()
+            .starts_with("Marked 2 image(s) as reviewed \u{2014} ")
+    );
+    f.w.set_rows_reviewed(&ids, true);
+    assert!(
+        f.say().starts_with("Marked 2"),
+        "nothing changed, nothing said"
+    );
+
+    // Reset asks first, and the question defaults to No.
+    f.w.reset_rows(&ids);
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.buttons, shown.default),
+        (Buttons::YesNo, Response::No)
+    );
+    assert!(
+        shown
+            .text
+            .starts_with("Discard the search results for 2 images?")
+    );
+    assert!(
+        view.cell(1, hatate_core::table_cells::Column::Status)
+            .is_some()
+    );
+    f.script.push(Answer::Msg(Response::Yes));
+    f.w.reset_rows(&ids);
+    assert_eq!(f.say(), "Reset 2 images to Not searched");
+
+    // Remove asks with Cancel as the default, and acts only on Remove.
+    f.w.remove_rows(&ids);
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.buttons, shown.default),
+        (Buttons::RemoveCancel, Response::Cancel)
+    );
+    assert_eq!(f.len(), 12, "the default answer removes nothing");
+    f.script.push(Answer::Msg(Response::Remove));
+    f.w.remove_rows(&ids);
+    assert_eq!(f.len(), 10);
+    assert_eq!(f.say(), "Removed 2 file(s) from the list");
+    f.close();
+}
+
+fn queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order(app: &adw::Application) {
+    use hatate_core::table_cells::Column;
+    let mut seed = seeded(4, MatchStatus::Good);
+    for (e, name) in seed
+        .iter_mut()
+        .zip(["/lib/c.png", "/lib/A.png", "/lib/b.png", "/lib/d.png"])
+    {
+        e.path = name.to_owned();
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let names = || -> Vec<String> {
+        f.w.s
+            .queue
+            .borrow()
+            .entries()
+            .iter()
+            .map(|e| e.filename().to_owned())
+            .collect()
+    };
+    assert_eq!(names(), ["c.png", "A.png", "b.png", "d.png"]);
+    view.on_header_clicked(Column::File);
+    assert_eq!(
+        names(),
+        ["A.png", "b.png", "c.png", "d.png"],
+        "ascending, case-folded"
+    );
+    assert_eq!(view.cell(0, Column::File).unwrap().text, "A.png");
+    view.on_header_clicked(Column::File);
+    assert_eq!(names(), ["d.png", "c.png", "b.png", "A.png"], "descending");
+    view.on_header_clicked(Column::File);
+    assert_eq!(view.sort_state(), None);
+    assert_eq!(
+        names(),
+        ["c.png", "A.png", "b.png", "d.png"],
+        "back to insertion order"
+    );
+    f.close();
+}
+
+fn tagged_seed(dir: &std::path::Path, names: &[&str]) -> Vec<hatate_core::model::Entry> {
+    make_images(dir, names)
+        .into_iter()
+        .map(|p| {
+            let mut e = entry(&p.to_string_lossy(), MatchStatus::Good);
+            e.tags = vec![hatate_core::model::Tag {
+                name: "cat".to_owned(),
+                namespace: None,
+                source: hatate_core::model::TagSource::User,
+            }];
+            e
+        })
+        .collect()
+}
+
+fn export_results_writes_the_format_the_name_says(app: &adw::Application) {
+    // An empty list says so and asks nothing.
+    let f = fx(app);
+    f.activate("export-results");
+    assert_eq!(
+        f.script.last_shown().text,
+        "There's nothing in the list to export."
+    );
+    assert!(f.script.asked.borrow().is_empty());
+    f.close();
+
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: seeded(2, MatchStatus::Good),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.script.push(Answer::Path(Some(f.dir.path().join("out"))));
+    f.activate("export-results");
+    let csv = f.dir.path().join("out.csv");
+    let text = std::fs::read_to_string(&csv).expect("the .csv is added to a bare name");
+    assert!(
+        text.contains("\r\n") && text.contains("img0.png"),
+        "{text:?}"
+    );
+    assert_eq!(f.say(), "Exported 2 image(s) to out.csv");
+    let Asked::SaveFile {
+        title,
+        default_name,
+        filter,
+    } = f.script.asked.borrow().last().cloned().unwrap()
+    else {
+        panic!("not a save chooser")
+    };
+    assert_eq!(title, "Export Results");
+    assert!(
+        default_name.contains("hatate-results-") && default_name.ends_with(".csv"),
+        "{default_name}"
+    );
+    assert_eq!(
+        filter,
+        "CSV spreadsheet (*.csv);;JSON (*.json);;All files (*)"
+    );
+    // A name that says JSON, with no filter to say otherwise, writes JSON.
+    f.script
+        .push(Answer::Path(Some(f.dir.path().join("out.json"))));
+    f.activate("export-results");
+    let json = std::fs::read_to_string(f.dir.path().join("out.json")).unwrap();
+    assert!(
+        json.starts_with('{') && json.contains("\"count\": 2"),
+        "{json:?}"
+    );
+    // An unwritable path warns and says nothing was exported.
+    f.script.push(Answer::Path(Some(PathBuf::from(
+        "/nonexistent-dir-for-test/x.csv",
+    ))));
+    f.activate("export-results");
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.kind, shown.title.as_str()),
+        (Kind::Warning, "Export Results")
+    );
+    assert!(
+        shown
+            .text
+            .starts_with("Could not write the results to:\n/nonexistent-dir-for-test/x.csv\n\n")
+    );
+    assert!(!shown.text.contains("os error"), "{}", shown.text);
+    f.close();
+}
+
+fn write_tag_files_asks_then_writes_and_keeps_what_is_there(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = tagged_seed(dir.path(), &["a.png", "b.png"]);
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    std::fs::write(dir.path().join("a.png.txt"), "mine\n").unwrap();
+    // `ask` with a file in the way: the three-way box, Keep existing files the default.
+    f.script.push(Answer::Msg(Response::Keep));
+    f.activate("write-tag-files");
+    let shown = f.script.last_shown();
+    assert_eq!(shown.buttons, Buttons::KeepReplaceCancel);
+    assert_eq!(shown.default, Response::Keep);
+    assert!(
+        shown.text.contains("1 of them already exist, for example:"),
+        "{}",
+        shown.text
+    );
+    assert!(shown.text.ends_with("This app cannot tell a tag file it wrote on an earlier run from a text file you wrote yourself."));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.png.txt")).unwrap(),
+        "mine\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("b.png.txt")).unwrap(),
+        "cat\n"
+    );
+    assert_eq!(
+        f.say(),
+        "Wrote 1 tag file(s), 1 already existed and were kept"
+    );
+    // Replace them replaces; Cancel writes nothing.
+    f.script.push(Answer::Msg(Response::Cancel));
+    std::fs::remove_file(dir.path().join("b.png.txt")).unwrap();
+    f.activate("write-tag-files");
+    assert!(!dir.path().join("b.png.txt").exists());
+    f.script.push(Answer::Msg(Response::Replace));
+    f.activate("write-tag-files");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.png.txt")).unwrap(),
+        "cat\n"
+    );
+    assert_eq!(f.say(), "Wrote 2 tag file(s)");
+    f.close();
+}
+
+fn clear_search_cache_asks_then_removes_the_saved_results(app: &adw::Application) {
+    let f = fx(app);
+    // Set at startup, before anything is cached.
+    assert_eq!(
+        f.w.s.clear_cache_item.label(),
+        "Clear Search Cache (0 B)\u{2026}"
+    );
+    let cache = hatate_core::cache::SearchCache::new(&f.paths);
+    std::fs::create_dir_all(cache.dir()).unwrap();
+    for n in ["a", "b"] {
+        std::fs::write(cache.dir().join(format!("{n}.json")), "{}").unwrap();
+    }
+    // The question defaults to No (design gate 2.6), so nothing is deleted without a Yes.
+    f.activate("clear-search-cache");
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.buttons, shown.default),
+        (Buttons::YesNo, Response::No)
+    );
+    assert_eq!(std::fs::read_dir(cache.dir()).unwrap().count(), 2);
+    f.script.push(Answer::Msg(Response::Yes));
+    f.activate("clear-search-cache");
+    assert_eq!(
+        f.script.last_shown().text,
+        "Removed 2 cached search result(s)."
+    );
+    assert_eq!(std::fs::read_dir(cache.dir()).unwrap().count(), 0);
+    f.close();
+}
+
+fn queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded(
+    app: &adw::Application,
+) {
+    use hatate_core::table_cells::{
+        COLUMNS, DEFAULT_COLUMN_WIDTH, HEADER_STATE_PREFIX, HeaderSection, encode_header_state,
+    };
+    let saved = |paths: &hatate_core::paths::Paths| {
+        let s = hatate_core::config::Settings::load(paths).settings;
+        (s.table_header_state, s.table_header_columns)
+    };
+    let with_state = |state: String, columns: i64| Opts {
+        tweak: Some(Box::new(move |s| {
+            s.table_header_state = state.clone();
+            s.table_header_columns = columns;
+        })),
+        ..Opts::default()
+    };
+
+    // A usable layout, with one hidden and one too-narrow column: restored, then repaired.
+    let mut sections = vec![
+        HeaderSection {
+            width: 130,
+            hidden: false
+        };
+        COLUMNS.len()
+    ];
+    sections[2].hidden = true;
+    sections[3].width = 10;
+    let f = Fx::new(app, with_state(encode_header_state(&sections), 12));
+    let got = f.w.s.queue_view.header_sections();
+    assert!(!got[2].hidden, "the hidden column is shown again");
+    assert_eq!(
+        got[3].width, DEFAULT_COLUMN_WIDTH,
+        "the narrow column is widened"
+    );
+    assert_eq!(
+        got[4].width, 130,
+        "an ordinary column keeps its saved width"
+    );
+    // A saved layout is not overwritten by the window changing size
+    // (`test_a_saved_layout_is_not_overwritten_by_the_defaults`).
+    f.w.win.set_default_size(1500, 900);
+    pump_for(300);
+    let resized = f.w.s.queue_view.header_sections();
+    assert_eq!(
+        resized[4].width, 130,
+        "a resize rewrote a saved column width"
+    );
+    f.w.close_teardown();
+    // Closing saves the live layout in this build's format, with the column count. Read before the
+    // fixture closes: dropping it removes the profile.
+    let (state, columns) = saved(&f.paths);
+    f.close();
+    assert!(state.starts_with(HEADER_STATE_PREFIX), "{state:?}");
+    assert_eq!(columns, 12);
+    assert_eq!(state.split(',').count(), 12);
+
+    // A Qt blob of the right column count (what a Python build wrote): discarded, never parsed.
+    let f = Fx::new(
+        app,
+        with_state(
+            "AAAA/wAAAAAAAAABAAAAAQEAAAAAAAAAAAAAAAAAAAAAAADIAAA=".into(),
+            12,
+        ),
+    );
+    assert_eq!(f.w.s.settings.lock().unwrap().table_header_state, "");
+    assert_eq!(f.w.s.settings.lock().unwrap().table_header_columns, 12);
+    f.close();
+
+    // Saved with another column count: both keys reset.
+    let f = Fx::new(app, with_state(encode_header_state(&sections), 10));
+    let s = f.w.s.settings.lock().unwrap().clone();
+    assert_eq!(
+        (s.table_header_state.as_str(), s.table_header_columns),
+        ("", 0)
+    );
+    drop(s);
+    f.close();
+}
+
+fn clear_search_cache_label_carries_the_cache_size(app: &adw::Application) {
+    let f = fx(app);
+    let cache = hatate_core::cache::SearchCache::new(&f.paths);
+    std::fs::create_dir_all(cache.dir()).unwrap();
+    std::fs::write(
+        cache.dir().join(format!("{}.json", "a".repeat(64))),
+        vec![b'x'; 1536],
+    )
+    .unwrap();
+    // The label is refreshed when the menu is about to open; here the refresh is called directly.
+    f.w.update_clear_cache_label();
+    assert_eq!(
+        f.w.s.clear_cache_item.label(),
+        "Clear Search Cache (1.5 KB)\u{2026}"
+    );
+    f.close();
+}
+
+/// Every `gtk::Label` under `w` (itself included).
+fn all_labels(w: &gtk4::Widget, out: &mut Vec<gtk4::Label>) {
+    if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+        out.push(l.clone());
+    }
+    let mut child = w.first_child();
+    while let Some(c) = child {
+        all_labels(&c, out);
+        child = c.next_sibling();
+    }
+}
+
+/// DAN-1999 F6: the `THUMB` title (letter-spaced, in a 72 px column) was clipped at the minimum
+/// window size. Every column title must be drawn whole: not ellipsized, and given at least the
+/// width it asks for.
+fn queue_header_titles_are_not_clipped_at_the_minimum_window_size(app: &adw::Application) {
+    use hatate_core::table_cells::Column;
+    for scheme in ["dark", "light"] {
+        let s = scheme.to_owned();
+        let f = Fx::new(
+            app,
+            Opts {
+                seed: seeded(5, MatchStatus::Good),
+                missing: Some(Arc::new(|_, _| HashSet::new())),
+                tweak: Some(Box::new(move |c| c.theme = s.clone())),
+                ..Opts::default()
+            },
+        );
+        f.w.win.set_default_size(1, 1);
+        pump_for(300);
+        let mut labels = Vec::new();
+        all_labels(f.w.s.queue_view.view.upcast_ref(), &mut labels);
+        let mut seen = 0;
+        for col in Column::ALL {
+            let title = col.title();
+            let Some(label) = labels
+                .iter()
+                .find(|l| l.text() == title && l.is_mapped() && l.width() > 0)
+            else {
+                panic!("{scheme}: no drawn header title {title:?}");
+            };
+            seen += 1;
+            // The header cell is the enclosing button: the title must sit wholly inside it.
+            let mut cell = label.parent();
+            while let Some(c) = &cell {
+                if c.css_name() == "button" {
+                    break;
+                }
+                cell = c.parent();
+            }
+            let cell = cell.unwrap_or_else(|| panic!("{scheme}: header {title:?} has no cell"));
+            let b = label.compute_bounds(&cell).expect("bounds");
+            println!(
+                "HEADER {scheme} {title} cell_width={} label_x={:.1}..{:.1} ellipsized={}",
+                cell.width(),
+                b.x(),
+                b.x() + b.width(),
+                label.layout().is_ellipsized()
+            );
+            assert!(
+                !label.layout().is_ellipsized()
+                    && b.x() >= -0.5
+                    && b.x() + b.width() <= cell.width() as f32 + 0.5,
+                "{scheme}: header {title:?} is clipped (cell {}, title {:.1}..{:.1})",
+                cell.width(),
+                b.x(),
+                b.x() + b.width()
+            );
+        }
+        assert_eq!(seen, Column::ALL.len());
         f.close();
     }
 }
