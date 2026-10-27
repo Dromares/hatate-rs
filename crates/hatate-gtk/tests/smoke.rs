@@ -102,6 +102,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_view_holds_5000_rows_and_filters_without_touching_the_queue,
     ),
     (
+        "queue_view_thumbnails_load_fail_and_stay_off_the_main_loop",
+        queue_view_thumbnails_load_fail_and_stay_off_the_main_loop,
+    ),
+    (
         "queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order",
         queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order,
     ),
@@ -1617,6 +1621,47 @@ fn queue_view_holds_5000_rows_and_filters_without_touching_the_queue(app: &adw::
         "the selection survives a reset"
     );
     assert_eq!(view.row_of(id), Some(1));
+    f.close();
+}
+
+fn queue_view_thumbnails_load_fail_and_stay_off_the_main_loop(app: &adw::Application) {
+    use hatate_core::thumb::{FAILED_TOOLTIP, ThumbState};
+    let pics = tempfile::tempdir().unwrap();
+    let good = pics.path().join("good.png");
+    image::RgbaImage::from_pixel(640, 320, image::Rgba([10, 120, 200, 255]))
+        .save(&good)
+        .unwrap();
+    let text = pics.path().join("text.png");
+    std::fs::write(&text, b"not a picture").unwrap();
+    let mut seed = seeded(3, MatchStatus::Good);
+    seed[0].path = good.to_string_lossy().into_owned();
+    seed[1].path = text.to_string_lossy().into_owned();
+    seed[2].path = pics.path().join("missing.png").to_string_lossy().into_owned();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let ids = view.visible_ids();
+    // Every drawn row asks, so all three settle: one picture, two failures.
+    assert!(
+        pump_until(10_000, || ids.iter().all(|id| view.thumb_known(*id))),
+        "the drawn rows were never decoded"
+    );
+    assert_eq!(
+        ids.iter().map(|id| view.thumb_state(*id)).collect::<Vec<_>>(),
+        [ThumbState::Loaded, ThumbState::Failed, ThumbState::Failed]
+    );
+    assert_eq!(f.w.s.thumbs.in_flight(), 0);
+    assert!(FAILED_TOOLTIP.len() > 10);
+    // A row rebuilt from the cache keeps its picture without a second decode.
+    view.rebuild();
+    assert_eq!(view.thumb_state(ids[0]), ThumbState::Loaded);
+    assert!(!f.w.s.thumbs.is_running());
     f.close();
 }
 
