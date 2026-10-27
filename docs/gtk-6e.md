@@ -114,6 +114,17 @@ At the head the differential ran on (`ea900c0`; later commits touch tests and th
 Everything else is equal at every step: `session.db` rows, `config.json`, the quota-pause file, banners, the run
 strip, the button, the rows and every other dialog.
 
+**Unopenable inputs (DAN-2231, added in the DAN-2321 fixup).** The generator takes `HATATE_DIFF_UNOPENABLE=1`, which
+makes some rows' files a directory (`@dir`) or absent (`@missing`) in half the run, quota and alert scenarios; both
+drivers create them the same way. Seed 11, 40 cases, at the head of the fixup (`./run_all.sh 11 40 --all` with the
+variable set, log `worktrees/DAN-2218-differential.log`): 193 steps, 34 differing steps, 39 differences, **0
+unclassified, 0 errors**, 34 steps all in the two classes above (class 1: 29 steps in 9 scenarios; class 2: 5 dialogs
+in 5). 13 scenarios carried an unopenable row (8 directories, 12 missing files). What the rows do is equal on both
+sides: they are searched with an empty hash and end `not_found` like a scripted answer; there is no error text to diff,
+because the engines are scripted and never read the file. **Mode 000 is not a variant here**: both sides run under
+`unshare -rn`, where the process is root in its own user namespace and reads a mode-000 file. The reads that do fail
+loudly (the hash pass over a bad path) are 3.i's, in `batch_run` and its differential (`docs/batch.md`).
+
 ## 8. Shots and contrast
 
 Rendered by `crates/hatate-gtk/examples/shot.rs` (a test-only tool; the shipped binary has no way to do this), on
