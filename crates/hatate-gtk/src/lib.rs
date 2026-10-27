@@ -15,6 +15,7 @@ pub mod shell;
 pub mod startup;
 pub mod table_actions;
 pub mod text;
+pub mod thumbnails;
 pub mod theme;
 pub mod tokens;
 pub mod widgets;

@@ -18,12 +18,12 @@ use gtk4 as gtk;
 use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::subclass::prelude::*;
-use gtk4::{gio, pango};
+use gtk4::{gdk, gio, pango};
 use hatate_core::entry_filter::EntryFilter;
 use hatate_core::queue::{EntryId, QueueModel};
 use hatate_core::status_tier::{GlyphFont, Ink, StatusTier, UpscaleTier};
 use hatate_core::table_cells::{self, CellInk, Chip, Column};
-use hatate_core::thumb::{QUEUE_ROW_HEIGHT, THUMB_COLUMN_SIZE, ThumbState};
+use hatate_core::thumb::{QUEUE_ROW_HEIGHT, THUMB_COLUMN_SIZE, ThumbBook, ThumbKey, ThumbState};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -138,6 +138,7 @@ mod imp {
         pub id: Cell<u64>,
         pub cells: RefCell<Vec<CellView>>,
         pub thumb: Cell<Option<ThumbState>>,
+        pub texture: RefCell<Option<gdk::Texture>>,
     }
 
     #[glib::object_subclass]
@@ -146,7 +147,13 @@ mod imp {
         type Type = super::RowObject;
     }
 
-    impl ObjectImpl for RowObject {}
+    impl ObjectImpl for RowObject {
+        fn signals() -> &'static [glib::subclass::Signal] {
+            static SIGNALS: std::sync::OnceLock<Vec<glib::subclass::Signal>> =
+                std::sync::OnceLock::new();
+            SIGNALS.get_or_init(|| vec![glib::subclass::Signal::builder("thumb-changed").build()])
+        }
+    }
 }
 
 glib::wrapper! {
@@ -155,12 +162,24 @@ glib::wrapper! {
 }
 
 impl RowObject {
-    fn new(id: EntryId, entry: &hatate_core::model::Entry) -> RowObject {
+    fn new(
+        id: EntryId,
+        entry: &hatate_core::model::Entry,
+        thumb: (ThumbState, Option<gdk::Texture>),
+    ) -> RowObject {
         let row: RowObject = glib::Object::new();
         row.imp().id.set(id.0);
         row.imp().cells.replace(snapshot(entry));
-        row.imp().thumb.set(Some(ThumbState::Loading));
+        row.imp().thumb.set(Some(thumb.0));
+        row.imp().texture.replace(thumb.1);
         row
+    }
+
+    /// The thumbnail cell changed state: whatever draws it repaints.
+    fn set_thumb(&self, state: ThumbState, texture: Option<gdk::Texture>) {
+        self.imp().thumb.set(Some(state));
+        self.imp().texture.replace(texture);
+        self.emit_by_name::<()>("thumb-changed", &[]);
     }
 
     pub fn id(&self) -> EntryId {
@@ -233,10 +252,39 @@ fn text_factory(column: Column) -> gtk::SignalListItemFactory {
     factory
 }
 
-/// The thumbnail cell: a 40 px frame in the loading or failed state until the worker's texture
-/// lands (the decode and the worker are the next run of DAN-2217).
-fn thumb_factory() -> gtk::SignalListItemFactory {
+/// Called with the id of a row that has just been drawn (bound to a cell), so the window can ask
+/// for its thumbnail (`_schedule_viewport_thumbnails`).
+type BoundCallback = Rc<RefCell<Option<Rc<dyn Fn(EntryId)>>>>;
+
+/// Puts a row's thumbnail state into its cell: the picture, or the loading halftone, or the
+/// failed frame with its path-free tooltip. The cell keeps its rect in every state (call 4).
+fn paint_thumb(frame: &gtk::Picture, row: &RowObject) {
+    frame.remove_css_class("thumb-loading");
+    frame.remove_css_class("thumb-failed");
+    match row.imp().thumb.get() {
+        Some(ThumbState::Loaded) => {
+            frame.set_paintable(row.imp().texture.borrow().as_ref());
+            frame.set_tooltip_text(None);
+        }
+        Some(ThumbState::Failed) => {
+            frame.set_paintable(None::<&gdk::Paintable>);
+            frame.add_css_class("thumb-failed");
+            frame.set_tooltip_text(Some(hatate_core::thumb::FAILED_TOOLTIP));
+        }
+        _ => {
+            frame.set_paintable(None::<&gdk::Paintable>);
+            frame.add_css_class("thumb-loading");
+            frame.set_tooltip_text(None);
+        }
+    }
+}
+
+/// The thumbnail cell: a 40 px frame, loading or failed until the worker's texture lands.
+fn thumb_factory(bound: BoundCallback) -> gtk::SignalListItemFactory {
     let factory = gtk::SignalListItemFactory::new();
+    // The `thumb-changed` handler each recycled cell holds, so unbinding can drop it.
+    let handlers: Rc<RefCell<HashMap<usize, (RowObject, glib::SignalHandlerId)>>> =
+        Rc::default();
     factory.connect_setup(|_, item| {
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
             return;
@@ -250,7 +298,8 @@ fn thumb_factory() -> gtk::SignalListItemFactory {
         frame.add_css_class("thumb");
         item.set_child(Some(&frame));
     });
-    factory.connect_bind(|_, item| {
+    let held = handlers.clone();
+    factory.connect_bind(move |_, item| {
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
             return;
         };
@@ -260,17 +309,27 @@ fn thumb_factory() -> gtk::SignalListItemFactory {
         ) else {
             return;
         };
-        frame.remove_css_class("thumb-loading");
-        frame.remove_css_class("thumb-failed");
-        match row.imp().thumb.get() {
-            Some(ThumbState::Failed) => {
-                frame.add_css_class("thumb-failed");
-                frame.set_tooltip_text(Some(hatate_core::thumb::FAILED_TOOLTIP));
+        paint_thumb(&frame, &row);
+        let weak = frame.downgrade();
+        let id = row.connect_local("thumb-changed", false, {
+            let row = row.downgrade();
+            move |_| {
+                if let (Some(frame), Some(row)) = (weak.upgrade(), row.upgrade()) {
+                    paint_thumb(&frame, &row);
+                }
+                None
             }
-            _ => {
-                frame.add_css_class("thumb-loading");
-                frame.set_tooltip_text(None);
-            }
+        });
+        held.borrow_mut()
+            .insert(item.as_ptr() as usize, (row.clone(), id));
+        let callback = bound.borrow().clone();
+        if let Some(callback) = callback {
+            callback(row.id());
+        }
+    });
+    factory.connect_unbind(move |_, item| {
+        if let Some((row, id)) = handlers.borrow_mut().remove(&(item.as_ptr() as usize)) {
+            row.disconnect(id);
         }
     });
     factory
@@ -313,6 +372,9 @@ pub struct QueueView {
     drawing_indicator: Cell<bool>,
     on_selection: RefCell<Option<SelectionCallback>>,
     scheme: Cell<Scheme>,
+    /// `self._thumb_icon_cache`: what each file's thumbnail is, filed by path and decode size.
+    thumbs: RefCell<ThumbBook<gdk::Texture>>,
+    on_row_bound: BoundCallback,
 }
 
 impl QueueView {
@@ -330,11 +392,12 @@ impl QueueView {
         view.set_vexpand(true);
         view.set_model(Some(&selection));
 
+        let bound: BoundCallback = Rc::default();
         let widths = table_cells::default_column_widths(1000, THUMB_COLUMN_SIZE as i32 + 32);
         let mut columns = Vec::new();
         for column in Column::ALL {
             let factory = match column {
-                Column::Thumb => thumb_factory(),
+                Column::Thumb => thumb_factory(bound.clone()),
                 _ => text_factory(column),
             };
             let col = gtk::ColumnViewColumn::new(Some(column.title()), Some(factory));
@@ -381,6 +444,8 @@ impl QueueView {
             drawing_indicator: Cell::new(false),
             on_selection: RefCell::new(None),
             scheme: Cell::new(Scheme::Dark),
+            thumbs: RefCell::new(ThumbBook::default()),
+            on_row_bound: bound,
         });
 
         let weak = Rc::downgrade(&this);
@@ -507,7 +572,9 @@ impl QueueView {
                 .into_iter()
                 .filter_map(|i| {
                     let id = queue.id_at(i as i64)?;
-                    Some(RowObject::new(id, &entries[i]))
+                    let key = ThumbKey::of(entries[i].path.clone());
+                    let thumb = self.thumbs.borrow_mut().get(&key);
+                    Some(RowObject::new(id, &entries[i], thumb))
                 })
                 .collect()
         };
@@ -525,6 +592,54 @@ impl QueueView {
             row.imp().cells.replace(snapshot(entry));
         }
         self.store.items_changed(pos, 1, 1);
+    }
+
+    /// Called with the id of every row as it is drawn, so its thumbnail can be asked for.
+    pub fn connect_row_bound(&self, f: impl Fn(EntryId) + 'static) {
+        *self.on_row_bound.borrow_mut() = Some(Rc::new(f));
+    }
+
+    /// Where a thumbnail stands: `Loading` for a file nobody has decoded yet.
+    pub fn thumb_state(&self, id: EntryId) -> ThumbState {
+        self.thumb_key(id)
+            .map_or(ThumbState::Loading, |k| self.thumbs.borrow_mut().get(&k).0)
+    }
+
+    /// Whether the cache knows anything of this row's file (a decode, or that it failed).
+    pub fn thumb_known(&self, id: EntryId) -> bool {
+        self.thumb_key(id)
+            .is_some_and(|k| self.thumbs.borrow().knows(&k))
+    }
+
+    fn thumb_key(&self, id: EntryId) -> Option<ThumbKey> {
+        let queue = self.queue.borrow();
+        queue.entry(id).map(|e| ThumbKey::of(e.path.clone()))
+    }
+
+    /// A decode finished (`Some`) or failed (`None`): files it and repaints the row if it is on
+    /// screen.
+    pub fn store_thumb(&self, id: EntryId, texture: Option<gdk::Texture>) {
+        let Some(key) = self.thumb_key(id) else { return };
+        let state = match &texture {
+            Some(t) => {
+                self.thumbs.borrow_mut().loaded(key, t.clone());
+                ThumbState::Loaded
+            }
+            None => {
+                self.thumbs.borrow_mut().failed(key);
+                ThumbState::Failed
+            }
+        };
+        if let Some(pos) = self.row_of(id)
+            && let Some(row) = self.store.item(pos).and_downcast::<RowObject>()
+        {
+            row.set_thumb(state, texture);
+        }
+    }
+
+    /// `_thumb_icon_cache.clear()`.
+    pub fn clear_thumbs(&self) {
+        self.thumbs.borrow_mut().clear();
     }
 
     /// `_register_new_entries`: records insertion order for entries just added, so "original"

@@ -117,6 +117,8 @@ pub struct State {
     pub queue_view: Rc<QueueView>,
     pub workers: Workers,
     pub file_hash_worker: Slot,
+    /// The thumbnail scheduler (`thumbnail_worker`, `_thumbs_in_flight`).
+    pub thumbs: crate::thumbnails::Scheduler,
     pub missing_file_worker: Slot,
     pub autosave_worker: Slot,
     /// Set while an autosave write is on the pool, so close can wait for it.
@@ -277,6 +279,7 @@ impl MainWindow {
             queue_view,
             workers: Workers::new(),
             file_hash_worker: Slot::new(),
+            thumbs: Default::default(),
             missing_file_worker: Slot::new(),
             autosave_worker: Slot::new(),
             autosave_inflight: Arc::new(AtomicBool::new(false)),
@@ -311,12 +314,23 @@ impl MainWindow {
         };
         let _ = handle.set(window.downgrade());
         window.install_actions(app);
+        window.wire_thumbnails();
         window.wire_banners();
         window.apply_theme(&theme_setting(&window.s));
         window.refresh_queue_empty_state();
         window.connect_close();
         window.startup();
         window
+    }
+
+    /// Rows ask for their thumbnail as they are drawn.
+    fn wire_thumbnails(&self) {
+        let w = self.downgrade();
+        self.s.queue_view.connect_row_bound(move |id| {
+            if let Some(w) = w.upgrade() {
+                w.on_row_drawn(id);
+            }
+        });
     }
 
     pub fn downgrade(&self) -> MainWindowWeak {

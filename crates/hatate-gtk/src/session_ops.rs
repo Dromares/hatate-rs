@@ -275,7 +275,7 @@ impl MainWindow {
         }
         self.say(&status);
         // DEFERRED(6.g): `_lookup_existing_hydrus_tags(new_entries)`.
-        // DEFERRED(6.d): `_schedule_viewport_thumbnails` / `_start_thumbnail_generation`.
+        self.thumbnails_for_new_entries();
     }
 
     /// What `_refresh_table()` does for this ticket: the list changed, so the empty state, the
@@ -426,7 +426,7 @@ impl MainWindow {
         }
         self.start_missing_file_check(&entries);
         // DEFERRED(6.g): `_start_hydrus_reconcile(quiet=True)`.
-        // DEFERRED(6.d): the viewport pass or `_start_thumbnail_generation(entries)`.
+        self.thumbnails_for_new_entries();
     }
 
     /// `_start_missing_file_check(entries)`: whether a restored session's files are still on disk,
@@ -644,7 +644,7 @@ impl MainWindow {
             entries.len()
         ));
         self.start_missing_file_check(&entries);
-        // DEFERRED(6.d): the viewport pass or `_start_thumbnail_generation(entries)`.
+        self.thumbnails_for_new_entries();
     }
 
     /// Replaces the working list wholesale (Python rebinds `self.entries`).
@@ -663,7 +663,8 @@ impl MainWindow {
     /// replaced, and drops its results (`retire_attrs(..., clear=True)`).
     pub fn stop_background_workers(&self) {
         self.s.file_hash_worker.retire();
-        // DEFERRED(6.d): `thumbnail_worker`; DEFERRED(6.e): `availability_worker`.
+        self.s.thumbs.retire();
+        // DEFERRED(6.e): `availability_worker`.
     }
 
     /// `clear_session()`: discards the automatic session, both stores. `true` when nothing went
