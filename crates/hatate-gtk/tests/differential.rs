@@ -298,6 +298,7 @@ fn button(r: Response) -> &'static str {
         Response::No => "no",
         Response::Keep => "keep",
         Response::Replace => "replace",
+        Response::Remove => "remove",
         Response::Cancel => "cancel",
     }
 }
@@ -341,6 +342,7 @@ fn digest(
                 "buttons": match d.buttons {
                     Buttons::YesNo => "yes_no",
                     Buttons::KeepReplaceCancel => "keep_replace_cancel",
+                    Buttons::RemoveCancel => "remove_cancel",
                     Buttons::Ok => "ok",
                 },
                 "default": button(d.default),
