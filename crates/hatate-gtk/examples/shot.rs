@@ -3,7 +3,7 @@
 //! the shipped binary has no way to do this. Shows only the synthetic profile it creates.
 //!
 //! `STATE` is one of `empty` (default), `rows`, `crashed`, `survived`, `quota`, `dialog` (the
-//! Clear Session question), `logs` (the log viewer), `logs-selected` (the log viewer with the path
+//! Clear Session question), `dialog-nolabel` (the same with the Queue page's placeholder label hidden, DAN-2256), `logs` (the log viewer), `logs-selected` (the log viewer with the path
 //! line selected and focused) or `logs-selected-body` (the log body selected and focused), `menu` (the first menu open) or `focus` (the
 //! first button focused with the ring showing), `focus-files` / `focus-folder` (the stamp-filled Add
 //! files, the hollow Add folder, focused with the ring showing) or `hover-folder` (Add folder under
@@ -119,7 +119,7 @@ fn main() -> glib::ExitCode {
     };
     let mut unclean = false;
     match state.as_str() {
-        "rows" | "dialog" => save(&rows(12)),
+        "rows" | "dialog" | "dialog-nolabel" => save(&rows(12)),
         st if st.starts_with("queue") => save(&queue_rows(
             &pics,
             if st.starts_with("queue-5000") {
@@ -214,7 +214,7 @@ fn main() -> glib::ExitCode {
             std::fs::write(out.with_extension("rects"), rects).expect("rects");
             // The dialog's widget tree, for reading a toolkit-specific paint artefact (DAN-2245
             // item 4): type, css classes, border box in window coordinates, mapped, first text.
-            if state == "dialog" {
+            if state.starts_with("dialog") {
                 let mut tree = String::new();
                 tree_dump(win.upcast_ref(), win.upcast_ref(), 0, &mut tree);
                 std::fs::write(out.with_extension("tree"), tree).expect("tree");
@@ -253,6 +253,13 @@ fn prepare(window: &MainWindow, state: &str) {
     match state {
         st if st.starts_with("queue") => prepare_queue(window, st),
         "dialog" => window.activate_action("clear-session"),
+        // The control for the glyph fragment under the dialog (DAN-2256): the same shot with the
+        // Queue page's placeholder label hidden, so any pixel under the dialog's border that
+        // survives is not that label's descenders.
+        "dialog-nolabel" => {
+            hide_label_starting(window.win.upcast_ref(), "12 image(s)");
+            window.activate_action("clear-session");
+        }
         "logs" => window.activate_action("view-logs"),
         "logs-selected" | "logs-selected-body" => {
             window.activate_action("view-logs");
@@ -627,6 +634,20 @@ fn first_popover_menu(w: &gtk4::Widget) -> Option<gtk4::PopoverMenu> {
 
 /// The `modelbutton` row that holds a label reading `text`, anywhere under `w` (popovers
 /// included).
+/// Hides every label whose text starts with `prefix`.
+fn hide_label_starting(w: &gtk4::Widget, prefix: &str) {
+    if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+        if l.text().starts_with(prefix) {
+            l.set_visible(false);
+        }
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        hide_label_starting(&child, prefix);
+        c = child.next_sibling();
+    }
+}
+
 fn find_row(w: &gtk4::Widget, text: &str) -> Option<gtk4::Widget> {
     if let Some(l) = w.downcast_ref::<gtk4::Label>() {
         if l.text() == text {

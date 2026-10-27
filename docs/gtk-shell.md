@@ -1565,14 +1565,21 @@ groups it by (scheme, fg, bg). Disabled controls are exempt (`Start Search`, the
 | light | #211d17 | #f2ede1 | 14.35 | pass | 38 | ◐, Run interrupted — partial results survived, 0s ago, no ne |
 | light | #f6f1e6 | #211d17 | 14.88 | pass | 23 | Queue, Add files…, Files, Start new search |
 
-**The `_ (_)` fragment under the dialog (DAN-2245 item 4).** In the GTK 4.14 / cairo shots (`dialog-dark.png`,
-`dialog-light.png`), 35 pixels at x 413 to 448, y 497 to 499 sit just under the dialog's bottom border (y 496): the
-lower three pixel rows of what look like glyph bottoms, centred on the `No` label (x 332 to 529), about 2:1. They
-do **not** reproduce on GTK 4.24 / libadwaita 1.10 (0 pixels outside the sheet; the layout differs, so the
-comparison is the band under the border). The widget tree of the 4.14 dialog (`dialog-*.tree`, new in the shot
-artifact) has no widget with a box there, so it is not a widget placed outside the sheet. Both shots use
-`GSK_RENDERER=cairo` under Xvfb, which no user runs; the cause is not found, and it is not fixed. Next step if it
-matters: the same shot on 4.14 with `ngl`, on a real display. Until then it is a P3 artefact of the shot harness.
+**The `_ (_)` fragment under the dialog (DAN-2245 item 4, closed by DAN-2256).** In the GTK 4.14 / cairo shots
+(`dialog-dark.png`, `dialog-light.png`), 35 pixels at x 413 to 448, y 497 to 499 sit just under the dialog's bottom
+border (y 496), the lower rows of what look like glyph bottoms. They do **not** reproduce on GTK 4.24 / libadwaita
+1.10 (the layout differs, so the comparison is the band under the border). The widget tree of the 4.14 dialog
+(`dialog-*.tree`) has no widget with a box there. **Cause: the Queue page's placeholder label** (`12 image(s) in the
+list. The list view arrives in 6.d.`, x 367 to 722, y 481 to 501) seen through the scrim: the sheet covers y <= 496,
+so the label's descender rows 497 to 499 (the `g` of "image", the `(` `)` of "(s)") show below it. **Control:** the
+`dialog-nolabel` state (the same shot with that label hidden; the two trees differ only in that label's line) on the
+CI toolkit, run 40485308569 at `1135a27`: with the label 35 pixels in that band, without it 0, dark and light; the
+two shots differ by exactly those 35 pixels in y >= 497. The other 3,161 differing pixels lie in y 293 to 496, 3,157 of them at
+7/255 or less; not explained. The label's glyphs also show, dimmed the same way, beside the sheet.
+**Decision: no change to the scrim.** A modal shows the window's content around the sheet, dimmed; that is what the
+scrim is for, and the position comes from layout, not from the renderer, so the cairo-under-Xvfb question does not
+move it. It is not a stray widget or a paint bug. No real-display capture was taken; the claim is about this layout
+and was not measured on `ngl`. The placeholder goes in 6.d, when the list view replaces it.
 
 **Selected text, and the log viewer (DAN-2245).** The first sweep did not read a selected-text state, and its two
 `Log file:` rows above (`#6f849c` on `#0d0d0d` 5.05, `#50657b` on `#e8e1d2` 4.62) were the path line measured with
@@ -1641,8 +1648,36 @@ button sits in the raised frame, so the surface it has to clear is the frame's.
 **Tab order of the shell** (state `tab` of `shot.rs`, walking `child_focus(TabForward)` from the top): on the
 empty Queue, `Queue`, `Review`, `Activity`, `Add files`, `Add folder`. `Start Search`, the gear and
 `Query Hydrus` are disabled and are skipped. The order is printed by the shot renderer in a live Xvfb
-session (hosted `ci` log, step "Shot set (under Xvfb)"). The menubar's own keyboard path (F10 opens Files, Right moves to Hydrus, Escape returns focus) is **not
-covered**: a smoke scenario that sends real key events (`xdotool`, XTEST, under Xvfb with no window manager)
-was tried for DAN-2242 and the keys never reached GTK (Tab, Ctrl+O, Alt+F and F10 were all no-ops with the
-window active and X focus on it), so it is not in the suite; whether F10 is handled at all for an
-`AdwApplicationWindow` (which, unlike `GtkApplicationWindow`, does not own the menubar) is unproven.
+session (hosted `ci` log, step "Shot set (under Xvfb)").
+
+**The menubar's keyboard path** (DAN-2246, smoke scenario `menubar_keyboard_path`, `menubar_keys.rs`). The
+scenario sends real X key events from Rust: `tests/common/xtest.rs` is a minimal X11 client (wire protocol
+over the display socket, XTEST `FakeInput`; no crate, no `xdotool`, test-only), so GTK receives them as it
+would from a keyboard. Measured on the real window: GTK's own `PopoverMenuBar` already opens Files on Alt+F,
+moves with Left and Right, and closes on Escape. It did **not** (a) open anything on F10, which only moved
+focus onto the first bar item, or (b) give focus back on Escape, which left it on the bar. `menubar_keys.rs`
+adds F10 (opens the first menu through the route an Alt mnemonic takes, so Left and Right keep working; F10
+again closes; Shift+F10 and Ctrl+F10 are left alone) and returns focus to the widget that had it before the
+bar once no menu is open. The earlier "keys never reach GTK" result (DAN-2242) was the log viewer windows of
+earlier scenarios, which stay mapped and hold the keyboard; the scenario destroys other toplevels first.
+Not covered: Alt alone (Qt's underline reveal), mnemonics for menus other than Files, and the keyboard path
+on Wayland (the injector is X11 only; with `CI` set a missing XTEST fails the scenario, without it the
+scenario skips).
+
+**The injector only types into a headless Xvfb** (DAN-2264). `Xtest::connect` returns `Err` before it opens
+the X socket unless both hold: `HATATE_SMOKE_XVFB=1` is set (the runner's statement that the display is its
+own Xvfb), **and** `XAUTHORITY` names a file `xvfb-run` created (`<tmp>/xvfb-run.XXXXXX/Xauthority`, with a `.XXXXXX` suffix on some distributions; Ubuntu 24.04, the CI image, has none).
+The second condition is what stops `HATATE_SMOKE_XVFB=1 DISPLAY=:0`: a live desktop's cookie is
+`~/.Xauthority` or `$XDG_RUNTIME_DIR/xauth_*`, never in an `xvfb-run.*` directory. The X vendor string was
+considered and rejected: Xvfb and a real Xorg both report "The X.Org Foundation". A hand-started `Xvfb` or
+`xvfb-run -f` is refused too; the supported invocation is
+
+```
+HATATE_GTK_SMOKE=1 HATATE_SMOKE_XVFB=1 GDK_BACKEND=x11 GSK_RENDERER=cairo \
+  xvfb-run -a -s "-screen 0 1440x900x24" cargo test -p hatate-gtk --test smoke
+```
+
+CI sets the same two variables on its test step. A refusal fails the `menubar_keyboard_path` scenario when
+`CI` is set and skips it (naming the reason) otherwise. The refusal is `check_headless` in
+`tests/common/xtest.rs`, covered without an X server by `tests/xtest_guard.rs`. It guards key injection only:
+the other scenarios still open their window on whatever `DISPLAY` is, so run the smoke under `xvfb-run` always.

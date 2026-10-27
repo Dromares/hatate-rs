@@ -10,6 +10,7 @@ pub mod fonts;
 pub mod logsink;
 pub mod logview;
 pub mod menu;
+pub mod menubar_keys;
 pub mod queue_menu;
 pub mod queue_view;
 pub mod session_ops;

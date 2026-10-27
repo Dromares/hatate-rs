@@ -4,7 +4,8 @@
 //! not give a test that.
 //!
 //! Needs a display. It runs under `xvfb-run` with `HATATE_GTK_SMOKE=1`. **Fails closed**: with
-//! `CI` set, a missing flag or a missing display is a failure, not a skip (DAN-1974 item 1).
+//! `CI` set, a missing flag or a missing display is a failure, not a skip (DAN-1974 item 1). Key
+//! injection additionally needs `HATATE_SMOKE_XVFB=1` and an `xvfb-run` display (DAN-2264).
 
 mod common;
 
@@ -93,6 +94,7 @@ const SCENARIOS: &[Scenario] = &[
         "a_dialog_shows_the_ring_on_its_default",
         a_dialog_shows_the_ring_on_its_default,
     ),
+    ("menubar_keyboard_path", menubar_keyboard_path),
     (
         "the_log_viewer_opens_on_close_and_selects_in_ink",
         the_log_viewer_opens_on_close_and_selects_in_ink,
@@ -179,7 +181,12 @@ fn main() {
     let failed = Rc::new(Cell::new(0usize));
     let f = failed.clone();
     let code = hatate_gtk::app::with_application(move |app| {
+        // `HATATE_SMOKE_ONLY=<substring>` runs just the scenarios whose name contains it.
+        let only = std::env::var("HATATE_SMOKE_ONLY").ok();
         for (name, scenario) in SCENARIOS {
+            if only.as_deref().is_some_and(|o| !name.contains(o)) {
+                continue;
+            }
             let result = std::panic::catch_unwind(AssertUnwindSafe(|| scenario(app)));
             match result {
                 Ok(()) => println!("scenario {name} ... ok"),
@@ -2394,4 +2401,142 @@ fn queue_header_titles_are_not_clipped_at_the_minimum_window_size(app: &adw::App
         assert_eq!(seen, Column::ALL.len());
         f.close();
     }
+}
+
+/// The first label under `w` that is a `GtkModelButton` text, per visible popover menu: what menus
+/// are open, by their first entry.
+fn open_menu_first_entries(w: &gtk4::Widget, out: &mut Vec<String>) {
+    if let Some(p) = w.downcast_ref::<gtk4::PopoverMenu>() {
+        if p.is_visible() {
+            out.push(first_model_button_text(p.upcast_ref()).unwrap_or_default());
+        }
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        open_menu_first_entries(&child, out);
+        c = child.next_sibling();
+    }
+}
+
+fn first_model_button_text(w: &gtk4::Widget) -> Option<String> {
+    if w.type_().name() == "GtkModelButton" {
+        return w.property::<Option<String>>("text");
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(t) = first_model_button_text(&child) {
+            return Some(t);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
+/// DAN-2246: the menubar by keyboard, with real X key events (`common::xtest`) delivered to the
+/// real window. GTK does Alt+mnemonic, Left and Right on its own and this pins that it still does;
+/// `menubar_keys` adds F10 (open the first menu, again to close) and the return of focus to the
+/// widget that had it before the bar was entered.
+fn menubar_keyboard_path(app: &adw::Application) {
+    use common::xtest::{Key, Mod, Xtest};
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("menubar_keyboard_path: skipped ({why})");
+            return;
+        }
+    };
+    let f = fx(app);
+    // Earlier scenarios leave their secondary windows mapped (the log viewer); they would hold the
+    // keyboard. Only this scenario's window may be on screen.
+    for w in gtk4::Window::list_toplevels() {
+        if &w != f.w.win.upcast_ref::<gtk4::Widget>() {
+            if let Ok(w) = w.downcast::<gtk4::Window>() {
+                w.destroy();
+            }
+        }
+    }
+    f.w.win.set_default_size(1100, 800);
+    pump_for(400);
+    let root = f.w.win.clone().upcast::<gtk4::Widget>();
+    let window = f.w.win.upcast_ref::<gtk4::Window>();
+    let focus = || gtk4::prelude::GtkWindowExt::focus(window);
+    let open_menus = || {
+        let mut v = Vec::new();
+        open_menu_first_entries(&root, &mut v);
+        v
+    };
+    let files = "Add Files\u{2026}";
+    let hydrus = "Send File + URL + Tags to Hydrus (upload)";
+
+    // No window manager under xvfb: the pointer and the X focus put the keys on this window.
+    keys.focus_window_at(300, 300).expect("focus the window");
+    let add = find_button(&root, "Add files\u{2026}").expect("Add files");
+    add.grab_focus();
+    pump_for(200);
+    let add_widget = add.clone().upcast::<gtk4::Widget>();
+    assert_eq!(
+        focus().as_ref(),
+        Some(&add_widget),
+        "Add files starts with focus"
+    );
+
+    let mut press = |key: Key, mods: &[Mod]| {
+        keys.tap(key, mods).expect("inject");
+        pump_for(400);
+    };
+
+    // The keys reach the window at all: Alt+F is GTK's own, and opens Files.
+    press(Key::Char('f'), &[Mod::Alt]);
+    assert_eq!(open_menus(), [files], "Alt+F opens Files");
+    press(Key::Escape, &[]);
+    assert!(open_menus().is_empty(), "Escape closes it");
+    assert_eq!(
+        focus().as_ref(),
+        Some(&add_widget),
+        "and focus returns to Add files"
+    );
+
+    // Shift+F10 is the context-menu key and Ctrl+F10 is not ours: neither opens a menu.
+    press(Key::F10, &[Mod::Shift]);
+    assert!(open_menus().is_empty(), "Shift+F10 does not open a menu");
+    press(Key::F10, &[Mod::Ctrl]);
+    assert!(open_menus().is_empty(), "Ctrl+F10 does not open a menu");
+
+    // F10 opens the first menu.
+    press(Key::F10, &[]);
+    assert_eq!(open_menus(), [files], "F10 opens Files");
+    // Right moves to the next menu, Left back.
+    press(Key::Right, &[]);
+    assert_eq!(
+        open_menus(),
+        [hydrus],
+        "Right opens Hydrus and closes Files"
+    );
+    press(Key::Left, &[]);
+    assert_eq!(open_menus(), [files], "Left goes back to Files");
+    // F10 again closes, and focus goes back to where it was before F10.
+    press(Key::F10, &[]);
+    assert!(open_menus().is_empty(), "F10 a second time closes the menu");
+    assert_eq!(
+        focus().as_ref(),
+        Some(&add_widget),
+        "focus returns to Add files after F10, F10"
+    );
+
+    // Escape does the same after a trip through two menus.
+    press(Key::F10, &[]);
+    press(Key::Right, &[]);
+    assert_eq!(open_menus(), [hydrus]);
+    press(Key::Escape, &[]);
+    assert!(open_menus().is_empty(), "Escape closes the Hydrus menu");
+    assert_eq!(
+        focus().as_ref(),
+        Some(&add_widget),
+        "Escape returns focus to the widget that had it before F10"
+    );
+    f.close();
 }
