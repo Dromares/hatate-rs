@@ -809,9 +809,15 @@ impl QueueView {
     }
 
     /// `_apply_sort()`: sorts the queue in place by the current column, redraws, and keeps the
-    /// current row selected.
+    /// current row selected. As Python does, "the current row" is the top selected one and it is
+    /// all that stays selected (`selectRow` replaces the selection the refresh restored).
     pub fn apply_sort(&self) {
-        let selected = self.selected_ids();
+        let current = self
+            .selected_ids()
+            .into_iter()
+            .filter_map(|id| Some((self.row_of(id)?, id)))
+            .min()
+            .map(|(_, id)| id);
         {
             let mut queue = self.queue.borrow_mut();
             let order = match self.sort.get() {
@@ -835,7 +841,9 @@ impl QueueView {
         }
         self.draw_indicator();
         self.rebuild();
-        self.select_ids(&selected);
+        if let Some(id) = current {
+            self.select_ids(&[id]);
+        }
     }
 
     /// The chevron on the sorted header, or none.

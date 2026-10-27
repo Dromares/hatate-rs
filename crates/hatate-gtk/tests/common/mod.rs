@@ -28,6 +28,8 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Debug)]
 pub enum Answer {
     Msg(Response),
+    /// A Save dialog's answer: the path and the filter the user chose.
+    Save(Option<(PathBuf, String)>),
     Files(Vec<PathBuf>),
     Path(Option<PathBuf>),
 }
@@ -97,12 +99,41 @@ impl Prompter for Script {
             default,
         });
         let answer = match self.next() {
-            Some(Answer::Msg(r)) => r,
+            // An answer this box has no button for is the one a click elsewhere would give:
+            // the Python driver treats any word that is not "yes" as No, and so on.
+            Some(Answer::Msg(r)) => match (buttons, r) {
+                (Buttons::YesNo, Response::Yes) => Response::Yes,
+                (Buttons::YesNo, _) => Response::No,
+                (Buttons::KeepReplaceCancel, Response::Keep | Response::Replace) => r,
+                (Buttons::KeepReplaceCancel, _) => Response::Cancel,
+                (Buttons::RemoveCancel, Response::Remove) => r,
+                (Buttons::RemoveCancel, _) => Response::Cancel,
+                (Buttons::Ok, _) => Response::Ok,
+            },
             // An unscripted box is answered by its default button, as pressing Enter would.
             _ => default,
         };
         self.results.borrow_mut().push(answer);
         done(answer);
+    }
+
+    fn save_file_with_filter(
+        &self,
+        title: &str,
+        default_name: &str,
+        filter: &str,
+        done: Done<Option<(PathBuf, String)>>,
+    ) {
+        self.asked.borrow_mut().push(Asked::SaveFile {
+            title: title.to_owned(),
+            default_name: default_name.to_owned(),
+            filter: filter.to_owned(),
+        });
+        match self.next_pick() {
+            Some(Answer::Save(p)) => done(p),
+            Some(Answer::Path(p)) => done(p.map(|p| (p, String::new()))),
+            _ => done(None),
+        }
     }
 
     fn open_files(&self, title: &str, filter: &str, done: Done<Vec<PathBuf>>) {

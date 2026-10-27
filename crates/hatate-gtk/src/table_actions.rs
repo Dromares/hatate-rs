@@ -93,7 +93,12 @@ impl MainWindow {
                 let path = with_export_extension(path, fmt);
                 let text = {
                     let settings = w.s.settings.lock().unwrap();
-                    export::render(rows.iter(), fmt, Some(&settings))
+                    // `generated_at` follows the window's clock, as the default file name does.
+                    if fmt == "json" {
+                        export::to_json(rows.iter(), Some((w.s.clock)()), Some(&settings))
+                    } else {
+                        export::render(rows.iter(), fmt, Some(&settings))
+                    }
                 };
                 // newline="": the writer's \r\n goes out as it is.
                 match std::fs::write(&path, text.as_bytes()) {

@@ -150,6 +150,31 @@ impl FilterBar {
         }
     }
 
+    /// What a menu offers now, in menu order (the checkable actions of `filter_*_menu`).
+    pub fn present(&self, prefix: &str) -> Vec<String> {
+        let which = match prefix {
+            "Status" => 0,
+            "Site" => 1,
+            _ => 2,
+        };
+        self.dim(which).present.borrow().clone()
+    }
+
+    /// Whether the nth entry of a menu is ticked.
+    pub fn ticked(&self, prefix: &str, n: usize) -> bool {
+        let which = match prefix {
+            "Status" => 0,
+            "Site" => 1,
+            _ => 2,
+        };
+        let dim = self.dim(which);
+        dim.group
+            .lookup_action(&format!("v{n}"))
+            .and_then(|a| a.state())
+            .and_then(|s| s.get::<bool>())
+            .unwrap_or(false)
+    }
+
     /// `changed.connect`.
     pub fn connect_changed(&self, f: impl Fn() + 'static) {
         *self.changed.borrow_mut() = Some(Rc::new(f));
@@ -283,6 +308,16 @@ impl FilterBar {
                 );
             }
         }
+    }
+
+    /// `_set_all_statuses(checked)` and its siblings, by prefix.
+    pub fn set_all_named(&self, prefix: &str, checked: bool) {
+        let which = match prefix {
+            "Status" => 0,
+            "Site" => 1,
+            _ => 2,
+        };
+        self.set_all(which, checked);
     }
 
     /// `set_all_checked` + `_set_all_*`: everything ticked is stored as `None` ("not filtering"),
