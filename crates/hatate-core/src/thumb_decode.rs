@@ -22,6 +22,25 @@ pub struct ThumbPixels {
     pub rgba: Vec<u8>,
 }
 
+/// The size the Qt reader decodes a `width` x `height` picture at for a `limit`: [`fit_within`],
+/// except where that truncates the thin side to 0. `QImageReader` then still decodes at 1 pixel
+/// when the exact size rounds to 1 or more (`2 * thin * limit >= long`) and fails below that
+/// (probed against `ThumbnailWorker._decode`, DAN-2217 B1). `None` for no picture.
+fn reader_size(width: u32, height: u32, limit: u32) -> Option<(u32, u32)> {
+    if width == 0 || height == 0 {
+        return None;
+    }
+    let (w, h) = fit_within(width, height, limit);
+    if w != 0 && h != 0 {
+        return Some((w, h));
+    }
+    let (thin, long) = (u64::from(width.min(height)), u64::from(width.max(height)));
+    if 2 * thin * u64::from(limit) < long {
+        return None;
+    }
+    Some((w.max(1), h.max(1)))
+}
+
 /// The thumbnail of the file at `path`, at most `limit` on a side. `None` for a file that is
 /// missing, unreadable or not a picture, and for a picture Qt would scale to nothing.
 pub fn decode_thumbnail(path: &str, limit: u32) -> Option<ThumbPixels> {
@@ -36,10 +55,7 @@ pub fn decode_thumbnail(path: &str, limit: u32) -> Option<ThumbPixels> {
     if let Some(orientation) = orientation {
         picture.apply_orientation(orientation);
     }
-    let (w, h) = fit_within(picture.width(), picture.height(), limit);
-    if w == 0 || h == 0 {
-        return None;
-    }
+    let (w, h) = reader_size(picture.width(), picture.height(), limit)?;
     if (w, h) != (picture.width(), picture.height()) {
         picture = picture.resize_exact(w, h, FilterType::Triangle);
     }
@@ -95,5 +111,32 @@ mod tests {
         // Qt truncates 160 * 3 / 1000 to 0, so the scaled size is empty and the read fails.
         let sliver = write_png(dir.path(), "sliver.png", 1000, 3);
         assert!(decode_thumbnail(&sliver, 160).is_none());
+    }
+
+    /// The reader does not fail on every empty scaled size (differential, DAN-2217 B1): where
+    /// `QSize.scaled` truncates the thin side to 0, `QImageReader` still decodes it at 1 pixel
+    /// when the exact size rounds to 1 or more (`2 * thin * limit >= long`), and fails below that.
+    /// Probed against `ThumbnailWorker._decode` over PNG, JPEG, GIF, BMP and WebP.
+    #[test]
+    fn a_sliver_whose_exact_size_rounds_to_a_pixel_is_decoded_at_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let size = |name: &str, w: u32, h: u32, limit: u32| {
+            let p = write_png(dir.path(), name, w, h);
+            decode_thumbnail(&p, limit).map(|t| (t.width, t.height))
+        };
+        assert_eq!(
+            size("a.png", 18, 2308, 96),
+            Some((1, 96)),
+            "96 * 18 / 2308 = 0.75"
+        );
+        assert_eq!(
+            size("b.png", 2308, 18, 96),
+            Some((96, 1)),
+            "and the same on its side"
+        );
+        assert_eq!(size("c.png", 1, 192, 96), Some((1, 96)), "0.5 rounds up");
+        assert_eq!(size("d.png", 1, 193, 96), None, "0.497 does not");
+        assert_eq!(size("e.png", 3, 500, 96), Some((1, 96)));
+        assert_eq!(size("f.png", 3, 1000, 96), None);
     }
 }
