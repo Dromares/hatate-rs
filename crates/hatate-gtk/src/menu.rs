@@ -407,11 +407,9 @@ mod tests {
         assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
         for want in [
             "query-hydrus",
-            "export-results",
             "parser-health",
             "preferences",
             "edit-conditions",
-            "clear-search-cache",
             "sites-select-all",
             "site",
         ] {
@@ -427,8 +425,11 @@ mod tests {
             "view-logs",
             "clear-session",
             "theme",
+            "export-results",
+            "write-tag-files",
+            "clear-search-cache",
         ] {
-            assert!(!d.iter().any(|(n, _)| *n == working), "{working} is 6.c's");
+            assert!(!d.iter().any(|(n, _)| *n == working), "{working} is wired");
         }
     }
 }
