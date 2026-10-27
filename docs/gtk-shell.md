@@ -1656,3 +1656,21 @@ earlier scenarios, which stay mapped and hold the keyboard; the scenario destroy
 Not covered: Alt alone (Qt's underline reveal), mnemonics for menus other than Files, and the keyboard path
 on Wayland (the injector is X11 only; with `CI` set a missing XTEST fails the scenario, without it the
 scenario skips).
+
+**The injector only types into a headless Xvfb** (DAN-2264). `Xtest::connect` returns `Err` before it opens
+the X socket unless both hold: `HATATE_SMOKE_XVFB=1` is set (the runner's statement that the display is its
+own Xvfb), **and** `XAUTHORITY` names a file `xvfb-run` created (`<tmp>/xvfb-run.XXXXXX/Xauthority.XXXXXX`).
+The second condition is what stops `HATATE_SMOKE_XVFB=1 DISPLAY=:0`: a live desktop's cookie is
+`~/.Xauthority` or `$XDG_RUNTIME_DIR/xauth_*`, never in an `xvfb-run.*` directory. The X vendor string was
+considered and rejected: Xvfb and a real Xorg both report "The X.Org Foundation". A hand-started `Xvfb` or
+`xvfb-run -f` is refused too; the supported invocation is
+
+```
+HATATE_GTK_SMOKE=1 HATATE_SMOKE_XVFB=1 GDK_BACKEND=x11 GSK_RENDERER=cairo \
+  xvfb-run -a -s "-screen 0 1440x900x24" cargo test -p hatate-gtk --test smoke
+```
+
+CI sets the same two variables on its test step. A refusal fails the `menubar_keyboard_path` scenario when
+`CI` is set and skips it (naming the reason) otherwise. The refusal is `check_headless` in
+`tests/common/xtest.rs`, covered without an X server by `tests/xtest_guard.rs`. It guards key injection only:
+the other scenarios still open their window on whatever `DISPLAY` is, so run the smoke under `xvfb-run` always.

@@ -18,7 +18,14 @@ fn refused(display: Option<&str>, flag: Option<&str>, auth: Option<&str>) -> Str
 #[test]
 fn the_documented_xvfb_run_environment_passes() {
     assert!(check_headless(Some(":99"), Some("1"), Some(OsStr::new(XVFB_AUTH))).is_ok());
-    assert!(check_headless(Some(":99.0"), Some("1"), Some(OsStr::new("/var/tmp/xvfb-run.X/Xauthority.Y"))).is_ok());
+    assert!(
+        check_headless(
+            Some(":99.0"),
+            Some("1"),
+            Some(OsStr::new("/var/tmp/xvfb-run.X/Xauthority.Y"))
+        )
+        .is_ok()
+    );
 }
 
 #[test]
@@ -39,19 +46,25 @@ fn the_flag_alone_does_not_open_a_live_session() {
         Some("/home/u/.Xauthority"),
         Some("/run/user/1000/xauth_AbCdEf"),
         Some("/run/user/1000/gdm/Xauthority"),
-        Some("/tmp/Xauthority.d4E5f6"),         // right file name, not in an xvfb-run directory
+        Some("/tmp/Xauthority.d4E5f6"), // right file name, not in an xvfb-run directory
         Some("/tmp/xvfb-run.a1B2c3/.Xauthority"), // right directory, not xvfb-run's file name
         Some("/"),
         None,
     ] {
         let why = refused(Some(":0"), Some("1"), auth);
-        assert!(why.contains("refusing to inject keys into DISPLAY=:0"), "{auth:?}: {why}");
+        assert!(
+            why.contains("refusing to inject keys into DISPLAY=:0"),
+            "{auth:?}: {why}"
+        );
     }
 }
 
 #[test]
 fn no_display_is_refused() {
-    assert_eq!(refused(None, Some("1"), Some(XVFB_AUTH)), "DISPLAY is not set");
+    assert_eq!(
+        refused(None, Some("1"), Some(XVFB_AUTH)),
+        "DISPLAY is not set"
+    );
 }
 
 #[test]
