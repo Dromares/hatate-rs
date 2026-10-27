@@ -461,15 +461,8 @@ impl MainWindow {
             });
         }
         self.win.add_action(&theme_action);
-        // The Sites menu's per-site toggles: a stateful action with the site as its target.
-        // DEFERRED(6.e): disabled until the Sites menu is wired.
-        let site = gio::SimpleAction::new_stateful(
-            "site",
-            Some(glib::VariantTy::STRING),
-            &"".to_variant(),
-        );
-        site.set_enabled(false);
-        self.win.add_action(&site);
+        // `_build_sites_menu`: one checkable action per site, checked when the setting has it.
+        self.install_site_actions();
         // `toggle-search` is the Start Search button's action (6.e wires it).
         let toggle = gio::SimpleAction::new("toggle-search", None);
         {
@@ -506,6 +499,8 @@ impl MainWindow {
                 "save-session-as" => w.action_save_session_as(),
                 "open-session" => w.action_open_session(),
                 "clear-session" => w.action_clear_session(),
+                "sites-select-all" => w.set_all_sites(true),
+                "sites-select-none" => w.set_all_sites(false),
                 "open-log" => w.action_open_log(),
                 "view-logs" => w.action_view_logs(),
                 "quit" => w.win.close(),

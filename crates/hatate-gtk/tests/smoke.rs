@@ -106,6 +106,14 @@ const SCENARIOS: &[Scenario] = &[
         "the_window_keeps_working_while_an_engine_stalls",
         the_window_keeps_working_while_an_engine_stalls,
     ),
+    (
+        "the_sites_menu_toggles_and_saves",
+        the_sites_menu_toggles_and_saves,
+    ),
+    (
+        "re_search_uses_the_engine_it_was_asked_for",
+        re_search_uses_the_engine_it_was_asked_for,
+    ),
 ];
 
 fn main() {
@@ -166,6 +174,14 @@ fn window_menus_and_deferred_actions(app: &adw::Application) {
     assert!(f.w.win.title().unwrap().contains("work in progress"));
     // Every action in the menus exists; a later ticket's is disabled, this ticket's is enabled.
     for (name, owner) in menu::actions() {
+        if name == "site" {
+            // The Check entries stand for one boolean action per site.
+            for i in 0..menu::all_site_options().len() {
+                let a = f.w.win.lookup_action(&menu::site_action(i));
+                assert!(a.is_some_and(|a| a.is_enabled()), "site-{i}");
+            }
+            continue;
+        }
         let action =
             f.w.win
                 .lookup_action(name)
@@ -1533,5 +1549,105 @@ fn the_window_keeps_working_while_an_engine_stalls(app: &adw::Application) {
     assert!(f.w.s.run_active.get());
     assert!(pump_until(10_000, || !f.w.s.run_active.get()));
     id.remove();
+    f.close();
+}
+
+/// `_build_sites_menu`, `_on_site_toggled`, `_set_all_sites`: one check per site, the setting
+/// follows each click and is saved, Select None / Select All set every check at once.
+fn the_sites_menu_toggles_and_saves(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            tweak: Some(Box::new(|s: &mut hatate_core::config::Settings| {
+                s.enabled_sites = vec!["Danbooru".to_owned(), "Pixiv".to_owned()];
+            })),
+            ..Opts::default()
+        },
+    );
+    let all = menu::all_site_options();
+    let state = |i: usize| -> bool {
+        f.w.win
+            .lookup_action(&menu::site_action(i))
+            .and_then(|a| a.state())
+            .and_then(|v| v.get::<bool>())
+            .expect("a boolean site action")
+    };
+    for (i, site) in all.iter().enumerate() {
+        assert_eq!(state(i), site == "Danbooru" || site == "Pixiv", "{site}");
+    }
+    let danbooru = all.iter().position(|s| s == "Danbooru").unwrap();
+    let gelbooru = all.iter().position(|s| s == "Gelbooru").unwrap();
+    // Clicking a site turns it off, and the saved config has it so.
+    f.activate(&menu::site_action(danbooru));
+    assert!(!state(danbooru));
+    let saved = |paths: &hatate_core::paths::Paths| {
+        hatate_core::config::Settings::load(paths)
+            .settings
+            .enabled_sites
+    };
+    assert_eq!(saved(&f.paths), vec!["Pixiv".to_owned()]);
+    // And on: the list is in ALL_SITE_OPTIONS order, not click order.
+    f.activate(&menu::site_action(gelbooru));
+    f.activate(&menu::site_action(danbooru));
+    let want: Vec<String> = all
+        .iter()
+        .filter(|s| ["Danbooru", "Gelbooru", "Pixiv"].contains(&s.as_str()))
+        .cloned()
+        .collect();
+    assert_eq!(saved(&f.paths), want);
+    f.activate("sites-select-none");
+    assert!((0..all.len()).all(|i| !state(i)));
+    assert!(saved(&f.paths).is_empty());
+    f.activate("sites-select-all");
+    assert!((0..all.len()).all(state));
+    assert_eq!(saved(&f.paths), all);
+    f.close();
+}
+
+/// `_research_rows_with_engine` and `_with_opposite_engine`: the named engine runs whatever the
+/// configured order says, with the cache bypassed and the saved row overwritten.
+fn re_search_uses_the_engine_it_was_asked_for(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let mut rows = unsearched(pics.path(), 2);
+    rows[0].status = MatchStatus::NotFound;
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: rows,
+            tweak: Some(search_tweak()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let ids: Vec<_> = {
+        let q = f.w.s.queue.borrow();
+        (0..2).map(|r| q.id_at(r).unwrap()).collect()
+    };
+    f.search
+        .engines
+        .saucenao
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.w.research_rows_with_engine(&ids[..1], "saucenao");
+    assert_eq!(f.say(), "Searching (SauceNAO only) 1 image(s)\u{2026}");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(f.search.engines.calls(), vec!["saucenao"]);
+    // Primary is IQDB, so a row with no match flips to SauceNAO.
+    f.search
+        .engines
+        .saucenao
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.w.research_rows_with_opposite_engine(&ids[1..]);
+    assert_eq!(f.say(), "Searching (opposite engine) 1 image(s)\u{2026}");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(f.search.engines.calls(), vec!["saucenao", "saucenao"]);
+    // Plain re-search: the configured engine, "Re-searching".
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.w.research_rows(&ids[..1]);
+    assert_eq!(f.say(), "Re-searching 1 image(s)\u{2026}");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(f.search.engines.calls()[2], "iqdb");
     f.close();
 }

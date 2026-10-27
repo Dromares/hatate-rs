@@ -21,6 +21,7 @@ use crate::shell::{QUOTA_PAUSED_ETA, QUOTA_PAUSED_NOTE};
 use crate::text::{describe_quota_pause, round_half_even};
 use crate::window::MainWindow;
 use async_channel::{Receiver, Sender};
+use gtk4::gio;
 use gtk4::prelude::*;
 use hatate_core::batch::{
     Autosave, BatchEnv, Ending, PendingOptions, Reporter, SessionSink, search_pending_with,
@@ -438,6 +439,74 @@ impl MainWindow {
         }
     }
 
+    // ---- the Sites menu -------------------------------------------------------------------
+
+    /// `_build_sites_menu`'s actions: `site_actions[site]`, checked when `site` is in
+    /// `settings.enabled_sites`.
+    pub(crate) fn install_site_actions(&self) {
+        let enabled = self.s.settings.lock().unwrap().enabled_sites.clone();
+        for (i, site) in crate::menu::all_site_options().into_iter().enumerate() {
+            let action = gio::SimpleAction::new_stateful(
+                &crate::menu::site_action(i),
+                None,
+                &enabled.contains(&site).to_variant(),
+            );
+            let w = self.downgrade();
+            action.connect_activate(move |a, _| {
+                let checked = !a.state().and_then(|v| v.get::<bool>()).unwrap_or(false);
+                a.set_state(&checked.to_variant());
+                if let Some(w) = w.upgrade() {
+                    w.on_site_toggled(&site, checked);
+                }
+            });
+            self.win.add_action(&action);
+        }
+    }
+
+    /// `_on_site_toggled(site, checked)`.
+    pub fn on_site_toggled(&self, site: &str, checked: bool) {
+        let all = crate::menu::all_site_options();
+        let mut s = self.s.settings.lock().unwrap();
+        let mut enabled: std::collections::HashSet<String> =
+            s.enabled_sites.iter().cloned().collect();
+        if checked {
+            enabled.insert(site.to_owned());
+        } else {
+            enabled.remove(site);
+        }
+        s.enabled_sites = all.into_iter().filter(|x| enabled.contains(x)).collect();
+        tracing::debug!(
+            "Site filter: {site} -> {checked} (now enabled: {:?})",
+            s.enabled_sites
+        );
+        if let Err(e) = s.save(&self.s.paths) {
+            tracing::warn!("could not save the settings: {e}");
+        }
+    }
+
+    /// `_set_all_sites(checked)`: every check follows, without one handler call per site.
+    pub fn set_all_sites(&self, checked: bool) {
+        let all = crate::menu::all_site_options();
+        for i in 0..all.len() {
+            if let Some(a) = self
+                .win
+                .lookup_action(&crate::menu::site_action(i))
+                .and_downcast::<gio::SimpleAction>()
+            {
+                a.set_state(&checked.to_variant());
+            }
+        }
+        let mut s = self.s.settings.lock().unwrap();
+        s.enabled_sites = if checked { all } else { Vec::new() };
+        tracing::info!(
+            "Site filter: {} all sites",
+            if checked { "enabled" } else { "disabled" }
+        );
+        if let Err(e) = s.save(&self.s.paths) {
+            tracing::warn!("could not save the settings: {e}");
+        }
+    }
+
     // ---- start, stop ----------------------------------------------------------------------
 
     /// `action_toggle_search`.
@@ -798,6 +867,122 @@ impl MainWindow {
                 .set_text("last run failed \u{2014} see log");
             self.say(message);
         }
+    }
+
+    // ---- re-search (6.d's context menu calls these) ------------------------------------------
+
+    /// `_live_entries(entries)`: the rows that are still in the list.
+    fn live_rows(&self, ids: &[EntryId]) -> Vec<EntryId> {
+        let q = self.s.queue.borrow();
+        ids.iter()
+            .copied()
+            .filter(|id| q.position_of(*id).is_some())
+            .collect()
+    }
+
+    /// `_research_rows(entries)`: re-runs the search for the rows whatever their status, with the
+    /// search cache bypassed (the point is a fresh look).
+    pub fn research_rows(&self, ids: &[EntryId]) {
+        if self.search_running() {
+            dialogs::information(&*self.s.prompter, "Search", "A search is already running.");
+            return;
+        }
+        let rows = self.live_rows(ids);
+        if rows.is_empty() {
+            return;
+        }
+        {
+            let q = self.s.queue.borrow();
+            let names: Vec<&str> = rows
+                .iter()
+                .filter_map(|id| q.entry(*id).map(|e| e.filename()))
+                .collect();
+            tracing::info!("Re-search requested for {} image(s): {names:?}", rows.len());
+        }
+        self.launch_search_worker(
+            rows,
+            LaunchOptions {
+                status_prefix: "Re-searching".to_owned(),
+                bypass_cache: true,
+                ..LaunchOptions::default()
+            },
+        );
+    }
+
+    /// `_research_rows_with_engine(entries, engine)`: re-searches the rows with ONE named engine,
+    /// whatever their state.
+    pub fn research_rows_with_engine(&self, ids: &[EntryId], engine: &str) {
+        if self.search_running() {
+            dialogs::information(&*self.s.prompter, "Search", "A search is already running.");
+            return;
+        }
+        let rows = self.live_rows(ids);
+        if rows.is_empty() {
+            return;
+        }
+        let label = hatate_core::engine_ids::label_for(engine).to_owned();
+        tracing::info!("{label}-only search requested for {} image(s)", rows.len());
+        let overrides = rows.iter().map(|id| (*id, engine.to_owned())).collect();
+        self.launch_search_worker(
+            rows,
+            LaunchOptions {
+                status_prefix: format!("Searching ({label} only)"),
+                override_engines: overrides,
+                bypass_cache: true,
+                ..LaunchOptions::default()
+            },
+        );
+    }
+
+    /// `_research_rows_with_opposite_engine(entries)`: each row with whichever engine did NOT find
+    /// its current match, ignoring the configured order. A row with no match gets the opposite of
+    /// the configured primary.
+    pub fn research_rows_with_opposite_engine(&self, ids: &[EntryId]) {
+        use hatate_core::engine_ids::{effective_primary, opposite_engine};
+        if self.search_running() {
+            dialogs::information(&*self.s.prompter, "Search", "A search is already running.");
+            return;
+        }
+        let primary = self.s.settings.lock().unwrap().primary_engine.clone();
+        let primary = effective_primary(&primary).to_owned();
+        let fallback_for_unsearched = opposite_engine(None, &primary);
+        let rows = self.live_rows(ids);
+        let mut overrides: HashMap<EntryId, String> = HashMap::new();
+        let mut unsearched = 0;
+        {
+            let q = self.s.queue.borrow();
+            for id in &rows {
+                let current = q
+                    .entry(*id)
+                    .and_then(|e| e.selected_candidate())
+                    .map(|c| c.engine.clone());
+                if !current.as_deref().is_some_and(|c| !c.trim().is_empty()) {
+                    unsearched += 1;
+                }
+                overrides.insert(
+                    *id,
+                    opposite_engine(current.as_deref(), &primary).to_owned(),
+                );
+            }
+        }
+        if rows.is_empty() {
+            return;
+        }
+        if unsearched > 0 {
+            tracing::info!(
+                "Opposite-engine search: {unsearched} row(s) had no match to flip, using \
+                 {fallback_for_unsearched:?} (the opposite of the configured primary {primary:?})"
+            );
+        }
+        self.launch_search_worker(
+            rows,
+            LaunchOptions {
+                status_prefix: "Searching (opposite engine)".to_owned(),
+                override_engines: overrides,
+                bypass_cache: true,
+                ..LaunchOptions::default()
+            },
+        );
     }
 
     // ---- quota banner actions ---------------------------------------------------------------

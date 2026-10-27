@@ -84,7 +84,7 @@ pub fn menus() -> Vec<Menu> {
     use Owner::{Later, Shell};
     // DEFERRED(6.g): Query Hydrus, Re-check Queued Imports, Pawchive Index, the two Send items.
     // DEFERRED(6.d): Export Results, Write Tag Files, Clear Search Cache.
-    // DEFERRED(6.e): Parser Health, the Sites menu.
+    // DEFERRED(6.e): Parser Health.
     // DEFERRED(6.f): Edit Match Conditions.
     // DEFERRED(6.h): Preferences.
     let files = Menu {
@@ -131,8 +131,8 @@ pub fn menus() -> Vec<Menu> {
         ],
     };
     let mut sites_entries = vec![
-        item("Select All", "sites-select-all", Later("6.e")),
-        item("Select None", "sites-select-none", Later("6.e")),
+        item("Select All", "sites-select-all", Shell),
+        item("Select None", "sites-select-none", Shell),
         Entry::Separator,
     ];
     for site in all_site_options() {
@@ -140,7 +140,7 @@ pub fn menus() -> Vec<Menu> {
             label: site.clone(),
             action: "site",
             target: site,
-            owner: Later("6.e"),
+            owner: Shell,
         });
     }
     let sites = Menu {
@@ -237,9 +237,15 @@ pub fn accelerators() -> Vec<(String, &'static str)> {
     out
 }
 
+/// The boolean action behind the `index`-th site's check item.
+pub fn site_action(index: usize) -> String {
+    format!("site-{index}")
+}
+
 /// The `gio::Menu` for the menubar.
 pub fn model() -> gio::Menu {
     let bar = gio::Menu::new();
+    let mut site_index = 0usize;
     for menu in menus() {
         let m = gio::Menu::new();
         let mut section = gio::Menu::new();
@@ -248,18 +254,13 @@ pub fn model() -> gio::Menu {
                 Entry::Item { label, action, .. } => {
                     section.append(Some(label), Some(&format!("win.{action}")));
                 }
-                Entry::Check {
-                    label,
-                    action,
-                    target,
-                    ..
-                } => {
-                    let it = gio::MenuItem::new(Some(label), None);
-                    it.set_action_and_target_value(
-                        Some(&format!("win.{action}")),
-                        Some(&gtk4::glib::Variant::from(target.as_str())),
+                Entry::Check { label, .. } => {
+                    // One boolean action per site: a check item, not a radio on one string.
+                    section.append(
+                        Some(label),
+                        Some(&format!("win.{}", site_action(site_index))),
                     );
-                    section.append_item(&it);
+                    site_index += 1;
                 }
                 Entry::Radio {
                     title,
@@ -417,8 +418,6 @@ mod tests {
             "preferences",
             "edit-conditions",
             "clear-search-cache",
-            "sites-select-all",
-            "site",
         ] {
             assert!(d.iter().any(|(n, _)| *n == want), "{want} not deferred");
         }
@@ -432,6 +431,9 @@ mod tests {
             "view-logs",
             "clear-session",
             "theme",
+            "sites-select-all",
+            "sites-select-none",
+            "site",
         ] {
             assert!(!d.iter().any(|(n, _)| *n == working), "{working} is 6.c's");
         }
