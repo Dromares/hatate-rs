@@ -165,6 +165,10 @@ mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
 
+    /// The tests that run a call take this, so the script files one test looks for are never
+    /// another test's in flight (they share the temp dir and the process id).
+    static SERIAL: Mutex<()> = Mutex::new(());
+
     /// A `qdbus6` that appends its arguments, and the script file's text at `loadScript`, to a log.
     fn fake_qdbus(dir: &Path, log: &Path) -> PathBuf {
         let bin = dir.join("bin");
@@ -196,6 +200,7 @@ mod tests {
 
     #[test]
     fn off_plasma_or_without_qdbus_every_call_does_nothing() {
+        let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("calls.log");
         let bin = fake_qdbus(dir.path(), &log);
@@ -210,6 +215,7 @@ mod tests {
 
     #[test]
     fn quiet_and_ask_load_start_and_unload_the_kwin_script_in_python_order() {
+        let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("calls.log");
         let bin = fake_qdbus(dir.path(), &log);
@@ -239,5 +245,69 @@ mod tests {
         let said = std::fs::read_to_string(&log).unwrap();
         assert!(said.contains("w.skipTaskbar = false;"));
         assert!(said.contains("w.demandsAttention = true;"));
+    }
+    #[test]
+    fn the_desktop_name_is_matched_case_insensitively_and_the_qt6_binary_name_is_a_fallback() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = fake_qdbus(dir.path(), &dir.path().join("calls.log"));
+        // Real sessions say "KDE", "kde" and "plasma:KDE".
+        assert!(KdeAttention::new("plasma:kde".into(), vec![bin.clone()]).available());
+        // A bare session (no desktop at all) is not Plasma.
+        assert!(!KdeAttention::new(String::new(), vec![bin.clone()]).available());
+        // `qdbus6` is tried first; `qdbus-qt6` is accepted when it is the only one.
+        std::fs::rename(bin.join("qdbus6"), bin.join("qdbus-qt6")).unwrap();
+        let kde = KdeAttention::new("KDE".into(), vec![bin.clone()]);
+        assert!(kde.available());
+        assert_eq!(kde.qdbus(), Some(bin.join("qdbus-qt6")));
+    }
+
+    /// The script files this process has left in the temp dir (`hatate-kwin-<pid>-<n>.js`).
+    fn leftover_scripts() -> Vec<PathBuf> {
+        let prefix = format!("hatate-kwin-{}-", std::process::id());
+        std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with(&prefix))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_script_file_goes_afterwards_and_a_nonzero_exit_is_not_an_error() {
+        let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("calls.log");
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        // KWin refusing the script: every call exits 7.
+        let q = bin.join("qdbus6");
+        std::fs::write(
+            &q,
+            format!("#!/bin/sh\necho \"$@\" >> '{}'\nexit 7\n", log.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&q, std::fs::Permissions::from_mode(0o755)).unwrap();
+        KdeAttention::new("KDE".into(), vec![bin]).quiet("lens_browser");
+        // check=False: all four calls are made, and nothing is raised.
+        assert_eq!(std::fs::read_to_string(&log).unwrap().lines().count(), 4);
+        assert!(leftover_scripts().is_empty(), "{:?}", leftover_scripts());
+    }
+
+    #[test]
+    fn a_command_that_cannot_start_is_swallowed_after_one_call_and_the_file_still_goes() {
+        let _serial = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        // Executable, but its interpreter is not there: `spawn` fails.
+        let q = bin.join("qdbus6");
+        std::fs::write(&q, "#!/nonexistent/interpreter\n").unwrap();
+        std::fs::set_permissions(&q, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Must not panic; the script file written before the first call is removed.
+        KdeAttention::new("KDE".into(), vec![bin]).ask_for_input("lens_browser");
+        assert!(leftover_scripts().is_empty(), "{:?}", leftover_scripts());
     }
 }
