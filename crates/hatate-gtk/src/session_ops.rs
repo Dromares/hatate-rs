@@ -835,6 +835,7 @@ impl MainWindow {
         // DEFERRED(6.i): stop the MCP server first. DEFERRED(6.g): close the Pawchive Index window.
         // `engine_alerts.unsubscribe`, the stop request and the engines' shutdown.
         self.close_search_run();
+        self.set_activity_live(false);
         // Ask every worker to stop and silence it: results for a window on its way out are
         // never shown (`retire_attrs(..., grace_ms=2000)`).
         self.s.file_hash_worker.retire();

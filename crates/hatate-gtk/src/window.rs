@@ -185,6 +185,8 @@ pub struct State {
     pub log_viewer: RefCell<Option<Rc<crate::logview::LogViewer>>>,
     /// The search run: backend, inbox, estimate, alert listener.
     pub search: Rc<SearchRun>,
+    /// The Activity page.
+    pub activity: Rc<crate::activity::ActivityPage>,
 }
 
 /// The window and its state.
@@ -268,6 +270,7 @@ impl MainWindow {
         queue_stack.set_visible_child_name("empty");
         queue_page.append(&queue_stack);
 
+        let activity = crate::activity::build(&logs.log_path());
         let handle: Rc<OnceCell<MainWindowWeak>> = Rc::new(OnceCell::new());
         let call = |handle: &Rc<OnceCell<MainWindowWeak>>, f: fn(&MainWindow)| {
             let handle = handle.clone();
@@ -282,6 +285,7 @@ impl MainWindow {
             &[
                 ("queue", queue_page.clone().upcast()),
                 ("review", review_frame()),
+                ("activity", activity.root.clone().upcast()),
             ],
             move |key| {
                 if let Some(w) = mode_handle.get().and_then(MainWindowWeak::upgrade) {
@@ -342,6 +346,7 @@ impl MainWindow {
             win: win.clone(),
             log_viewer: RefCell::new(None),
             search: SearchRun::new(env.search.take(), env.monotonic.clone()),
+            activity,
         });
         let window = MainWindow {
             win: win.clone(),
@@ -350,6 +355,9 @@ impl MainWindow {
         let _ = handle.set(window.downgrade());
         window.install_actions(app);
         window.start_search_inbox();
+        window.wire_activity();
+        window.refresh_engines();
+        window.tail_log();
         window.wire_banners();
         window.apply_theme(&theme_setting(&window.s));
         window.refresh_queue_empty_state();
@@ -413,8 +421,11 @@ impl MainWindow {
         shell::ghost_glyph(key).to_owned()
     }
 
-    /// `_on_mode_changed(key)`: a hook for the views (Review, 6.f).
-    fn on_mode_changed(&self, _key: &str) {}
+    /// `_on_mode_changed(key)`: whichever mode just came to the front gets brought up to date.
+    /// Activity tails the log while it is on screen. DEFERRED(6.f): `refresh_review`.
+    fn on_mode_changed(&self, key: &str) {
+        self.set_activity_live(key == "activity");
+    }
 
     /// `_refresh_queue_empty_state()`: an empty list shows the drop zone instead of an empty grid.
     /// Keyed on the list and not on how many rows are visible: a filter that matches nothing still

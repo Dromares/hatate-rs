@@ -207,6 +207,11 @@ button.disclosure { background: none; border: none; box-shadow: none; padding: 0
 .banner-glyph { font-family: %status%; font-size: 17px; color: @ink; }
 .banner-head { font-size: %label%px; letter-spacing: %tracking_label%px; font-weight: 700; color: @ink; }
 .banner-body { color: @ink_65; font-size: %body%px; }
+/* Activity: the pipeline sentence, the "Show in Queue" hint, the log footer. */
+.pipeline-line { font-family: %mono%; font-size: %label%px; color: @ink_65; }
+.pipeline-names { font-family: %mono%; font-size: %label%px; font-weight: 700; color: @ink; }
+.button-hint { font-family: %mono%; font-size: %micro%px; color: @ink_65; }
+.log-footer { font-family: %mono%; font-size: %micro%px; color: @ink_65; }
 /* Parser Health: working is ink_65, broken is ink_100 (the tiers Status uses). */
 .health-ok { color: @ink_65; }
 .health-bad { color: @ink; font-weight: 700; }

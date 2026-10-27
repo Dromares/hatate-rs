@@ -127,6 +127,10 @@ const SCENARIOS: &[Scenario] = &[
         parser_health_dialog_and_warning,
     ),
     (
+        "activity_page_states_the_engines_and_tails_the_log",
+        activity_page_states_the_engines_and_tails_the_log,
+    ),
+    (
         "re_search_uses_the_engine_it_was_asked_for",
         re_search_uses_the_engine_it_was_asked_for,
     ),
@@ -2021,5 +2025,97 @@ fn parser_health_dialog_and_warning(app: &adw::Application) {
             .contains("not part of this build")
     );
     dialog.window.close();
+    f.close();
+}
+
+/// A log source whose text the test changes.
+struct MovingLog(std::cell::RefCell<String>);
+
+impl hatate_gtk::logview::LogSource for MovingLog {
+    fn log_path(&self) -> PathBuf {
+        PathBuf::from("/synthetic/logs/hatate-rs.log")
+    }
+    fn recent_log(&self) -> String {
+        self.0.borrow().clone()
+    }
+    fn crash_log_path(&self) -> PathBuf {
+        PathBuf::from("/synthetic/logs/crash.log")
+    }
+    fn recent_crash_log(&self) -> String {
+        String::new()
+    }
+}
+
+/// `ActivityViewMixin`: the engine line-up read from the settings, the pipeline sentence, the log
+/// pane that tails only while the page is on screen and the follow toggle is on.
+fn activity_page_states_the_engines_and_tails_the_log(app: &adw::Application) {
+    let log = Rc::new(MovingLog(std::cell::RefCell::new(String::new())));
+    let l2 = log.clone();
+    let f = Fx::new_with(
+        app,
+        Opts {
+            tweak: Some(Box::new(|s: &mut hatate_core::config::Settings| {
+                s.primary_engine = "iqdb".to_owned();
+                s.secondary_engine_mode = "fallback".to_owned();
+                s.enable_ascii2d = true;
+                s.extras_only_as_fallback = true;
+                s.delay_min_seconds = 45.0;
+                s.delay_max_seconds = 75.0;
+                s.use_search_cache = false;
+            })),
+            ..Opts::default()
+        },
+        move |env| env.logs = Some(l2),
+    );
+    let page = f.w.s.activity.clone();
+    // Built with the window: the chips and the sentences are there before the page is shown.
+    let chips: Vec<(String, bool)> = page.chip_texts().into_iter().map(|c| (c.0, c.1)).collect();
+    assert_eq!(chips.len(), 10);
+    assert_eq!(chips[0], ("IQDB \u{b7} primary".to_owned(), true));
+    assert_eq!(chips[1], ("SauceNAO \u{b7} fallback".to_owned(), true));
+    assert_eq!(chips[2], ("ascii2d \u{b7} fallback".to_owned(), true));
+    assert_eq!(chips[3], ("trace.moe \u{b7} off".to_owned(), false));
+    assert_eq!(page.chip_texts()[3].2, "Switched off in Settings > Engine.");
+    assert_eq!(page.chip_texts()[0].2, "Runs on every image.");
+    assert!(page.pipeline.text().contains("IQDB"));
+    assert_eq!(
+        page.summary.text(),
+        "Paced at 45\u{2013}75s an image.  The search cache is off."
+    );
+    assert!(
+        page.footer
+            .text()
+            .ends_with("/synthetic/logs/hatate-rs.log")
+    );
+    assert_eq!(page.log_text(), hatate_gtk::activity::NO_LOG_YET);
+
+    // Off the page, nothing tails.
+    assert!(page.timer.borrow().is_none());
+    f.w.set_mode("activity");
+    assert!(page.timer.borrow().is_some(), "on the page the log follows");
+    *log.0.borrow_mut() = "first line\nsecond line".to_owned();
+    f.w.tail_log();
+    assert_eq!(page.log_text(), "first line\nsecond line");
+    // The follow toggle off stops the tail; on, it reads at once and starts again.
+    page.follow.set_active(false);
+    assert!(page.timer.borrow().is_none());
+    *log.0.borrow_mut() = "first line\nsecond line\nthird".to_owned();
+    page.follow.set_active(true);
+    assert_eq!(page.log_text(), "first line\nsecond line\nthird");
+    assert!(page.timer.borrow().is_some());
+    // The folder button hands the log's folder to the desktop.
+    page.open_folder.emit_clicked();
+    assert_eq!(
+        f.opened.borrow().last().unwrap(),
+        &PathBuf::from("/synthetic/logs")
+    );
+    // Leaving the page stops the tail; Show in Queue goes to Queue.
+    page.show_in_queue.emit_clicked();
+    assert_eq!(f.w.s.shell.current_mode(), "queue");
+    assert!(page.timer.borrow().is_none());
+    // Back on the page the engines are restated from the settings as they are now.
+    f.w.s.settings.lock().unwrap().enable_tracemoe = true;
+    f.w.set_mode("activity");
+    assert_eq!(page.chip_texts()[3].0, "trace.moe \u{b7} fallback");
     f.close();
 }
