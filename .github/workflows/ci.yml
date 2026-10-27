@@ -28,10 +28,13 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # `HATATE_GTK_SMOKE=1` turns the window scenarios on. With `CI` set (it always is here) a
-      # missing flag or a missing display fails the test instead of skipping it.
+      # missing flag or a missing display fails the test instead of skipping it. `HATATE_SMOKE_XVFB=1`
+      # states that the display is the Xvfb `xvfb-run` starts here; the key injector refuses without
+      # it and without an `xvfb-run` Xauthority (DAN-2264), so it can never type into a live session.
       - name: cargo test --workspace (under Xvfb)
         env:
           HATATE_GTK_SMOKE: "1"
+          HATATE_SMOKE_XVFB: "1"
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
           NO_AT_BRIDGE: "1"
