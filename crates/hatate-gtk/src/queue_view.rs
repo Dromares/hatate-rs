@@ -594,6 +594,23 @@ impl QueueView {
         }
     }
 
+    /// `_successor_surviving(ids_to_remove)`: the visible entry to land on if the selection is about
+    /// to be removed: the next one down that survives, else the nearest above. `None` when the
+    /// selection survives or there is nothing selected.
+    pub fn successor_surviving(&self, removed: &[EntryId]) -> Option<EntryId> {
+        let selected = self.selected_ids();
+        let first = selected.iter().filter_map(|id| self.row_of(*id)).min()?;
+        if selected.iter().any(|id| !removed.contains(id)) {
+            return None;
+        }
+        let ids = self.visible_ids();
+        let total = ids.len() as u32;
+        (first + 1..total)
+            .chain((0..first).rev())
+            .map(|r| ids[r as usize])
+            .find(|id| !removed.contains(id))
+    }
+
     /// `_reselect`: selects exactly these ids, those still on screen.
     pub fn select_ids(&self, ids: &[EntryId]) {
         let bits = gtk::Bitset::new_empty();

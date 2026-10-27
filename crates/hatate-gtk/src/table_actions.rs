@@ -369,12 +369,21 @@ impl MainWindow {
         if live.is_empty() {
             return;
         }
+        // Where to land once they are gone, worked out by identity before removing.
+        let successor = self.s.queue_view.successor_surviving(&live);
         self.s
             .queue
             .borrow_mut()
             .remove(&live, RemoveReason::Requested);
         self.s.queue.borrow_mut().take_events();
         self.list_changed();
+        if let Some(next) = successor {
+            if self.s.queue_view.selected_ids().is_empty() {
+                if let Some(row) = self.s.queue_view.row_of(next) {
+                    self.s.queue_view.select_row(row);
+                }
+            }
+        }
         self.say(&format!("Removed {} file(s) from the list", live.len()));
     }
 

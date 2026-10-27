@@ -106,6 +106,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears,
     ),
     (
+        "queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row",
+        queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row,
+    ),
+    (
         "queue_view_thumbnails_load_fail_and_stay_off_the_main_loop",
         queue_view_thumbnails_load_fail_and_stay_off_the_main_loop,
     ),
@@ -1694,6 +1698,65 @@ fn queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears(app: &adw:
     assert_eq!(status.label().unwrap().as_str(), "Status: All");
     // A filter hides rows from the table, never from the queue.
     assert_eq!(f.w.s.queue.borrow().len(), 12);
+    f.close();
+}
+
+fn queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row(
+    app: &adw::Application,
+) {
+    use hatate_core::table_cells::Column;
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: seeded(5, MatchStatus::Good),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let ids = view.visible_ids();
+    let path_of = |id| f.w.s.queue.borrow().entry(id).unwrap().path.clone();
+
+    // `_successor_surviving`: removing the selected row selects the one that followed it.
+    view.select_row(1);
+    f.script.push(Answer::Msg(Response::Remove));
+    f.w.remove_rows(&[ids[1]]);
+    assert_eq!(
+        view.selected_ids()
+            .iter()
+            .map(|i| path_of(*i))
+            .collect::<Vec<_>>(),
+        ["/lib/img2.png"]
+    );
+    // The last row has nothing below it, so the nearest one above is taken.
+    view.select_row(3);
+    f.script.push(Answer::Msg(Response::Remove));
+    f.w.remove_rows(&[ids[4]]);
+    assert_eq!(
+        view.selected_ids()
+            .iter()
+            .map(|i| path_of(*i))
+            .collect::<Vec<_>>(),
+        ["/lib/img3.png"]
+    );
+    // A selection that survives is left as it is.
+    view.select_row(0);
+    f.script.push(Answer::Msg(Response::Remove));
+    f.w.remove_rows(&[ids[2]]);
+    assert_eq!(
+        view.selected_ids()
+            .iter()
+            .map(|i| path_of(*i))
+            .collect::<Vec<_>>(),
+        ["/lib/img0.png"]
+    );
+
+    // `_apply_sort`: the top selected row is the current one and the only one left selected.
+    let top = view.visible_ids();
+    view.select_ids(&[top[0], top[1]]);
+    view.on_header_clicked(Column::File);
+    assert_eq!(view.selected_ids().len(), 1);
+    assert_eq!(path_of(view.selected_ids()[0]), "/lib/img0.png");
     f.close();
 }
 
