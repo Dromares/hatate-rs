@@ -394,6 +394,8 @@ pub struct QueueView {
     /// `self._thumb_icon_cache`: what each file's thumbnail is, filed by path and decode size.
     thumbs: RefCell<ThumbBook<gdk::Texture>>,
     on_row_bound: BoundCallback,
+    /// Called after every `rebuild`, so the filter bar can follow the list.
+    on_rebuilt: RefCell<Option<Rc<dyn Fn()>>>,
     cell_rows: CellRows,
 }
 
@@ -489,6 +491,7 @@ impl QueueView {
             scheme: Cell::new(Scheme::Dark),
             thumbs: RefCell::new(ThumbBook::default()),
             on_row_bound: bound,
+            on_rebuilt: RefCell::new(None),
             cell_rows,
         });
 
@@ -624,6 +627,16 @@ impl QueueView {
         };
         self.store.splice(0, self.store.n_items(), &rows);
         self.select_ids(&selected);
+        let hook = self.on_rebuilt.borrow().clone();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
+    /// Called after every `rebuild` (`_refresh_table` ends by rebuilding the filter menus and
+    /// the readout).
+    pub fn connect_rebuilt(&self, f: impl Fn() + 'static) {
+        *self.on_rebuilt.borrow_mut() = Some(Rc::new(f));
     }
 
     /// `_refresh_entry_row(entry)`: repaints one row; nothing if it is not on screen (it may have

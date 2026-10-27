@@ -8,6 +8,7 @@
 //! and nothing in it can be clicked into an empty handler.
 
 use crate::dialogs::{AdwPrompter, Prompter};
+use crate::filter_bar::FilterBar;
 use crate::logview::{LogSource, RingLogs};
 use crate::menu::{self, Owner};
 use crate::queue_view::QueueView;
@@ -115,6 +116,8 @@ pub struct State {
     pub queue: Rc<RefCell<QueueModel>>,
     /// The Queue table (`self.table`, `self.table_model`).
     pub queue_view: Rc<QueueView>,
+    /// `self.filter_bar`.
+    pub filter_bar: Rc<FilterBar>,
     pub workers: Workers,
     pub file_hash_worker: Slot,
     /// The thumbnail scheduler (`thumbnail_worker`, `_thumbs_in_flight`).
@@ -264,7 +267,34 @@ impl MainWindow {
 
         let queue_stack = gtk::Stack::new();
         queue_stack.set_vexpand(true);
-        queue_stack.add_named(&queue_view.root, Some("rows"));
+        // `table_layout`: the filter band over the list.
+        let filter_bar = FilterBar::new(queue.clone());
+        {
+            let view = Rc::downgrade(&queue_view);
+            let bar = filter_bar.clone();
+            filter_bar.connect_changed(move || {
+                if let Some(view) = view.upgrade() {
+                    view.set_filter(bar.current_filter());
+                }
+            });
+            let view = Rc::downgrade(&queue_view);
+            let bar = filter_bar.clone();
+            queue_view.connect_rebuilt(move || {
+                if let Some(view) = view.upgrade() {
+                    bar.rebuild_menus();
+                    bar.refresh(
+                        view.visible_count(),
+                        view.total_count(),
+                        view.filter().is_active(),
+                    );
+                }
+            });
+        }
+        let rows_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        rows_page.append(&filter_bar.root);
+        queue_view.root.set_vexpand(true);
+        rows_page.append(&queue_view.root);
+        queue_stack.add_named(&rows_page, Some("rows"));
         let drop_zone = build_drop_zone();
         queue_stack.add_named(&drop_zone, Some("empty"));
         queue_stack.set_visible_child_name("empty");
@@ -310,6 +340,7 @@ impl MainWindow {
             settings: settings.clone(),
             queue,
             queue_view,
+            filter_bar,
             workers: Workers::new(),
             file_hash_worker: Slot::new(),
             thumbs: Default::default(),

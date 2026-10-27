@@ -194,6 +194,19 @@ button.link { background: none; border: none; box-shadow: none; padding: 0; min-
   color: @ink_65; font-family: %mono%; font-size: %label%px; letter-spacing: 0.06em; text-decoration: underline; }
 button.link:hover { color: @ink; }
 
+/* ---- the filter band over the Queue (gui/filter_bar.py; the mockup's .field): a hairline band, mono
+   fields on the border tier, the hidden count on the label tier (the mockup's ink_45 is under 4.5:1) ---- */
+.filter-band { border: 1px solid @ink_18; }
+entry.field, menubutton.field > button { background: transparent; color: @ink; border: 1px solid @ink_46;
+  border-radius: 0; box-shadow: none; font-family: %mono%; font-size: %label%px; letter-spacing: 0.04em;
+  min-height: 0; min-width: 0; }
+entry.field { padding: 7px 10px; }
+menubutton.field > button { padding: 6px 14px; }
+entry.field:hover, menubutton.field > button:hover { border-color: @ink_58; }
+entry.field:focus-within { border-color: @ink; }
+entry.field text > placeholder { color: @ink_65; }
+.filter-count { font-family: %mono%; font-size: %label%px; color: @ink_65; }
+
 /* ---- keycaps (the mockup's .kbd) and the key-hint bar ---- */
 .keycap { border: 1px solid @ink_28; color: @ink_65; padding: 0 5px; font-size: %micro%px; letter-spacing: 0.08em; }
 button.pill.primary .keycap { border-color: @stamp_fg; color: @stamp_fg; }

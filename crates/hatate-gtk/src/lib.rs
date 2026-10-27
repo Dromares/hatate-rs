@@ -5,6 +5,7 @@ pub mod app;
 pub mod banners;
 pub mod dialogs;
 pub mod error;
+pub mod filter_bar;
 pub mod fonts;
 pub mod logsink;
 pub mod logview;
