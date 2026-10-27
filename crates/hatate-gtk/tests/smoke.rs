@@ -2017,12 +2017,20 @@ fn parser_health_dialog_and_warning(app: &adw::Application) {
     f.activate("parser-health");
     let dialog = f.w.s.parser_health_dialog.borrow().clone().unwrap();
     assert!(!dialog.check_button.is_sensitive());
+    assert_eq!(
+        dialog.texts()[0],
+        ["Site", "This session", "Last problem"],
+        "no Live check column when no live check runs"
+    );
+    assert_eq!(
+        dialog.check_button.tooltip_text().unwrap(),
+        "The live check is not part of this build yet."
+    );
+    // And the same words as a caption, so the reason is on screen without a hover.
     assert!(
-        dialog
-            .check_button
-            .tooltip_text()
-            .unwrap()
-            .contains("not part of this build")
+        texts_under(dialog.window.child().unwrap().upcast_ref())
+            .iter()
+            .any(|t| t == "The live check is not part of this build yet.")
     );
     dialog.window.close();
     f.close();

@@ -36,6 +36,9 @@ pub const PROBE_SITES: [&str; 13] = [
     "twitter",
 ];
 
+/// What the disabled button says, as DAN-2290 words it.
+pub const NO_LIVE_CHECK: &str = "The live check is not part of this build yet.";
+
 /// The dialog's columns.
 pub const COLUMNS: [&str; 4] = ["Site", "This session", "Live check", "Last problem"];
 
@@ -260,11 +263,14 @@ impl ParserHealthDialog {
              down will show here as a failure, which is worth knowing too.",
         ));
         if probe.is_none() {
+            // DAN-2290 (Cloud): disabled, with exactly this text; and the same text as a caption
+            // under the button, because GTK may not show a tooltip on an insensitive widget.
             check_button.set_sensitive(false);
-            check_button.set_tooltip_text(Some(
-                "The live check is not part of this build yet. What this session has seen is \
-                 listed above.",
-            ));
+            check_button.set_tooltip_text(Some(NO_LIVE_CHECK));
+            let caption = gtk::Label::new(Some(NO_LIVE_CHECK));
+            caption.add_css_class("muted");
+            caption.set_xalign(0.0);
+            column.append(&caption);
         }
         row.append(&check_button);
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -309,22 +315,24 @@ impl ParserHealthDialog {
         while let Some(child) = self.grid.first_child() {
             self.grid.remove(&child);
         }
-        for (c, name) in COLUMNS.iter().enumerate() {
-            let h = widgets::section_label(name);
+        // Without a live check there is no "Live check" column: a column of dashes would imply
+        // one runs (DAN-2290 condition 1).
+        let shown = self.shown_columns();
+        for (c, &col) in shown.iter().enumerate() {
+            let h = widgets::section_label(COLUMNS[col]);
             h.set_xalign(0.0);
             self.grid.attach(&h, c as i32, 0, 1, 1);
         }
         for (i, r) in rows.iter().enumerate() {
             let y = i as i32 + 1;
-            for (c, (text, tone)) in [
+            let cells = [
                 (&r.site, Tone::Plain),
                 (&r.session, r.session_tone),
                 (&r.live, r.live_tone),
                 (&r.problem, Tone::Plain),
-            ]
-            .into_iter()
-            .enumerate()
-            {
+            ];
+            for (c, &col) in shown.iter().enumerate() {
+                let (text, tone) = cells[col];
                 let l = gtk::Label::new(Some(text));
                 l.set_xalign(0.0);
                 l.set_selectable(true);
@@ -336,19 +344,29 @@ impl ParserHealthDialog {
         }
     }
 
+    /// The indexes into [`COLUMNS`] the dialog shows.
+    pub fn shown_columns(&self) -> Vec<usize> {
+        if self.probe.is_some() {
+            vec![0, 1, 2, 3]
+        } else {
+            vec![0, 1, 3]
+        }
+    }
+
     /// Every cell's text, row by row (header first).
     pub fn texts(&self) -> Vec<Vec<String>> {
         let mut out: Vec<Vec<String>> = Vec::new();
         let mut y = 0;
         loop {
             let mut row = Vec::new();
-            for x in 0..COLUMNS.len() as i32 {
+            let width = self.shown_columns().len();
+            for x in 0..width as i32 {
                 match self.grid.child_at(x, y).and_downcast::<gtk::Label>() {
                     Some(l) => row.push(l.text().to_string()),
                     None => break,
                 }
             }
-            if row.len() != COLUMNS.len() {
+            if row.len() != width {
                 break;
             }
             out.push(row);
