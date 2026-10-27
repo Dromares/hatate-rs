@@ -1584,9 +1584,10 @@ fn queue_view_holds_5000_rows_and_filters_without_touching_the_queue(app: &adw::
     assert_eq!(view.cell(0, Column::File).unwrap().text, "img0.png");
     assert_eq!(view.cell(1, Column::Status).unwrap().text, "\u{25cf} Good");
     // A filter hides rows from the table, never from the queue.
-    let mut filter = EntryFilter::default();
-    filter.statuses = Some([MatchStatus::Good].into_iter().collect());
-    view.set_filter(filter);
+    view.set_filter(EntryFilter {
+        statuses: Some([MatchStatus::Good].into_iter().collect()),
+        ..EntryFilter::default()
+    });
     assert_eq!(view.visible_count(), 5000 / 6 + usize::from(5000 % 6 > 1));
     assert_eq!(f.w.s.queue.borrow().len(), 5000);
     assert_eq!(view.cell(0, Column::File).unwrap().text, "img1.png");
