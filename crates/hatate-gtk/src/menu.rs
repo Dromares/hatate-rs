@@ -241,6 +241,14 @@ pub struct ClearCacheItem {
 }
 
 impl ClearCacheItem {
+    /// The label the menu shows now.
+    pub fn label(&self) -> String {
+        self.section
+            .item_attribute_value(self.position, "label", None)
+            .and_then(|v| v.str().map(str::to_owned))
+            .unwrap_or_default()
+    }
+
     pub fn set_label(&self, label: &str) {
         self.section.remove(self.position);
         let item = gio::MenuItem::new(Some(label), Some("win.clear-search-cache"));

@@ -106,6 +106,14 @@ const SCENARIOS: &[Scenario] = &[
         queue_view_thumbnails_load_fail_and_stay_off_the_main_loop,
     ),
     (
+        "queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded",
+        queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded,
+    ),
+    (
+        "clear_search_cache_label_carries_the_cache_size",
+        clear_search_cache_label_carries_the_cache_size,
+    ),
+    (
         "queue_context_menu_selects_marks_resets_and_removes",
         queue_context_menu_selects_marks_resets_and_removes,
     ),
@@ -1950,6 +1958,11 @@ fn write_tag_files_asks_then_writes_and_keeps_what_is_there(app: &adw::Applicati
 
 fn clear_search_cache_asks_then_removes_the_saved_results(app: &adw::Application) {
     let f = fx(app);
+    // Set at startup, before anything is cached.
+    assert_eq!(
+        f.w.s.clear_cache_item.label(),
+        "Clear Search Cache (0 B)\u{2026}"
+    );
     let cache = hatate_core::cache::SearchCache::new(&f.paths);
     std::fs::create_dir_all(cache.dir()).unwrap();
     for n in ["a", "b"] {
@@ -1970,5 +1983,94 @@ fn clear_search_cache_asks_then_removes_the_saved_results(app: &adw::Application
         "Removed 2 cached search result(s)."
     );
     assert_eq!(std::fs::read_dir(cache.dir()).unwrap().count(), 0);
+    f.close();
+}
+
+fn queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded(
+    app: &adw::Application,
+) {
+    use hatate_core::table_cells::{
+        COLUMNS, DEFAULT_COLUMN_WIDTH, HEADER_STATE_PREFIX, HeaderSection, encode_header_state,
+    };
+    let saved = |paths: &hatate_core::paths::Paths| {
+        let s = hatate_core::config::Settings::load(paths).settings;
+        (s.table_header_state, s.table_header_columns)
+    };
+    let with_state = |state: String, columns: i64| Opts {
+        tweak: Some(Box::new(move |s| {
+            s.table_header_state = state.clone();
+            s.table_header_columns = columns;
+        })),
+        ..Opts::default()
+    };
+
+    // A usable layout, with one hidden and one too-narrow column: restored, then repaired.
+    let mut sections = vec![
+        HeaderSection {
+            width: 130,
+            hidden: false
+        };
+        COLUMNS.len()
+    ];
+    sections[2].hidden = true;
+    sections[3].width = 10;
+    let f = Fx::new(app, with_state(encode_header_state(&sections), 12));
+    let got = f.w.s.queue_view.header_sections();
+    assert!(!got[2].hidden, "the hidden column is shown again");
+    assert_eq!(
+        got[3].width, DEFAULT_COLUMN_WIDTH,
+        "the narrow column is widened"
+    );
+    assert_eq!(
+        got[4].width, 130,
+        "an ordinary column keeps its saved width"
+    );
+    f.w.close_teardown();
+    // Closing saves the live layout in this build's format, with the column count. Read before the
+    // fixture closes: dropping it removes the profile.
+    let (state, columns) = saved(&f.paths);
+    f.close();
+    assert!(state.starts_with(HEADER_STATE_PREFIX), "{state:?}");
+    assert_eq!(columns, 12);
+    assert_eq!(state.split(',').count(), 12);
+
+    // A Qt blob of the right column count (what a Python build wrote): discarded, never parsed.
+    let f = Fx::new(
+        app,
+        with_state(
+            "AAAA/wAAAAAAAAABAAAAAQEAAAAAAAAAAAAAAAAAAAAAAADIAAA=".into(),
+            12,
+        ),
+    );
+    assert_eq!(f.w.s.settings.lock().unwrap().table_header_state, "");
+    assert_eq!(f.w.s.settings.lock().unwrap().table_header_columns, 12);
+    f.close();
+
+    // Saved with another column count: both keys reset.
+    let f = Fx::new(app, with_state(encode_header_state(&sections), 10));
+    let s = f.w.s.settings.lock().unwrap().clone();
+    assert_eq!(
+        (s.table_header_state.as_str(), s.table_header_columns),
+        ("", 0)
+    );
+    drop(s);
+    f.close();
+}
+
+fn clear_search_cache_label_carries_the_cache_size(app: &adw::Application) {
+    let f = fx(app);
+    let cache = hatate_core::cache::SearchCache::new(&f.paths);
+    std::fs::create_dir_all(cache.dir()).unwrap();
+    std::fs::write(
+        cache.dir().join(format!("{}.json", "a".repeat(64))),
+        vec![b'x'; 1536],
+    )
+    .unwrap();
+    // The label is refreshed when the menu is about to open; here the refresh is called directly.
+    f.w.update_clear_cache_label();
+    assert_eq!(
+        f.w.s.clear_cache_item.label(),
+        "Clear Search Cache (1.5 KB)\u{2026}"
+    );
     f.close();
 }
