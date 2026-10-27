@@ -114,6 +114,17 @@ fn make_files(ctx: &Ctx, spec: &Value) {
         for (rel, content) in files {
             let p = ctx.files.join(rel);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            // `@dir` and `@missing` are the unopenable inputs: the path is a directory, or there
+            // is nothing at it (DAN-2231). Mode 000 is no variant: the run is root in its own
+            // user namespace and reads it.
+            match content.as_str() {
+                Some("@dir") => {
+                    std::fs::create_dir_all(&p).unwrap();
+                    continue;
+                }
+                Some("@missing") => continue,
+                _ => {}
+            }
             // The scenario holds the bytes as latin-1 text, as the Python driver writes them.
             let bytes: Vec<u8> = content
                 .as_str()

@@ -1555,6 +1555,15 @@ fn a_quota_pause_shows_the_banner_and_continue_resumes(app: &adw::Application) {
         f.w.s.shell.run_note_label.text(),
         "paused \u{2014} quota exhausted"
     );
+    // `test_review_is_the_primary_and_continue_is_the_secondary`, the half a test can read: the
+    // second action's words, and that the first is not offered while nothing has been decided
+    // (the one row searched is a NotFound). Which is primary and their order are judged in the
+    // shots.
+    assert_eq!(
+        f.w.s.quota_banner.keep_going.label().as_deref(),
+        Some("Continue with other engines")
+    );
+    assert!(!f.w.s.quota_banner.review.is_visible());
     assert_eq!(f.w.s.shell.run_eta_label.text(), "ETA paused");
     let pause = QuotaPauseFile::new(&f.paths)
         .read()

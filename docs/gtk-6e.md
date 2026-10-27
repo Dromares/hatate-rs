@@ -50,7 +50,7 @@ check: the window's timers keep turning while it waits.
 
 `MIN_WIDTH x MIN_HEIGHT` is unchanged (1010 x 790). The `minimum_size_fits_every_state_in_both_schemes` scenario
 now also renders the Failed banner and the Activity page. What each state needs on the **host toolkit** (GTK 4.24;
-log `worktrees/DAN-2218-smoke-ea900c0.log`, head `ea900c0`; the hosted run on GTK 4.14 passed the same scenario):
+log `worktrees/DAN-2218-smoke-ea900c0.log`, head `ea900c0`; re-measured after the chip change of DAN-2297 in `worktrees/DAN-2321-smoke.log` with the same numbers; the hosted run on GTK 4.14 passed the same scenario):
 
 | State | Dark | Light |
 |---|---|---|
@@ -131,38 +131,36 @@ minimum-size states in this PR). Host files:
 - `empty-*`, `rows-*`, `menu-*` (and `menu-*-popover.png`), `focus-*`: the shell around them
 
 The contrast table is `shots/contrast-host.md`, computed by `worktrees/DAN-2218-tools/contrast.py` (the extreme-pixel
-method, the label boxes from each shot's `.rects`): 742 rows (670 pass, 48 disabled-exempt, 24 fail). **Every row passes 4.5:1 except the six "off" engine
-chips on the Activity page, in all four Activity shots (24 rows):**
+method, the label boxes from each shot's `.rects`), at the head of DAN-2321: 742 rows (694 pass, 48 disabled-exempt,
+**0 fail**). It was 24 fails at `24a6d64`, all the six "off" engine chips on the Activity page in the four Activity shots
+(2.71 to 3.46:1). That was the mockup's own spec (`activity.html:17`, `--ink-45`, which `tokens.css` calls "large text or
+non-text only, never body"). Oderisi ruled on it (DAN-2297, 10:10Z): off chips read in `ink_65`, on chips in `ink` at
+weight 700 (`theme.rs`, `.chip` and `.chip.on`); `ink_58` was tried and still failed at 4.38 / 4.30:1. The chips now
+measure, the least first:
 
 | Shot | Element | fg | bg | ratio | scheme |
 |---|---|---|---|---|---|
-| activity-dark | trace.moe · off | #5c5854 | #0d0d0d | 2.76 | dark |
-| activity-dark | IQDB 3D · off | #635f5b | #0d0d0d | 3.07 | dark |
-| activity-dark | Google Images · off | #65625e | #0d0d0d | 3.20 | dark |
-| activity-dark | Google Lens · off | #686460 | #0d0d0d | 3.31 | dark |
-| activity-dark | Yandex · off | #635f5b | #0d0d0d | 3.07 | dark |
-| activity-dark | Pawchive · off | #625e5a | #0d0d0d | 3.02 | dark |
-| activity-light | trace.moe · off | #8d887c | #e8e1d2 | 2.71 | light |
-| activity-light | IQDB 3D · off | #847e74 | #e8e1d2 | 3.09 | light |
-| activity-light | Google Images · off | #7f796f | #e8e1d2 | 3.31 | light |
-| activity-light | Google Lens · off | #7c766c | #e8e1d2 | 3.46 | light |
-| activity-light | Yandex · off | #847e74 | #e8e1d2 | 3.09 | light |
-| activity-light | Pawchive · off | #858075 | #e8e1d2 | 3.02 | light |
+| activity-dark | trace.moe · off | #7e7973 | #0d0d0d | 4.51 | dark |
+| activity-dark | Pawchive · off | #88837d | #0d0d0d | 5.17 | dark |
+| activity-dark | IQDB · primary (on) | #cdc4ba | #0d0d0d | 11.29 | dark |
+| activity-light | trace.moe · off | #69635b | #e8e1d2 | 4.56 | light |
+| activity-light | Pawchive · off | #5e5950 | #e8e1d2 | 5.34 | light |
+| activity-light | IQDB · primary (on) | #211d17 | #e8e1d2 | 12.88 | light |
 
-This is the mockup's own spec: `activity.html:17` sets `.engine-tag--off { color: var(--ink-45) }`, and
-`tokens.css` says of `--ink-45` "large text or non-text only, never body". The chips are micro-size text, not
-large text, so the specified colour is below the 4.5:1 floor. It is **written here, not fixed**: it is a call for
-Oderisi's read (the options are `ink_58`, as the control tiers use, or keeping the mockup and recording the
-exemption), and changing it moves the Activity shots. The enabled chips (`ink_65`) pass. Rows below the fold of the
-Parser Health list (the `twitter` and `xbooru` rows, which are not drawn in the shot) are unmeasured; the visible
-rows and the caption pass. The disabled "Clear Search Cache…" button and the disabled live-check button are
-exempt as disabled controls (the table says so row by row).
+The other two Activity shots (`activity-min-*`) give the same figures to within the antialiasing (the full rows are in
+the table). Pinned by `theme::tests::the_engine_chips_are_text_and_clear_four_and_a_half` (the CSS rules and the tokens'
+contrast, both schemes). Rows below the fold of the Parser Health list (the `twitter` and `xbooru` rows, which are not
+drawn in the shot) are unmeasured; the visible rows and the caption pass. The disabled "Clear Search Cache…" button, the
+gear and the disabled live-check button are exempt as disabled controls (the table says so row by row).
 
 **Tab order**, from `shots/tab-order.txt` (the shot tool's `tab`, `tab-failed`, `tab-activity` states): the queue
 walks Review, Activity, Start Search, the empty-state buttons, Queue; with the Failed banner up, Start Search is
-followed by Resume Queue, View Log, Dismiss. On the Activity page it walks the ten engine chips (each is a tab
-stop, so its tooltip can be reached from the keyboard), Parser health…, Show in Queue, the follow toggle, Copy,
-Open folder, the log, Queue. A chip is not a control: ten tab stops that do nothing are for Oderisi's read.
+followed by Resume Queue, View Log, Dismiss. On the Activity page it walks Parser health…, Show in Queue, the follow
+toggle, Copy, Open folder, the log, Queue. **The ten engine chips are not Tab stops** (Oderisi's ruling 2, DAN-2297:
+they say how the engines are set, Settings changes it, and their tooltips stay for the pointer). Taking the chips out
+needed `set_can_focus(false)` on the FlowBox; marking only its `FlowBoxChild` wrappers `focusable(false)` left the Tab walk
+stuck on Start Search (found in this fixup), so `smoke::activity_page_states_the_engines_and_tails_the_log` now walks Tab
+twelve times, asserts none lands in the chip row and that it reaches Parser health….
 
 **Not measured by the author** (named, not passed): non-text boundaries (3:1 for the chips' borders, the banner
 frame and the focus ring on the new surfaces; the `ink-18` hairlines are 6.c's deliberate sub-3:1 set), the focus
@@ -284,7 +282,7 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 
 ### Tests that touch 6.e's symbols
 
-An `ast` walk over every `tests/test_*.py` at `76c85c4` (`scan.py`, run outside the repo) finds **124** tests whose source mentions a symbol this ticket ports (the method names of the ticket, the modules `activity_view`, `parser_health_dialog`, `desktop_attention`, `availability_worker`, `upscale_check_worker`, `parser_probe`, `SearchWorker`, `engine_alerts.unsubscribe`, the run strip's labels and the sites menu). 42 of them are rows `docs/gtk-shell.md` section 7 already maps to another ticket (6.c: 23, 6.d: 13, 6.d/6.e: 2, 6.g: 2, n/a: 2); they are not repeated. The other 82 are below.
+The set to map is the union of two, so a test that exercises 6.e behaviour without naming one of its symbols is not missed (DAN-2296 found 33 of those). (1) An `ast` walk over every `tests/test_*.py` at `76c85c4` (`scan.py`, run outside the repo) finds **124** tests whose source mentions a symbol this ticket ports (the method names of the ticket, the modules `activity_view`, `parser_health_dialog`, `desktop_attention`, `availability_worker`, `upscale_check_worker`, `parser_probe`, `SearchWorker`, `engine_alerts.unsubscribe`, the run strip's labels and the sites menu). (2) The **59** rows `docs/gtk-shell.md` section 7 gives to 6.e (any disposition naming it, including `is 6.e's`). The union is **150** tests (33 are in both). **115** have a row below (82 from the walk, 33 from the second set). The other **35** are rows `gtk-shell.md` section 7 maps only to another ticket (6.c, 6.d, 6.g, n/a) and are not repeated. **Unmapped: 0**, by `mapcheck.py` (outside the repo, `worktrees/DAN-2321/mapcheck.py`), which also greps every Rust test name cited below. A row whose disposition is `6.h` or `6.f` hands the test to that ticket, with the reason; 6.j's union check reads it there.
 
 `6.e` rows name the Rust test that covers them (`smoke::` is a scenario of `crates/hatate-gtk/tests/smoke.rs`; `module::tests::` is a unit test; `batch_run::` is `crates/hatate-core/tests/batch_run.rs`). A row that says `not asserted` names a Python test that no Rust test in the tree checks. Where the action differential compares the same field after every step, the row says so: that is evidence from a run, and CI does not run it. There are no tests in `tests/` for `gui/activity_view.py` or `core/parser_probe.py`'s window half beyond those below; the Activity page's own tests are Rust's (`smoke::activity_page_states_the_engines_and_tails_the_log` and `activity::tests`), and have no Python counterpart.
 
@@ -313,7 +311,7 @@ An `ast` walk over every `tests/test_*.py` at `76c85c4` (`scan.py`, run outside 
 |---|---|---|
 | 162 | `TestRegionsAreFlatHairlines.test_run_strip_is_a_hairline_on_the_flat_page` | 6.c: the strip's hairline, judged in the shot set |
 
-#### `tests/test_gui_smoke.py` (21)
+#### `tests/test_gui_smoke.py` (48)
 
 | Line | Test | Disposition |
 |---|---|---|
@@ -325,19 +323,46 @@ An `ast` walk over every `tests/test_*.py` at `76c85c4` (`scan.py`, run outside 
 | 427 | `TestEngineAlertsReachTheUser.test_closing_mid_run_takes_the_listener_off_too` | **6.e**: not asserted: a run that is stopped part-way never reaches the finish handler in Python, so its listener has to come off at close; in Rust `SearchRun::close` calls the same `drop_listener`, and `smoke::close_saves_and_marks_a_clean_exit` closes a window, but no test closes mid-run and then raises an alert |
 | 438 | `TestEngineAlertsReachTheUser.test_a_forwarder_whose_window_is_gone_is_harmless` | **6.e**: does not apply: Python's forwarder emits a Qt signal on a window whose C++ half can already be gone. The Rust listener posts to a `Send` inbox and the window drains it only while it is alive (`SearchRun::post`, `MainWindow::downgrade` / `upgrade`); there is no object to emit on |
 | 449 | `TestEngineAlertsReachTheUser.test_an_alert_becomes_a_box_and_a_status_line` | **6.e**: `smoke::engine_alerts_reach_the_user_only_during_a_run` asserts the box's kind, title and buttons; the remedy sits in the body, not a detail area (documented class, section 4, D3). That the status line names the engine is not asserted |
+| 467 | `TestEngineAlertsReachTheUser.test_enabling_lens_without_its_dependencies_warns_at_once` | **6.h**: this is the Settings dialog's own Lens toggle (`gui/settings_dialog.py`, 6.h: Preferences in `gtk-shell.md`), not the run. 6.e ports the run-time end of the alert channel (`smoke::engine_alerts_reach_the_user_only_during_a_run`), and the alert text is core's (`docs/google-lens.md`, the row naming this test and the next). The early warning at toggle time moves to 6.h's map |
+| 488 | `TestEngineAlertsReachTheUser.test_a_working_install_says_nothing` | **6.h**: the same toggle, with a working install; see the row above |
 | 1491 | `TestWorkerCallbacksDuringClose.test_availability_finished_is_a_no_op_while_closing` | **6.e**: `smoke::the_availability_check_offers_to_drop_the_dead_matches` covers the handler's outcomes, and ends by setting `closing` and calling the handler again: no box is raised |
+| 1816 | `TestTagsAppearWhenAMatchLands.test_tags_show_without_reselecting_the_row` | **6.e**: not asserted: the tag panel is 6.d/6.f's and the Rust window shows no tags yet. 6.e's half is that the row carries the worker's copy as the search lands: `smoke::start_search_runs_the_batch` asserts the rows' final statuses, and `batch_run::updated_comes_after_each_search_and_before_its_progress` asserts the event that replaces the row comes after each search |
 | 1832 | `TestTagsAppearWhenAMatchLands.test_a_re_search_clears_the_previous_tags` | **6.e**: not asserted: the tag panel belongs to 6.d/6.f. The row model follows the worker's copy (`on_worker_image_updated`), and that the previous result's tags are gone once a row is `Searching` again is the core `Entry` reset, which `batch_run::updated_comes_after_each_search_and_before_its_progress` observes through the events, not the tags |
+| 1846 | `TestTagsAppearWhenAMatchLands.test_an_update_for_another_row_still_follows_the_search` | **6.f (DAN-2219)**: not asserted here. "An update selects that row and the panel describes it" is class 1 of the action differential (DAN-2291: Python selects the row and fetches its candidates, so its status line reads `Ready`); the selection and the panel are 6.d/6.f, which reruns that class to zero. 6.e's half is the same as the row above |
 | 1983 | `TestParserHealthDialog.test_it_lists_every_site_even_before_anything_is_known` | **6.e**: `parser_health::tests::every_site_is_listed_before_anything_is_known`; `smoke::parser_health_dialog_and_warning` asserts the 13 rows and the `not used yet` cells |
+| 1989 | `TestParserHealthDialog.test_a_broken_parser_shows_in_the_session_column` | **6.e**: `parser_health::tests::a_broken_parser_shows_in_the_session_column_with_its_problem`; `smoke::parser_health_dialog_and_warning` asserts the dialog's cells |
 | 1996 | `TestParserHealthDialog.test_live_results_fill_the_check_column` | **6.e, per DAN-2290**: the live check is off in this build (the button is disabled with its tooltip and caption; `parser_probe` is Phase 7's decision). The check column's filling is `parser_health::tests::live_results_fill_the_check_column_and_a_failure_names_its_problem` and `smoke::parser_health_dialog_and_warning`, over a scripted probe (the seam the real check will use) |
 | 2008 | `TestParserHealthDialog.test_an_all_clear_says_so` | **6.e, per DAN-2290**: `parser_health::tests::the_summary_line_says_all_clear_names_the_broken_and_never_clears_a_check_that_did_not_run`, over scripted results |
+| 2015 | `TestParserHealthDialog.test_a_check_that_could_not_run_is_not_reported_as_all_clear` | **6.e, per DAN-2290**: `parser_health::tests::the_summary_line_says_all_clear_names_the_broken_and_never_clears_a_check_that_did_not_run`, over scripted results (the live check itself is off in this build) |
 | 2020 | `TestParserHealthDialog.test_the_check_runs_off_the_gui_thread` | **6.e, per DAN-2290**: `smoke::parser_health_dialog_and_warning` runs the scripted probe off the main thread (a 150 ms pause) and asserts the window's timers keep turning, the button is off meanwhile and the progress and summary follow |
+| 2093 | `TestRateLimitIsMeasuredEngineToEngine.test_engine_to_engine_gap_is_never_shortened` | **core**: `batch_run::booru_time_counts_toward_the_gap_and_the_engine_to_engine_interval_stays_whole` asserts the interval the engines see (answer to answer) is 60 s however the time was spent: 140 s elapsed for three images, not less. The worker loop is 3.i's |
+| 2111 | `TestRateLimitIsMeasuredEngineToEngine.test_non_engine_work_does_not_add_to_the_batch` | **core**: the same test: the booru page's 20 s vanishes into the gap (two waits of 40 s slept, not 60 s) |
+| 2588 | `TestPerHostPacing.test_with_no_overrides_every_host_keeps_the_global_gap` | **core**: with no `engine_delays` set, the global delay is the gap: `batch_run::the_gap_between_images_is_waited_out_with_a_countdown_and_not_after_the_last` and `batch_run::booru_time_counts_toward_the_gap_and_the_engine_to_engine_interval_stays_whole` |
+| 2598 | `TestPerHostPacing.test_a_skipped_host_imposes_no_wait` | **core**: `batch_run::a_hosts_own_interval_replaces_the_global_gap_for_that_host_only`, first half: IQDB alone at 5 s against a global 60 s sleeps 10 s over three images, and SauceNAO is never called |
+| 2613 | `TestPerHostPacing.test_a_longer_override_extends_the_wait` | **core**: the same test, second half: a 90 s override against a global 10 s sleeps 180 s over three images |
+| 2621 | `TestPerHostPacing.test_a_stricter_host_paces_the_whole_wave` | **core**: `batch_run::a_stricter_host_paces_the_whole_wave`: IQDB waits for SauceNAO's 70 s |
+| 2630 | `TestPerHostPacing.test_a_broken_engine_report_falls_back_instead_of_hammering` | **core**: does not apply as written (Python feeds per-engine clocks by a callback that can stop firing; the Rust batch has no such callback). The failure mode it guards, no report so no wait owed, is `batch_run::no_engine_report_falls_back_to_the_global_delay` |
+| 4369 | `TestFailedSearchesAreRetriedOnce.test_a_failed_image_is_tried_again` | **core**: `batch_run::a_network_fault_is_retried_once_after_the_first_pass` asserts three searches for two images and that every row ends Good (the second attempt's result stands) |
+| 4378 | `TestFailedSearchesAreRetriedOnce.test_a_successful_image_is_not_tried_again` | **core**: the same test (the image that succeeded is not among the retries: `searched` is 3, not 4) and `batch_run::several_failures_are_all_retried_and_the_image_that_succeeded_is_not` |
+| 4383 | `TestFailedSearchesAreRetriedOnce.test_an_image_that_keeps_failing_is_not_retried_forever` | **core**: `batch_run::a_persistent_failure_is_retried_exactly_once`: two attempts, then the row stays `Error` |
+| 4393 | `TestFailedSearchesAreRetriedOnce.test_the_setting_turns_it_off` | **core**: `batch_run::retries_off_means_one_attempt` |
+| 4400 | `TestFailedSearchesAreRetriedOnce.test_several_failures_are_all_retried` | **core**: `batch_run::several_failures_are_all_retried_and_the_image_that_succeeded_is_not` (added by this PR; the map showed the core test covered one failure only) |
+| 4411 | `TestFailedSearchesAreRetriedOnce.test_a_not_found_is_not_a_failure` | **core**: `batch_run::a_not_found_is_not_a_failure_and_is_not_retried` (added by this PR) |
 | 4419 | `TestFailedSearchesAreRetriedOnce.test_stopping_cancels_the_retry_pass` | **core**: `batch_run::stopping_cancels_the_retry_pass`; the window's Stop is `smoke::stop_search_finishes_the_image_under_way` |
 | 4439 | `TestFailedSearchesAreRetriedOnce.test_an_exhausted_daily_quota_cancels_the_retry_pass` | **core**: `batch_run::an_exhausted_quota_cancels_the_retry_pass` |
 | 4457 | `TestFailedSearchesAreRetriedOnce.test_progress_accounts_for_the_extra_attempts` | **core**: `batch_run::progress_accounts_for_the_extra_attempts` |
+| 4751 | `TestBatchCarriesOnWithoutSauceNao.test_it_stops_by_default` | **core**: `batch_run::an_exhausted_saucenao_quota_pauses_the_run_and_records_it` (paused after the first image, two left `NotSearched`, the pause on disk); the window's end is `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` |
+| 4755 | `TestBatchCarriesOnWithoutSauceNao.test_with_the_toggle_it_finishes_the_batch` | **core**: `batch_run::continue_without_saucenao_carries_on_and_says_so_once` asserts `Ending::Finished` and three searched |
+| 4759 | `TestBatchCarriesOnWithoutSauceNao.test_the_later_images_are_searched_without_saucenao` | **core**: the same test; this PR adds the assertion that SauceNAO is asked exactly once, while the allowance was still there |
+| 4765 | `TestBatchCarriesOnWithoutSauceNao.test_those_results_are_marked_provisional` | **core**: the same test asserts `searched_without_saucenao` is `[false, true, true]` and that only the complete result is cached |
 | 4770 | `TestBatchCarriesOnWithoutSauceNao.test_it_says_so_once_rather_than_per_image` | **core**: `batch_run::continue_without_saucenao_carries_on_and_says_so_once` |
 | 4899 | `TestPauseIsPersistedWhenTheBatchStops.test_pausing_records_the_counts` | **core**: `batch_run::an_exhausted_saucenao_quota_pauses_the_run_and_records_it`; `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` asserts the pause file's counts `(1, 2)` |
 | 4948 | `TestPausedBannerContinueButton.test_continue_actually_launches_a_search_without_saucenao` | **6.e**: `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` clicks Continue with other engines and asserts the banner and the pause file go, the run takes the other engine and every row is searched; core: `batch_run::the_one_shot_override_continues_without_saucenao_and_without_it_the_run_pauses` |
+| 5002 | `TestResumeWithoutSaucenaoOverride.test_without_the_override_it_still_pauses` | **core**: `batch_run::the_one_shot_override_continues_without_saucenao_and_without_it_the_run_pauses`, first half: without the override the run is `PausedForQuota { searched: 1, remaining: 2 }` |
+| 5008 | `TestResumeWithoutSaucenaoOverride.test_the_override_finishes_the_batch_despite_the_saved_setting_being_off` | **core**: the same test, second half: with `force_continue_without_saucenao` the run finishes with three searched, the one `continuing` line is said, and the saved setting stays off |
 | 5012 | `TestResumeWithoutSaucenaoOverride.test_the_saved_setting_is_unchanged_by_the_override` | **6.e**: the same scenario asserts the saved `continue_without_saucenao_on_quota` is as the user has it after the one-shot |
+| 5144 | `TestModeStackSizeFloor.test_queue_floor_ignores_activitys_width_and_reviews_height` | **6.e**: does not apply as written: the Rust window's floor is the stated `MIN_WIDTH x MIN_HEIGHT` (`set_size_request` on the window), not the maximum over its pages, and the mode stack is not homogeneous (`shell.rs`, `set_hhomogeneous(false)`). What stands is that no page makes the window grow past it: `smoke::minimum_size_fits_every_state_in_both_schemes` asserts the outer rect stays within the stated size for every state, Activity with every extra engine on included |
+| 5165 | `TestModeStackSizeFloor.test_switching_to_activity_grows_without_clipping` | **6.e**: `smoke::minimum_size_fits_every_state_in_both_schemes`, its `activity` state: the content area it is given at the stated minimum is at least what the page needs (width and height at that width), both schemes |
 
 #### `tests/test_hydrus_import_poll.py` (1)
 
@@ -350,6 +375,12 @@ An `ast` walk over every `tests/test_*.py` at `76c85c4` (`scan.py`, run outside 
 | Line | Test | Disposition |
 |---|---|---|
 | 580 | `TestAutoImportWiring.test_nothing_is_confirmed_or_noted_when_every_setting_is_off` | 6.g: auto-import settings (the run passes them to `batch/run.rs`, which Phase 5 differentialed) |
+
+#### `tests/test_interrupted_banner.py` (1)
+
+| Line | Test | Disposition |
+|---|---|---|
+| 483 | `TestStripNote.test_starting_a_search_clears_it` | **6.e**: `smoke::starting_a_search_clears_the_stopped_note` (added by this PR) restores after a crash, reads `stopped ...` on the strip, starts a search and asserts the note is empty; the row's `interrupted_mid_search` flag is spent by `batch_run::a_search_spends_the_interrupted_note` |
 
 #### `tests/test_lens_browser.py` (3)
 
@@ -377,14 +408,19 @@ An `ast` walk over every `tests/test_*.py` at `76c85c4` (`scan.py`, run outside 
 | 408 | `TestRunStrip.test_it_is_absent_on_an_ordinary_start` | 6.c: the Nothing-survived page and the strip's crashed note. **Not in `docs/gtk-shell.md` section 7** (the file is not among the 20 it lists); flagged for 6.j |
 | 415 | `TestDismissal.test_a_list_replaces_the_notice_and_the_strip_note` | 6.c: the Nothing-survived page and the strip's crashed note. **Not in `docs/gtk-shell.md` section 7** (the file is not among the 20 it lists); flagged for 6.j |
 
-#### `tests/test_quota_pause_banner.py` (4)
+#### `tests/test_quota_pause_banner.py` (9)
 
 | Line | Test | Disposition |
 |---|---|---|
+| 96 | `TestNoModal.test_a_quota_pause_raises_no_modal` | **6.e**: `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` pauses a live run and asserts `count_shown() == 0` with the banner visible (one scheme; Python loops `MODES`, and the banner in both schemes is judged in the `quota-*` shots) |
+| 116 | `TestNoModal.test_a_pause_with_nothing_recorded_still_raises_no_modal` | **6.e**: not asserted: the branch exists (`search_run.rs`, `on_paused_out_of_quota`, `None` case: the status line is built from the run's counts and the banner still shows), but the scenario always has the pause file on disk, because the core writes it before the window hears of the pause; no test removes it first |
+| 228 | `TestActions.test_review_is_the_primary_and_continue_is_the_secondary` | **6.e**, the half a test can read: `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` asserts Continue's words and that Review is not offered while nothing has been decided. Not asserted: Review's label `Review the N waiting →` and its visibility with rows waiting (`banners.rs`, `show_quota_banner`), and which action is primary and their order, which are judged in the `quota-*` shots (6.c) |
 | 241 | `TestActions.test_review_opens_review_on_the_first_waiting_row` | **6.e/6.d/6.f**: not asserted: the button "Review the N waiting" is built, and stays disabled until 6.d and 6.f give it a row selection and Review (`DEFERRED(6.d/6.f)`, `window.rs`); the first waiting row's selection is theirs |
 | 248 | `TestActions.test_review_is_hidden_when_nothing_is_waiting` | **6.e**: not asserted: Python hides the button when nothing is waiting; here it is disabled for every state (see 241) |
 | 254 | `TestActions.test_continue_launches_without_saucenao_and_clears_the_banner` | **6.e**: `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` |
 | 270 | `TestActions.test_clearing_the_list_retires_the_banner` | **6.e/6.c**: not asserted by a test for the quota banner specifically: `hide_quota_banner` is the one path; `smoke::clear_session_matches_the_empty_list_quirk` clears the list, and the strip's note is asserted cleared by `a_quota_pause_shows_the_banner_and_continue_resumes` after Continue |
+| 319 | `TestStrip.test_the_strip_reads_paused_the_count_and_eta_paused` | **6.e**: `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` asserts the note `paused — quota exhausted` and `ETA paused` after a live pause. Not asserted in CI: the SauceNAO `200/200` readout (`saucenao_quota_label`); the action differential compares it after every step, which is a run, not a test |
+| 327 | `TestStrip.test_the_run_ending_does_not_wipe_the_pause_from_the_strip` | **6.e**: the same scenario asserts, after the run has ended (`Search finished`), that the note and `ETA paused` are still there |
 
 #### `tests/test_render_states.py` (1)
 
