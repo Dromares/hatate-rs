@@ -70,7 +70,11 @@ mod tests {
         let t = decode_thumbnail(&p, 160).unwrap();
         assert_eq!((t.width, t.height), (160, 80));
         assert_eq!(t.rgba.len(), 160 * 80 * 4);
-        assert_eq!(&t.rgba[..4], &[200, 30, 60, 255], "a flat colour stays flat");
+        assert_eq!(
+            &t.rgba[..4],
+            &[200, 30, 60, 255],
+            "a flat colour stays flat"
+        );
     }
 
     #[test]

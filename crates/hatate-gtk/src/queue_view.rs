@@ -283,8 +283,7 @@ fn paint_thumb(frame: &gtk::Picture, row: &RowObject) {
 fn thumb_factory(bound: BoundCallback) -> gtk::SignalListItemFactory {
     let factory = gtk::SignalListItemFactory::new();
     // The `thumb-changed` handler each recycled cell holds, so unbinding can drop it.
-    let handlers: Rc<RefCell<HashMap<usize, (RowObject, glib::SignalHandlerId)>>> =
-        Rc::default();
+    let handlers: Rc<RefCell<HashMap<usize, (RowObject, glib::SignalHandlerId)>>> = Rc::default();
     factory.connect_setup(|_, item| {
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
             return;
@@ -619,7 +618,9 @@ impl QueueView {
     /// A decode finished (`Some`) or failed (`None`): files it and repaints the row if it is on
     /// screen.
     pub fn store_thumb(&self, id: EntryId, texture: Option<gdk::Texture>) {
-        let Some(key) = self.thumb_key(id) else { return };
+        let Some(key) = self.thumb_key(id) else {
+            return;
+        };
         let state = match &texture {
             Some(t) => {
                 self.thumbs.borrow_mut().loaded(key, t.clone());

@@ -77,6 +77,7 @@ pub mod sites;
 pub mod status_tier;
 pub mod stop_record;
 pub mod table_cells;
+pub mod table_menu;
 pub mod tag_band_metrics;
 pub mod tag_borrowing;
 pub mod tag_colors;

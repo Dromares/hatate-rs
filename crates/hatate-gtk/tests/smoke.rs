@@ -1636,7 +1636,11 @@ fn queue_view_thumbnails_load_fail_and_stay_off_the_main_loop(app: &adw::Applica
     let mut seed = seeded(3, MatchStatus::Good);
     seed[0].path = good.to_string_lossy().into_owned();
     seed[1].path = text.to_string_lossy().into_owned();
-    seed[2].path = pics.path().join("missing.png").to_string_lossy().into_owned();
+    seed[2].path = pics
+        .path()
+        .join("missing.png")
+        .to_string_lossy()
+        .into_owned();
     let f = Fx::new(
         app,
         Opts {
@@ -1653,7 +1657,9 @@ fn queue_view_thumbnails_load_fail_and_stay_off_the_main_loop(app: &adw::Applica
         "the drawn rows were never decoded"
     );
     assert_eq!(
-        ids.iter().map(|id| view.thumb_state(*id)).collect::<Vec<_>>(),
+        ids.iter()
+            .map(|id| view.thumb_state(*id))
+            .collect::<Vec<_>>(),
         [ThumbState::Loaded, ThumbState::Failed, ThumbState::Failed]
     );
     assert_eq!(f.w.s.thumbs.in_flight(), 0);
