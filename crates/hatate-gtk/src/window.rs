@@ -131,6 +131,8 @@ pub struct State {
     pub logs: Rc<dyn LogSource>,
     pub run_session: RefCell<Option<RunSession>>,
     pub shell: Rc<Shell>,
+    /// The Help menu's Clear Search Cache item, whose label carries the cache size.
+    pub clear_cache_item: menu::ClearCacheItem,
     pub queue_stack: gtk::Stack,
     pub drop_zone: gtk::Overlay,
     pub run_banner: widgets::RunBanner,
@@ -294,7 +296,8 @@ impl MainWindow {
             call(&handle, |w| w.activate_action("preferences")),
         );
 
-        let menubar = gtk::PopoverMenuBar::from_model(Some(&menu::model()));
+        let (menu_model, clear_cache_item) = menu::model();
+        let menubar = gtk::PopoverMenuBar::from_model(Some(&menu_model));
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.append(&menubar);
         shell.root.root.set_vexpand(true);
@@ -321,6 +324,7 @@ impl MainWindow {
             logs,
             run_session: RefCell::new(env.run_session),
             shell,
+            clear_cache_item,
             queue_stack,
             drop_zone,
             run_banner,
@@ -345,6 +349,7 @@ impl MainWindow {
         let _ = handle.set(window.downgrade());
         window.install_actions(app);
         window.wire_thumbnails();
+        window.wire_clear_cache_label(&menubar);
         window.wire_table_context_menu();
         window.wire_banners();
         window.apply_theme(&theme_setting(&window.s));
@@ -355,6 +360,25 @@ impl MainWindow {
     }
 
     /// Rows ask for their thumbnail as they are drawn.
+    /// `_update_clear_cache_action_label`.
+    pub fn update_clear_cache_label(&self) {
+        let size = hatate_core::cache::SearchCache::new(&self.s.paths).size_bytes();
+        self.s
+            .clear_cache_item
+            .set_label(&hatate_core::table_menu::clear_cache_label(size));
+    }
+
+    /// GTK's menubar has no about-to-show signal, so the label is refreshed on the press that
+    /// opens a menu (capture phase, before the popover is built) and on startup.
+    fn wire_clear_cache_label(&self, menubar: &gtk::PopoverMenuBar) {
+        let w = self.clone();
+        let press = gtk::GestureClick::new();
+        press.set_propagation_phase(gtk::PropagationPhase::Capture);
+        press.connect_pressed(move |_, _, _, _| w.update_clear_cache_label());
+        menubar.add_controller(press);
+        self.update_clear_cache_label();
+    }
+
     fn wire_thumbnails(&self) {
         let w = self.downgrade();
         self.s.queue_view.connect_row_bound(move |id| {

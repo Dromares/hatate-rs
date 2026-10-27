@@ -390,6 +390,7 @@ impl MainWindow {
                         tracing::info!(
                             "Search cache cleared via menu action ({removed} entries removed)"
                         );
+                        w.update_clear_cache_label();
                         dialogs::information(
                             &*w.s.prompter,
                             "Clear Search Cache",

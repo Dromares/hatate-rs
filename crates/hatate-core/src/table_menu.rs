@@ -12,6 +12,15 @@
 use crate::model::{Entry, MatchStatus};
 use crate::queue::{has_result, needs_review};
 
+/// `_update_clear_cache_action_label`: `Clear Search Cache (1.5 KB)…`; an empty cache says `0 B`.
+pub fn clear_cache_label(size_bytes: u64) -> String {
+    let size = crate::preview_text::human_size(i64::try_from(size_bytes).ok());
+    format!(
+        "Clear Search Cache ({})\u{2026}",
+        size.as_deref().unwrap_or("0 B")
+    )
+}
+
 /// `count_label`: "Reset result" for one row, "Reset results on 12 selected images" for more.
 /// `plural` takes `{n}`.
 pub fn count_label(count: usize, singular: &str, plural: &str) -> String {
@@ -752,6 +761,19 @@ mod tests {
                 .filter(|l| **l == Line::Separator)
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn the_clear_cache_label_carries_the_cache_size() {
+        assert_eq!(clear_cache_label(0), "Clear Search Cache (0 B)\u{2026}");
+        assert_eq!(
+            clear_cache_label(1536),
+            "Clear Search Cache (1.5 KB)\u{2026}"
+        );
+        assert_eq!(
+            clear_cache_label(5 * 1024 * 1024),
+            "Clear Search Cache (5.0 MB)\u{2026}"
         );
     }
 }

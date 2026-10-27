@@ -8,6 +8,7 @@
 //! are left (`grep -n 'DEFERRED(' crates/hatate-gtk/src/menu.rs`).
 
 use gtk4::gio;
+use gtk4::prelude::*;
 
 /// Who implements the action.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -232,8 +233,24 @@ pub fn accelerators() -> Vec<(String, &'static str)> {
     out
 }
 
-/// The `gio::Menu` for the menubar.
-pub fn model() -> gio::Menu {
+/// Where the Clear Search Cache item sits, so its label (which carries the cache size) can be
+/// replaced when the Help menu is about to be shown (`_update_clear_cache_action_label`).
+pub struct ClearCacheItem {
+    section: gio::Menu,
+    position: i32,
+}
+
+impl ClearCacheItem {
+    pub fn set_label(&self, label: &str) {
+        self.section.remove(self.position);
+        let item = gio::MenuItem::new(Some(label), Some("win.clear-search-cache"));
+        self.section.insert_item(self.position, &item);
+    }
+}
+
+/// The `gio::Menu` for the menubar, and the handle to the item whose label changes.
+pub fn model() -> (gio::Menu, ClearCacheItem) {
+    let mut clear_cache = None;
     let bar = gio::Menu::new();
     for menu in menus() {
         let m = gio::Menu::new();
@@ -241,6 +258,12 @@ pub fn model() -> gio::Menu {
         for e in &menu.entries {
             match e {
                 Entry::Item { label, action, .. } => {
+                    if *action == "clear-search-cache" {
+                        clear_cache = Some(ClearCacheItem {
+                            section: section.clone(),
+                            position: section.n_items(),
+                        });
+                    }
                     section.append(Some(label), Some(&format!("win.{action}")));
                 }
                 Entry::Check {
@@ -282,7 +305,10 @@ pub fn model() -> gio::Menu {
         m.append_section(None, &section);
         bar.append_submenu(Some(menu.title), &m);
     }
-    bar
+    (
+        bar,
+        clear_cache.expect("the Help menu has Clear Search Cache"),
+    )
 }
 
 #[cfg(test)]
