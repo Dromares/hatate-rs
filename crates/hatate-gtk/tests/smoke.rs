@@ -4,7 +4,8 @@
 //! not give a test that.
 //!
 //! Needs a display. It runs under `xvfb-run` with `HATATE_GTK_SMOKE=1`. **Fails closed**: with
-//! `CI` set, a missing flag or a missing display is a failure, not a skip (DAN-1974 item 1).
+//! `CI` set, a missing flag or a missing display is a failure, not a skip (DAN-1974 item 1). Key
+//! injection additionally needs `HATATE_SMOKE_XVFB=1` and an `xvfb-run` display (DAN-2264).
 
 mod common;
 

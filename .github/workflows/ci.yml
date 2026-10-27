@@ -28,10 +28,13 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # `HATATE_GTK_SMOKE=1` turns the window scenarios on. With `CI` set (it always is here) a
-      # missing flag or a missing display fails the test instead of skipping it.
+      # missing flag or a missing display fails the test instead of skipping it. `HATATE_SMOKE_XVFB=1`
+      # states that the display is the Xvfb `xvfb-run` starts here; the key injector refuses without
+      # it and without an `xvfb-run` Xauthority (DAN-2264), so it can never type into a live session.
       - name: cargo test --workspace (under Xvfb)
         env:
           HATATE_GTK_SMOKE: "1"
+          HATATE_SMOKE_XVFB: "1"
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
           NO_AT_BRIDGE: "1"
@@ -50,7 +53,7 @@ jobs:
           mkdir -p shots
           shot() { xvfb-run -a -s "-screen 0 1440x900x24" target/debug/examples/shot "$@"; }
           for s in dark light; do
-            for st in empty rows crashed survived quota dialog logs logs-selected logs-selected-body menu menu-hover focus focus-files focus-folder hover-folder failed activity parser-health; do
+            for st in empty rows crashed survived quota dialog dialog-nolabel logs logs-selected logs-selected-body menu menu-hover focus focus-files focus-folder hover-folder failed activity parser-health; do
               shot "shots/$st-$s.png" "$s" 1100x800 "$st"
             done
             for st in empty failed activity parser-health quota; do
