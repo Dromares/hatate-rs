@@ -1924,6 +1924,21 @@ fn the_availability_check_offers_to_drop_the_dead_matches(app: &adw::Application
         "All 1 match(es) still appear to be available."
     );
     assert_eq!(f.say(), "Availability check finished: nothing gone");
+
+    // A window that is closing says nothing (`test_availability_finished_is_a_no_op_while_closing`).
+    let shown_before = f.script.count_shown();
+    f.w.s.closing.set(true);
+    let mut done = f.w.s.queue.borrow().entry(id).cloned().unwrap();
+    done.candidates[0].remote_available = Some(false);
+    f.w.on_availability_finished(
+        id,
+        done,
+        hatate_core::availability::EntryCheck {
+            gone: 1,
+            checked: 1,
+        },
+    );
+    assert_eq!(f.script.count_shown(), shown_before);
     f.close();
 }
 
