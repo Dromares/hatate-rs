@@ -85,6 +85,27 @@ const SCENARIOS: &[Scenario] = &[
         "minimum_size_fits_every_state_in_both_schemes",
         minimum_size_fits_every_state_in_both_schemes,
     ),
+    ("start_search_runs_the_batch", start_search_runs_the_batch),
+    (
+        "start_search_with_nothing_to_do_or_one_running",
+        start_search_with_nothing_to_do_or_one_running,
+    ),
+    (
+        "stop_search_finishes_the_image_under_way",
+        stop_search_finishes_the_image_under_way,
+    ),
+    (
+        "a_quota_pause_shows_the_banner_and_continue_resumes",
+        a_quota_pause_shows_the_banner_and_continue_resumes,
+    ),
+    (
+        "engine_alerts_reach_the_user_only_during_a_run",
+        engine_alerts_reach_the_user_only_during_a_run,
+    ),
+    (
+        "the_window_keeps_working_while_an_engine_stalls",
+        the_window_keeps_working_while_an_engine_stalls,
+    ),
 ];
 
 fn main() {
@@ -155,10 +176,11 @@ fn window_menus_and_deferred_actions(app: &adw::Application) {
             Owner::Shell => assert!(enabled, "{name} must be enabled"),
         }
     }
+    // Start Search is wired (6.e): its action is enabled and the button follows it.
     assert!(
         f.w.win
             .lookup_action("toggle-search")
-            .is_some_and(|a| !a.is_enabled())
+            .is_some_and(|a| a.is_enabled())
     );
     f.close();
 }
@@ -1158,4 +1180,358 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
         "MINSIZE worst content_min={}x{} stated={MIN_WIDTH}x{MIN_HEIGHT}",
         worst.0, worst.1
     );
+}
+
+// ---- 6.e: running searches from the window ---------------------------------------------------
+
+/// Settings every search scenario starts from: IQDB only, no pacing wait, no cache, nothing that
+/// would reach a network.
+fn search_tweak() -> Tweak {
+    Box::new(|s: &mut hatate_core::config::Settings| {
+        s.primary_engine = "iqdb".to_owned();
+        s.secondary_engine_mode = "disabled".to_owned();
+        s.enable_ascii2d = false;
+        s.enable_tracemoe = false;
+        s.enable_pawchive_index = false;
+        s.use_search_cache = false;
+        s.delay_min_seconds = 0.0;
+        s.delay_max_seconds = 0.0;
+        s.match_conditions.require_larger_than_local = false;
+    })
+}
+
+/// `n` unsearched rows whose files exist (a 4 x 3 PNG each), under `dir`.
+fn unsearched(dir: &std::path::Path, n: usize) -> Vec<hatate_core::model::Entry> {
+    std::fs::create_dir_all(dir).unwrap();
+    (0..n)
+        .map(|i| {
+            let p = dir.join(format!("img{i}.png"));
+            std::fs::write(&p, common::search::PNG).unwrap();
+            entry(&p.to_string_lossy(), MatchStatus::NotSearched)
+        })
+        .collect()
+}
+
+fn search_fx(app: &adw::Application, pics: &std::path::Path, n: usize) -> Fx {
+    Fx::new(
+        app,
+        Opts {
+            seed: unsearched(pics, n),
+            tweak: Some(search_tweak()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    )
+}
+
+fn statuses(f: &Fx) -> Vec<MatchStatus> {
+    f.w.s
+        .queue
+        .borrow()
+        .entries()
+        .iter()
+        .map(|e| e.status)
+        .collect()
+}
+
+fn start_button(f: &Fx) -> String {
+    f.w.s
+        .shell
+        .search_toggle_btn
+        .label()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// `action_start_search` over three rows: the strip, the status line, the button and the rows
+/// follow the worker, and the list is the searched one when it ends.
+fn start_search_runs_the_batch(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 3);
+    for _ in 0..3 {
+        f.search
+            .engines
+            .iqdb
+            .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    }
+    assert_eq!(start_button(&f), "\u{25B6} Start Search");
+    assert_eq!(f.w.s.shell.run_progress_label.text(), "3 not searched");
+    f.activate("toggle-search");
+    // At once: the gauge is at 0 of 3, the strip is live, the button says Stop, and the rows are
+    // still the list's own until the worker reports.
+    assert_eq!(start_button(&f), "\u{25A0} Stop Search");
+    assert!(f.w.s.run_active.get());
+    assert!(f.w.s.queue.borrow().search_running());
+    assert_eq!(f.w.s.run_progress.get(), (0, 3));
+    assert_eq!(f.w.s.shell.run_progress_label.text(), "0/3 searched");
+    assert_eq!(f.say(), "Searching 3 image(s)\u{2026}");
+    assert_eq!(f.search.resets.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        pump_until(10_000, || !f.w.s.run_active.get()),
+        "the run never finished: {}",
+        f.say()
+    );
+    assert_eq!(statuses(&f), vec![MatchStatus::NotFound; 3]);
+    assert_eq!(f.w.s.run_progress.get(), (3, 3));
+    assert_eq!(f.w.s.shell.run_progress_label.text(), "3/3 searched");
+    assert_eq!(f.say(), "Search finished");
+    assert_eq!(start_button(&f), "\u{25B6} Start Search");
+    assert!(f.w.s.shell.search_toggle_btn.is_sensitive());
+    assert!(!f.w.s.queue.borrow().search_running());
+    // The ETA is not a lie about a run that is over: the strip is back to its idle reading.
+    assert_eq!(f.w.s.shell.run_eta_label.text(), IDLE_ETA);
+    // The engine order the scripted engines saw: one IQDB call per row.
+    assert_eq!(f.search.engines.calls(), vec!["iqdb"; 3]);
+    f.close();
+}
+
+/// `action_start_search`'s two refusals.
+fn start_search_with_nothing_to_do_or_one_running(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: vec![entry(
+                &pics.path().join("done.png").to_string_lossy(),
+                MatchStatus::Good,
+            )],
+            tweak: Some(search_tweak()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.activate("toggle-search");
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Search");
+    assert_eq!(shown.text, "No unsearched images in the list.");
+    assert_eq!(shown.buttons, Buttons::Ok);
+    assert!(!f.w.s.queue.borrow().search_running());
+    f.close();
+
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 2);
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::After(
+            std::time::Duration::from_millis(400),
+            Ok(Vec::new()),
+        ));
+    f.activate("toggle-search");
+    assert!(f.w.s.queue.borrow().search_running());
+    // A second Start while one runs (the menu cannot do it, a shortcut or the MCP tool can).
+    f.w.action_start_search();
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.title.as_str(), shown.text.as_str()),
+        ("Search", "A search is already running.")
+    );
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    f.close();
+}
+
+/// `action_stop_search`: "Stopping after current image\u{2026}", the button off until the worker
+/// is done, and the image under way is finished and kept.
+fn stop_search_finishes_the_image_under_way(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 3);
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::After(
+            std::time::Duration::from_millis(300),
+            Ok(Vec::new()),
+        ));
+    f.activate("toggle-search");
+    // The first image is in the engine's hands; Stop now.
+    pump_for(50);
+    f.activate("toggle-search");
+    assert_eq!(f.say(), "Stopping after current image\u{2026}");
+    assert!(!f.w.s.shell.search_toggle_btn.is_sensitive());
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(
+        statuses(&f),
+        vec![
+            MatchStatus::NotFound,
+            MatchStatus::NotSearched,
+            MatchStatus::NotSearched
+        ]
+    );
+    assert_eq!(f.say(), "Search finished");
+    assert!(f.w.s.shell.search_toggle_btn.is_sensitive());
+    assert_eq!(start_button(&f), "\u{25B6} Start Search");
+    assert_eq!(f.w.s.shell.run_progress_label.text(), "1/3 searched");
+    // Interrupted in-session shows no banner: the user just did it.
+    assert!(!f.w.s.run_banner.root.is_visible());
+    f.close();
+}
+
+/// A daily quota that runs out mid-batch: no modal, the banner with both actions, the pause on
+/// disk and on the strip; "Continue with other engines" resumes without SauceNAO for this run
+/// only.
+fn a_quota_pause_shows_the_banner_and_continue_resumes(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: unsearched(pics.path(), 3),
+            tweak: Some(Box::new(|s: &mut hatate_core::config::Settings| {
+                search_tweak()(s);
+                s.primary_engine = "saucenao".to_owned();
+                s.saucenao.pause_search_on_quota_exhausted = true;
+                s.continue_without_saucenao_on_quota = false;
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    for _ in 0..3 {
+        f.search
+            .engines
+            .saucenao
+            .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    }
+    // The allowance is spent after the first request.
+    f.search
+        .quota_after_calls
+        .store(1, std::sync::atomic::Ordering::SeqCst);
+    f.activate("toggle-search");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(
+        statuses(&f),
+        vec![
+            MatchStatus::NotFound,
+            MatchStatus::NotSearched,
+            MatchStatus::NotSearched
+        ]
+    );
+    assert_eq!(f.script.count_shown(), 0, "a quota pause raises no modal");
+    assert!(f.w.s.quota_banner.root.is_visible());
+    assert!(f.w.s.quota_paused.get());
+    assert_eq!(
+        f.w.s.shell.run_note_label.text(),
+        "paused \u{2014} quota exhausted"
+    );
+    assert_eq!(f.w.s.shell.run_eta_label.text(), "ETA paused");
+    let pause = QuotaPauseFile::new(&f.paths)
+        .read()
+        .expect("the pause is on disk");
+    assert_eq!((pause.searched, pause.remaining), (1, 2));
+    let texts = texts_under(f.w.s.quota_banner.root.upcast_ref());
+    assert!(
+        texts.iter().any(|t| t.contains("2 ")),
+        "the banner counts what is left: {texts:?}"
+    );
+    // The run ending does not wipe the pause from the strip: the status line is the run's, the
+    // note and the banner are the pause's.
+    assert_eq!(f.say(), "Search finished");
+
+    // Continue with other engines: SauceNAO is left out of this run, the saved setting is not
+    // touched, the banner and the persisted pause go.
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.w.s.quota_banner.keep_going.emit_clicked();
+    assert!(!f.w.s.quota_banner.root.is_visible());
+    assert!(!f.w.s.quota_paused.get());
+    assert!(QuotaPauseFile::new(&f.paths).read().is_none());
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(statuses(&f), vec![MatchStatus::NotFound; 3]);
+    assert!(
+        !f.w.s
+            .settings
+            .lock()
+            .unwrap()
+            .continue_without_saucenao_on_quota,
+        "the saved setting is exactly as the user has it"
+    );
+    f.close();
+}
+
+/// `_engine_alert_forwarder` / `_on_engine_alert` / `engine_alerts.unsubscribe`: the channel is
+/// open for the length of a run, an alert becomes a warning box and a status line, and an
+/// unsubscribed listener stops hearing.
+fn engine_alerts_reach_the_user_only_during_a_run(app: &adw::Application) {
+    use hatate_core::engine_alerts::EngineAlert;
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 1);
+    let alert = |key: &str| EngineAlert {
+        key: key.to_owned(),
+        engine: "Google Lens".to_owned(),
+        title: "Google Lens needs a browser".to_owned(),
+        body: "Lens cannot run: no browser was found.".to_owned(),
+        remedy: "install chromium".to_owned(),
+    };
+    // Before a run nobody is listening.
+    assert!(f.search.alerts.raise_alert(&alert("before")));
+    pump_for(30);
+    assert_eq!(f.script.count_shown(), 0);
+
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::After(
+            std::time::Duration::from_millis(250),
+            Ok(Vec::new()),
+        ));
+    f.activate("toggle-search");
+    pump_for(30);
+    assert!(f.search.alerts.raise_alert(&alert("during")));
+    assert!(pump_until(2_000, || f.script.count_shown() == 1));
+    let shown = f.script.last_shown();
+    assert_eq!(shown.kind, Kind::Warning);
+    assert_eq!(shown.title, "Google Lens needs a browser");
+    assert_eq!(
+        shown.text,
+        "Lens cannot run: no browser was found.\n\ninstall chromium"
+    );
+    assert_eq!(shown.buttons, Buttons::Ok);
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    // The listener comes off when the run ends (`test_an_unsubscribed_listener_stops_hearing`).
+    assert!(f.search.alerts.raise_alert(&alert("after")));
+    pump_for(30);
+    assert_eq!(f.script.count_shown(), 1);
+    f.close();
+}
+
+/// Nothing the engine does blocks the main loop: while the engine sits on a stalled answer the
+/// window still handles actions and its timers.
+fn the_window_keeps_working_while_an_engine_stalls(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 1);
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::After(
+            std::time::Duration::from_millis(700),
+            Ok(Vec::new()),
+        ));
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let id = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    f.activate("toggle-search");
+    pump_for(100);
+    assert!(f.w.s.run_active.get(), "the engine is still stalled");
+    let before = ticks.get();
+    // An action handled while the search waits.
+    f.w.set_theme("light");
+    assert_eq!(f.w.s.settings.lock().unwrap().theme, "light");
+    pump_for(200);
+    assert!(
+        ticks.get() >= before + 4,
+        "the main loop kept turning: {before} -> {}",
+        ticks.get()
+    );
+    assert!(f.w.s.run_active.get());
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    id.remove();
+    f.close();
 }

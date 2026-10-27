@@ -6,6 +6,8 @@
 
 #![allow(dead_code)]
 
+pub mod search;
+
 use gtk4::glib;
 use gtk4::prelude::*;
 use hatate_core::config::Settings;
@@ -183,6 +185,8 @@ pub struct Fx {
     pub clock: Rc<Cell<f64>>,
     pub opened: Rc<RefCell<Vec<PathBuf>>>,
     pub w: MainWindow,
+    /// The scripted engines behind Start Search.
+    pub search: search::Scripted,
 }
 
 pub fn temp_paths(root: &Path) -> Paths {
@@ -234,6 +238,8 @@ impl Fx {
         if let Some(m) = opts.missing {
             env.missing_files = m;
         }
+        let (backend, search) = search::Scripted::new(&paths);
+        env.search = Some(backend);
         let w = MainWindow::new(app, env);
         w.win.present();
         Fx {
@@ -243,6 +249,7 @@ impl Fx {
             clock,
             opened,
             w,
+            search,
         }
     }
 
