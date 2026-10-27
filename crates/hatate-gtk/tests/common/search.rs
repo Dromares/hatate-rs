@@ -70,7 +70,7 @@ impl Scripted {
             reset_run_state: Arc::new(move || {
                 r.fetch_add(1, Ordering::SeqCst);
             }),
-            hydrus_client: Arc::new(|s| hatate_core::hydrus_client::HydrusClient::new(s)),
+            hydrus_client: Arc::new(hatate_core::hydrus_client::HydrusClient::new),
             alerts: alerts.clone(),
             unit_random: Arc::new(|| 0.5),
             shutdown: Arc::new(move || d.store(true, Ordering::SeqCst)),

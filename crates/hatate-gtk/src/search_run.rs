@@ -129,7 +129,7 @@ impl SearchBackend {
             quota_exhausted: Arc::new(move || a.saucenao.is_daily_quota_exhausted()),
             last_quota: Arc::new(move || b.saucenao.get_last_quota()),
             reset_run_state: Arc::new(move || c.reset_run_state()),
-            hydrus_client: Arc::new(|s| hatate_core::hydrus_client::HydrusClient::new(s)),
+            hydrus_client: Arc::new(hatate_core::hydrus_client::HydrusClient::new),
             alerts: d.lens.alerts().clone(),
             unit_random: unit_random(),
             shutdown: Arc::new(move || live.shutdown()),
@@ -187,7 +187,7 @@ pub enum Msg {
 /// What reaches the main thread.
 #[derive(Debug)]
 pub enum BusEvent {
-    Run(u64, Msg),
+    Run(u64, Box<Msg>),
     Lens(LensConnection),
     Alert(EngineAlert),
 }
@@ -317,7 +317,7 @@ struct WindowNext {
 
 impl WindowNext {
     fn post(&self, msg: Msg) {
-        self.bus.post(BusEvent::Run(self.run, msg));
+        self.bus.post(BusEvent::Run(self.run, Box::new(msg)));
     }
 }
 
@@ -423,7 +423,7 @@ impl MainWindow {
         match event {
             BusEvent::Run(run, msg) => {
                 if run == self.s.search.run_id.get() {
-                    self.on_run_message(msg);
+                    self.on_run_message(*msg);
                 }
             }
             BusEvent::Lens(c) => self.on_lens_connection(c),
@@ -1174,7 +1174,7 @@ fn run_search(
     let sink_bus = bus.clone();
     let sink: RunSink = Arc::new(move |event| match event {
         RunEvent::State(RunState::Ended(end)) => {
-            sink_bus.post(BusEvent::Run(run, Msg::Ended(end)));
+            sink_bus.post(BusEvent::Run(run, Box::new(Msg::Ended(end))));
         }
         RunEvent::State(_) => {}
         RunEvent::Lens(c) => sink_bus.post(BusEvent::Lens(c)),
