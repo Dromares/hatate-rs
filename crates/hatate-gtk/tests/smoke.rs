@@ -102,6 +102,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_view_holds_5000_rows_and_filters_without_touching_the_queue,
     ),
     (
+        "queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears",
+        queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears,
+    ),
+    (
         "queue_view_thumbnails_load_fail_and_stay_off_the_main_loop",
         queue_view_thumbnails_load_fail_and_stay_off_the_main_loop,
     ),
@@ -1637,6 +1641,59 @@ fn queue_view_holds_5000_rows_and_filters_without_touching_the_queue(app: &adw::
         "the selection survives a reset"
     );
     assert_eq!(view.row_of(id), Some(1));
+    f.close();
+}
+
+fn queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears(app: &adw::Application) {
+    let mut seed = seeded(12, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % 3];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let bar = f.w.s.filter_bar.clone();
+    assert_eq!(view.visible_count(), 12);
+    assert_eq!(bar.count.label().as_str(), "", "no filter, no reading");
+    assert!(!bar.clear.is_sensitive());
+    assert_eq!(
+        bar.button("Status").label().unwrap().as_str(),
+        "Status: All"
+    );
+
+    // Typing narrows the list by filename and the reading says how many are held back.
+    bar.text.set_text("img1");
+    assert_eq!(view.visible_count(), 3, "img1, img10 and img11");
+    assert_eq!(bar.count.label().as_str(), "9 hidden");
+    assert!(bar.clear.is_sensitive());
+    assert_eq!(
+        bar.count.tooltip_text().unwrap().as_str(),
+        "showing 3 of 12 (the rest are hidden, not removed)"
+    );
+    bar.clear.emit_clicked();
+    assert_eq!(view.visible_count(), 12);
+    assert_eq!(bar.text.text().as_str(), "");
+    assert_eq!(bar.count.label().as_str(), "");
+
+    // The Status menu: None empties the list, ticking one back isolates it, All restores it.
+    let status = bar.button("Status");
+    status.activate_action("fstatus.none", None).unwrap();
+    assert_eq!(view.visible_count(), 0);
+    assert_eq!(status.label().unwrap().as_str(), "Status: 0 selected");
+    status.activate_action("fstatus.v0", None).unwrap();
+    assert_eq!(view.visible_count(), 4);
+    assert_eq!(status.label().unwrap().as_str(), "Status: Not searched");
+    status.activate_action("fstatus.all", None).unwrap();
+    assert_eq!(view.visible_count(), 12);
+    assert_eq!(status.label().unwrap().as_str(), "Status: All");
+    // A filter hides rows from the table, never from the queue.
+    assert_eq!(f.w.s.queue.borrow().len(), 12);
     f.close();
 }
 

@@ -141,6 +141,15 @@ impl FilterBar {
         this
     }
 
+    /// The Status, Site or Upscale button (`filter_status_button` and its siblings), by prefix.
+    pub fn button(&self, prefix: &str) -> &gtk::MenuButton {
+        match prefix {
+            "Status" => &self.status.button,
+            "Site" => &self.site.button,
+            _ => &self.upscale.button,
+        }
+    }
+
     /// `changed.connect`.
     pub fn connect_changed(&self, f: impl Fn() + 'static) {
         *self.changed.borrow_mut() = Some(Rc::new(f));
