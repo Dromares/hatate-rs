@@ -85,6 +85,8 @@ pub struct Env {
     pub search: Option<SearchBackend>,
     /// `time.monotonic()`, for the run's pace estimate.
     pub monotonic: Rc<dyn Fn() -> f64>,
+    /// Parser Health's live check (`core/parser_probe.py`); none in the shipped window.
+    pub probe: Option<Arc<dyn crate::parser_health::ProbeRunner>>,
 }
 
 impl Env {
@@ -101,6 +103,7 @@ impl Env {
             run_session: None,
             search: None,
             monotonic: Rc::new(system_monotonic),
+            probe: None,
         }
     }
 }
@@ -137,6 +140,11 @@ pub struct State {
     /// `self.availability_worker` and `self.upscale_check_worker`.
     pub availability_worker: Slot,
     pub upscale_check_worker: Slot,
+    /// The live check of Parser Health, off the main thread.
+    pub parser_probe_worker: Slot,
+    /// The live check itself; the shipped window has none (`parser_probe.py` is not ported).
+    pub probe: Option<Arc<dyn crate::parser_health::ProbeRunner>>,
+    pub parser_health_dialog: RefCell<Option<Rc<crate::parser_health::ParserHealthDialog>>>,
     /// Set while an autosave write is on the pool, so close can wait for it.
     pub autosave_inflight: Arc<AtomicBool>,
     pub autosave_timer: RefCell<Option<glib::SourceId>>,
@@ -304,6 +312,9 @@ impl MainWindow {
             autosave_worker: Slot::new(),
             availability_worker: Slot::new(),
             upscale_check_worker: Slot::new(),
+            parser_probe_worker: Slot::new(),
+            probe: env.probe.take(),
+            parser_health_dialog: RefCell::new(None),
             autosave_inflight: Arc::new(AtomicBool::new(false)),
             autosave_timer: RefCell::new(None),
             prompter,
@@ -512,6 +523,7 @@ impl MainWindow {
                 "clear-session" => w.action_clear_session(),
                 "sites-select-all" => w.set_all_sites(true),
                 "sites-select-none" => w.set_all_sites(false),
+                "parser-health" => w.action_parser_health(),
                 "open-log" => w.action_open_log(),
                 "view-logs" => w.action_view_logs(),
                 "quit" => w.win.close(),

@@ -207,6 +207,11 @@ pub const NOW: f64 = 1_792_000_000.0;
 
 impl Fx {
     pub fn new(app: &adw::Application, opts: Opts) -> Fx {
+        Fx::new_with(app, opts, |_| {})
+    }
+
+    /// As [`Fx::new`], with a last say over the environment the window is given.
+    pub fn new_with(app: &adw::Application, opts: Opts, edit: impl FnOnce(&mut Env)) -> Fx {
         let dir = tempfile::tempdir().expect("temp profile");
         let paths = temp_paths(dir.path());
         std::fs::create_dir_all(paths.config_dir()).unwrap();
@@ -240,6 +245,7 @@ impl Fx {
         }
         let (backend, search) = search::Scripted::new(&paths);
         env.search = Some(backend);
+        edit(&mut env);
         let w = MainWindow::new(app, env);
         w.win.present();
         Fx {

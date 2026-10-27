@@ -123,6 +123,10 @@ const SCENARIOS: &[Scenario] = &[
         the_upscale_check_marks_rows_and_summarises,
     ),
     (
+        "parser_health_dialog_and_warning",
+        parser_health_dialog_and_warning,
+    ),
+    (
         "re_search_uses_the_engine_it_was_asked_for",
         re_search_uses_the_engine_it_was_asked_for,
     ),
@@ -1888,5 +1892,134 @@ fn the_upscale_check_marks_rows_and_summarises(app: &adw::Application) {
     );
     assert!(shown.text.contains("img0.png:\n"));
     assert!(f.say().starts_with("Upscale check finished: "));
+    f.close();
+}
+
+/// A probe that answers from a script after a pause, so a test can watch the window meanwhile.
+struct ScriptedProbe {
+    results: Vec<hatate_gtk::parser_health::ProbeResult>,
+    pause: std::time::Duration,
+}
+
+impl hatate_gtk::parser_health::ProbeRunner for ScriptedProbe {
+    fn run(
+        &self,
+        _timeout: f64,
+        on_progress: &dyn Fn(usize, usize, &str),
+    ) -> Vec<hatate_gtk::parser_health::ProbeResult> {
+        for (i, r) in self.results.iter().enumerate() {
+            on_progress(i, self.results.len(), &r.site);
+            std::thread::sleep(self.pause);
+        }
+        self.results.clone()
+    }
+}
+
+/// `action_parser_health`, `ParserHealthDialog`, `_warn_about_broken_parsers`.
+fn parser_health_dialog_and_warning(app: &adw::Application) {
+    use hatate_gtk::parser_health::ProbeResult;
+    let probe = |site: &str, ok: bool, problem: Option<&str>| ProbeResult {
+        site: site.to_owned(),
+        ok,
+        tags: 7,
+        width: Some(800),
+        height: Some(600),
+        has_preview: true,
+        has_file_url: true,
+        problem: problem.map(str::to_owned),
+        restricted: None,
+    };
+    let f = Fx::new_with(app, Opts::default(), |env| {
+        env.probe = Some(Arc::new(ScriptedProbe {
+            results: vec![
+                probe("danbooru", true, None),
+                probe("e621", false, Some("fetched, but produced no tags")),
+            ],
+            pause: std::time::Duration::from_millis(150),
+        }));
+    });
+    assert!(f.w.win.lookup_action("parser-health").unwrap().is_enabled());
+    f.activate("parser-health");
+    let dialog =
+        f.w.s
+            .parser_health_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog is up");
+    let cells = dialog.texts();
+    assert_eq!(
+        cells[0],
+        ["Site", "This session", "Live check", "Last problem"]
+    );
+    assert_eq!(cells.len(), 1 + 13, "every site, before anything is known");
+    assert!(
+        cells[1..]
+            .iter()
+            .all(|r| r[1] == "not used yet" && r[2] == "\u{2014}")
+    );
+
+    // The live check runs off the main thread: the window's timers keep turning while it waits,
+    // the button is off, and the progress and the summary line follow.
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let id = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    dialog.check_button.emit_clicked();
+    assert!(!dialog.check_button.is_sensitive());
+    assert!(dialog.progress.is_visible());
+    assert_eq!(dialog.status.text(), "Checking\u{2026}");
+    pump_for(120);
+    assert!(ticks.get() >= 3, "the loop kept turning: {}", ticks.get());
+    assert!(pump_until(5_000, || dialog.check_button.is_sensitive()));
+    id.remove();
+    assert!(!dialog.progress.is_visible());
+    assert!(
+        dialog
+            .status
+            .text()
+            .starts_with("1 of 2 sites have a problem: e621. A site being down")
+    );
+    let rows = dialog.texts();
+    let e621 = rows.iter().find(|r| r[0] == "e621").unwrap();
+    assert_eq!(e621[2], "fetched, but produced no tags");
+    assert_eq!(e621[3], "fetched, but produced no tags");
+    let dan = rows.iter().find(|r| r[0] == "danbooru").unwrap();
+    assert_eq!(dan[2], "7 tags, 800x600, preview, file");
+    dialog.window.close();
+
+    // `_warn_about_broken_parsers`: once per site, only after three empties and no success.
+    let backend = f.w.s.search.backend_if_built().unwrap();
+    let health = &backend.engine.booru.health;
+    for _ in 0..2 {
+        health.record_empty("rule34", "https://rule34.xxx/p/1");
+    }
+    f.w.warn_about_broken_parsers();
+    assert_eq!(f.say(), "Ready", "two empties are not yet a fault");
+    health.record_empty("rule34", "https://rule34.xxx/p/1");
+    f.w.warn_about_broken_parsers();
+    assert_eq!(
+        f.say(),
+        "rule34: no tags in 3 attempts - see Help > Parser Health"
+    );
+    f.w.say("Ready");
+    f.w.warn_about_broken_parsers();
+    assert_eq!(f.say(), "Ready", "reported once");
+    f.close();
+
+    // Without a live check the button says so and stays off.
+    let f = fx(app);
+    f.activate("parser-health");
+    let dialog = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    assert!(!dialog.check_button.is_sensitive());
+    assert!(
+        dialog
+            .check_button
+            .tooltip_text()
+            .unwrap()
+            .contains("not part of this build")
+    );
+    dialog.window.close();
     f.close();
 }

@@ -260,6 +260,11 @@ impl SearchRun {
         self.backend.borrow().as_ref().map(|b| b.alerts.clone())
     }
 
+    /// The backend if one has been built (a test's, or the first Start Search's).
+    pub fn backend_if_built(&self) -> Option<SearchBackend> {
+        self.backend.borrow().clone()
+    }
+
     /// Whether a run's messages are still being heard.
     pub fn listening(&self) -> bool {
         self.run_id.get() != 0
@@ -769,6 +774,7 @@ impl MainWindow {
             self.say(&format!("Searching {name}\u{2026}"));
         } else {
             self.refresh_saucenao_quota_label();
+            self.warn_about_broken_parsers();
         }
         // DEFERRED(6.d): select the row and refresh the preview and the tag list.
     }

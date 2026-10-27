@@ -207,6 +207,9 @@ button.disclosure { background: none; border: none; box-shadow: none; padding: 0
 .banner-glyph { font-family: %status%; font-size: 17px; color: @ink; }
 .banner-head { font-size: %label%px; letter-spacing: %tracking_label%px; font-weight: 700; color: @ink; }
 .banner-body { color: @ink_65; font-size: %body%px; }
+/* Parser Health: working is ink_65, broken is ink_100 (the tiers Status uses). */
+.health-ok { color: @ink_65; }
+.health-bad { color: @ink; font-weight: 700; }
 .meta-label { font-size: %label%px; letter-spacing: 0.08em; color: @ink_65; }
 .meta-figure { font-size: %label%px; letter-spacing: 0.08em; color: @ink; font-weight: 700; }
 .meta-figure.quiet { color: @ink_65; font-weight: 400; }

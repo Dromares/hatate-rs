@@ -84,7 +84,6 @@ pub fn menus() -> Vec<Menu> {
     use Owner::{Later, Shell};
     // DEFERRED(6.g): Query Hydrus, Re-check Queued Imports, Pawchive Index, the two Send items.
     // DEFERRED(6.d): Export Results, Write Tag Files, Clear Search Cache.
-    // DEFERRED(6.e): Parser Health.
     // DEFERRED(6.f): Edit Match Conditions.
     // DEFERRED(6.h): Preferences.
     let files = Menu {
@@ -173,7 +172,7 @@ pub fn menus() -> Vec<Menu> {
         title: "_Help",
         entries: vec![
             item("View Logs\u{2026}", "view-logs", Shell),
-            item("Parser Health\u{2026}", "parser-health", Later("6.e")),
+            item("Parser Health\u{2026}", "parser-health", Shell),
             item(
                 "Clear Search Cache\u{2026}",
                 "clear-search-cache",
@@ -414,7 +413,6 @@ mod tests {
         for want in [
             "query-hydrus",
             "export-results",
-            "parser-health",
             "preferences",
             "edit-conditions",
             "clear-search-cache",
@@ -434,6 +432,8 @@ mod tests {
             "sites-select-all",
             "sites-select-none",
             "site",
+            "parser-health",
+            "toggle-search",
         ] {
             assert!(!d.iter().any(|(n, _)| *n == working), "{working} is 6.c's");
         }

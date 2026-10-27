@@ -10,6 +10,7 @@ pub mod fonts;
 pub mod logsink;
 pub mod logview;
 pub mod menu;
+pub mod parser_health;
 pub mod search_run;
 pub mod session_ops;
 pub mod shell;
