@@ -52,10 +52,16 @@ pub fn decode_thumbnail(path: &str, limit: u32) -> Option<ThumbPixels> {
         .ok()?;
     let orientation = decoder.orientation().ok();
     let mut picture = DynamicImage::from_decoder(decoder).ok()?;
+    // Qt fits the picture as stored and turns it afterwards, which truncates differently from
+    // fitting the turned picture (159 x 160 at 96 is 95 x 96, not 96 x 96 once turned).
+    let stored = (picture.width(), picture.height());
+    let (mut w, mut h) = reader_size(stored.0, stored.1, limit)?;
     if let Some(orientation) = orientation {
         picture.apply_orientation(orientation);
+        if (picture.width(), picture.height()) != stored {
+            std::mem::swap(&mut w, &mut h);
+        }
     }
-    let (w, h) = reader_size(picture.width(), picture.height(), limit)?;
     if (w, h) != (picture.width(), picture.height()) {
         picture = picture.resize_exact(w, h, FilterType::Triangle);
     }
@@ -138,5 +144,52 @@ mod tests {
         assert_eq!(size("d.png", 1, 193, 96), None, "0.497 does not");
         assert_eq!(size("e.png", 3, 500, 96), Some((1, 96)));
         assert_eq!(size("f.png", 3, 1000, 96), None);
+    }
+
+    /// A JPEG with an EXIF orientation tag spliced in after SOI (the encoder writes none).
+    fn write_jpeg_with_orientation(
+        dir: &std::path::Path,
+        name: &str,
+        w: u32,
+        h: u32,
+        o: u8,
+    ) -> String {
+        let path = dir.join(name);
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
+            .encode(
+                &vec![120u8; (w * h * 3) as usize],
+                w,
+                h,
+                image::ExtendedColorType::Rgb8,
+            )
+            .unwrap();
+        let mut exif = b"Exif\0\0MM\0*\0\0\0\x08\0\x01\x01\x12\0\x03\0\0\0\x01".to_vec();
+        exif.extend_from_slice(&[0, o, 0, 0, 0, 0, 0, 0]);
+        let mut seg = vec![0xFF, 0xE1];
+        seg.extend_from_slice(&((exif.len() + 2) as u16).to_be_bytes());
+        seg.extend_from_slice(&exif);
+        jpeg.splice(2..2, seg);
+        std::fs::write(&path, jpeg).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    /// Qt asks the decoder for the scaled size of the picture as stored and rotates it afterwards,
+    /// so a 159 x 160 file turned by orientation 5 to 8 is 95 x 96 -> 96 x 95, while fitting the
+    /// rotated 160 x 159 would truncate to 96 x 96 (differential seed 2, DAN-2217 B2).
+    #[test]
+    fn the_size_is_fitted_to_the_stored_picture_then_turned_by_the_orientation() {
+        let dir = tempfile::tempdir().unwrap();
+        for (o, want) in [
+            (1u8, (95, 96)),
+            (2, (95, 96)),
+            (5, (96, 95)),
+            (6, (96, 95)),
+            (8, (96, 95)),
+        ] {
+            let p = write_jpeg_with_orientation(dir.path(), &format!("o{o}.jpg"), 159, 160, o);
+            let t = decode_thumbnail(&p, 96).unwrap();
+            assert_eq!((t.width, t.height), want, "orientation {o}");
+        }
     }
 }
