@@ -5,7 +5,8 @@
 //! `STATE` is one of `empty` (default), `rows`, `crashed`, `survived`, `quota`, `dialog` (the
 //! Clear Session question), `logs` (the log viewer), `logs-selected` (the log viewer with the path
 //! line selected and focused) or `logs-selected-body` (the log body selected and focused), `menu` (the first menu open) or `focus` (the
-//! first button focused with the ring showing), `focus-files` / `focus-folder` (the stamp-filled Add
+//! first button focused with the ring showing), `failed` (the Failed banner), `activity` (the
+//! Activity page) or `parser-health` (the Parser Health dialog), `focus-files` / `focus-folder` (the stamp-filled Add
 //! files, the hollow Add folder, focused with the ring showing) or `hover-folder` (Add folder under
 //! the pointer) or `menu-hover` (the Files menu open with `Save Session As…` under the pointer). The size `min` is the window's stated minimum.
 
@@ -76,7 +77,7 @@ fn main() -> glib::ExitCode {
     };
     let mut unclean = false;
     match state.as_str() {
-        "rows" | "dialog" => save(&rows(12)),
+        "rows" | "dialog" | "failed" | "activity" | "parser-health" => save(&rows(12)),
         "crashed" => {
             unclean = true;
             let mut r = rows(8);
@@ -136,15 +137,20 @@ fn main() -> glib::ExitCode {
                 return glib::ControlFlow::Continue;
             }
             // The log viewer is its own window; its shot is that window's, not the main one's.
-            let logs_window = state
-                .starts_with("logs")
-                .then(|| {
+            let other = if state.starts_with("logs") {
+                Some("Logs")
+            } else if state == "parser-health" {
+                Some("Parser Health")
+            } else {
+                None
+            };
+            let logs_window = other
+                .and_then(|title| {
                     gtk4::Window::list_toplevels()
                         .into_iter()
                         .filter_map(|w| w.downcast::<gtk4::Window>().ok())
-                        .find(|w| w.title().as_deref() == Some("Logs") && w.is_mapped())
-                })
-                .flatten();
+                        .find(|w| w.title().as_deref() == Some(title) && w.is_mapped())
+                });
             let main_app = win.application();
             let win: &gtk4::Window = logs_window.as_ref().unwrap_or(win.upcast_ref());
             let renderer = win.native().and_then(|n| n.renderer()).expect("renderer");
@@ -197,6 +203,11 @@ fn prepare(window: &MainWindow, state: &str) {
     match state {
         "dialog" => window.activate_action("clear-session"),
         "logs" => window.activate_action("view-logs"),
+        // 6.e: the Failed banner (a synthetic fault message, path-free), the Activity page and
+        // the Parser Health dialog (its live check is off in this build, DAN-2290).
+        "failed" => window.show_failed_banner("The run stopped on a fault (synthetic)."),
+        "activity" => window.set_mode("activity"),
+        "parser-health" => window.activate_action("parser-health"),
         "logs-selected" | "logs-selected-body" => {
             window.activate_action("view-logs");
             let viewer = window
