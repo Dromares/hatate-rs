@@ -397,6 +397,24 @@ pub struct QueueView {
     cell_rows: CellRows,
 }
 
+/// The Thumb column's width: the 40 px picture plus room for the letter-spaced `THUMB` title,
+/// which was clipped in a 72 px column at the minimum window size (DAN-1999 F6; 56 px of title in
+/// a header cell 24 px narrower than the column).
+const THUMB_COLUMN_WIDTH: i32 = THUMB_COLUMN_SIZE as i32 + 44;
+
+/// Least default width of a column whose letter-spaced title is wider than Python's minimum
+/// leaves room for: a GTK header cell is 25 px narrower than its column (Qt's is not), so the
+/// ported `DEFAULT_COLUMN_MINIMUMS` clip `ENGINE` by a pixel and `SIMILARITY`, `TAGS`, `CACHE` and `REVIEWED`
+/// by more. Measured at the minimum window size by the header-title scenario.
+const HEADER_TITLE_FLOORS: [(Column, i32); 6] = [
+    (Column::Engine, 84),
+    (Column::Tags, 68),
+    (Column::Cache, 80),
+    (Column::Similarity, 116),
+    (Column::SizeDelta, 104),
+    (Column::Reviewed, 106),
+];
+
 impl QueueView {
     pub fn new(queue: Rc<RefCell<QueueModel>>) -> Rc<QueueView> {
         let store = gio::ListStore::new::<RowObject>();
@@ -414,7 +432,7 @@ impl QueueView {
 
         let bound: BoundCallback = Rc::default();
         let cell_rows: CellRows = Rc::default();
-        let widths = table_cells::default_column_widths(1000, THUMB_COLUMN_SIZE as i32 + 32);
+        let widths = table_cells::default_column_widths(1000, THUMB_COLUMN_WIDTH);
         let mut columns = Vec::new();
         for column in Column::ALL {
             let factory = match column {
@@ -424,11 +442,15 @@ impl QueueView {
             let col = gtk::ColumnViewColumn::new(Some(column.title()), Some(factory));
             col.set_resizable(column != Column::Thumb);
             match column {
-                Column::Thumb => col.set_fixed_width(THUMB_COLUMN_SIZE as i32 + 32),
+                Column::Thumb => col.set_fixed_width(THUMB_COLUMN_WIDTH),
                 Column::Upscale => col.set_expand(true),
                 _ => {
                     if let Some((_, w)) = widths.iter().find(|(c, _)| *c == column) {
-                        col.set_fixed_width(*w);
+                        let floor = HEADER_TITLE_FLOORS
+                            .iter()
+                            .find(|(c, _)| *c == column)
+                            .map_or(0, |(_, f)| *f);
+                        col.set_fixed_width((*w).max(floor));
                     }
                 }
             }

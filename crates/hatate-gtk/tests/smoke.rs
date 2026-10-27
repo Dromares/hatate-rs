@@ -110,6 +110,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded,
     ),
     (
+        "queue_header_titles_are_not_clipped_at_the_minimum_window_size",
+        queue_header_titles_are_not_clipped_at_the_minimum_window_size,
+    ),
+    (
         "clear_search_cache_label_carries_the_cache_size",
         clear_search_cache_label_carries_the_cache_size,
     ),
@@ -2073,4 +2077,78 @@ fn clear_search_cache_label_carries_the_cache_size(app: &adw::Application) {
         "Clear Search Cache (1.5 KB)\u{2026}"
     );
     f.close();
+}
+
+/// Every `gtk::Label` under `w` (itself included).
+fn all_labels(w: &gtk4::Widget, out: &mut Vec<gtk4::Label>) {
+    if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+        out.push(l.clone());
+    }
+    let mut child = w.first_child();
+    while let Some(c) = child {
+        all_labels(&c, out);
+        child = c.next_sibling();
+    }
+}
+
+/// DAN-1999 F6: the `THUMB` title (letter-spaced, in a 72 px column) was clipped at the minimum
+/// window size. Every column title must be drawn whole: not ellipsized, and given at least the
+/// width it asks for.
+fn queue_header_titles_are_not_clipped_at_the_minimum_window_size(app: &adw::Application) {
+    use hatate_core::table_cells::Column;
+    for scheme in ["dark", "light"] {
+        let s = scheme.to_owned();
+        let f = Fx::new(
+            app,
+            Opts {
+                seed: seeded(5, MatchStatus::Good),
+                missing: Some(Arc::new(|_, _| HashSet::new())),
+                tweak: Some(Box::new(move |c| c.theme = s.clone())),
+                ..Opts::default()
+            },
+        );
+        f.w.win.set_default_size(1, 1);
+        pump_for(300);
+        let mut labels = Vec::new();
+        all_labels(f.w.s.queue_view.view.upcast_ref(), &mut labels);
+        let mut seen = 0;
+        for col in Column::ALL {
+            let title = col.title();
+            let Some(label) = labels
+                .iter()
+                .find(|l| l.text() == title && l.is_mapped() && l.width() > 0)
+            else {
+                panic!("{scheme}: no drawn header title {title:?}");
+            };
+            seen += 1;
+            // The header cell is the enclosing button: the title must sit wholly inside it.
+            let mut cell = label.parent();
+            while let Some(c) = &cell {
+                if c.css_name() == "button" {
+                    break;
+                }
+                cell = c.parent();
+            }
+            let cell = cell.unwrap_or_else(|| panic!("{scheme}: header {title:?} has no cell"));
+            let b = label.compute_bounds(&cell).expect("bounds");
+            println!(
+                "HEADER {scheme} {title} cell_width={} label_x={:.1}..{:.1} ellipsized={}",
+                cell.width(),
+                b.x(),
+                b.x() + b.width(),
+                label.layout().is_ellipsized()
+            );
+            assert!(
+                !label.layout().is_ellipsized()
+                    && b.x() >= -0.5
+                    && b.x() + b.width() <= cell.width() as f32 + 0.5,
+                "{scheme}: header {title:?} is clipped (cell {}, title {:.1}..{:.1})",
+                cell.width(),
+                b.x(),
+                b.x() + b.width()
+            );
+        }
+        assert_eq!(seen, Column::ALL.len());
+        f.close();
+    }
 }
