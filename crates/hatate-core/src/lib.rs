@@ -82,6 +82,7 @@ pub mod tag_borrowing;
 pub mod tag_colors;
 pub mod tag_rules;
 pub mod thumb;
+pub mod thumb_decode;
 pub mod timeutil;
 pub mod upscale_detect;
 pub mod viewport;
