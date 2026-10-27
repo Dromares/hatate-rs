@@ -118,7 +118,10 @@ strip, the button, the rows and every other dialog.
 
 Rendered by `crates/hatate-gtk/examples/shot.rs` (a test-only tool; the shipped binary has no way to do this), on
 Xvfb with a temp profile and synthetic sessions, at 1100 x 800 (outer 1090 x 790) and at the stated minimum
-(`min`, outer 1000 x 780). Host toolkit (GTK 4.24); `worktrees/DAN-2218/shots`:
+(`min`, outer 1000 x 780). The set below is the **host toolkit's** (GTK 4.24), `worktrees/DAN-2218/shots`. The `ci`
+job renders the same states on the CI toolkit (GTK 4.14 / libadwaita 1.5) and uploads them as the `shots` artifact
+of the run at the head (`.github/workflows/ci.yml` gains `failed`, `activity`, `parser-health` and the four
+minimum-size states in this PR). Host files:
 
 - `failed-{dark,light}.png`, `failed-min-{dark,light}.png`: the Failed banner (synthetic message, rows loaded)
 - `activity-{dark,light}.png`, `activity-min-{dark,light}.png`: the Activity page
