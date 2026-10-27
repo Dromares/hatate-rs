@@ -134,6 +134,14 @@ const SCENARIOS: &[Scenario] = &[
         "re_search_uses_the_engine_it_was_asked_for",
         re_search_uses_the_engine_it_was_asked_for,
     ),
+    (
+        "design_follow_ups_paint_as_specified",
+        design_follow_ups_paint_as_specified,
+    ),
+    (
+        "a_dialog_shows_the_ring_on_its_default",
+        a_dialog_shows_the_ring_on_its_default,
+    ),
 ];
 
 fn main() {
@@ -2174,5 +2182,216 @@ fn activity_page_states_the_engines_and_tails_the_log(app: &adw::Application) {
     f.w.s.settings.lock().unwrap().enable_tracemoe = true;
     f.w.set_mode("activity");
     assert_eq!(page.chip_texts()[3].0, "trace.moe \u{b7} fallback");
+    f.close();
+}
+
+/// The first widget under `w` (itself included) with the CSS class `class`.
+fn find_class(w: &gtk4::Widget, class: &str) -> Option<gtk4::Widget> {
+    if w.has_css_class(class) {
+        return Some(w.clone());
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(found) = find_class(&child, class) {
+            return Some(found);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
+/// The first button under `w` whose label reads `text`.
+fn find_button(w: &gtk4::Widget, text: &str) -> Option<gtk4::Button> {
+    if let Some(b) = w.downcast_ref::<gtk4::Button>() {
+        if b.label().as_deref() == Some(text) {
+            return Some(b.clone());
+        }
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(found) = find_button(&child, text) {
+            return Some(found);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
+/// What the widget draws, `margin` px of room around its box included, as straight RGBA
+/// (`width`, `height`, bytes); the widget's own box starts at `(margin, margin)`.
+fn render(w: &gtk4::Widget, margin: i32) -> (usize, usize, Vec<u8>) {
+    use gtk4::gdk;
+    use gtk4::graphene::Rect;
+    let paintable = gtk4::WidgetPaintable::new(Some(w));
+    // The paintable's own size is the widget's border box; `Widget::width` is the content box inside
+    // the CSS padding and border, and asking for that scales the picture down.
+    let (bw, bh) = (
+        gdk::prelude::PaintableExt::intrinsic_width(&paintable),
+        gdk::prelude::PaintableExt::intrinsic_height(&paintable),
+    );
+    let snap = gtk4::Snapshot::new();
+    gdk::prelude::PaintableExt::snapshot(&paintable, &snap, f64::from(bw), f64::from(bh));
+    let node = snap.to_node().expect("snapshot");
+    let renderer = w
+        .native()
+        .and_then(|n| n.renderer())
+        .expect("a realized widget has a renderer");
+    let (vw, vh) = (bw + 2 * margin, bh + 2 * margin);
+    let view = Rect::new(-margin as f32, -margin as f32, vw as f32, vh as f32);
+    let tex = renderer.render_texture(&node, Some(&view));
+    let mut dl = gdk::TextureDownloader::new(&tex);
+    dl.set_format(gdk::MemoryFormat::R8g8b8a8);
+    let (bytes, stride) = dl.download_bytes();
+    assert_eq!(stride, vw as usize * 4);
+    (vw as usize, vh as usize, bytes.to_vec())
+}
+
+fn px(img: &(usize, usize, Vec<u8>), x: usize, y: usize) -> [u8; 4] {
+    let i = (y * img.0 + x) * 4;
+    [img.2[i], img.2[i + 1], img.2[i + 2], img.2[i + 3]]
+}
+
+/// DAN-2242: what the design read measured on the shots, asserted on the widgets' own pixels, in
+/// both schemes: the ghost kanji's box is 420 px tall (fix 1), the Queue frame is the raised fill
+/// (fix 2), the plain `.card` draws no outline outside its box (fix 3), and a hollow control's
+/// border is `ink-46` at rest and `ink-58` under the pointer (fix 4).
+fn design_follow_ups_paint_as_specified(app: &adw::Application) {
+    use hatate_gtk::tokens::{Palette, Scheme};
+    for (name, scheme) in [("dark", Scheme::Dark), ("light", Scheme::Light)] {
+        let f = Fx::new(
+            app,
+            Opts {
+                tweak: Some(Box::new(move |c| c.theme = name.to_owned())),
+                ..Opts::default()
+            },
+        );
+        f.w.win.set_default_size(1100, 800);
+        pump_for(400);
+        let pal = Palette::of(scheme);
+        let root = f.w.win.clone().upcast::<gtk4::Widget>();
+
+        let ghost = find_class(&root, "ghost-kanji").expect("the ghost kanji");
+        assert_eq!(
+            ghost.height(),
+            420,
+            "{name}: the ghost label box is 420 px (line-height: 1 of a 420 px face), not the font's own 1.44 em"
+        );
+
+        let zone = find_class(&root, "drop-zone").expect("the empty-state frame");
+        let img = render(&zone, 0);
+        let want = pal.raised.hex();
+        let at = |x, y| {
+            let p = px(&img, x, y);
+            format!("#{:02x}{:02x}{:02x}", p[0], p[1], p[2])
+        };
+        assert_eq!(
+            at(16, img.1 - 16),
+            want,
+            "{name}: the frame interior is the raised fill"
+        );
+        assert_eq!(px(&img, 16, img.1 - 16)[3], 255, "{name}: and opaque");
+
+        // The card: libadwaita's own `.card` draws a ring and a shadow outside its box, which a
+        // paintable of the card alone does not hold. Read the margin around it from its parent.
+        let card = find_class(&root, "card").expect("the Queue card");
+        // The nearest ancestor with room around the card.
+        let mut up = card.parent();
+        let (parent, cx, cy) = loop {
+            let p = up.expect("an ancestor with room around the card");
+            let at = card
+                .compute_point(&p, &gtk4::graphene::Point::new(0.0, 0.0))
+                .expect("the card's place in its ancestor");
+            if at.x() >= 20.0 && at.y() >= 20.0 {
+                break (p, at.x() as usize, at.y() as usize);
+            }
+            up = p.parent();
+        };
+        let img = render(&parent, 0);
+        let mid_y = cy + card.height() as usize / 2;
+        let right = cx + card.width() as usize;
+        assert!(right + 20 <= img.0, "{name}: room right of the card");
+        let (ref_l, ref_r) = (px(&img, cx - 18, mid_y), px(&img, right + 18, mid_y));
+        for d in 1..=8 {
+            assert_eq!(
+                px(&img, cx - d, mid_y),
+                ref_l,
+                "{name}: the page is plain {d}px left of the card (no outline or shadow)"
+            );
+            assert_eq!(
+                px(&img, right + d - 1, mid_y),
+                ref_r,
+                "{name}: the page is plain {d}px right of the card"
+            );
+        }
+
+        // A hollow control's border: the left edge column of the button, alpha only.
+        let folder = find_button(&root, "Add folder\u{2026}").expect("Add folder");
+        let edge_alpha = |b: &gtk4::Button| {
+            let img = render(b.upcast_ref(), 0);
+            f64::from(px(&img, 0, img.1 / 2)[3]) / 255.0
+        };
+        assert!(
+            (edge_alpha(&folder) - pal.ink_46.3).abs() < 0.02,
+            "{name}: Add folder's border is ink-46 ({}) at rest, got {}",
+            pal.ink_46.3,
+            edge_alpha(&folder)
+        );
+        folder.set_state_flags(gtk4::StateFlags::PRELIGHT, false);
+        pump_for(100);
+        // The hover wash (ink-10) is painted under the border, so the edge pixel is the two over each other.
+        let under_wash = 1.0 - (1.0 - pal.ink_58.3) * (1.0 - pal.ink_10.3);
+        assert!(
+            (edge_alpha(&folder) - under_wash).abs() < 0.02,
+            "{name}: and ink-58 over the ink-10 wash ({under_wash:.3}) under the pointer, got {}",
+            edge_alpha(&folder)
+        );
+        f.close();
+    }
+}
+
+/// DAN-2242 fix 6 (design gate 2.6): the production prompter shows the default button's focus ring
+/// as soon as the dialog opens, and the default of a destructive question is No.
+fn a_dialog_shows_the_ring_on_its_default(app: &adw::Application) {
+    use hatate_gtk::dialogs::{AdwPrompter, Prompter};
+    let f = fx(app);
+    assert!(
+        !f.w.win.upcast_ref::<gtk4::Window>().gets_focus_visible(),
+        "no key has been pressed yet"
+    );
+    let prompter = AdwPrompter::new(&f.w.win);
+    let answered = Rc::new(Cell::new(None));
+    let a = answered.clone();
+    prompter.message(
+        Kind::Question,
+        "Clear Saved Session",
+        "Empty the current list?",
+        Buttons::YesNo,
+        Box::new(move |r| a.set(Some(r))),
+    );
+    pump_for(400);
+    assert!(
+        f.w.win.upcast_ref::<gtk4::Window>().gets_focus_visible(),
+        "the ring is drawn on the dialog's default button the moment it opens"
+    );
+    let focused = gtk4::prelude::GtkWindowExt::focus(f.w.win.upcast_ref::<gtk4::Window>())
+        .expect("focus is inside the dialog");
+    let mut label = String::new();
+    let mut stack = vec![focused];
+    while let Some(w) = stack.pop() {
+        if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+            label = l.text().to_string();
+            break;
+        }
+        let mut c = w.first_child();
+        while let Some(ch) = c {
+            stack.push(ch.clone());
+            c = ch.next_sibling();
+        }
+    }
+    assert_eq!(
+        label, "No",
+        "the default button, and the focused one, is No"
+    );
+    assert_eq!(answered.get(), None, "nothing answered the question");
     f.close();
 }
