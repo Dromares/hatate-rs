@@ -1,0 +1,903 @@
+/* ============================================================
+   RYOKU — token sheet for Hatate-Linux-Redux
+   Single-ink dossier system. See PLAN.md for the full rationale,
+   contrast measurements, and gui/theme.py -> token translation map.
+   ============================================================ */
+
+:root {
+  /* ---- surfaces (no gradients, no shadows) ---- */
+  --charcoal:        #0d0d0d;  /* page background */
+  --charcoal-raised: #141414;  /* table / list surface — lifted by a hairline, not a shadow */
+  --charcoal-sunken: #090909;  /* recessed: inputs, log pane, filter fields */
+
+  /* ---- ink (the one colour) ----
+     Contrast ratios measured against #0d0d0d, sRGB relative-luminance method.
+     --ink-100   11.3:1  primary text, headlines, key values, glyphs that must read as "urgent"
+     --ink-65     5.25:1 secondary text, body copy, meta labels — body-text safe (>= 4.5:1)
+     --ink-45     3.1:1  tertiary / decorative / disabled — LARGE TEXT OR NON-TEXT ONLY, never body
+     --ink-28     hairline, emphasis (focused input, header underline, active frame)
+     --ink-18     hairline, at rest (row dividers, card borders, table rules)
+     --ink-10     hover wash
+     --ink-06     zebra / sunken wash
+     --ink-05     ghosted background kanji
+  */
+  --ink:      #cdc4ba;
+  --ink-100:  rgba(205,196,186,1);
+  --ink-65:   rgba(205,196,186,0.65);
+  --ink-45:   rgba(205,196,186,0.45);
+  --ink-28:   rgba(205,196,186,0.28);
+  --ink-18:   rgba(205,196,186,0.18);
+  --ink-10:   rgba(205,196,186,0.10);
+  --ink-06:   rgba(205,196,186,0.06);
+  --ink-05:   rgba(205,196,186,0.05);
+
+  /* ---- the one "accent": inversion, not hue ----
+     Primary actions and active/selected states swap fg/bg instead of
+     reaching for a colour. This is the direct replacement for the old
+     primary/primary_lo/primary_hi blue family. */
+  --stamp-bg: var(--ink);
+  --stamp-fg: #0d0d0d;
+
+  /* ---- type: three voices — final selection, DAN-132.
+     DAN-137: real, bundled files under fonts/ (measured payload +
+     per-file licence + upstream URL in PLAN.md "Fonts" and
+     each family's SOURCE.txt under fonts/). The named family is listed first in each stack
+     purely as a safety net if a file 404s under file://; it is not
+     standing in for an unbundled font. The shipped app registers the
+     same files via QFontDatabase.addApplicationFont, so Qt never needs
+     the fallback chain either.
+     DAN-144: Space Grotesk and JetBrains Mono are now static per-weight
+     instances (9 @font-face rules / 9 files total, up from 7), not
+     variable fonts — Qt 6.11.2 exposed only one weight from each
+     variable file (confirmed by probe + zero-pixel-diff render test),
+     so the variable files were replaced outright rather than kept
+     alongside unusable statics. See fonts/space-grotesk/SOURCE.txt and
+     fonts/jetbrains-mono/SOURCE.txt for the instancer commands and Qt
+     verification. ---- */
+  --font-serif: 'Source Serif 4', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-sans:  'Space Grotesk', 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:  'JetBrains Mono', 'IBM Plex Mono', 'DejaVu Sans Mono', 'Courier New', monospace;
+  /* DAN-137 (supersedes the DAN-134 claim): Source Serif 4 has no CJK
+     coverage, so the ghost-kanji ornament (力/鏡/動/空) needs its own
+     face. 'Ryoku Kanji' is a bundled 4-glyph subset of Noto Serif CJK
+     JP, verified by cmap lookup to contain exactly those four
+     codepoints — see fonts/ryoku-kanji/SOURCE.txt for why the slimmer
+     "Noto Serif JP" family was rejected (it is missing U+955C 鏡
+     entirely, a real per-codepoint gap, not a hypothetical one).
+     Source Serif 4 stays first in the stack so Latin punctuation/metrics
+     in the same element still come from the named display face. */
+  --font-kanji: 'Ryoku Kanji', 'Source Serif 4', 'Noto Serif CJK JP', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  /* DAN-137 (supersedes the DAN-134 claim): JetBrains Mono (upright and
+     italic) is missing two of the six status glyphs — confirmed by
+     cmap lookup: ● yes, ○ NO, ◐ NO, × yes, · yes, ▲ yes. Patching only
+     the two missing glyphs from a second donor font would reproduce the
+     exact "silently mismatched silhouette" failure this ticket exists
+     to fix. 'Ryoku Status' is instead a bundled 6-glyph subset of Noto
+     Sans Mono, which has all six natively in one face — guaranteed
+     identical advance width (600/1000em) and matched stroke weight
+     across the whole status column. See fonts/ryoku-status/SOURCE.txt
+     for the full coverage table and glyph metrics. Scoped to the status
+     glyphs only, not merged into --font-mono. */
+  --font-status: 'Ryoku Status', var(--font-mono);
+
+  --text-display: 2.25rem;   /* 36px — screen titles: "Queue.", "Review." */
+  --text-title:   1.375rem;  /* 22px — panel/dialog titles */
+  --text-body:    0.9375rem; /* 15px — body copy, filenames, tag text */
+  --text-label:   0.6875rem; /* 11px — mono caps metadata labels */
+  --text-micro:   0.625rem;  /* 10px — tertiary captions, timestamps */
+
+  --tracking-label: 0.16em;
+
+  /* ---- spacing scale ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+}
+
+/* ============================================================
+   @font-face — real, bundled files. Paths are relative so this
+   sheet (and every screen that links it) still opens from file://
+   with no build step and no network fetch. See PLAN.md "Fonts" and
+   each family's SOURCE.txt under fonts/ for upstream URLs, licences, and the measured
+   payload per family. DAN-137.
+   ============================================================ */
+
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('fonts/source-serif-4/SourceSerif4-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Source Serif 4';
+  src: url('fonts/source-serif-4/SourceSerif4-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  /* DAN-144: single static Regular (400) instance — Qt cannot expose this
+     family's wght axis (only ever matched "Light"/300 regardless of
+     request), and nothing in this sheet asks --font-sans for anything but
+     the implicit default weight, so one correctly-weighted static replaces
+     the variable file entirely. See fonts/space-grotesk/SOURCE.txt. */
+  font-family: 'Space Grotesk';
+  src: url('fonts/space-grotesk/SpaceGrotesk-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  /* DAN-144: three static instances (400/500/700) replace the variable
+     file — Qt exposed only one weight from it, collapsing the
+     match-quality status system's ink-weight channel. See
+     fonts/jetbrains-mono/SOURCE.txt. */
+  font-family: 'JetBrains Mono';
+  src: url('fonts/jetbrains-mono/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('fonts/jetbrains-mono/JetBrainsMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('fonts/jetbrains-mono/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  /* Only italic usage in the sheet (.status--searching) is weight: 500,
+     so a single medium-italic static covers it — see SOURCE.txt. */
+  font-family: 'JetBrains Mono';
+  src: url('fonts/jetbrains-mono/JetBrainsMono-MediumItalic.woff2') format('woff2');
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  /* 4-glyph subset: 力 鏡 動 空 — see fonts/ryoku-kanji/SOURCE.txt */
+  font-family: 'Ryoku Kanji';
+  src: url('fonts/ryoku-kanji/RyokuKanji.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+529B, U+52D5, U+7A7A, U+955C;
+}
+@font-face {
+  /* 6-glyph subset: ● ○ ◐ × · ▲ — see fonts/ryoku-status/SOURCE.txt */
+  font-family: 'Ryoku Status';
+  src: url('fonts/ryoku-status/RyokuStatus.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+  unicode-range: U+00B7, U+00D7, U+25B2, U+25CB, U+25CF, U+25D0;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--charcoal);
+  color: var(--ink-100);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+
+body {
+  height: 900px;
+  width: 1440px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+a { color: var(--ink-100); }
+
+::selection { background: var(--ink); color: var(--stamp-fg); }
+
+/* ---- scrollbars: hairline, no gloss ---- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ink-18); }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-28); }
+
+/* ============================================================
+   Layout shell
+   ============================================================ */
+.app {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;   /* 848px: the 900px window minus menubar 28 + status bar 24 (DAN-1158 B-1/B-2) */
+  padding: var(--space-5) var(--space-6);
+  gap: var(--space-4);
+  position: relative;
+}
+
+/* ---- ghosted background kanji: typographic ornament, never dithered ---- */
+.kanji-ghost {
+  position: absolute;
+  top: -40px;
+  right: 40px;
+  font-family: var(--font-kanji);
+  font-size: 420px;
+  line-height: 1;
+  color: var(--ink-05);
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+.app > *:not(.kanji-ghost) { position: relative; z-index: 1; }
+
+/* ============================================================
+   Top bar
+   ============================================================ */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.mark {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.mark__glyph {
+  font-family: var(--font-kanji);   /* Ryoku Kanji subset; Source Serif 4 has no CJK (DAN-137) */
+  font-size: 22px;
+  color: var(--ink-100);
+}
+.mark__word {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--ink-100);
+  font-weight: 700;
+}
+
+.mode-switch {
+  display: flex;
+  border: 1px solid var(--ink-18);
+}
+.mode-btn {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-65);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--ink-18);
+  padding: var(--space-3) var(--space-5);
+  cursor: default;
+}
+.mode-btn:last-child { border-right: none; }
+.mode-btn[data-active="true"] {
+  background: var(--stamp-bg);
+  color: var(--stamp-fg);
+}
+
+.topbar__spacer { flex: 1; }
+
+/* ---- buttons: square, one outline weight, inversion for primary ---- */
+.btn {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  font-weight: 700;
+  border: 1px solid var(--ink-18);
+  background: transparent;
+  color: var(--ink-100);
+  padding: var(--space-3) var(--space-5);
+  cursor: default;
+  white-space: nowrap;
+}
+.btn--primary {
+  background: var(--stamp-bg);
+  color: var(--stamp-fg);
+  border-color: var(--ink);
+}
+.btn--block { width: 100%; display: block; text-align: center; }
+.btn--icon {
+  padding: var(--space-2) var(--space-3);
+  font-size: 15px;
+  border: 1px solid var(--ink-18);
+}
+.btn-row { display: flex; gap: var(--space-2); }
+/* minmax(0,1fr), not bare 1fr: a bare fr track still floors at its content's
+   min-content width, so a longer button label in one cell can grow that
+   column and nudge the sibling column's button sideways — a real Fitts's-Law
+   target-stability failure for a grid holding frequently re-labelled buttons
+   (e.g. review.html's "Mark reviewed" / "Unmark reviewed" toggle). DAN-787.
+   minmax(0,1fr) clamps both columns to a true, content-blind 50/50 split. */
+.btn-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-2); }
+.btn-grid .btn--keyed { flex-wrap: wrap; row-gap: 2px; }
+
+/* ============================================================
+   Run strip — spans Queue / Review / Activity
+   ============================================================ */
+.run-strip {
+  background: var(--charcoal);
+  border: 1px solid var(--ink-18);
+  padding: var(--space-3) var(--space-5);
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+.run-strip__tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  color: var(--ink-65);
+  white-space: nowrap;
+}
+.run-strip__track {
+  width: 220px;
+  height: 3px;
+  background: var(--ink-18);
+  position: relative;
+  flex-shrink: 0;
+}
+.run-strip__fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  background: var(--ink-100);
+}
+.run-strip__kv {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  color: var(--ink-65);
+  white-space: nowrap;
+}
+.run-strip__kv b { color: var(--ink-100); font-weight: 700; }
+.run-strip__spacer { flex: 1; }
+
+/* ============================================================
+   Section tags — "01 // FILTER"
+   ============================================================ */
+.section-tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--ink-65);
+  font-weight: 700;
+  margin-bottom: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.section-tag::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--ink-18);
+}
+
+/* ============================================================
+   Status glyphs — replaces green/amber/red.
+   Channel 1: glyph shape (scannable silhouette down a column).
+   Channel 2: ink weight (100% bold = needs a decision, 65% = routine/done, 45% = inert).
+   Neither channel depends on hue, so this is colour-blindness-proof by construction.
+   ============================================================ */
+.status {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.06em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+/* DAN-138 (shipped, gui/table_delegates.py ChipDelegate.paint()): status
+   chips stay mixed-case ("Good"/"Sent"/"Not found"), not uppercased. The
+   chip's text is painted by QPainter.drawText() from theme.chip_label(),
+   which never passes through the stylesheet's text layout — there is no
+   QSS property that uppercases a string already handed to drawText(), so
+   this mockup's text-transform had no Qt-side mechanism to land on. This
+   rule's ABSENCE is the decision, not an oversight: do not re-add
+   text-transform: uppercase here without a Python-side .upper() call to
+   back it, or the mockup will again show something Qt cannot paint. */
+.status__glyph { font-size: 13px; }
+.status--good        { color: var(--ink-65); font-weight: 500; }
+.status--sent         { color: var(--ink-65); font-weight: 500; }
+.status--queued       { color: var(--ink-65); font-weight: 500; }
+/* DAN-211 (shipped, gui/theme.py STATUS_WEIGHTS): both read at ink-65, not
+   ink-45 — ink-45 only clears ~3.1:1 against this table's row surface,
+   short of the 4.5:1 body-text floor. Raised here to match; see
+   DECISION-chip-semantics.md for the full citation and the "estimated"
+   chip's own rule (chip keeps the cell's number, doesn't substitute a word). */
+.status--unsearched   { color: var(--ink-65); font-weight: 500; }
+.status--searching    { color: var(--ink-65); font-weight: 500; font-style: italic; }
+.status--estimated    { color: var(--ink-65); font-weight: 500; }
+.status--review       { color: var(--ink-100); font-weight: 700; }
+.status--notfound     { color: var(--ink-100); font-weight: 700; }
+/* DAN-137: JetBrains Mono is missing TWO status glyphs, not one — ◐
+   U+25D0 (review) AND ○ U+25CB (not found), confirmed by cmap
+   inspection (see PLAN.md "Match-quality glyph coverage"). Both route
+   to the bundled Ryoku Status subset so the whole column comes from a
+   single consistent face; the other four glyphs (● × · ▲) are fully
+   covered by JetBrains Mono and stay on --font-mono untouched.
+
+   THE VERIFIED SET IS EXACTLY THESE SIX: ● ○ ◐ × · ▲ (see
+   fonts/ryoku-status/SOURCE.txt for the per-codepoint coverage dump).
+   DAN-138 shipped shape+weight for match quality against this same six
+   and found two more codepoints this mockup had specified outside it —
+   ✓ (Sent/Queued) and ▼ (Size Difference downgrade) — neither checked
+   against this list before being written into PLAN.md's token table.
+   Qt shipped ● for Sent/Queued (reusing Good's shape; status_weight()
+   still tells it apart) and no glyph at all for a downgrade (the
+   "-"-prefixed label already carries the direction). CHECK ANY NEW
+   STATUS/DIFF GLYPH AGAINST THIS LIST BEFORE ADDING IT TO A MOCKUP OR
+   TO PLAN.md's table — see IMPLEMENTATION.md's "Verified glyph set"
+   addendum for the full reconciliation (DAN-1123). */
+.status--review .status__glyph,
+.status--notfound .status__glyph { font-family: var(--font-status); }
+.status--error        { color: var(--ink-100); font-weight: 700; border: 1px solid var(--ink-28); padding: 1px 6px; }
+
+.diff { font-family: var(--font-mono); font-size: var(--text-label); white-space: nowrap; }
+.diff--up   { color: var(--ink-100); font-weight: 700; }
+/* DAN-138 (shipped, gui/image_table_model.py _size_delta_glyph()): a
+   downgrade draws NO glyph — ▼ is outside the verified six-glyph set
+   above (fonts/ryoku-status/SOURCE.txt), and compact_size_delta()'s own
+   "-" prefix in the label text already carries the direction, so there
+   was no missing shape channel for a glyph to fill. Weight-only tier,
+   same ink-65 as before. */
+.diff--down { color: var(--ink-65); font-weight: 500; }
+
+/* ============================================================
+   Labels / mono-caps metadata
+   ============================================================ */
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--ink-65);
+}
+.label--dim { color: var(--ink-45); }
+.label--strong { color: var(--ink-100); font-weight: 700; }
+
+/* ============================================================
+   Dossier frame — hairline box with four corner crop-marks
+   ============================================================ */
+.frame {
+  position: relative;
+  border: 1px solid var(--ink-18);
+  background: var(--charcoal-raised);
+}
+.frame__corner {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-color: var(--ink-65);
+  border-style: solid;
+  border-width: 0;
+}
+.frame__corner--tl { top: -1px; left: -1px; border-top-width: 2px; border-left-width: 2px; }
+.frame__corner--tr { top: -1px; right: -1px; border-top-width: 2px; border-right-width: 2px; }
+.frame__corner--bl { bottom: -1px; left: -1px; border-bottom-width: 2px; border-left-width: 2px; }
+.frame__corner--br { bottom: -1px; right: -1px; border-bottom-width: 2px; border-right-width: 2px; }
+
+/* ============================================================
+   Table (Queue)
+   ============================================================ */
+.table-wrap {
+  border: 1px solid var(--ink-18);
+  background: var(--charcoal-raised);
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+table.rows {
+  width: 100%;
+  border-collapse: collapse;
+}
+table.rows thead th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-65);
+  font-weight: 700;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--ink-28);
+  white-space: nowrap;
+}
+table.rows tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--ink-18);
+  font-size: 13px;
+  color: var(--ink-100);
+  vertical-align: middle;
+}
+table.rows tbody tr:nth-child(even) td { background: var(--ink-06); }
+table.rows tbody tr[data-selected="true"] td {
+  background: var(--stamp-bg);
+  color: var(--stamp-fg);
+}
+table.rows tbody tr[data-selected="true"] .status,
+table.rows tbody tr[data-selected="true"] .diff,
+table.rows tbody tr[data-selected="true"] .upscale--flagged,
+table.rows tbody tr[data-selected="true"] .upscale--clear,
+table.rows tbody tr[data-selected="true"] .muted {
+  color: var(--stamp-fg) !important;
+}
+
+.thumb {
+  width: 32px;
+  height: 32px;
+  background-color: var(--charcoal-sunken);
+  background-image: radial-gradient(var(--ink-45) 1px, transparent 1.4px);
+  background-size: 5px 5px;
+  border: 1px solid var(--ink-18);
+}
+
+.muted { color: var(--ink-65); }
+.dim { color: var(--ink-45); }
+
+/* ============================================================
+   Filter bar
+   ============================================================ */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--ink-18);
+  padding: var(--space-3) var(--space-4);
+  background: var(--charcoal-sunken);
+}
+.field {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.04em;
+  color: var(--ink-65);
+  background: transparent;
+  border: 1px solid var(--ink-18);
+  padding: var(--space-2) var(--space-3);
+}
+.field--grow { flex: 1; }
+.field--button { color: var(--ink-100); cursor: default; }
+.filter-bar__spacer { flex: 1; }
+.filter-bar__count { font-family: var(--font-mono); font-size: var(--text-label); color: var(--ink-45); }
+
+/* ============================================================
+   Segmented control (compare view, mode switch reuses .mode-btn)
+   ============================================================ */
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--ink-18);
+}
+.segmented__btn {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-65);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--ink-18);
+  padding: var(--space-2) var(--space-4);
+  cursor: default;
+}
+.segmented__btn:last-child { border-right: none; }
+.segmented__btn[data-active="true"] { background: var(--stamp-bg); color: var(--stamp-fg); }
+
+/* ============================================================
+   DAN-1158 — mockup sync with the production we decided to keep
+   (DAN-1156 gap register §3, B-1 … B-12; CEO rulings DAN-1155).
+   Everything below is additive; tokens above are unchanged.
+   ============================================================ */
+
+/* ---- B-1 / C-3: native menubar as window chrome — 28px, full width,
+   Files · Hydrus · Sites · Settings · Help. Qt draws this natively
+   (QMenuBar); the mockup only reserves its height so every screen's
+   vertical budget is honest. Text is --ink-100 (11.3:1 dark). ---- */
+.menubar {
+  flex: 0 0 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: 0 var(--space-6);
+  border-bottom: 1px solid var(--ink-18);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink-100);
+}
+.menubar u { text-decoration: underline; text-underline-offset: 2px; }
+
+/* ---- B-2 / G-06: status bar, 24px. Transient messages (import results,
+   quota pause, "nothing survived") live here even once banners exist. ---- */
+.statusbar {
+  flex: 0 0 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-6);
+  border-top: 1px solid var(--ink-18);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.06em;
+  color: var(--ink-65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- disabled controls (Prev at row 1, ◀ at candidate 1, Send with no
+   match). WCAG exempts inactive components; the hairline outline
+   stays so the target does not move or vanish (Fitts / target stability). ---- */
+.btn--disabled,
+.btn--disabled.btn--primary {
+  color: var(--ink-45);
+  background: transparent;
+  border-color: var(--ink-18);
+}
+.btn--disabled.btn--primary { background: var(--ink-10); }
+.kbd.kbd--disabled { color: var(--ink-45); border-color: var(--ink-18); font-weight: 400; }
+
+/* ---- B-3 Upscale column: ▲ flagged (same shape as a Size Difference
+   upgrade), ● clear, — not checked. Weight tiers mirror
+   gui/image_table_model.py _upscale_weight(): flagged ink-100 bold,
+   clear ink-65, not checked ink-45. ---- */
+.upscale--flagged { font-family: var(--font-mono); font-size: var(--text-label); letter-spacing: 0.06em; color: var(--ink-100); font-weight: 700; white-space: nowrap; }
+.upscale--clear   { font-family: var(--font-mono); font-size: var(--text-label); letter-spacing: 0.06em; color: var(--ink-65);  font-weight: 500; white-space: nowrap; }
+
+/* ---- B-4 run strip: ETA is the answer to "will it finish tonight?" —
+   it sits at the right edge (Serial Position) and reads at ink-65, not
+   ink-45 (3.1:1 fails the 4.5:1 body floor for 11px text). ---- */
+.run-strip__kv--eta b { color: var(--ink-100); }
+
+/* ---- B-6 candidate picker: full-width, one line, mono, hairline.
+   Production: WideComboBox under the "Match n of m" heading. ---- */
+.picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border: 1px solid var(--ink-18);
+  background: var(--charcoal-sunken);
+  padding: 0 var(--space-3);
+  height: 32px;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.02em;
+  color: var(--ink-100);
+  white-space: nowrap;
+}
+.picker__text { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.picker__text .ns { color: var(--ink-65); }
+.picker--disabled { color: var(--ink-45); }
+
+/* ---- B-7 review header tools (pop-out ⧉, shortcuts ⌨, show-in-queue ⮐)
+   and the zoom group, which floats inside the frame in Wipe/Differences
+   so the header never overflows and the image never shifts when the
+   view is switched. ---- */
+.head-tools { display: flex; gap: var(--space-2); margin-left: var(--space-4); }
+.head-tools .btn--icon, .zoom-tools .btn--icon { min-width: 36px; text-align: center; }
+.zoom-tools {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--charcoal);
+  border: 1px solid var(--ink-18);
+}
+.zoom-tools .btn--icon { padding: 4px 8px; font-size: var(--text-label); letter-spacing: 0.1em; }
+.zoom-tools__pct { font-family: var(--font-mono); font-size: var(--text-label); color: var(--ink-65); min-width: 48px; text-align: right; padding-right: var(--space-2); }
+
+/* ---- B-8 Wipe / Differences: one large frame, a divider with a handle,
+   a hairline slider under it, and the verdict sentence production
+   writes into review_note. ---- */
+.wipe-frame { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; }
+.wipe-frame .swatch { width: 100%; height: 100%; }
+.wipe-slider { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-1) 0; }
+.wipe-slider__track { flex: 1; height: 3px; background: var(--ink-18); position: relative; }
+.wipe-slider__thumb { position: absolute; top: -7px; width: 4px; height: 17px; background: var(--ink-100); }
+.review-note { font-size: 13px; color: var(--ink-65); text-align: center; margin: 0; max-width: 920px; align-self: center; }
+
+/* ---- B-8 no-match: the right rail says so in a sentence. ---- */
+.empty-note { margin: auto; text-align: center; padding: var(--space-5); color: var(--ink-65); font-size: 13px; display: flex; flex-direction: column; gap: var(--space-2); }
+.empty-note b { color: var(--ink-100); font-family: var(--font-mono); font-size: var(--text-label); letter-spacing: 0.1em; text-transform: uppercase; }
+.frame--empty { background: var(--charcoal-sunken); }
+.frame--empty .empty-pane { color: var(--ink-65); font-family: var(--font-mono); font-size: var(--text-label); letter-spacing: 0.1em; text-transform: uppercase; }
+
+/* ---- B-9 Activity: Pipeline summary line + labelled show-in-queue ---- */
+.pipeline-line { font-family: var(--font-mono); font-size: var(--text-label); letter-spacing: 0.06em; color: var(--ink-65); margin: 0 0 var(--space-3) 0; }
+.pipeline-line b { color: var(--ink-100); }
+.btn-hint { font-family: var(--font-mono); font-size: var(--text-micro); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-65); margin-right: var(--space-2); }
+
+/* ---- B-10 Prev / Next flanking the hint bar: the mouse path for J/K/N.
+   38px tall, same height as the other review buttons. ---- */
+.review-footer { display: flex; align-items: center; gap: var(--space-4); border-top: 1px solid var(--ink-18); padding-top: var(--space-3); margin-top: var(--space-1); }
+.review-footer .bottom-strip { flex: 1; border-top: none; padding-top: 0; margin-top: 0; }
+.review-footer .btn { display: inline-flex; align-items: center; gap: var(--space-2); padding-top: var(--space-2); padding-bottom: var(--space-2); }
+
+/* ---- B-8 running-with-banner: the run is live while a notice persists.
+   Glyph is the status "·" family at ink-65 (nothing is wrong, something
+   changed) — same weight tier as .run-banner--paused. ---- */
+.run-banner--running .run-banner__glyph { color: var(--ink-65); font-weight: 500; }
+
+/* ============================================================
+   RYOKU LIGHT — a different artifact, not an inversion.
+
+   Dark Ryoku is bone ink printed on black paper: a pixel at low
+   opacity ADDS a trace of light to a black ground. Paper does the
+   opposite — ink SUBTRACTS light from a bright ground — so every
+   token below was re-measured against the paper colour rather than
+   algebraically flipped. Two concrete consequences of that:
+
+   1. The body-safe ink tier needs MORE pigment in light, not less.
+      Dark's body tier sits at 65% bone ink and clears 5.25:1 against
+      near-black. Measured on this paper, 65% dark ink only clears
+      ~3.4:1 — the 4.6:1 floor needs 70% ink (~5.3:1). The token name
+      stays --ink-65 (same semantic slot: "body-safe secondary text")
+      but its literal alpha is theme-specific, same as --ink-45 etc.
+      This is the "materially higher opacity" the brief called for,
+      with the actual number behind it.
+   2. Hairlines and the ghost kanji need the same bump for a
+      different reason: at dark's literal 18-28% a dark-ink hairline
+      on bright paper doesn't read as a drawn rule, it reads as a
+      smudge (not enough pigment to register as an intentional mark).
+      Hairline-rest and hairline-emphasis are raised to ~32%/45% so
+      a table rule reads as print, not dust. The ghost kanji is
+      raised from 5% to 8% for the same reason — 5% dark-ink-on-paper
+      measures under 1.1:1, which is functionally invisible, not
+      "ghosted."
+
+   Contrast measurements (sRGB relative luminance, composited against
+   the REAL surface each token sits on, not an assumed flat) are in
+   PLAN.md. Dark values above this point are untouched.
+   ============================================================ */
+/* ============================================================
+   Run banner — queue failure / interrupted-run states (DAN-470).
+   A stamped notice that sits between the run-strip and the table on
+   Queue, for the moment a multi-hour unattended run died, paused, or
+   left nothing behind. Reuses the dossier .frame (hairline + corner
+   crop-marks) rather than inventing new chrome, and reuses the
+   existing status glyph vocabulary so a returning user reads this
+   with knowledge they already have from the table:
+     --run-banner--crashed  glyph ◐ (half dot = "partial"), ink-100,
+       same weight as row-level .status--review ("needs a decision").
+     --run-banner--paused   glyph … (ellipsis, italic), ink-65, same
+       weight as row-level .status--searching ("transient, resolves
+       on its own") — the headline text stays ink-100 bold regardless,
+       so the banner is still noticed even though nothing is wrong.
+     --run-banner--failed   glyph ✕ boxed, ink-100, identical to
+       row-level .status--error — the most severe tier, reused 1:1.
+   No new glyphs, no new font subset: zero additional Qt font risk.
+   ============================================================ */
+.run-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  padding: var(--space-5);
+}
+.run-banner__glyph {
+  font-family: var(--font-status);
+  font-size: 28px;
+  line-height: 1;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+.run-banner__glyph--boxed {
+  font-size: 22px;
+  border: 1px solid var(--ink-28);
+  padding: 4px 10px;
+}
+.run-banner--crashed .run-banner__glyph { color: var(--ink-100); font-weight: 700; }
+.run-banner--paused  .run-banner__glyph { color: var(--ink-65); font-weight: 500; font-style: italic; }
+.run-banner--failed  .run-banner__glyph { color: var(--ink-100); font-weight: 700; }
+
+.run-banner__body { flex: 1; display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.run-banner__head {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-100);
+}
+.run-banner__detail { color: var(--ink-65); font-size: var(--text-body); margin: 0; max-width: 840px; }
+.run-banner__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-65);
+}
+.run-banner__meta b { color: var(--ink-100); font-weight: 700; }
+.run-banner__actions { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-1); }
+.run-banner__discard {
+  /* Interactive text, not a decorative caption, so it stays on the
+     body-safe ink-65 tier (5.25:1 dark / 5.3:1 light) rather than
+     ink-45 (3.1:1) — de-emphasis here comes from the plain-text/
+     underline treatment against the two stamped buttons beside it,
+     not from failing the small-text contrast floor. */
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-65);
+  text-decoration: underline;
+  cursor: default;
+}
+
+/* Run-strip fill, frozen: a dead/stale run's progress bar dims to
+   ink-45 instead of the live ink-100 fill — the same weight-channel
+   convention the status column already uses for "nothing is moving
+   here right now," reused for the run strip itself. */
+.run-strip__fill--stopped { background: var(--ink-45) !important; }
+
+:root[data-theme="light"] {
+  /* ---- surfaces: a dossier printed on warm stock, not an inverted
+     screen. Paper is a toned off-white (#e8e1d2), never stark white —
+     a stark-white ground was tried and rejected (see PLAN.md "Option
+     B"): it reads as an ordinary document, not the same object as the
+     dark half. "Raised" still means "cleaner sheet, lifted" and
+     "sunken" still means "shaded receptacle," same direction of
+     travel as dark, just light-to-dark instead of dark-to-light. ---- */
+  --charcoal:        #e8e1d2;  /* page: warm dossier stock */
+  --charcoal-raised: #f2ede1;  /* table/list surface: a cleaner sheet, lifted */
+  --charcoal-sunken: #ddd2bd;  /* recessed: inputs, log pane, filter fields */
+
+  /* ---- ink: charcoal ink on paper, not bone-on-black re-tinted.
+     Base ink colour #211d17 (warm near-black), same eight tiers,
+     alphas re-measured per surface — see contrast table in PLAN.md.
+       --ink-100   12.55:1 on page   primary text, headlines, urgent glyphs (a=1.0, unchanged role)
+       --ink-65     5.3:1  on page, 5.07:1 on sunken   secondary/body text (a=0.70)
+       --ink-45     ~3.0:1 on page   decorative/disabled, LARGE/NON-TEXT ONLY (a=0.50)
+       --ink-28    hairline, emphasis — focused field, header underline (a=0.45)
+       --ink-18    hairline, at rest — row dividers, table rules (a=0.32)
+       --ink-10    hover wash (a=0.12)
+       --ink-06    zebra / sunken wash (a=0.07)
+       --ink-05    ghosted background kanji (a=0.08)
+  */
+  --ink:      #211d17;
+  --ink-100:  rgba(33,29,23,1);
+  --ink-65:   rgba(33,29,23,0.70);
+  --ink-45:   rgba(33,29,23,0.50);
+  --ink-28:   rgba(33,29,23,0.45);
+  --ink-18:   rgba(33,29,23,0.32);
+  --ink-10:   rgba(33,29,23,0.12);
+  --ink-06:   rgba(33,29,23,0.07);
+  --ink-05:   rgba(33,29,23,0.08);
+
+  /* ---- the "stamp" inversion still works unchanged: full ink fill,
+     paper-coloured text. Same mechanism as dark, swapped operands. ---- */
+  --stamp-bg: var(--ink);
+  --stamp-fg: #f6f1e6;
+}

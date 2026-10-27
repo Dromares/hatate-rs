@@ -47,8 +47,13 @@ Run exactly the commands in `.github/workflows/ci.yml`:
 ```
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+HATATE_GTK_SMOKE=1 GDK_BACKEND=x11 GSK_RENDERER=cairo xvfb-run -a cargo test --workspace
 ```
+
+The window crate needs the GTK 4 and libadwaita development files and `xvfb`. Run the window
+scenarios on Xvfb or a headless compositor with a temp `HOME` and temp XDG directories, never on
+the board's `DISPLAY` or Wayland socket. With `CI` set, a missing `HATATE_GTK_SMOKE=1` or a missing
+display fails the test.
 
 ## Merge gate
 
