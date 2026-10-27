@@ -579,7 +579,7 @@ pub fn restore_header_state(saved_state: &str, saved_columns: i64) -> HeaderRest
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Candidate;
+    use crate::model::{Candidate, Tag, TagSource};
 
     fn entry(path: &str) -> Entry {
         Entry::new(path)
@@ -712,6 +712,110 @@ mod tests {
             SortKey::Float(-1.0)
         );
         assert_eq!(sort_key(&entry("a.png"), Column::Thumb), SortKey::Int(0));
+    }
+
+    /// `lower` sorts before `higher` in `column`, ascending and (reversed) descending.
+    fn assert_sorts_before(column: Column, lower: Entry, higher: Entry) {
+        assert_eq!(
+            sort_key(&lower, column).compare(&sort_key(&higher, column)),
+            Ordering::Less,
+            "{column:?}: {:?} against {:?}",
+            sort_key(&lower, column),
+            sort_key(&higher, column)
+        );
+        let rows = [higher, lower];
+        assert_eq!(sorted_order(&rows, column, false), vec![1, 0], "{column:?}");
+        assert_eq!(sorted_order(&rows, column, true), vec![0, 1], "{column:?}");
+    }
+
+    fn named_tag(name: &str) -> Tag {
+        Tag {
+            name: name.to_owned(),
+            namespace: None,
+            source: TagSource::Booru,
+        }
+    }
+
+    #[test]
+    fn every_column_sorts_by_the_value_python_sorts_it_by() {
+        // Status: the tier rank, good first and unsearched last.
+        let mut good = entry("a.png");
+        good.status = MatchStatus::Good;
+        let mut error = entry("a.png");
+        error.status = MatchStatus::Error;
+        assert_eq!(sort_key(&good, Column::Status), SortKey::Int(0));
+        assert_sorts_before(Column::Status, good, entry("a.png"));
+        assert_sorts_before(Column::Status, error, entry("a.png"));
+
+        // Engine and Booru: the selected match's text, lower-cased; no match is the empty text.
+        let mut iqdb = with_match("a.png", 100, 100);
+        iqdb.candidates[0].engine = "IQDB".into();
+        iqdb.candidates[0].source_name = Some("Gelbooru".into());
+        let mut sauce = with_match("a.png", 100, 100);
+        sauce.candidates[0].engine = "saucenao".into();
+        sauce.candidates[0].source_name = Some("danbooru".into());
+        assert_eq!(
+            sort_key(&iqdb, Column::Engine),
+            SortKey::Text("iqdb".into())
+        );
+        assert_eq!(
+            sort_key(&iqdb, Column::Booru),
+            SortKey::Text("gelbooru".into())
+        );
+        assert_eq!(
+            sort_key(&entry("a.png"), Column::Booru),
+            SortKey::Text(String::new())
+        );
+        assert_sorts_before(Column::Engine, iqdb.clone(), sauce.clone());
+        assert_sorts_before(Column::Booru, sauce, iqdb);
+        assert_sorts_before(
+            Column::Engine,
+            entry("a.png"),
+            with_match("a.png", 100, 100),
+        );
+
+        // Size diff.: the scale of the selected match against the local file.
+        assert_sorts_before(
+            Column::SizeDelta,
+            with_match("a.png", 25, 25),
+            with_match("a.png", 400, 400),
+        );
+        assert_eq!(
+            sort_key(&entry("a.png"), Column::SizeDelta),
+            SortKey::Float(-1.0)
+        );
+        assert_sorts_before(
+            Column::SizeDelta,
+            entry("a.png"),
+            with_match("a.png", 25, 25),
+        );
+
+        // Tags: how many.
+        let mut one = entry("a.png");
+        one.tags = vec![named_tag("red")];
+        let mut two = entry("a.png");
+        two.tags = vec![named_tag("red"), named_tag("blue")];
+        assert_eq!(sort_key(&two, Column::Tags), SortKey::Int(2));
+        assert_sorts_before(Column::Tags, entry("a.png"), one.clone());
+        assert_sorts_before(Column::Tags, one, two);
+
+        // Sent: unsent, then queued, then confirmed.
+        let mut queued = entry("a.png");
+        queued.sent_to_hydrus = true;
+        let mut sent = queued.clone();
+        sent.hydrus_import_confirmed = true;
+        assert_eq!(sort_key(&sent, Column::Sent), SortKey::Int(2));
+        assert_sorts_before(Column::Sent, entry("a.png"), queued.clone());
+        assert_sorts_before(Column::Sent, queued, sent);
+
+        // Upscale: flagged, then clear, then never checked.
+        let mut flagged = entry("a.png");
+        flagged.upscale_verdict = Some("flagged".into());
+        let mut clear = entry("a.png");
+        clear.upscale_verdict = Some("clear".into());
+        assert_eq!(sort_key(&entry("a.png"), Column::Upscale), SortKey::Int(2));
+        assert_sorts_before(Column::Upscale, flagged, clear.clone());
+        assert_sorts_before(Column::Upscale, clear, entry("a.png"));
     }
 
     #[test]
