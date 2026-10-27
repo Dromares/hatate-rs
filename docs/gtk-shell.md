@@ -1565,14 +1565,21 @@ groups it by (scheme, fg, bg). Disabled controls are exempt (`Start Search`, the
 | light | #211d17 | #f2ede1 | 14.35 | pass | 38 | ◐, Run interrupted — partial results survived, 0s ago, no ne |
 | light | #f6f1e6 | #211d17 | 14.88 | pass | 23 | Queue, Add files…, Files, Start new search |
 
-**The `_ (_)` fragment under the dialog (DAN-2245 item 4).** In the GTK 4.14 / cairo shots (`dialog-dark.png`,
-`dialog-light.png`), 35 pixels at x 413 to 448, y 497 to 499 sit just under the dialog's bottom border (y 496): the
-lower three pixel rows of what look like glyph bottoms, centred on the `No` label (x 332 to 529), about 2:1. They
-do **not** reproduce on GTK 4.24 / libadwaita 1.10 (0 pixels outside the sheet; the layout differs, so the
-comparison is the band under the border). The widget tree of the 4.14 dialog (`dialog-*.tree`, new in the shot
-artifact) has no widget with a box there, so it is not a widget placed outside the sheet. Both shots use
-`GSK_RENDERER=cairo` under Xvfb, which no user runs; the cause is not found, and it is not fixed. Next step if it
-matters: the same shot on 4.14 with `ngl`, on a real display. Until then it is a P3 artefact of the shot harness.
+**The `_ (_)` fragment under the dialog (DAN-2245 item 4, closed by DAN-2256).** In the GTK 4.14 / cairo shots
+(`dialog-dark.png`, `dialog-light.png`), 35 pixels at x 413 to 448, y 497 to 499 sit just under the dialog's bottom
+border (y 496), the lower rows of what look like glyph bottoms. They do **not** reproduce on GTK 4.24 / libadwaita
+1.10 (the layout differs, so the comparison is the band under the border). The widget tree of the 4.14 dialog
+(`dialog-*.tree`) has no widget with a box there. **Cause: the Queue page's placeholder label** (`12 image(s) in the
+list. The list view arrives in 6.d.`, x 367 to 722, y 481 to 501) seen through the scrim: the sheet covers y <= 496,
+so the label's descender rows 497 to 499 (the `g` of "image", the `(` `)` of "(s)") show below it. **Control:** the
+`dialog-nolabel` state (the same shot with that label hidden; the two trees differ only in that label's line) on the
+CI toolkit, run 40485308569 at `1135a27`: with the label 35 pixels in that band, without it 0, dark and light; the
+two shots differ by exactly those 35 pixels in y >= 497. The other 3,161 differing pixels lie in y 293 to 496, 3,157 of them at
+7/255 or less; not explained. The label's glyphs also show, dimmed the same way, beside the sheet.
+**Decision: no change to the scrim.** A modal shows the window's content around the sheet, dimmed; that is what the
+scrim is for, and the position comes from layout, not from the renderer, so the cairo-under-Xvfb question does not
+move it. It is not a stray widget or a paint bug. No real-display capture was taken; the claim is about this layout
+and was not measured on `ngl`. The placeholder goes in 6.d, when the list view replaces it.
 
 **Selected text, and the log viewer (DAN-2245).** The first sweep did not read a selected-text state, and its two
 `Log file:` rows above (`#6f849c` on `#0d0d0d` 5.05, `#50657b` on `#e8e1d2` 4.62) were the path line measured with
