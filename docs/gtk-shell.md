@@ -1659,7 +1659,7 @@ scenario skips).
 
 **The injector only types into a headless Xvfb** (DAN-2264). `Xtest::connect` returns `Err` before it opens
 the X socket unless both hold: `HATATE_SMOKE_XVFB=1` is set (the runner's statement that the display is its
-own Xvfb), **and** `XAUTHORITY` names a file `xvfb-run` created (`<tmp>/xvfb-run.XXXXXX/Xauthority.XXXXXX`).
+own Xvfb), **and** `XAUTHORITY` names a file `xvfb-run` created (`<tmp>/xvfb-run.XXXXXX/Xauthority`, with a `.XXXXXX` suffix on some distributions; Ubuntu 24.04, the CI image, has none).
 The second condition is what stops `HATATE_SMOKE_XVFB=1 DISPLAY=:0`: a live desktop's cookie is
 `~/.Xauthority` or `$XDG_RUNTIME_DIR/xauth_*`, never in an `xvfb-run.*` directory. The X vendor string was
 considered and rejected: Xvfb and a real Xorg both report "The X.Org Foundation". A hand-started `Xvfb` or

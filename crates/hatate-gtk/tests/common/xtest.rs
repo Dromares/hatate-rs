@@ -108,7 +108,7 @@ pub const HEADLESS_FLAG: &str = "HATATE_SMOKE_XVFB";
 /// runner started. Two independent conditions, both required, because neither alone is enough:
 ///
 /// 1. `HATATE_SMOKE_XVFB=1`: an explicit statement by the runner. Alone it is only a promise, so
-/// 2. `XAUTHORITY` names a file `xvfb-run` created (`<tmp>/xvfb-run.XXXXXX/Xauthority.XXXXXX`).
+/// 2. `XAUTHORITY` names a file `xvfb-run` created (`<tmp>/xvfb-run.XXXXXX/Xauthority`, with a random suffix on some distributions).
 ///    A live desktop's cookie is `~/.Xauthority`, `$XDG_RUNTIME_DIR/xauth_*` or the display
 ///    manager's; none of those sits in an `xvfb-run.*` directory, so `HATATE_SMOKE_XVFB=1
 ///    DISPLAY=:0` is still refused. The X vendor string cannot do this job: Xvfb and a real Xorg
@@ -137,7 +137,7 @@ pub fn check_headless(
         .and_then(|d| d.file_name())
         .and_then(|n| n.to_str())
         .unwrap_or("");
-    if !(file.starts_with("Xauthority.") && dir.starts_with("xvfb-run.")) {
+    if !(file.starts_with("Xauthority") && dir.starts_with("xvfb-run.")) {
         return Err(format!(
             "refusing to inject keys into DISPLAY={display}: XAUTHORITY={} is not a file xvfb-run \
              created, so the display may be a live session",
