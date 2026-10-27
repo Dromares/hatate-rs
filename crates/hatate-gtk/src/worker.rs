@@ -62,6 +62,37 @@ impl<P> Ctx<P> {
     }
 }
 
+/// A cloneable sender for a job's events that outlives the borrow of its [`Ctx`] and still
+/// delivers after a Stop: `SearchWorker.stop()` is followed by the `image_updated`, `progress` and
+/// `finished_all` of the image under way, so those events must not be gated on the stop flag the
+/// way [`Ctx::report`] is. A *retired* job is still silenced, by the receiving side.
+pub struct Reports<P> {
+    tx: async_channel::Sender<P>,
+}
+
+impl<P> Clone for Reports<P> {
+    fn clone(&self) -> Self {
+        Reports {
+            tx: self.tx.clone(),
+        }
+    }
+}
+
+impl<P> Reports<P> {
+    pub fn send(&self, p: P) {
+        let _ = self.tx.try_send(p);
+    }
+}
+
+impl<P> Ctx<P> {
+    /// The sender, for a reporter that must be `'static` and keep sending after Stop.
+    pub fn reports(&self) -> Reports<P> {
+        Reports {
+            tx: self.tx.clone(),
+        }
+    }
+}
+
 /// The main thread's handle on one job.
 #[derive(Clone)]
 pub struct JobHandle {

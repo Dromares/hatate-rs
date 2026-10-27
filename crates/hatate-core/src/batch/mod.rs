@@ -16,7 +16,7 @@ pub mod staging;
 
 pub use auto_import::{RunFault, maybe_auto_import, removes_row, switch_to_importable_match};
 pub use run::{
-    Autosave, BatchEnv, Ending, Outcome, Reporter, SearchEnd, SessionSink, Silent, run_batch,
-    search_pending,
+    Autosave, BatchEnv, Ending, Outcome, PendingOptions, Reporter, SearchEnd, SessionSink, Silent,
+    run_batch, search_pending, search_pending_with,
 };
 pub use staging::{StagingDir, StagingError, cleanup_current as cleanup_current_staging};

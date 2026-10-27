@@ -49,8 +49,15 @@ pub trait Reporter: Send + Sync {
     /// `Searching`. `done` images are behind it and `total` is the queue's length (it grows once,
     /// when the retries are queued). The `RunState` channel reads the current file from it.
     fn searching(&self, _entry: &Entry, _done: usize, _total: usize) {}
+    /// `SearchWorker.image_updated` as the loop emits it after a search: `entry` holds the result
+    /// (a match, a miss or an error). `index` is the entry's position in the slice the loop was
+    /// given. Fired before `progress`, as Python emits `image_updated` before `progress`.
+    fn updated(&self, _index: usize, _entry: &Entry) {}
     /// `SearchWorker.progress(done, total)`: one image is searched.
     fn progress(&self, _done: usize, _total: usize) {}
+    /// `SearchWorker.continuing_without_saucenao(searched, remaining)`: said once per run, when
+    /// the allowance is spent and the run carries on without SauceNAO.
+    fn continuing_without_saucenao(&self, _searched: i64, _remaining: i64) {}
     /// `SearchWorker.paused_out_of_quota(searched, remaining)`.
     fn paused_for_quota(&self, _searched: i64, _remaining: i64) {}
     /// `SearchWorker.finished_all`: the loop is over, however it ended. A stop that arrived during
@@ -364,6 +371,31 @@ pub async fn search_pending(
     pending: Vec<usize>,
     autosave: &mut Autosave<'_>,
 ) -> SearchEnd {
+    search_pending_with(env, entries, pending, autosave, &PendingOptions::default()).await
+}
+
+/// What `SearchWorker.__init__` takes besides the entries (`override_engines`, `bypass_cache`,
+/// `force_continue_without_saucenao`). The default is a plain Start Search.
+#[derive(Debug, Clone, Default)]
+pub struct PendingOptions {
+    /// `override_engines`: the one engine to use for `entries[index]`, whatever the configured
+    /// order (Re-search with an engine, with the opposite engine).
+    pub override_engines: std::collections::HashMap<usize, String>,
+    /// `bypass_cache`: a re-search wants a fresh look, so the search cache is not read.
+    pub bypass_cache: bool,
+    /// `force_continue_without_saucenao`: the one-shot "Continue with other engines" of a paused
+    /// batch. It does not touch the saved setting.
+    pub force_continue_without_saucenao: bool,
+}
+
+/// [`search_pending`] with the options a window launch can set.
+pub async fn search_pending_with(
+    env: &BatchEnv<'_>,
+    entries: &mut [Entry],
+    pending: Vec<usize>,
+    autosave: &mut Autosave<'_>,
+    opts: &PendingOptions,
+) -> SearchEnd {
     let removed = vec![false; entries.len()];
     let mut end = SearchEnd {
         ending: Ending::Finished,
@@ -371,7 +403,7 @@ pub async fn search_pending(
         auto_imported: 0,
         removed,
     };
-    match search_queue(env, entries, pending, autosave, &mut end).await {
+    match search_queue(env, entries, pending, autosave, opts, &mut end).await {
         Ok(()) => {}
         Err(fault) => end.ending = Ending::Failed(fault),
     }
@@ -404,6 +436,7 @@ async fn search_queue(
     entries: &mut [Entry],
     pending: Vec<usize>,
     autosave: &mut Autosave<'_>,
+    opts: &PendingOptions,
     end: &mut SearchEnd,
 ) -> Result<(), RunFault> {
     let clock = env.engine.clock.clone();
@@ -477,10 +510,14 @@ async fn search_queue(
             limiter.record(engine, clock.monotonic());
         };
 
-        let skip_saucenao = skip_saucenao_now(env);
+        let skip_saucenao = skip_saucenao_now(env, opts);
         let (use_cache, delay_min, delay_max) = {
             let s = env.settings.lock().unwrap();
-            (s.use_search_cache, s.delay_min_seconds, s.delay_max_seconds)
+            (
+                s.use_search_cache && !opts.bypass_cache,
+                s.delay_min_seconds,
+                s.delay_max_seconds,
+            )
         };
         let stop_flag = env.stop.clone();
         let tick: crate::engines::client::OnTick = {
@@ -495,7 +532,7 @@ async fn search_queue(
                 &mut entries[idx],
                 env.settings,
                 SearchOptions {
-                    override_engine: None,
+                    override_engine: opts.override_engines.get(&idx).map(String::as_str),
                     use_cache,
                     on_tick: Some(tick),
                     on_engines_done: Some(&note_done),
@@ -517,6 +554,7 @@ async fn search_queue(
             entry.status = MatchStatus::Error;
             entry.error_message = Some(format!("Unexpected error: {exc}"));
         }
+        env.reporter.updated(idx, &entries[idx]);
         env.reporter.progress(i + 1, total);
 
         let entry_status = entries[idx].status;
@@ -567,7 +605,7 @@ async fn search_queue(
         autosave.tick_kept(&snapshot, entries, &end.removed, clock.wall());
 
         let remaining = (total - (i + 1)) as i64;
-        if remaining > 0 && skip_saucenao_now(env) {
+        if remaining > 0 && skip_saucenao_now(env, opts) {
             if !announced_quota_continue {
                 announced_quota_continue = true;
                 warn!(
@@ -580,8 +618,10 @@ async fn search_queue(
                     "SauceNAO's daily quota is exhausted: carrying on without it for the \
                      remaining {remaining} image(s)"
                 ));
+                env.reporter
+                    .continuing_without_saucenao((i + 1) as i64, remaining);
             }
-        } else if remaining > 0 && saucenao_quota_should_pause(env) {
+        } else if remaining > 0 && saucenao_quota_should_pause(env, opts) {
             let done = (i + 1) as i64;
             warn!(
                 "SauceNAO's daily quota is exhausted - pausing after {done}/{total} image(s), \
@@ -611,7 +651,7 @@ async fn search_queue(
             // End of the first pass. An ERROR is a network fault, not a verdict (the cache refuses
             // to remember one), so each gets exactly one more attempt.
             retries_queued = true;
-            let again = queue_retries(env, entries, &queue);
+            let again = queue_retries(env, opts, entries, &queue);
             queue.extend(again);
         }
 
@@ -631,7 +671,10 @@ async fn search_queue(
         }
 
         let delay = uniform(delay_min, delay_max, (env.unit_random)());
-        let next_override: Option<&str> = None;
+        let next_override: Option<&str> = queue
+            .get(i + 1)
+            .and_then(|next| opts.override_engines.get(next))
+            .map(String::as_str);
         let upcoming = crate::engine_runner::planned_engines(&snapshot, next_override, false);
         let intervals = upcoming
             .iter()
@@ -679,12 +722,17 @@ async fn search_queue(
 }
 
 /// `_queue_retries`: the images worth one more attempt after the first pass.
-fn queue_retries(env: &BatchEnv<'_>, entries: &[Entry], done: &[usize]) -> Vec<usize> {
+fn queue_retries(
+    env: &BatchEnv<'_>,
+    opts: &PendingOptions,
+    entries: &[Entry],
+    done: &[usize],
+) -> Vec<usize> {
     let settings = env.settings.lock().unwrap().clone();
     if !settings.retry_failed_searches {
         return Vec::new();
     }
-    if env.stop.load(Ordering::SeqCst) || saucenao_quota_should_pause(env) {
+    if env.stop.load(Ordering::SeqCst) || saucenao_quota_should_pause(env, opts) {
         return Vec::new();
     }
     let failed: Vec<usize> = done
@@ -730,9 +778,11 @@ fn saucenao_in_use(settings: &Settings) -> bool {
 /// `_skip_saucenao_now`: whether to leave SauceNAO out of the searches from here on. Only when the
 /// setting asks for it. A batch has no "Continue with other engines" dialog, so the one-shot
 /// override of the Python worker (`force_continue_without_saucenao`) is always off.
-fn skip_saucenao_now(env: &BatchEnv<'_>) -> bool {
+fn skip_saucenao_now(env: &BatchEnv<'_>, opts: &PendingOptions) -> bool {
     let s = env.settings.lock().unwrap();
-    if !s.continue_without_saucenao_on_quota || !saucenao_in_use(&s) {
+    if !(s.continue_without_saucenao_on_quota || opts.force_continue_without_saucenao)
+        || !saucenao_in_use(&s)
+    {
         return false;
     }
     drop(s);
@@ -741,10 +791,11 @@ fn skip_saucenao_now(env: &BatchEnv<'_>) -> bool {
 
 /// `_saucenao_quota_should_pause`: whether to stop because SauceNAO's daily allowance is spent.
 /// Only when SauceNAO is in the engine order, and not when the user has said to carry on without it.
-fn saucenao_quota_should_pause(env: &BatchEnv<'_>) -> bool {
+fn saucenao_quota_should_pause(env: &BatchEnv<'_>, opts: &PendingOptions) -> bool {
     let s = env.settings.lock().unwrap();
     if !s.saucenao.pause_search_on_quota_exhausted
         || s.continue_without_saucenao_on_quota
+        || opts.force_continue_without_saucenao
         || !saucenao_in_use(&s)
     {
         return false;
