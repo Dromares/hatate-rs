@@ -50,7 +50,7 @@ check: the window's timers keep turning while it waits.
 
 `MIN_WIDTH x MIN_HEIGHT` is unchanged (1010 x 790). The `minimum_size_fits_every_state_in_both_schemes` scenario
 now also renders the Failed banner and the Activity page. What each state needs on the **host toolkit** (GTK 4.24;
-log `worktrees/DAN-2218-smoke-ea900c0.log`, head `ea900c0`; re-measured after the chip change of DAN-2297 in `worktrees/DAN-2321-smoke.log` with the same numbers; the hosted run on GTK 4.14 passed the same scenario):
+log `worktrees/DAN-2218-smoke-ea900c0.log`, head `ea900c0`; re-measured after the chip change of DAN-2297 in `worktrees/DAN-2321-smoke.log` with the same numbers; the hosted run on GTK 4.14 passed at that head and still gave Activity 909 px: see the finding below):
 
 | State | Dark | Light |
 |---|---|---|
@@ -64,6 +64,16 @@ log `worktrees/DAN-2218-smoke-ea900c0.log`, head `ea900c0`; re-measured after th
 | Review, 340 px rail in | 1000 x 548 | 1000 x 548 |
 
 The worst case is still 1000 x 729 against the stated 1010 x 790 (the window reads 1000 x 780 on the outer rect).
+
+**GTK 4.14 finding and fix (DAN-2324).** The hosted run on 4.14 printed `OUTER activity ... window=1000x780 content=1000x909`: the
+Activity page was allocated 129 px more than the window, so its status bar and log-path line ran off the bottom. The cause
+is the engine chips' `FlowBox`: asked for a height with no width, 4.14 lays it out at its minimum width, one chip per line,
+and the page then asks for the sum. 4.24 does not, so the host never showed it and the fit test (`ch >= need`) could not see
+it either. The chips now say `set_min_children_per_line(5)` (two rows at most), and the scenario asserts both
+`content height <= window height` and that the height asked for with no width (`unconstrained_min_h`, printed on every
+`OUTER` line) is at most the stated minimum. At `5e05e25` the hosted GTK 4.14 run prints `OUTER activity dark|light
+window=1000x780 content=1000x780 needs=777x653 unconstrained_min_h=653` (job 122472998643, `worktrees/DAN-2218-ci-5e05e25.log`),
+and `activity-min-*.png` from that run's artifact is 1000 x 780 with the log-path line and the status bar in view.
 Parser Health is its own dialog and has its own minimum: 760 x 460, rendered at it in `parser-health-min-*` below.
 
 ## 4. Differences from Python, on purpose
@@ -173,6 +183,13 @@ needed `set_can_focus(false)` on the FlowBox; marking only its `FlowBoxChild` wr
 stuck on Start Search (found in this fixup), so `smoke::activity_page_states_the_engines_and_tails_the_log` now walks Tab
 twelve times, asserts none lands in the chip row and that it reaches Parser health….
 
+**Parser Health first focus** (Oderisi's item A, DAN-2297): the site names are selectable labels, and the first one took the
+dialog's first focus and so opened already selected. Close now takes it (`window.set_focus`), the names stay selectable so
+they can be copied, and `smoke::parser_health_dialog_and_warning` asserts that no label holds a selection on open, that
+some label is still selectable, and that the first focus is Close. With the `set_focus` line removed that scenario goes red
+("a site name opened already selected"). The dialog's own Tab walk is still not judged from a shot (owner: the executor,
+DAN-2297).
+
 **Not measured by the author** (named, not passed): non-text boundaries (3:1 for the chips' borders, the banner
 frame and the focus ring on the new surfaces; the `ink-18` hairlines are 6.c's deliberate sub-3:1 set), the focus
 ring on the Failed banner's buttons, hover wash, window chrome, GPU renderer, HiDPI. The verifier's table covers
@@ -221,9 +238,9 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 | 2507 | `_on_continuing_without_saucenao` | `hatate-gtk/src/search_run.rs:811` `on_continuing_without_saucenao` |  |
 | 2521 | `_on_engine_alert` | `hatate-gtk/src/search_run.rs:1098` `on_engine_alert` | the remedy is in the body (D3) |
 | 2548 | `_on_worker_finished` | `hatate-gtk/src/search_run.rs:861` `on_worker_finished`, `on_run_ended` |  |
-| 3061 | `_research_rows` | `hatate-gtk/src/search_run.rs:957` `research_rows` | 6.d's context menu calls it |
-| 3076 | `_research_rows_with_engine` | `hatate-gtk/src/search_run.rs:986` `research_rows_with_engine` | 6.d's context menu calls it |
-| 3100 | `_research_rows_with_opposite_engine` | `hatate-gtk/src/search_run.rs:1012` `research_rows_with_opposite_engine` | 6.d's context menu calls it |
+| 3061 | `_research_rows` | `hatate-gtk/src/search_run.rs:957` `research_rows` | 6.d's context menu calls it (`queue_menu.rs:56`, wired here after #67 merged) |
+| 3076 | `_research_rows_with_engine` | `hatate-gtk/src/search_run.rs:986` `research_rows_with_engine` | 6.d's context menu calls it (`queue_menu.rs:57`) |
+| 3100 | `_research_rows_with_opposite_engine` | `hatate-gtk/src/search_run.rs:1012` `research_rows_with_opposite_engine` | 6.d's context menu calls it (`queue_menu.rs:58`) |
 | 3146 | `_check_match_availability` | `hatate-gtk/src/checks.rs:64` `check_match_availability` |  |
 | 3168 | `_on_availability_progress` | `hatate-gtk/src/checks.rs:136` `on_availability_progress` |  |
 | 3172 | `_on_availability_finished` | `hatate-gtk/src/checks.rs:145` `on_availability_finished` |  |
@@ -240,13 +257,13 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 | 53 | `_build_activity_page` | `hatate-gtk/src/activity.rs:142` `build` |  |
 | 79 | `_build_engines_card` | `hatate-gtk/src/activity.rs:142` `build` (the chips) |  |
 | 128 | `_engine_state` | `hatate-gtk/src/activity.rs:32` `engine_state` |  |
-| 158 | `refresh_engines` | `hatate-gtk/src/activity.rs:297` `refresh_engines` |  |
+| 158 | `refresh_engines` | `hatate-gtk/src/activity.rs:301` `refresh_engines` |  |
 | 199 | `_build_log_card` | `hatate-gtk/src/activity.rs:142` `build` (the log card) |  |
-| 235 | `_tail_log` | `hatate-gtk/src/activity.rs:317` `tail_log` |  |
-| 256 | `_on_follow_toggled` | `hatate-gtk/src/activity.rs:365` `on_follow_toggled` |  |
-| 264 | `_copy_log` | `hatate-gtk/src/activity.rs:378` `copy_log` |  |
-| 267 | `_open_log_folder` | `hatate-gtk/src/activity.rs:384` `open_log_folder` |  |
-| 274 | `set_activity_live` | `hatate-gtk/src/activity.rs:343` `set_activity_live` |  |
+| 235 | `_tail_log` | `hatate-gtk/src/activity.rs:327` `tail_log` |  |
+| 256 | `_on_follow_toggled` | `hatate-gtk/src/activity.rs:375` `on_follow_toggled` |  |
+| 264 | `_copy_log` | `hatate-gtk/src/activity.rs:388` `copy_log` |  |
+| 267 | `_open_log_folder` | `hatate-gtk/src/activity.rs:394` `open_log_folder` |  |
+| 274 | `set_activity_live` | `hatate-gtk/src/activity.rs:353` `set_activity_live` |  |
 
 ### `gui/parser_health_dialog.py`
 
@@ -373,7 +390,7 @@ The set to map is the union of two, so a test that exercises 6.e behaviour witho
 | 5008 | `TestResumeWithoutSaucenaoOverride.test_the_override_finishes_the_batch_despite_the_saved_setting_being_off` | **core**: the same test, second half: with `force_continue_without_saucenao` the run finishes with three searched, the one `continuing` line is said, and the saved setting stays off |
 | 5012 | `TestResumeWithoutSaucenaoOverride.test_the_saved_setting_is_unchanged_by_the_override` | **6.e**: the same scenario asserts the saved `continue_without_saucenao_on_quota` is as the user has it after the one-shot |
 | 5144 | `TestModeStackSizeFloor.test_queue_floor_ignores_activitys_width_and_reviews_height` | **6.e**: does not apply as written: the Rust window's floor is the stated `MIN_WIDTH x MIN_HEIGHT` (`set_size_request` on the window), not the maximum over its pages, and the mode stack is not homogeneous (`shell.rs`, `set_hhomogeneous(false)`). What stands is that no page makes the window grow past it: `smoke::minimum_size_fits_every_state_in_both_schemes` asserts the outer rect stays within the stated size for every state, Activity with every extra engine on included |
-| 5165 | `TestModeStackSizeFloor.test_switching_to_activity_grows_without_clipping` | **6.e**: `smoke::minimum_size_fits_every_state_in_both_schemes`, its `activity` state: the content area it is given at the stated minimum is at least what the page needs (width and height at that width), both schemes |
+| 5165 | `TestModeStackSizeFloor.test_switching_to_activity_grows_without_clipping` | **6.e**: `smoke::minimum_size_fits_every_state_in_both_schemes`, its `activity` state: the content area it is given at the stated minimum is at least what the page needs (width and height at that width) **and no taller than the window**, and the height the page asks for with no width is at most the stated minimum (the last two added after DAN-2324's 4.14 finding, section 3), both schemes |
 
 #### `tests/test_hydrus_import_poll.py` (1)
 
