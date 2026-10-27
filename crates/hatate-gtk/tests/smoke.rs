@@ -97,6 +97,14 @@ const SCENARIOS: &[Scenario] = &[
         "the_log_viewer_opens_on_close_and_selects_in_ink",
         the_log_viewer_opens_on_close_and_selects_in_ink,
     ),
+    (
+        "queue_view_holds_5000_rows_and_filters_without_touching_the_queue",
+        queue_view_holds_5000_rows_and_filters_without_touching_the_queue,
+    ),
+    (
+        "queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order",
+        queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order,
+    ),
 ];
 
 fn main() {
@@ -1553,4 +1561,95 @@ fn the_log_viewer_opens_on_close_and_selects_in_ink(app: &adw::Application) {
         viewer.window.close();
         f.close();
     }
+}
+
+fn queue_view_holds_5000_rows_and_filters_without_touching_the_queue(app: &adw::Application) {
+    use hatate_core::entry_filter::EntryFilter;
+    use hatate_core::table_cells::Column;
+    let mut seed = seeded(5000, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % MatchStatus::ALL.len()];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    assert_eq!(view.total_count(), 5000);
+    assert_eq!(view.visible_count(), 5000);
+    assert_eq!(view.cell(0, Column::File).unwrap().text, "img0.png");
+    assert_eq!(view.cell(1, Column::Status).unwrap().text, "\u{25cf} Good");
+    // A filter hides rows from the table, never from the queue.
+    let mut filter = EntryFilter::default();
+    filter.statuses = Some([MatchStatus::Good].into_iter().collect());
+    view.set_filter(filter);
+    assert_eq!(view.visible_count(), 5000 / 6 + usize::from(5000 % 6 > 1));
+    assert_eq!(f.w.s.queue.borrow().len(), 5000);
+    assert_eq!(view.cell(0, Column::File).unwrap().text, "img1.png");
+    // The selection resolves through the screen, so a hidden row cannot be reached.
+    view.select_row(0);
+    let id = view.selected_ids()[0];
+    assert_eq!(
+        f.w.s.queue.borrow().entry(id).unwrap().path,
+        "/lib/img1.png"
+    );
+    view.set_filter(EntryFilter::default());
+    assert_eq!(
+        view.selected_ids(),
+        vec![id],
+        "the selection survives a reset"
+    );
+    assert_eq!(view.row_of(id), Some(1));
+    f.close();
+}
+
+fn queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order(app: &adw::Application) {
+    use hatate_core::table_cells::Column;
+    let mut seed = seeded(4, MatchStatus::Good);
+    for (e, name) in seed
+        .iter_mut()
+        .zip(["/lib/c.png", "/lib/A.png", "/lib/b.png", "/lib/d.png"])
+    {
+        e.path = name.to_owned();
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let names = || -> Vec<String> {
+        f.w.s
+            .queue
+            .borrow()
+            .entries()
+            .iter()
+            .map(|e| e.filename().to_owned())
+            .collect()
+    };
+    assert_eq!(names(), ["c.png", "A.png", "b.png", "d.png"]);
+    view.on_header_clicked(Column::File);
+    assert_eq!(
+        names(),
+        ["A.png", "b.png", "c.png", "d.png"],
+        "ascending, case-folded"
+    );
+    assert_eq!(view.cell(0, Column::File).unwrap().text, "A.png");
+    view.on_header_clicked(Column::File);
+    assert_eq!(names(), ["d.png", "c.png", "b.png", "A.png"], "descending");
+    view.on_header_clicked(Column::File);
+    assert_eq!(view.sort_state(), None);
+    assert_eq!(
+        names(),
+        ["c.png", "A.png", "b.png", "d.png"],
+        "back to insertion order"
+    );
+    f.close();
 }

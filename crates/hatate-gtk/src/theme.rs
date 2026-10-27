@@ -278,6 +278,32 @@ dialog.alert separator { background: @ink_18; min-width: 1px; min-height: 1px; }
 textview.log, textview.log text { background: @sunken; color: @ink; font-family: %mono%; font-size: 12px; }
 .log-path { font-family: %mono%; font-size: %label%px; color: @ink_65; }
 
+/* ---- the Queue table (DAN-2217). Ink tiers are classes the cell renderer sets; the status glyphs
+   take the bundled face through Pango markup, so no rule names it here ---- */
+.queue-frame { background: @raised; border: 1px solid @ink_18; }
+.queue { background: @raised; color: @ink; }
+.queue > header { background: @raised; border-bottom: 1px solid @ink_28; }
+.queue > header > button { border-radius: 0; background: transparent; color: @ink_65; padding: 0 %space_3%px;
+  min-height: 28px; font-family: %mono%; font-size: %micro%px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; }
+.queue > header > button:hover { background: @ink_10; color: @ink; }
+.queue > header > button sort-indicator { color: @ink; min-width: 10px; min-height: 10px; }
+.queue > listview > row { min-height: 48px; border-bottom: 1px solid @ink_18; background: @raised; padding: 0; }
+.queue > listview > row:selected { background: @stamp_bg; color: @stamp_fg; }
+.queue > listview > row:selected label { color: @stamp_fg; }
+.queue-cell { padding: 0 %space_3%px; font-size: %body%px; color: @ink; }
+.queue-cell.ink-45 { color: @ink_45; }
+.queue-cell.ink-65 { color: @ink_65; }
+.queue-cell.ink-100 { color: @ink; }
+.queue-cell.tier-bold { font-weight: 700; }
+.queue-cell.tier-italic { font-style: italic; }
+.queue-cell.chip-boxed { border: 1px solid @ink_46; padding: 1px %space_2%px; margin: 0 %space_3%px; }
+.queue-cell.cell-mono, .queue-cell.cell-mono-bold { font-family: %mono%; font-size: 11px; }
+.queue-cell.cell-mono { font-weight: 500; }
+.queue-cell.cell-mono-bold { font-weight: 700; }
+.queue .thumb { margin: 0 %space_3%px; border: 1px solid @ink_28; background: @sunken; }
+.queue .thumb.thumb-failed { border-color: @ink_46; }
+
 /* scrolled windows draw soft edge gradients where content continues; flat has none */
 undershoot, overshoot, undershoot.top, undershoot.bottom, undershoot.left, undershoot.right {
   background: none; background-image: none; box-shadow: none; }

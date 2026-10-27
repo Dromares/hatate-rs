@@ -257,12 +257,15 @@ impl MainWindow {
         );
         {
             let mut q = self.s.queue.borrow_mut();
+            let mut added = Vec::with_capacity(unique.len());
             for p in &unique {
                 let mut entry = Entry::new(p.to_string_lossy().into_owned());
                 // Already computed: avoid re-hashing.
                 entry.hydrus_hash = path_to_hash.get(p).cloned();
-                q.push(entry);
+                added.push(q.push(entry));
             }
+            // `_register_new_entries`: so the header cycle can restore insertion order.
+            self.s.queue_view.register_new(&added);
         }
         self.list_changed();
         let total = self.s.queue.borrow().len();
@@ -276,7 +279,7 @@ impl MainWindow {
     }
 
     /// What `_refresh_table()` does for this ticket: the list changed, so the empty state, the
-    /// ghost glyph and the count follow it. 6.d's view hangs its refresh here.
+    /// ghost glyph, the table and the count follow it (`_refresh_table`).
     pub fn list_changed(&self) {
         self.refresh_queue_empty_state();
         self.refresh_sent_count_label();
@@ -407,9 +410,8 @@ impl MainWindow {
         let count = entries.len();
         {
             let mut q = self.s.queue.borrow_mut();
-            for e in entries.iter().cloned() {
-                q.push(e);
-            }
+            let added: Vec<_> = entries.iter().cloned().map(|e| q.push(e)).collect();
+            self.s.queue_view.register_new(&added);
         }
         self.list_changed();
         if self.s.unclean_shutdown {
@@ -648,6 +650,12 @@ impl MainWindow {
     /// Replaces the working list wholesale (Python rebinds `self.entries`).
     fn replace_entries(&self, entries: Vec<Entry>) {
         *self.s.queue.borrow_mut() = QueueModel::new(entries, self.s.settings.clone());
+        let ids: Vec<_> = {
+            let q = self.s.queue.borrow();
+            (0..q.len() as i64).filter_map(|r| q.id_at(r)).collect()
+        };
+        // `_register_new_entries(entries)`; the sort column and direction are left as they were.
+        self.s.queue_view.register_new(&ids);
         self.list_changed();
     }
 

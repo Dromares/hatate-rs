@@ -10,6 +10,7 @@
 use crate::dialogs::{AdwPrompter, Prompter};
 use crate::logview::{LogSource, RingLogs};
 use crate::menu::{self, Owner};
+use crate::queue_view::QueueView;
 use crate::shell::{self, Shell};
 use crate::theme;
 use crate::tokens::Scheme;
@@ -111,7 +112,9 @@ fn open_with_desktop(path: &Path) {
 pub struct State {
     pub paths: Paths,
     pub settings: Arc<Mutex<Settings>>,
-    pub queue: RefCell<QueueModel>,
+    pub queue: Rc<RefCell<QueueModel>>,
+    /// The Queue table (`self.table`, `self.table_model`).
+    pub queue_view: Rc<QueueView>,
     pub workers: Workers,
     pub file_hash_worker: Slot,
     pub missing_file_worker: Slot,
@@ -191,7 +194,8 @@ impl MainWindow {
     pub fn new(app: &adw::Application, env: Env) -> MainWindow {
         let loaded = Settings::load(&env.paths);
         let settings = Arc::new(Mutex::new(loaded.settings));
-        let queue = QueueModel::new(Vec::new(), settings.clone());
+        let queue = Rc::new(RefCell::new(QueueModel::new(Vec::new(), settings.clone())));
+        let queue_view = QueueView::new(queue.clone());
 
         let win = adw::ApplicationWindow::builder()
             .application(app)
@@ -226,7 +230,7 @@ impl MainWindow {
 
         let queue_stack = gtk::Stack::new();
         queue_stack.set_vexpand(true);
-        queue_stack.add_named(&placeholder_rows(), Some("rows"));
+        queue_stack.add_named(&queue_view.root, Some("rows"));
         let drop_zone = build_drop_zone();
         queue_stack.add_named(&drop_zone, Some("empty"));
         queue_stack.set_visible_child_name("empty");
@@ -269,7 +273,8 @@ impl MainWindow {
         let state = Rc::new(State {
             paths: env.paths.clone(),
             settings: settings.clone(),
-            queue: RefCell::new(queue),
+            queue,
+            queue_view,
             workers: Workers::new(),
             file_hash_worker: Slot::new(),
             missing_file_worker: Slot::new(),
@@ -395,12 +400,7 @@ impl MainWindow {
             let ghost = self.ghost_glyph_for("queue");
             self.s.shell.root.set_glyph(&ghost);
         }
-        if let Some(count) = self.s.queue_stack.child_by_name("rows") {
-            let n = self.s.queue.borrow().len();
-            if let Some(label) = count.first_child().and_downcast::<gtk::Label>() {
-                label.set_text(&rows_text(n));
-            }
-        }
+        self.s.queue_view.rebuild();
     }
 
     /// `status_label.setText`.
@@ -516,25 +516,6 @@ impl MainWindow {
 /// The stored `theme` setting.
 fn theme_setting(s: &State) -> String {
     s.settings.lock().unwrap().theme.clone()
-}
-
-/// What the Queue's list page says until 6.d replaces it with the `ColumnView`.
-fn rows_text(n: usize) -> String {
-    if n == 0 {
-        "The list view arrives in 6.d.".to_owned()
-    } else {
-        format!("{n} image(s) in the list. The list view arrives in 6.d.")
-    }
-}
-
-fn placeholder_rows() -> gtk::Widget {
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let label = widgets::muted(&rows_text(0));
-    label.set_halign(gtk::Align::Center);
-    label.set_valign(gtk::Align::Center);
-    label.set_vexpand(true);
-    page.append(&label);
-    page.upcast()
 }
 
 /// Review's frame at its minimum footprint, until 6.f fills it: two previews of at least
