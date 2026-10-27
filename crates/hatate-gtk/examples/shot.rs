@@ -477,8 +477,6 @@ fn first_popover_menu(w: &gtk4::Widget) -> Option<gtk4::PopoverMenu> {
     None
 }
 
-/// The `modelbutton` row that holds a label reading `text`, anywhere under `w` (popovers
-/// included).
 /// Hides every label whose text starts with `prefix`.
 fn hide_label_starting(w: &gtk4::Widget, prefix: &str) {
     if let Some(l) = w.downcast_ref::<gtk4::Label>() {
@@ -493,6 +491,8 @@ fn hide_label_starting(w: &gtk4::Widget, prefix: &str) {
     }
 }
 
+/// The `modelbutton` row that holds a label reading `text`, anywhere under `w` (popovers
+/// included).
 fn find_row(w: &gtk4::Widget, text: &str) -> Option<gtk4::Widget> {
     if let Some(l) = w.downcast_ref::<gtk4::Label>() {
         if l.text() == text {

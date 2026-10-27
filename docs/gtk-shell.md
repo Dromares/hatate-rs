@@ -1574,8 +1574,10 @@ list. The list view arrives in 6.d.`, x 367 to 722, y 481 to 501) seen through t
 so the label's descender rows 497 to 499 (the `g` of "image", the `(` `)` of "(s)") show below it. **Control:** the
 `dialog-nolabel` state (the same shot with that label hidden; the two trees differ only in that label's line) on the
 CI toolkit, run 40485308569 at `1135a27`: with the label 35 pixels in that band, without it 0, dark and light; the
-two shots differ by exactly those 35 pixels in y >= 497. The other 3,161 differing pixels lie in y 293 to 496, 3,157 of them at
-7/255 or less; not explained. The label's glyphs also show, dimmed the same way, beside the sheet.
+two shots differ by exactly those 35 pixels in y >= 497. In the dark pair the other 3,161 differing pixels
+(3,196 in all) lie in y 293 to 496, 3,157 of them at 7/255 or less; in the light pair 2,133 pixels differ in
+all, so 2,098 besides those 35. Not explained. The label's glyphs also show, dimmed the same way, beside the
+sheet.
 **Decision: no change to the scrim.** A modal shows the window's content around the sheet, dimmed; that is what the
 scrim is for, and the position comes from layout, not from the renderer, so the cairo-under-Xvfb question does not
 move it. It is not a stray widget or a paint bug. No real-display capture was taken; the claim is about this layout
