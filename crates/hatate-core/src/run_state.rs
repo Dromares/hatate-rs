@@ -324,6 +324,12 @@ impl Reporter for RunChannel {
         }
     }
 
+    fn updated(&self, index: usize, entry: &Entry) {
+        if let Some(next) = &self.next {
+            next.updated(index, entry);
+        }
+    }
+
     fn progress(&self, done: usize, total: usize) {
         let now = self.clock.monotonic();
         let state = {
@@ -338,6 +344,12 @@ impl Reporter for RunChannel {
         self.set(state);
         if let Some(next) = &self.next {
             next.progress(done, total);
+        }
+    }
+
+    fn continuing_without_saucenao(&self, searched: i64, remaining: i64) {
+        if let Some(next) = &self.next {
+            next.continuing_without_saucenao(searched, remaining);
         }
     }
 

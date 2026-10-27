@@ -12,6 +12,7 @@ use crate::filter_bar::FilterBar;
 use crate::logview::{LogSource, RingLogs};
 use crate::menu::{self, Owner};
 use crate::queue_view::QueueView;
+use crate::search_run::{SearchBackend, SearchRun};
 use crate::shell::{self, Shell};
 use crate::theme;
 use crate::tokens::Scheme;
@@ -81,6 +82,13 @@ pub struct Env {
     pub log_ring: LogRing,
     /// This run's crash marker; consumed at a clean close (`mark_clean_shutdown`).
     pub run_session: Option<RunSession>,
+    /// The search engines a run uses; the shipped window builds the real ones on the first Start
+    /// Search, a test gives its own.
+    pub search: Option<SearchBackend>,
+    /// `time.monotonic()`, for the run's pace estimate.
+    pub monotonic: Rc<dyn Fn() -> f64>,
+    /// Parser Health's live check (`core/parser_probe.py`); none in the shipped window.
+    pub probe: Option<Arc<dyn crate::parser_health::ProbeRunner>>,
 }
 
 impl Env {
@@ -95,8 +103,21 @@ impl Env {
             logs: None,
             log_ring: LogRing::new(),
             run_session: None,
+            search: None,
+            monotonic: Rc::new(system_monotonic),
+            probe: None,
         }
     }
+}
+
+/// Seconds from a fixed origin, never going back.
+fn system_monotonic() -> f64 {
+    use std::sync::OnceLock;
+    static ORIGIN: OnceLock<std::time::Instant> = OnceLock::new();
+    ORIGIN
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_secs_f64()
 }
 
 /// Hands a file or folder to the desktop's default handler.
@@ -124,6 +145,14 @@ pub struct State {
     pub thumbs: crate::thumbnails::Scheduler,
     pub missing_file_worker: Slot,
     pub autosave_worker: Slot,
+    /// `self.availability_worker` and `self.upscale_check_worker`.
+    pub availability_worker: Slot,
+    pub upscale_check_worker: Slot,
+    /// The live check of Parser Health, off the main thread.
+    pub parser_probe_worker: Slot,
+    /// The live check itself; the shipped window has none (`parser_probe.py` is not ported).
+    pub probe: Option<Arc<dyn crate::parser_health::ProbeRunner>>,
+    pub parser_health_dialog: RefCell<Option<Rc<crate::parser_health::ParserHealthDialog>>>,
     /// Set while an autosave write is on the pool, so close can wait for it.
     pub autosave_inflight: Arc<AtomicBool>,
     pub autosave_timer: RefCell<Option<glib::SourceId>>,
@@ -140,6 +169,8 @@ pub struct State {
     pub drop_zone: gtk::Overlay,
     pub run_banner: widgets::RunBanner,
     pub quota_banner: widgets::QuotaBanner,
+    /// The banner of a run that ended on `Ending::Failed` (call 2b).
+    pub failed_banner: widgets::FailedBanner,
     /// The Crashed "Nothing survived." variant of the empty state, while it is showing.
     pub nothing_survived: RefCell<Option<widgets::NothingSurvived>>,
     /// `self._unclean_shutdown`.
@@ -162,6 +193,10 @@ pub struct State {
     pub win: adw::ApplicationWindow,
     /// The dialogs that are open (the log viewer), so a test can find them.
     pub log_viewer: RefCell<Option<Rc<crate::logview::LogViewer>>>,
+    /// The search run: backend, inbox, estimate, alert listener.
+    pub search: Rc<SearchRun>,
+    /// The Activity page.
+    pub activity: Rc<crate::activity::ActivityPage>,
 }
 
 /// The window and its state.
@@ -227,7 +262,7 @@ fn restore_table_header_state(settings: &Mutex<Settings>, view: &QueueView) {
 }
 
 impl MainWindow {
-    pub fn new(app: &adw::Application, env: Env) -> MainWindow {
+    pub fn new(app: &adw::Application, mut env: Env) -> MainWindow {
         let loaded = Settings::load(&env.paths);
         let settings = Arc::new(Mutex::new(loaded.settings));
         let queue = Rc::new(RefCell::new(QueueModel::new(Vec::new(), settings.clone())));
@@ -264,6 +299,9 @@ impl MainWindow {
         let quota_banner = widgets::quota_pause_banner();
         quota_banner.root.set_visible(false);
         queue_page.append(&quota_banner.root);
+        let failed_banner = widgets::failed_banner();
+        failed_banner.root.set_visible(false);
+        queue_page.append(&failed_banner.root);
 
         let queue_stack = gtk::Stack::new();
         queue_stack.set_vexpand(true);
@@ -300,6 +338,7 @@ impl MainWindow {
         queue_stack.set_visible_child_name("empty");
         queue_page.append(&queue_stack);
 
+        let activity = crate::activity::build(&logs.log_path());
         let handle: Rc<OnceCell<MainWindowWeak>> = Rc::new(OnceCell::new());
         let call = |handle: &Rc<OnceCell<MainWindowWeak>>, f: fn(&MainWindow)| {
             let handle = handle.clone();
@@ -314,6 +353,7 @@ impl MainWindow {
             &[
                 ("queue", queue_page.clone().upcast()),
                 ("review", review_frame()),
+                ("activity", activity.root.clone().upcast()),
             ],
             move |key| {
                 if let Some(w) = mode_handle.get().and_then(MainWindowWeak::upgrade) {
@@ -347,6 +387,11 @@ impl MainWindow {
             thumbs: Default::default(),
             missing_file_worker: Slot::new(),
             autosave_worker: Slot::new(),
+            availability_worker: Slot::new(),
+            upscale_check_worker: Slot::new(),
+            parser_probe_worker: Slot::new(),
+            probe: env.probe.take(),
+            parser_health_dialog: RefCell::new(None),
             autosave_inflight: Arc::new(AtomicBool::new(false)),
             autosave_timer: RefCell::new(None),
             prompter,
@@ -361,6 +406,7 @@ impl MainWindow {
             drop_zone,
             run_banner,
             quota_banner,
+            failed_banner,
             nothing_survived: RefCell::new(None),
             unclean_shutdown: env.unclean_shutdown,
             closing: Cell::new(false),
@@ -373,6 +419,8 @@ impl MainWindow {
             scheme: Cell::new(Scheme::Dark),
             win: win.clone(),
             log_viewer: RefCell::new(None),
+            search: SearchRun::new(env.search.take(), env.monotonic.clone()),
+            activity,
         });
         let window = MainWindow {
             win: win.clone(),
@@ -380,6 +428,10 @@ impl MainWindow {
         };
         let _ = handle.set(window.downgrade());
         window.install_actions(app);
+        window.start_search_inbox();
+        window.wire_activity();
+        window.refresh_engines();
+        window.tail_log();
         window.wire_thumbnails();
         window.wire_clear_cache_label(&menubar);
         window.wire_table_context_menu();
@@ -475,8 +527,11 @@ impl MainWindow {
         shell::ghost_glyph(key).to_owned()
     }
 
-    /// `_on_mode_changed(key)`: a hook for the views (Review, 6.f).
-    fn on_mode_changed(&self, _key: &str) {}
+    /// `_on_mode_changed(key)`: whichever mode just came to the front gets brought up to date.
+    /// Activity tails the log while it is on screen. DEFERRED(6.f): `refresh_review`.
+    fn on_mode_changed(&self, key: &str) {
+        self.set_activity_live(key == "activity");
+    }
 
     /// `_refresh_queue_empty_state()`: an empty list shows the drop zone instead of an empty grid.
     /// Keyed on the list and not on how many rows are visible: a filter that matches nothing still
@@ -540,18 +595,18 @@ impl MainWindow {
             });
         }
         self.win.add_action(&theme_action);
-        // The Sites menu's per-site toggles: a stateful action with the site as its target.
-        // DEFERRED(6.e): disabled until the Sites menu is wired.
-        let site = gio::SimpleAction::new_stateful(
-            "site",
-            Some(glib::VariantTy::STRING),
-            &"".to_variant(),
-        );
-        site.set_enabled(false);
-        self.win.add_action(&site);
+        // `_build_sites_menu`: one checkable action per site, checked when the setting has it.
+        self.install_site_actions();
         // `toggle-search` is the Start Search button's action (6.e wires it).
         let toggle = gio::SimpleAction::new("toggle-search", None);
-        toggle.set_enabled(false); // DEFERRED(6.e)
+        {
+            let w = self.downgrade();
+            toggle.connect_activate(move |_, _| {
+                if let Some(w) = w.upgrade() {
+                    w.action_toggle_search();
+                }
+            });
+        }
         self.win.add_action(&toggle);
 
         for (action, accel) in menu::accelerators() {
@@ -578,6 +633,9 @@ impl MainWindow {
                 "save-session-as" => w.action_save_session_as(),
                 "open-session" => w.action_open_session(),
                 "clear-session" => w.action_clear_session(),
+                "sites-select-all" => w.set_all_sites(true),
+                "sites-select-none" => w.set_all_sites(false),
+                "parser-health" => w.action_parser_health(),
                 "open-log" => w.action_open_log(),
                 "view-logs" => w.action_view_logs(),
                 "export-results" => w.action_export_results(None),
@@ -609,10 +667,52 @@ impl MainWindow {
                 }
             }
         });
-        // DEFERRED(6.e): Resume Queue, "Review the waiting", "Continue with other engines".
-        self.s.run_banner.resume.set_sensitive(false);
+        // `run_banner.resume -> action_start_search`.
+        self.s.run_banner.resume.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.action_start_search();
+                }
+            }
+        });
+        // `continue_button -> _resume_without_saucenao`.
+        self.s.quota_banner.keep_going.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.resume_without_saucenao();
+                }
+            }
+        });
+        // The Failed banner: Resume Queue starts a search, View Log opens the log viewer, Dismiss
+        // closes it and clears the strip's note.
+        self.s.failed_banner.resume.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.action_start_search();
+                }
+            }
+        });
+        self.s.failed_banner.view_log.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.action_view_logs();
+                }
+            }
+        });
+        self.s.failed_banner.dismiss.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.hide_failed_banner();
+                }
+            }
+        });
+        // DEFERRED(6.d/6.f): "Review the waiting" needs the table's row selection and Review.
         self.s.quota_banner.review.set_sensitive(false);
-        self.s.quota_banner.keep_going.set_sensitive(false);
         // The empty state's three buttons. Query Hydrus follows its (disabled) action.
     }
 }

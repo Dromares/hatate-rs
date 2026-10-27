@@ -51,7 +51,7 @@ Every `.py` file in `core/`, `core/boorus/`, `workers/` and `tools/` at `Hatate-
 | `core/multipage_resolve.py` | `multipage_resolve.rs` | ported | #28 |  |
 | `core/net.py` | `net/*`, `pyresponse.rs` | ported | #6, #24, #26 |  |
 | `core/parser_health.py` | `parser_health.rs` | ported | #24 |  |
-| `core/parser_probe.py` | - | not ported | Phase 7 | A developer tool that checks each parser against a live post on the real site. The Rust parsers are checked against the corpus; a live probe cannot run in CI (no live network) and is a maintenance tool, not part of the app. Phase 7 decides whether to keep one. |
+| `core/parser_probe.py` | - | not ported | Phase 7 | A developer tool that checks each parser against a live post on the real site. The Rust parsers are checked against the corpus; a live probe cannot run in CI (no live network) and is a maintenance tool, not part of the app. Phase 7 decides whether to keep one. The Parser Health button ships disabled (6.e, DAN-2290); if Phase 7 drops the probe, the button goes with it. |
 | `core/paths.py` | `paths.rs` | ported | #5 |  |
 | `core/pawchive_index.py` | `pawchive_index/*` | ported | #38, #44 | Index (#38), wiring into the engines (#44). |
 | `core/pawchive_lookup.py` | `engines/pawchive_lookup.rs` | ported | #18 |  |

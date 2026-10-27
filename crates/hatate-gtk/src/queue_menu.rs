@@ -3,8 +3,8 @@
 //!
 //! What the menu says and when an entry is enabled is `hatate_core::table_menu`. This file turns
 //! it into a popover, resolves the selection once when the menu is built (a row number can move
-//! while a menu is open; an id does not), and runs the picked entry. The re-search and Hydrus
-//! entries are in the menu and disabled: 6.e and 6.g give them handlers.
+//! while a menu is open; an id does not), and runs the picked entry. The Compare and Hydrus
+//! entries are in the menu and disabled: 6.f and 6.g give them handlers.
 
 use crate::window::MainWindow;
 use gtk4 as gtk;
@@ -25,6 +25,11 @@ pub fn is_wired(action: Action) -> bool {
             | Action::Export
             | Action::WriteTagFiles
             | Action::Remove
+            | Action::Research
+            | Action::ResearchWithEngine(_)
+            | Action::ResearchWithOppositeEngine
+            | Action::CheckUpscaling
+            | Action::CheckAvailability
     )
 }
 
@@ -48,8 +53,17 @@ impl MainWindow {
             Action::Export => self.action_export_results(Some(ids)),
             Action::WriteTagFiles => self.action_write_tag_files(Some(ids)),
             Action::Remove => self.remove_rows(ids),
-            // DEFERRED(6.e): `_research_rows*`, `_check_rows_for_upscaling`,
-            // `_check_match_availability`, `_open_compare_dialog`.
+            Action::Research => self.research_rows(ids),
+            Action::ResearchWithEngine(engine) => self.research_rows_with_engine(ids, engine),
+            Action::ResearchWithOppositeEngine => self.research_rows_with_opposite_engine(ids),
+            Action::CheckUpscaling => self.check_rows_for_upscaling(ids),
+            // The menu enables this for exactly one row.
+            Action::CheckAvailability => {
+                if let Some(id) = ids.first() {
+                    self.check_match_availability(*id);
+                }
+            }
+            // DEFERRED(6.f): `_open_compare_dialog`.
             // DEFERRED(6.g): the Hydrus entries.
             _ => {}
         }
@@ -144,5 +158,33 @@ impl MainWindow {
                 w.show_table_context_menu(x, y);
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 6.e gives the re-search, upscale-check and availability entries their handlers; Compare
+    /// (6.f) and the Hydrus entries (6.g) stay off.
+    #[test]
+    fn the_entries_6e_owns_are_wired_and_the_later_ones_are_not() {
+        for a in [
+            Action::Research,
+            Action::ResearchWithEngine("iqdb"),
+            Action::ResearchWithOppositeEngine,
+            Action::CheckUpscaling,
+            Action::CheckAvailability,
+        ] {
+            assert!(is_wired(a), "{a:?}");
+        }
+        for a in [
+            Action::Compare,
+            Action::SendToHydrus,
+            Action::ShowInHydrus,
+            Action::DeleteFromHydrus,
+        ] {
+            assert!(!is_wired(a), "{a:?}");
+        }
     }
 }

@@ -214,8 +214,10 @@ button.pill.primary .keycap { border-color: @stamp_fg; color: @stamp_fg; }
 .hint-bar .strong { color: @ink; font-weight: 700; }
 
 /* ---- chips and disclosure ---- */
-.chip { font-family: %mono%; font-size: %micro%px; letter-spacing: 0.08em; padding: 1px 6px; border: 1px solid @ink_18; color: @ink_45; }
-.chip.on { border-color: @ink_28; color: @ink_65; }
+/* DAN-2297: a chip is text, so it clears 4.5:1 in both schemes: `ink_65` off (the mockup's `ink-45` measured
+   2.71 to 3.46:1), `ink` at weight 700 on, so the two states differ by weight and not by contrast alone. */
+.chip { font-family: %mono%; font-size: %micro%px; letter-spacing: 0.08em; padding: 1px 6px; border: 1px solid @ink_18; color: @ink_65; }
+.chip.on { border-color: @ink_28; color: @ink; font-weight: 700; }
 button.disclosure { background: none; border: none; box-shadow: none; padding: 0; min-height: 0; color: @ink_65;
   font-family: %mono%; font-size: %label%px; letter-spacing: %tracking_label%px; font-weight: 700; }
 
@@ -238,6 +240,14 @@ button.disclosure { background: none; border: none; box-shadow: none; padding: 0
 .banner-glyph { font-family: %status%; font-size: 17px; color: @ink; }
 .banner-head { font-size: %label%px; letter-spacing: %tracking_label%px; font-weight: 700; color: @ink; }
 .banner-body { color: @ink_65; font-size: %body%px; }
+/* Activity: the pipeline sentence, the "Show in Queue" hint, the log footer. */
+.pipeline-line { font-family: %mono%; font-size: %label%px; color: @ink_65; }
+.pipeline-names { font-family: %mono%; font-size: %label%px; font-weight: 700; color: @ink; }
+.button-hint { font-family: %mono%; font-size: %micro%px; color: @ink_65; }
+.log-footer { font-family: %mono%; font-size: %micro%px; color: @ink_65; }
+/* Parser Health: working is ink_65, broken is ink_100 (the tiers Status uses). */
+.health-ok { color: @ink_65; }
+.health-bad { color: @ink; font-weight: 700; }
 .meta-label { font-size: %label%px; letter-spacing: 0.08em; color: @ink_65; }
 .meta-figure { font-size: %label%px; letter-spacing: 0.08em; color: @ink; font-weight: 700; }
 .meta-figure.quiet { color: @ink_65; font-weight: 400; }
@@ -576,6 +586,29 @@ mod tests {
             for surface in [p.page, p.raised, p.zebra()] {
                 let c = contrast(p.ink_65.over(surface), surface);
                 assert!(c >= 4.5, "{scheme:?} ink-65 on {}: {c:.2}", surface.hex());
+            }
+        }
+    }
+
+    /// DAN-2297 ruling 1: the Activity chips are text, so off reads in `ink_65` (`ink_45` and `ink_58`
+    /// measured 2.7 to 4.4:1) and on in `ink` at weight 700; both clear 4.5:1 in both schemes.
+    #[test]
+    fn the_engine_chips_are_text_and_clear_four_and_a_half() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let css = css(scheme);
+            let rule = |sel: &str| {
+                css.lines()
+                    .find(|l| l.starts_with(sel))
+                    .unwrap_or_else(|| panic!("no {sel} rule"))
+                    .to_owned()
+            };
+            assert!(rule(".chip {").contains("color: @ink_65;"), "{scheme:?}");
+            let on = rule(".chip.on {");
+            assert!(on.contains("color: @ink;") && on.contains("font-weight: 700"));
+            let p = Palette::of(scheme);
+            for surface in [p.page, p.raised] {
+                assert!(contrast(p.ink_65.over(surface), surface) >= 4.5);
+                assert!(contrast(p.ink, surface) >= 4.5);
             }
         }
     }

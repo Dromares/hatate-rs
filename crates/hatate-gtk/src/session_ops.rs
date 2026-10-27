@@ -305,8 +305,6 @@ impl MainWindow {
 
     /// `_refresh_run_progress_label()`: the count, and the estimate that joins it once a run has
     /// one. With no run to report the strip says so rather than going blank (R-05).
-    /// DEFERRED(6.e): the pace estimate of a live run (`_run_estimate`); here a run that is
-    /// active reports its count and `ETA paused`/`ETA \u{2014}` until 6.e supplies the estimate.
     pub fn refresh_run_progress_label(&self) {
         let (done, total) = self.s.run_progress.get();
         let strip = &self.s.shell;
@@ -328,7 +326,12 @@ impl MainWindow {
             thousands(done),
             thousands(total)
         ));
-        strip.run_eta_label.set_text(paused_eta);
+        // The estimate joins the count a couple of images later, once there is enough of the run to
+        // average; without one the strip reads as it does when idle or paused.
+        match self.live_eta_text() {
+            Some(eta) => strip.run_eta_label.set_text(&eta),
+            None => strip.run_eta_label.set_text(paused_eta),
+        }
     }
 
     /// `_refresh_sent_count_label()`: keeps the status-bar "N sent" readout in step with the list.
@@ -572,7 +575,8 @@ impl MainWindow {
         );
     }
 
-    /// Whether a search is running (`self.worker.isRunning()`); 6.e owns the worker.
+    /// Whether a search is running (`self.worker.isRunning()`): the model's flag, which a window
+    /// search and an MCP re-search both raise.
     pub fn search_running(&self) -> bool {
         self.s.queue.borrow().search_running()
     }
@@ -663,8 +667,8 @@ impl MainWindow {
     /// replaced, and drops its results (`retire_attrs(..., clear=True)`).
     pub fn stop_background_workers(&self) {
         self.s.file_hash_worker.retire();
+        self.s.availability_worker.retire();
         self.s.thumbs.retire();
-        // DEFERRED(6.e): `availability_worker`.
     }
 
     /// `clear_session()`: discards the automatic session, both stores. `true` when nothing went
@@ -837,11 +841,14 @@ impl MainWindow {
             return;
         }
         // DEFERRED(6.i): stop the MCP server first. DEFERRED(6.g): close the Pawchive Index window.
-        // DEFERRED(6.e): `engine_alerts.unsubscribe`.
+        // `engine_alerts.unsubscribe`, the stop request and the engines' shutdown.
+        self.close_search_run();
+        self.set_activity_live(false);
         // Ask every worker to stop and silence it: results for a window on its way out are
         // never shown (`retire_attrs(..., grace_ms=2000)`).
         self.s.file_hash_worker.retire();
         self.s.missing_file_worker.retire();
+        self.retire_checks();
         // Waits for an in-flight write and stops the timer, before the final save: a background
         // write landing afterwards would put a slightly older session on top of the one meant to
         // be authoritative (`SessionAutosaver.shutdown`).
@@ -855,7 +862,6 @@ impl MainWindow {
         if let Some(id) = self.s.autosave_timer.borrow_mut().take() {
             id.remove();
         }
-        // DEFERRED(6.e): `lens_browser.shutdown()`.
         {
             // `_save_table_header_state()`.
             let sections = self.s.queue_view.header_sections();

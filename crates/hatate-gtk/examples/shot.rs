@@ -5,7 +5,8 @@
 //! `STATE` is one of `empty` (default), `rows`, `crashed`, `survived`, `quota`, `dialog` (the
 //! Clear Session question), `dialog-nolabel` (the same with the Queue page's placeholder label hidden, DAN-2256), `logs` (the log viewer), `logs-selected` (the log viewer with the path
 //! line selected and focused) or `logs-selected-body` (the log body selected and focused), `menu` (the first menu open) or `focus` (the
-//! first button focused with the ring showing), `focus-files` / `focus-folder` (the stamp-filled Add
+//! first button focused with the ring showing), `failed` (the Failed banner), `activity` (the
+//! Activity page) or `parser-health` (the Parser Health dialog), `focus-files` / `focus-folder` (the stamp-filled Add
 //! files, the hollow Add folder, focused with the ring showing) or `hover-folder` (Add folder under
 //! the pointer) or `menu-hover` (the Files menu open with `Save Session As…` under the pointer). The Queue states (6.d) are `queue` (24 rows
 //! with real pictures, all six statuses), `queue-selected` (two rows selected), `queue-sorted` (by
@@ -119,7 +120,8 @@ fn main() -> glib::ExitCode {
     };
     let mut unclean = false;
     match state.as_str() {
-        "rows" | "dialog" | "dialog-nolabel" => save(&rows(12)),
+        "rows" | "dialog" | "dialog-nolabel" | "failed" | "activity" | "parser-health"
+        | "tab-failed" | "tab-activity" => save(&rows(12)),
         st if st.starts_with("queue") => save(&queue_rows(
             &pics,
             if st.starts_with("queue-5000") {
@@ -192,15 +194,19 @@ fn main() -> glib::ExitCode {
                 return glib::ControlFlow::Continue;
             }
             // The log viewer is its own window; its shot is that window's, not the main one's.
-            let logs_window = state
-                .starts_with("logs")
-                .then(|| {
-                    gtk4::Window::list_toplevels()
-                        .into_iter()
-                        .filter_map(|w| w.downcast::<gtk4::Window>().ok())
-                        .find(|w| w.title().as_deref() == Some("Logs") && w.is_mapped())
-                })
-                .flatten();
+            let other = if state.starts_with("logs") {
+                Some("Logs")
+            } else if state == "parser-health" {
+                Some("Parser Health")
+            } else {
+                None
+            };
+            let logs_window = other.and_then(|title| {
+                gtk4::Window::list_toplevels()
+                    .into_iter()
+                    .filter_map(|w| w.downcast::<gtk4::Window>().ok())
+                    .find(|w| w.title().as_deref() == Some(title) && w.is_mapped())
+            });
             let main_app = win.application();
             let win: &gtk4::Window = logs_window.as_ref().unwrap_or(win.upcast_ref());
             let renderer = win.native().and_then(|n| n.renderer()).expect("renderer");
@@ -261,6 +267,11 @@ fn prepare(window: &MainWindow, state: &str) {
             window.activate_action("clear-session");
         }
         "logs" => window.activate_action("view-logs"),
+        // 6.e: the Failed banner (a synthetic fault message, path-free), the Activity page and
+        // the Parser Health dialog (its live check is off in this build, DAN-2290).
+        "failed" => window.show_failed_banner("The run stopped on a fault (synthetic)."),
+        "activity" => window.set_mode("activity"),
+        "parser-health" => window.activate_action("parser-health"),
         "logs-selected" | "logs-selected-body" => {
             window.activate_action("view-logs");
             let viewer = window
@@ -289,8 +300,16 @@ fn prepare(window: &MainWindow, state: &str) {
                 p.popup();
             }
         }
-        "tab" => {
+        "tab" | "tab-failed" | "tab-activity" => {
             // Walks Tab from the top and prints what takes focus, for the verdict's Tab order.
+            // `tab-failed` and `tab-activity` do it with the Failed banner up or on the Activity page.
+            match state {
+                "tab-failed" => {
+                    window.show_failed_banner("The run stopped on a fault (synthetic).")
+                }
+                "tab-activity" => window.set_mode("activity"),
+                _ => {}
+            }
             window.win.set_focus_visible(true);
             let win = window.win.clone();
             glib::idle_add_local_once(move || {

@@ -1,9 +1,9 @@
-//! The action differential, Rust side (DAN-2215, Phase 6 acceptance).
+//! The action differential, Rust side (DAN-2215 and DAN-2218, Phase 6 acceptance).
 //!
 //! Runs the same scripted action sequences the Python driver runs through `MainWindow` at
 //! `76c85c4`, through the Rust window, and writes one JSON digest per step in the same shape.
 //! The comparer, the scenario generator and the Python driver live outside the repo
-//! (`worktrees/DAN-2215-tools`, the tree is Rust only); this is the half that has to be Rust.
+//! (`worktrees/DAN-2215-tools` and `worktrees/DAN-2218-tools`, the tree is Rust only); this is the half that has to be Rust.
 //!
 //! Test-only. It needs a display and reads its inputs from the environment, and nothing of that
 //! exists in the shipped binary: `HATATE_DIFF_SCENARIOS` (JSONL), `HATATE_DIFF_OUT`,
@@ -114,6 +114,17 @@ fn make_files(ctx: &Ctx, spec: &Value) {
         for (rel, content) in files {
             let p = ctx.files.join(rel);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            // `@dir` and `@missing` are the unopenable inputs: the path is a directory, or there
+            // is nothing at it (DAN-2231). Mode 000 is no variant: the run is root in its own
+            // user namespace and reads it.
+            match content.as_str() {
+                Some("@dir") => {
+                    std::fs::create_dir_all(&p).unwrap();
+                    continue;
+                }
+                Some("@missing") => continue,
+                _ => {}
+            }
             // The scenario holds the bytes as latin-1 text, as the Python driver writes them.
             let bytes: Vec<u8> = content
                 .as_str()
@@ -140,6 +151,9 @@ fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
     let opened = Rc::new(RefCell::new(Vec::<PathBuf>::new()));
     let mut env = Env::new(paths.clone(), spec["unclean"].as_bool().unwrap_or(false));
     env.prompter = Some(script.clone());
+    // Start Search runs against scripted engines (never a network), as in the smoke tests.
+    let (backend, search) = common::search::Scripted::new(&paths);
+    env.search = Some(backend);
     let now = ctx.now;
     env.clock = Rc::new(move || now);
     {
@@ -148,6 +162,8 @@ fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
     }
     let w = MainWindow::new(app, env);
     w.win.present();
+    // The startup hash pass lands before the first step, not during a one-image run.
+    pump_for(400);
     settle(&w);
     let mut trace = vec![digest(ctx, &paths, &w, &script, &opened, "start")];
     script.reset();
@@ -165,7 +181,7 @@ fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
                 _ => Response::No,
             }));
         }
-        do_step(ctx, &w, &script, step);
+        do_step(ctx, &w, &script, &search, step);
         settle(&w);
         trace.push(digest(
             ctx,
@@ -186,7 +202,13 @@ fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
     trace
 }
 
-fn do_step(ctx: &Ctx, w: &MainWindow, script: &Script, step: &Value) {
+fn do_step(
+    ctx: &Ctx,
+    w: &MainWindow,
+    script: &Script,
+    search: &common::search::Scripted,
+    step: &Value,
+) {
     let op = step["op"].as_str().unwrap();
     let strs = |k: &str| -> Vec<String> {
         step[k]
@@ -228,6 +250,23 @@ fn do_step(ctx: &Ctx, w: &MainWindow, script: &Script, step: &Value) {
             }
         }
         "open_log" => w.activate_action("open-log"),
+        "start" | "continue_without_saucenao" => run_search_step(w, search, step),
+        "alert" => {
+            search.alerts.raise_alert(&alert_of(&step["alert"]));
+        }
+        "site" => {
+            let all = hatate_gtk::menu::all_site_options();
+            let i = all
+                .iter()
+                .position(|s| s == step["site"].as_str().unwrap())
+                .expect("a known site");
+            w.activate_action(&hatate_gtk::menu::site_action(i));
+        }
+        "sites_all" => w.activate_action(if step["on"].as_bool().unwrap() {
+            "sites-select-all"
+        } else {
+            "sites-select-none"
+        }),
         "filter_text" => w.s.filter_bar.text.set_text(step["text"].as_str().unwrap()),
         "filter_isolate" | "filter_toggle" | "filter_all" => {
             let bar = &w.s.filter_bar;
@@ -309,6 +348,104 @@ fn do_step(ctx: &Ctx, w: &MainWindow, script: &Script, step: &Value) {
         }
         "clear_cache" => w.action_clear_search_cache(),
         other => panic!("unknown op {other}"),
+    }
+}
+
+fn alert_of(a: &Value) -> hatate_core::engine_alerts::EngineAlert {
+    let t = |k: &str| a[k].as_str().unwrap().to_owned();
+    hatate_core::engine_alerts::EngineAlert {
+        key: t("key"),
+        engine: t("engine"),
+        title: t("title"),
+        body: t("body"),
+        remedy: t("remedy"),
+    }
+}
+
+/// `start` and `continue_without_saucenao`: script the engines, press the button, and turn the
+/// loop until the run is over, stopping or raising an alert once the scripted number of images
+/// has been searched (the Python driver does the same, see `run_search_step` there).
+fn run_search_step(w: &MainWindow, search: &common::search::Scripted, step: &Value) {
+    use common::search::scripted::Step;
+    use std::sync::atomic::Ordering;
+    use std::time::Duration;
+    let op = step["op"].as_str().unwrap();
+    let delay_ms = step["delay_ms"]
+        .as_u64()
+        .filter(|d| *d > 0)
+        .unwrap_or(if step["stop_after"].is_u64() { 150 } else { 0 });
+    let urls = step["urls"].as_array().cloned().unwrap_or_default();
+    let engine = step["engine"].as_str().unwrap();
+    for (i, o) in step["outcomes"].as_array().unwrap().iter().enumerate() {
+        let o = o.as_str().unwrap();
+        let wait = Duration::from_millis(delay_ms);
+        let list: Vec<&str> = urls
+            .get(i)
+            .and_then(|u| u.as_array())
+            .map(|u| u.iter().map(|x| x.as_str().unwrap()).collect())
+            .unwrap_or_default();
+        if engine == "iqdb" {
+            let answer = match o {
+                "error" => Err(hatate_core::engines::iqdb::IqdbError(
+                    "scripted error".into(),
+                )),
+                "good" => Ok(list
+                    .iter()
+                    .enumerate()
+                    .map(|(k, u)| common::search::scripted::iqdb_match(u, 95.0 - 5.0 * k as f64))
+                    .collect()),
+                _ => Ok(Vec::new()),
+            };
+            search.engines.iqdb.push(Step::After(wait, answer));
+        } else {
+            let answer = match o {
+                "error" => Err(hatate_core::engines::saucenao::SauceNaoError(
+                    "scripted error".into(),
+                )),
+                _ => Ok(Vec::new()),
+            };
+            search.engines.saucenao.push(Step::After(wait, answer));
+        }
+    }
+    let calls = search.engines.calls().len();
+    let quota = match (step["quota_after"].as_u64(), op) {
+        (Some(k), _) => calls + k as usize,
+        (None, "continue_without_saucenao") => 0,
+        _ => usize::MAX,
+    };
+    search.quota_after_calls.store(quota, Ordering::SeqCst);
+    if op == "start" {
+        w.activate_action("toggle-search");
+    } else {
+        w.s.quota_banner.keep_going.emit_clicked();
+    }
+    let stop_after = step["stop_after"].as_u64();
+    let alert = step.get("alert").filter(|a| a.is_object());
+    let (mut stopped, mut raised) = (false, false);
+    let t = std::time::Instant::now();
+    while w.s.run_active.get() && t.elapsed() < Duration::from_secs(30) {
+        pump_for(5);
+        // "3/5 searched": the strip's own count, which is what the Python bar's value is.
+        let done =
+            w.s.shell
+                .run_progress_label
+                .text()
+                .split('/')
+                .next()
+                .and_then(|n| n.replace(',', "").parse::<u64>().ok())
+                .unwrap_or(0);
+        if let Some(k) = stop_after {
+            if !stopped && done >= k {
+                w.activate_action("toggle-search");
+                stopped = true;
+            }
+        }
+        if let Some(a) = alert {
+            if !raised && w.s.run_active.get() && done >= a["after_progress"].as_u64().unwrap() {
+                search.alerts.raise_alert(&alert_of(a));
+                raised = true;
+            }
+        }
     }
 }
 
@@ -464,6 +601,8 @@ fn digest(
     json!({
         "step": step,
         "status": sh.status_text(),
+        "button": sh.search_toggle_btn.label().map(|l| l.to_string()).unwrap_or_default(),
+        "active": s.run_active.get(),
         "run_note": sh.run_note_label.text(),
         "run_progress": sh.run_progress_label.text(),
         "run_eta": sh.run_eta_label.text(),
@@ -501,7 +640,15 @@ fn digest(
         "choosers": choosers,
         "opened": opened.borrow().iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
         "files": profile_files(ctx, paths),
+        "pause_file": pause_file(paths),
     })
+}
+
+fn pause_file(paths: &Paths) -> Value {
+    match std::fs::read_to_string(paths.config_dir().join("saucenao_quota_pause.json")) {
+        Ok(t) => serde_json::from_str::<Value>(&t).unwrap_or_else(|_| json!("unreadable")),
+        Err(_) => Value::Null,
+    }
 }
 
 /// `session.db` rows, `config.json` and the named sessions: what the step left on disk.

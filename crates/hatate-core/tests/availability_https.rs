@@ -1220,3 +1220,111 @@ fn a_definite_verdict_is_dated_and_an_inconclusive_one_clears_the_date() {
     assert_eq!(candidate.remote_available, None);
     assert_eq!(candidate.availability_checked_at, None);
 }
+
+// ---- the manual check of one image's matches (AvailabilityWorker, DAN-2218) ----------------
+
+fn entry_with(urls: &[&str]) -> hatate_core::model::Entry {
+    let mut entry = hatate_core::model::Entry::new("/pics/one.png");
+    entry.candidates = urls.iter().map(|u| Candidate::new(*u)).collect();
+    entry
+}
+
+/// Runs the manual check with the sandbox profile's settings.
+async fn manual_check(
+    w: &World,
+    entry: &mut hatate_core::model::Entry,
+    stop: &std::sync::atomic::AtomicBool,
+) -> (availability::EntryCheck, Vec<(usize, usize)>) {
+    let sandbox = Sandbox::new();
+    let settings = Mutex::new(Settings::with_defaults(&sandbox.paths));
+    let access = SettingsAccess {
+        settings: &settings,
+        paths: &sandbox.paths,
+    };
+    let progress = Mutex::new(Vec::new());
+    let on_progress = |d: usize, t: usize| progress.lock().unwrap().push((d, t));
+    let result =
+        availability::check_entry_candidates(&w.client, entry, &access, &on_progress, stop).await;
+    (result, progress.into_inner().unwrap())
+}
+
+/// `AvailabilityWorker.run`: a 404 is gone, a 200 is available, a 403 stays unknown; each
+/// verdict is recorded on its candidate (overwriting what was there), progress counts every
+/// check, and the gone count is only the definite ones.
+#[tokio::test]
+async fn the_manual_check_records_each_verdict_and_counts_only_the_gone() {
+    let w = world(&["x.test"], |req: &Recorded| match req.target.as_str() {
+        "/gone" => Reply::new(404, ""),
+        "/there" => Reply::ok("<html><title>fine</title></html>"),
+        _ => Reply::new(403, ""),
+    })
+    .await;
+    let mut entry = entry_with(&[
+        "https://x.test/gone",
+        "https://x.test/there",
+        "https://x.test/blocked",
+    ]);
+    // A saved verdict is overwritten: this is the user asking again.
+    entry.candidates[1].record_availability(Some(false), 1.0);
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let (result, progress) = manual_check(&w, &mut entry, &stop).await;
+    assert_eq!((result.gone, result.checked), (1, 3));
+    let verdicts: Vec<Option<bool>> = entry
+        .candidates
+        .iter()
+        .map(|c| c.remote_available)
+        .collect();
+    assert_eq!(verdicts, [Some(false), Some(true), None]);
+    let counts: Vec<usize> = progress.iter().map(|p| p.0).collect();
+    assert_eq!(counts, [1, 2, 3]);
+    assert!(progress.iter().all(|p| p.1 == 3));
+}
+
+/// A raised stop flag: nothing is started, nothing is recorded.
+#[tokio::test]
+async fn a_stopped_manual_check_starts_nothing() {
+    let w = world(&["x.test"], always(Reply::new(404, ""))).await;
+    let mut entry = entry_with(&["https://x.test/a", "https://x.test/b"]);
+    let stop = std::sync::atomic::AtomicBool::new(true);
+    let (result, progress) = manual_check(&w, &mut entry, &stop).await;
+    assert_eq!((result.gone, result.checked), (0, 0));
+    assert!(progress.is_empty());
+    assert!(w.seen().is_empty());
+    assert!(
+        entry
+            .candidates
+            .iter()
+            .all(|c| c.remote_available.is_none())
+    );
+}
+
+/// `ImageEntry.drop_unavailable_candidates`: only `Some(false)` goes, the selection follows the
+/// same match, and an entry with nothing left is a no-match.
+#[test]
+fn dropping_the_gone_keeps_the_selection_on_the_same_match() {
+    let mut entry = entry_with(&["https://a.test/1", "https://a.test/2", "https://a.test/3"]);
+    entry.candidates[0].remote_available = Some(false);
+    entry.candidates[2].remote_available = None;
+    entry.selected_candidate_index = 1;
+    assert_eq!(entry.drop_unavailable_candidates(), 1);
+    assert_eq!(entry.candidates.len(), 2);
+    assert_eq!(entry.selected_candidate_index, 0);
+    assert_eq!(entry.selected_candidate().unwrap().url, "https://a.test/2");
+
+    // The selected one is the one that went: back to the best remaining.
+    let mut entry = entry_with(&["https://a.test/1", "https://a.test/2"]);
+    entry.candidates[1].remote_available = Some(false);
+    entry.selected_candidate_index = 1;
+    assert_eq!(entry.drop_unavailable_candidates(), 1);
+    assert_eq!(entry.selected_candidate().unwrap().url, "https://a.test/1");
+
+    // Everything went.
+    let mut entry = entry_with(&["https://a.test/1"]);
+    entry.status = hatate_core::model::MatchStatus::Good;
+    entry.candidates[0].remote_available = Some(false);
+    assert_eq!(entry.drop_unavailable_candidates(), 1);
+    assert!(entry.candidates.is_empty());
+    assert_eq!(entry.status, hatate_core::model::MatchStatus::NotFound);
+    assert_eq!(entry.selected_candidate_index, 0);
+    assert_eq!(entry.similarity(), None);
+}

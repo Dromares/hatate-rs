@@ -84,7 +84,6 @@ pub fn all_site_options() -> Vec<String> {
 pub fn menus() -> Vec<Menu> {
     use Owner::{Later, Shell};
     // DEFERRED(6.g): Query Hydrus, Re-check Queued Imports, Pawchive Index, the two Send items.
-    // DEFERRED(6.e): Parser Health, the Sites menu.
     // DEFERRED(6.f): Edit Match Conditions.
     // DEFERRED(6.h): Preferences.
     let files = Menu {
@@ -131,8 +130,8 @@ pub fn menus() -> Vec<Menu> {
         ],
     };
     let mut sites_entries = vec![
-        item("Select All", "sites-select-all", Later("6.e")),
-        item("Select None", "sites-select-none", Later("6.e")),
+        item("Select All", "sites-select-all", Shell),
+        item("Select None", "sites-select-none", Shell),
         Entry::Separator,
     ];
     for site in all_site_options() {
@@ -140,7 +139,7 @@ pub fn menus() -> Vec<Menu> {
             label: site.clone(),
             action: "site",
             target: site,
-            owner: Later("6.e"),
+            owner: Shell,
         });
     }
     let sites = Menu {
@@ -173,7 +172,7 @@ pub fn menus() -> Vec<Menu> {
         title: "_Help",
         entries: vec![
             item("View Logs\u{2026}", "view-logs", Shell),
-            item("Parser Health\u{2026}", "parser-health", Later("6.e")),
+            item("Parser Health\u{2026}", "parser-health", Shell),
             item("Clear Search Cache\u{2026}", "clear-search-cache", Shell),
             item(
                 "Clear List and Saved Session\u{2026}",
@@ -233,6 +232,11 @@ pub fn accelerators() -> Vec<(String, &'static str)> {
     out
 }
 
+/// The boolean action behind the `index`-th site's check item.
+pub fn site_action(index: usize) -> String {
+    format!("site-{index}")
+}
+
 /// Where the Clear Search Cache item sits, so its label (which carries the cache size) can be
 /// replaced when the Help menu is about to be shown (`_update_clear_cache_action_label`).
 pub struct ClearCacheItem {
@@ -260,6 +264,7 @@ impl ClearCacheItem {
 pub fn model() -> (gio::Menu, ClearCacheItem) {
     let mut clear_cache = None;
     let bar = gio::Menu::new();
+    let mut site_index = 0usize;
     for menu in menus() {
         let m = gio::Menu::new();
         let mut section = gio::Menu::new();
@@ -274,18 +279,13 @@ pub fn model() -> (gio::Menu, ClearCacheItem) {
                     }
                     section.append(Some(label), Some(&format!("win.{action}")));
                 }
-                Entry::Check {
-                    label,
-                    action,
-                    target,
-                    ..
-                } => {
-                    let it = gio::MenuItem::new(Some(label), None);
-                    it.set_action_and_target_value(
-                        Some(&format!("win.{action}")),
-                        Some(&gtk4::glib::Variant::from(target.as_str())),
+                Entry::Check { label, .. } => {
+                    // One boolean action per site: a check item, not a radio on one string.
+                    section.append(
+                        Some(label),
+                        Some(&format!("win.{}", site_action(site_index))),
                     );
-                    section.append_item(&it);
+                    site_index += 1;
                 }
                 Entry::Radio {
                     title,
@@ -439,14 +439,7 @@ mod tests {
     fn every_deferred_action_names_a_ticket() {
         let d = deferred();
         assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
-        for want in [
-            "query-hydrus",
-            "parser-health",
-            "preferences",
-            "edit-conditions",
-            "sites-select-all",
-            "site",
-        ] {
+        for want in ["query-hydrus", "preferences", "edit-conditions"] {
             assert!(d.iter().any(|(n, _)| *n == want), "{want} not deferred");
         }
         for working in [
@@ -459,6 +452,11 @@ mod tests {
             "view-logs",
             "clear-session",
             "theme",
+            "sites-select-all",
+            "sites-select-none",
+            "site",
+            "parser-health",
+            "toggle-search",
             "export-results",
             "write-tag-files",
             "clear-search-cache",

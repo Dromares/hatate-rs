@@ -15,6 +15,7 @@ use gtk4::prelude::*;
 use hatate_core::model::MatchStatus;
 use hatate_core::quota_pause::{QuotaPause, QuotaPauseFile};
 use hatate_core::session::{LoadOptions, SessionStore, named};
+use hatate_core::table_menu::Action;
 use hatate_gtk::dialogs::{Asked, Buttons, Kind, Response};
 use hatate_gtk::menu::{self, Owner};
 use hatate_gtk::shell::{EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, RUN_FAILED_NOTE};
@@ -85,6 +86,63 @@ const SCENARIOS: &[Scenario] = &[
     (
         "minimum_size_fits_every_state_in_both_schemes",
         minimum_size_fits_every_state_in_both_schemes,
+    ),
+    ("start_search_runs_the_batch", start_search_runs_the_batch),
+    (
+        "start_search_with_nothing_to_do_or_one_running",
+        start_search_with_nothing_to_do_or_one_running,
+    ),
+    (
+        "stop_search_finishes_the_image_under_way",
+        stop_search_finishes_the_image_under_way,
+    ),
+    (
+        "a_quota_pause_shows_the_banner_and_continue_resumes",
+        a_quota_pause_shows_the_banner_and_continue_resumes,
+    ),
+    (
+        "engine_alerts_reach_the_user_only_during_a_run",
+        engine_alerts_reach_the_user_only_during_a_run,
+    ),
+    (
+        "the_window_keeps_working_while_an_engine_stalls",
+        the_window_keeps_working_while_an_engine_stalls,
+    ),
+    (
+        "the_sites_menu_toggles_and_saves",
+        the_sites_menu_toggles_and_saves,
+    ),
+    (
+        "a_failed_run_is_shown_as_failed_not_as_a_crash",
+        a_failed_run_is_shown_as_failed_not_as_a_crash,
+    ),
+    (
+        "the_availability_check_offers_to_drop_the_dead_matches",
+        the_availability_check_offers_to_drop_the_dead_matches,
+    ),
+    (
+        "the_upscale_check_marks_rows_and_summarises",
+        the_upscale_check_marks_rows_and_summarises,
+    ),
+    (
+        "starting_a_search_clears_the_stopped_note",
+        starting_a_search_clears_the_stopped_note,
+    ),
+    (
+        "parser_health_dialog_and_warning",
+        parser_health_dialog_and_warning,
+    ),
+    (
+        "activity_page_states_the_engines_and_tails_the_log",
+        activity_page_states_the_engines_and_tails_the_log,
+    ),
+    (
+        "lens_connection_is_said_in_the_status_line",
+        lens_connection_is_said_in_the_status_line,
+    ),
+    (
+        "re_search_uses_the_engine_it_was_asked_for",
+        re_search_uses_the_engine_it_was_asked_for,
     ),
     (
         "design_follow_ups_paint_as_specified",
@@ -224,6 +282,14 @@ fn window_menus_and_deferred_actions(app: &adw::Application) {
     assert!(f.w.win.title().unwrap().contains("work in progress"));
     // Every action in the menus exists; a later ticket's is disabled, this ticket's is enabled.
     for (name, owner) in menu::actions() {
+        if name == "site" {
+            // The Check entries stand for one boolean action per site.
+            for i in 0..menu::all_site_options().len() {
+                let a = f.w.win.lookup_action(&menu::site_action(i));
+                assert!(a.is_some_and(|a| a.is_enabled()), "site-{i}");
+            }
+            continue;
+        }
         let action =
             f.w.win
                 .lookup_action(name)
@@ -234,10 +300,11 @@ fn window_menus_and_deferred_actions(app: &adw::Application) {
             Owner::Shell => assert!(enabled, "{name} must be enabled"),
         }
     }
+    // Start Search is wired (6.e): its action is enabled and the button follows it.
     assert!(
         f.w.win
             .lookup_action("toggle-search")
-            .is_some_and(|a| !a.is_enabled())
+            .is_some_and(|a| a.is_enabled())
     );
     f.close();
 }
@@ -1084,7 +1151,7 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
     for scheme in ["dark", "light"] {
         let tweak = move |s: &mut hatate_core::config::Settings| s.theme = scheme.to_owned();
         type Build = fn(&adw::Application, &str) -> Fx;
-        let states: [(&str, Build, &str); 6] = [
+        let states: [(&str, Build, &str); 8] = [
             (
                 "queue-empty",
                 |app, scheme| {
@@ -1199,6 +1266,55 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
                 },
                 "review",
             ),
+            (
+                "queue-failed-banner",
+                |app, scheme| {
+                    let f = Fx::new(
+                        app,
+                        Opts {
+                            seed: seeded(5, MatchStatus::NotSearched),
+                            missing: Some(Arc::new(|_, _| HashSet::new())),
+                            tweak: Some(Box::new({
+                                let s = scheme.to_owned();
+                                move |c| c.theme = s.clone()
+                            })),
+                            ..Opts::default()
+                        },
+                    );
+                    f.w.show_failed_banner(
+                        "Hatate could not make its temporary folder for automatic imports. Check \
+                         that the cache folder exists and can be written to.",
+                    );
+                    f
+                },
+                "queue",
+            ),
+            (
+                "activity",
+                |app, scheme| {
+                    Fx::new(
+                        app,
+                        Opts {
+                            tweak: Some(Box::new({
+                                let s = scheme.to_owned();
+                                move |c| {
+                                    c.theme = s.clone();
+                                    // Every extra on: the widest chip row the page can have.
+                                    c.enable_tracemoe = true;
+                                    c.enable_iqdb3d = true;
+                                    c.enable_google_images = true;
+                                    c.enable_google_lens = true;
+                                    c.enable_yandex = true;
+                                    c.enable_pawchive = true;
+                                    c.secondary_engine_mode = "always".to_owned();
+                                }
+                            })),
+                            ..Opts::default()
+                        },
+                    )
+                },
+                "activity",
+            ),
         ];
         let _ = tweak;
         for (name, build, mode) in states {
@@ -1216,8 +1332,11 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
             let content = libadwaita::prelude::AdwApplicationWindowExt::content(&f.w.win).unwrap();
             let (cw, ch) = (content.width(), content.height());
             let (_, need_h_at_cw, _, _) = content.measure(gtk4::Orientation::Vertical, cw);
+            // What the toplevel asks for before it knows a width (GTK 4.14's FlowBox answers this
+            // with its chips stacked in one column: the Activity page then wanted 909 px, DAN-2324).
+            let (need_h_unconstrained, _, _, _) = content.measure(gtk4::Orientation::Vertical, -1);
             println!(
-                "OUTER {name} {scheme} window={}x{} content={cw}x{ch} needs={w}x{need_h_at_cw}",
+                "OUTER {name} {scheme} window={}x{} content={cw}x{ch} needs={w}x{need_h_at_cw} unconstrained_min_h={need_h_unconstrained}",
                 f.w.win.width(),
                 f.w.win.height()
             );
@@ -1229,6 +1348,17 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
                 cw >= w && ch >= need_h_at_cw,
                 "{name} ({scheme}) needs {w}x{need_h_at_cw} but the stated minimum gives it {cw}x{ch}"
             );
+            // The content must also fit INSIDE the window: a child given more than the window
+            // has runs off its bottom edge, and `ch >= need` above cannot see that.
+            assert!(
+                ch <= f.w.win.height(),
+                "{name} ({scheme}): the content is allocated {ch} px in a window {} px tall; it runs off the bottom",
+                f.w.win.height()
+            );
+            assert!(
+                need_h_unconstrained <= MIN_HEIGHT,
+                "{name} ({scheme}): asked for {need_h_unconstrained} px before a width is known; the stated minimum is {MIN_HEIGHT}"
+            );
             worst = (worst.0.max(w), worst.1.max(need_h_at_cw));
             f.close();
         }
@@ -1237,6 +1367,1029 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
         "MINSIZE worst content_min={}x{} stated={MIN_WIDTH}x{MIN_HEIGHT}",
         worst.0, worst.1
     );
+}
+
+// ---- 6.e: running searches from the window ---------------------------------------------------
+
+/// Settings every search scenario starts from: IQDB only, no pacing wait, no cache, nothing that
+/// would reach a network.
+fn search_tweak() -> Tweak {
+    Box::new(|s: &mut hatate_core::config::Settings| {
+        s.primary_engine = "iqdb".to_owned();
+        s.secondary_engine_mode = "disabled".to_owned();
+        s.enable_ascii2d = false;
+        s.enable_tracemoe = false;
+        s.enable_pawchive_index = false;
+        s.use_search_cache = false;
+        s.delay_min_seconds = 0.0;
+        s.delay_max_seconds = 0.0;
+        s.match_conditions.require_larger_than_local = false;
+    })
+}
+
+/// `n` unsearched rows whose files exist (a 4 x 3 PNG each), under `dir`.
+fn unsearched(dir: &std::path::Path, n: usize) -> Vec<hatate_core::model::Entry> {
+    std::fs::create_dir_all(dir).unwrap();
+    (0..n)
+        .map(|i| {
+            let p = dir.join(format!("img{i}.png"));
+            std::fs::write(&p, common::search::PNG).unwrap();
+            entry(&p.to_string_lossy(), MatchStatus::NotSearched)
+        })
+        .collect()
+}
+
+fn search_fx(app: &adw::Application, pics: &std::path::Path, n: usize) -> Fx {
+    Fx::new(
+        app,
+        Opts {
+            seed: unsearched(pics, n),
+            tweak: Some(search_tweak()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    )
+}
+
+fn statuses(f: &Fx) -> Vec<MatchStatus> {
+    f.w.s
+        .queue
+        .borrow()
+        .entries()
+        .iter()
+        .map(|e| e.status)
+        .collect()
+}
+
+fn start_button(f: &Fx) -> String {
+    f.w.s
+        .shell
+        .search_toggle_btn
+        .label()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// `action_start_search` over three rows: the strip, the status line, the button and the rows
+/// follow the worker, and the list is the searched one when it ends.
+fn start_search_runs_the_batch(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 3);
+    for _ in 0..3 {
+        f.search
+            .engines
+            .iqdb
+            .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    }
+    assert_eq!(start_button(&f), "\u{25B6} Start Search");
+    assert_eq!(f.w.s.shell.run_progress_label.text(), "3 not searched");
+    f.activate("toggle-search");
+    // At once: the gauge is at 0 of 3, the strip is live, the button says Stop, and the rows are
+    // still the list's own until the worker reports.
+    assert_eq!(start_button(&f), "\u{25A0} Stop Search");
+    assert!(f.w.s.run_active.get());
+    assert!(f.w.s.queue.borrow().search_running());
+    assert_eq!(f.w.s.run_progress.get(), (0, 3));
+    assert_eq!(f.w.s.shell.run_progress_label.text(), "0/3 searched");
+    assert_eq!(f.say(), "Searching 3 image(s)\u{2026}");
+    assert_eq!(f.search.resets.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert!(
+        pump_until(10_000, || !f.w.s.run_active.get()),
+        "the run never finished: {}",
+        f.say()
+    );
+    assert_eq!(statuses(&f), vec![MatchStatus::NotFound; 3]);
+    assert_eq!(f.w.s.run_progress.get(), (3, 3));
+    assert_eq!(f.w.s.shell.run_progress_label.text(), "3/3 searched");
+    assert_eq!(f.say(), "Search finished");
+    assert_eq!(start_button(&f), "\u{25B6} Start Search");
+    assert!(f.w.s.shell.search_toggle_btn.is_sensitive());
+    assert!(!f.w.s.queue.borrow().search_running());
+    // The ETA is not a lie about a run that is over: the strip is back to its idle reading.
+    assert_eq!(f.w.s.shell.run_eta_label.text(), IDLE_ETA);
+    // The engine order the scripted engines saw: one IQDB call per row.
+    assert_eq!(f.search.engines.calls(), vec!["iqdb"; 3]);
+    f.close();
+}
+
+/// `test_starting_a_search_clears_it` (test_interrupted_banner.py): after a crash the strip says
+/// "stopped 2h 14m ago"; starting a search forgets that, because it describes the run before.
+fn starting_a_search_clears_the_stopped_note(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = Fx::new(
+        app,
+        Opts {
+            unclean: true,
+            seed: unsearched(pics.path(), 2),
+            tweak: Some(search_tweak()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    assert!(
+        f.w.s.shell.run_note_label.text().starts_with("stopped "),
+        "{}",
+        f.w.s.shell.run_note_label.text()
+    );
+    for _ in 0..2 {
+        f.search
+            .engines
+            .iqdb
+            .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    }
+    f.activate("toggle-search");
+    assert_eq!(f.w.s.shell.run_note_label.text(), "");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    f.close();
+}
+
+/// `action_start_search`'s two refusals.
+fn start_search_with_nothing_to_do_or_one_running(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: vec![entry(
+                &pics.path().join("done.png").to_string_lossy(),
+                MatchStatus::Good,
+            )],
+            tweak: Some(search_tweak()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.activate("toggle-search");
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Search");
+    assert_eq!(shown.text, "No unsearched images in the list.");
+    assert_eq!(shown.buttons, Buttons::Ok);
+    assert!(!f.w.s.queue.borrow().search_running());
+    f.close();
+
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 2);
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::After(
+            std::time::Duration::from_millis(400),
+            Ok(Vec::new()),
+        ));
+    f.activate("toggle-search");
+    assert!(f.w.s.queue.borrow().search_running());
+    // A second Start while one runs (the menu cannot do it, a shortcut or the MCP tool can).
+    f.w.action_start_search();
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.title.as_str(), shown.text.as_str()),
+        ("Search", "A search is already running.")
+    );
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    f.close();
+}
+
+/// `action_stop_search`: "Stopping after current image\u{2026}", the button off until the worker
+/// is done, and the image under way is finished and kept.
+fn stop_search_finishes_the_image_under_way(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 3);
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::After(
+            std::time::Duration::from_millis(300),
+            Ok(Vec::new()),
+        ));
+    f.activate("toggle-search");
+    // The first image is in the engine's hands; Stop now.
+    pump_for(50);
+    f.activate("toggle-search");
+    assert_eq!(f.say(), "Stopping after current image\u{2026}");
+    assert!(!f.w.s.shell.search_toggle_btn.is_sensitive());
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(
+        statuses(&f),
+        vec![
+            MatchStatus::NotFound,
+            MatchStatus::NotSearched,
+            MatchStatus::NotSearched
+        ]
+    );
+    assert_eq!(f.say(), "Search finished");
+    assert!(f.w.s.shell.search_toggle_btn.is_sensitive());
+    assert_eq!(start_button(&f), "\u{25B6} Start Search");
+    assert_eq!(f.w.s.shell.run_progress_label.text(), "1/3 searched");
+    // Interrupted in-session shows no banner: the user just did it.
+    assert!(!f.w.s.run_banner.root.is_visible());
+    f.close();
+}
+
+/// A daily quota that runs out mid-batch: no modal, the banner with both actions, the pause on
+/// disk and on the strip; "Continue with other engines" resumes without SauceNAO for this run
+/// only.
+fn a_quota_pause_shows_the_banner_and_continue_resumes(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: unsearched(pics.path(), 3),
+            tweak: Some(Box::new(|s: &mut hatate_core::config::Settings| {
+                search_tweak()(s);
+                s.primary_engine = "saucenao".to_owned();
+                s.saucenao.pause_search_on_quota_exhausted = true;
+                s.continue_without_saucenao_on_quota = false;
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    for _ in 0..3 {
+        f.search
+            .engines
+            .saucenao
+            .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    }
+    // The allowance is spent after the first request.
+    f.search
+        .quota_after_calls
+        .store(1, std::sync::atomic::Ordering::SeqCst);
+    f.activate("toggle-search");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(
+        statuses(&f),
+        vec![
+            MatchStatus::NotFound,
+            MatchStatus::NotSearched,
+            MatchStatus::NotSearched
+        ]
+    );
+    assert_eq!(f.script.count_shown(), 0, "a quota pause raises no modal");
+    assert!(f.w.s.quota_banner.root.is_visible());
+    assert!(f.w.s.quota_paused.get());
+    assert_eq!(
+        f.w.s.shell.run_note_label.text(),
+        "paused \u{2014} quota exhausted"
+    );
+    // `test_review_is_the_primary_and_continue_is_the_secondary`, the half a test can read: the
+    // second action's words, and that the first is not offered while nothing has been decided
+    // (the one row searched is a NotFound). Which is primary and their order are judged in the
+    // shots.
+    assert_eq!(
+        f.w.s.quota_banner.keep_going.label().as_deref(),
+        Some("Continue with other engines")
+    );
+    assert!(!f.w.s.quota_banner.review.is_visible());
+    assert_eq!(f.w.s.shell.run_eta_label.text(), "ETA paused");
+    let pause = QuotaPauseFile::new(&f.paths)
+        .read()
+        .expect("the pause is on disk");
+    assert_eq!((pause.searched, pause.remaining), (1, 2));
+    let texts = texts_under(f.w.s.quota_banner.root.upcast_ref());
+    assert!(
+        texts.iter().any(|t| t.contains("2 ")),
+        "the banner counts what is left: {texts:?}"
+    );
+    // The run ending does not wipe the pause from the strip: the status line is the run's, the
+    // note and the banner are the pause's.
+    assert_eq!(f.say(), "Search finished");
+
+    // Continue with other engines: SauceNAO is left out of this run, the saved setting is not
+    // touched, the banner and the persisted pause go.
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.w.s.quota_banner.keep_going.emit_clicked();
+    assert!(!f.w.s.quota_banner.root.is_visible());
+    assert!(!f.w.s.quota_paused.get());
+    assert!(QuotaPauseFile::new(&f.paths).read().is_none());
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(statuses(&f), vec![MatchStatus::NotFound; 3]);
+    assert!(
+        !f.w.s
+            .settings
+            .lock()
+            .unwrap()
+            .continue_without_saucenao_on_quota,
+        "the saved setting is exactly as the user has it"
+    );
+    f.close();
+}
+
+/// `_engine_alert_forwarder` / `_on_engine_alert` / `engine_alerts.unsubscribe`: the channel is
+/// open for the length of a run, an alert becomes a warning box and a status line, and an
+/// unsubscribed listener stops hearing.
+fn engine_alerts_reach_the_user_only_during_a_run(app: &adw::Application) {
+    use hatate_core::engine_alerts::EngineAlert;
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 1);
+    let alert = |key: &str| EngineAlert {
+        key: key.to_owned(),
+        engine: "Google Lens".to_owned(),
+        title: "Google Lens needs a browser".to_owned(),
+        body: "Lens cannot run: no browser was found.".to_owned(),
+        remedy: "install chromium".to_owned(),
+    };
+    // Before a run nobody is listening.
+    assert!(f.search.alerts.raise_alert(&alert("before")));
+    pump_for(30);
+    assert_eq!(f.script.count_shown(), 0);
+
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::After(
+            std::time::Duration::from_millis(250),
+            Ok(Vec::new()),
+        ));
+    f.activate("toggle-search");
+    pump_for(30);
+    assert!(f.search.alerts.raise_alert(&alert("during")));
+    assert!(pump_until(2_000, || f.script.count_shown() == 1));
+    let shown = f.script.last_shown();
+    assert_eq!(shown.kind, Kind::Warning);
+    assert_eq!(shown.title, "Google Lens needs a browser");
+    assert_eq!(
+        shown.text,
+        "Lens cannot run: no browser was found.\n\ninstall chromium"
+    );
+    assert_eq!(shown.buttons, Buttons::Ok);
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    // The listener comes off when the run ends (`test_an_unsubscribed_listener_stops_hearing`).
+    assert!(f.search.alerts.raise_alert(&alert("after")));
+    pump_for(30);
+    assert_eq!(f.script.count_shown(), 1);
+    f.close();
+}
+
+/// Nothing the engine does blocks the main loop: while the engine sits on a stalled answer the
+/// window still handles actions and its timers.
+fn the_window_keeps_working_while_an_engine_stalls(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 1);
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::After(
+            std::time::Duration::from_millis(700),
+            Ok(Vec::new()),
+        ));
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let id = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    f.activate("toggle-search");
+    pump_for(100);
+    assert!(f.w.s.run_active.get(), "the engine is still stalled");
+    let before = ticks.get();
+    // An action handled while the search waits.
+    f.w.set_theme("light");
+    assert_eq!(f.w.s.settings.lock().unwrap().theme, "light");
+    pump_for(200);
+    assert!(
+        ticks.get() >= before + 4,
+        "the main loop kept turning: {before} -> {}",
+        ticks.get()
+    );
+    assert!(f.w.s.run_active.get());
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    id.remove();
+    f.close();
+}
+
+/// `_build_sites_menu`, `_on_site_toggled`, `_set_all_sites`: one check per site, the setting
+/// follows each click and is saved, Select None / Select All set every check at once.
+fn the_sites_menu_toggles_and_saves(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            tweak: Some(Box::new(|s: &mut hatate_core::config::Settings| {
+                s.enabled_sites = vec!["Danbooru".to_owned(), "Pixiv".to_owned()];
+            })),
+            ..Opts::default()
+        },
+    );
+    let all = menu::all_site_options();
+    let state = |i: usize| -> bool {
+        f.w.win
+            .lookup_action(&menu::site_action(i))
+            .and_then(|a| a.state())
+            .and_then(|v| v.get::<bool>())
+            .expect("a boolean site action")
+    };
+    for (i, site) in all.iter().enumerate() {
+        assert_eq!(state(i), site == "Danbooru" || site == "Pixiv", "{site}");
+    }
+    let danbooru = all.iter().position(|s| s == "Danbooru").unwrap();
+    let gelbooru = all.iter().position(|s| s == "Gelbooru").unwrap();
+    // Clicking a site turns it off, and the saved config has it so.
+    f.activate(&menu::site_action(danbooru));
+    assert!(!state(danbooru));
+    let saved = |paths: &hatate_core::paths::Paths| {
+        hatate_core::config::Settings::load(paths)
+            .settings
+            .enabled_sites
+    };
+    assert_eq!(saved(&f.paths), vec!["Pixiv".to_owned()]);
+    // And on: the list is in ALL_SITE_OPTIONS order, not click order.
+    f.activate(&menu::site_action(gelbooru));
+    f.activate(&menu::site_action(danbooru));
+    let want: Vec<String> = all
+        .iter()
+        .filter(|s| ["Danbooru", "Gelbooru", "Pixiv"].contains(&s.as_str()))
+        .cloned()
+        .collect();
+    assert_eq!(saved(&f.paths), want);
+    f.activate("sites-select-none");
+    assert!((0..all.len()).all(|i| !state(i)));
+    assert!(saved(&f.paths).is_empty());
+    f.activate("sites-select-all");
+    assert!((0..all.len()).all(state));
+    assert_eq!(saved(&f.paths), all);
+    f.close();
+}
+
+/// `_research_rows_with_engine` and `_with_opposite_engine`: the named engine runs whatever the
+/// configured order says, with the cache bypassed and the saved row overwritten.
+fn re_search_uses_the_engine_it_was_asked_for(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let mut rows = unsearched(pics.path(), 2);
+    rows[0].status = MatchStatus::NotFound;
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: rows,
+            tweak: Some(search_tweak()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let ids: Vec<_> = {
+        let q = f.w.s.queue.borrow();
+        (0..2).map(|r| q.id_at(r).unwrap()).collect()
+    };
+    f.search
+        .engines
+        .saucenao
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.w.run_menu_action(Action::ResearchWithEngine("saucenao"), &ids[..1]);
+    assert_eq!(f.say(), "Searching (SauceNAO only) 1 image(s)\u{2026}");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(f.search.engines.calls(), vec!["saucenao"]);
+    // Primary is IQDB, so a row with no match flips to SauceNAO.
+    f.search
+        .engines
+        .saucenao
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.w.run_menu_action(Action::ResearchWithOppositeEngine, &ids[1..]);
+    assert_eq!(f.say(), "Searching (opposite engine) 1 image(s)\u{2026}");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(f.search.engines.calls(), vec!["saucenao", "saucenao"]);
+    // Plain re-search: the configured engine, "Re-searching".
+    f.search
+        .engines
+        .iqdb
+        .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    f.w.run_menu_action(Action::Research, &ids[..1]);
+    assert_eq!(f.say(), "Re-searching 1 image(s)\u{2026}");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(f.search.engines.calls()[2], "iqdb");
+    f.close();
+}
+
+/// `Ending::Failed`: the worker dies on a staging directory that cannot be made. The window shows
+/// a failed run (banner, strip note, counts), the message holds no path and no OS text, nothing
+/// crashed, the rows stay as they were, and Dismiss clears it.
+fn a_failed_run_is_shown_as_failed_not_as_a_crash(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: unsearched(pics.path(), 2),
+            tweak: Some(Box::new(|s: &mut hatate_core::config::Settings| {
+                search_tweak()(s);
+                s.auto_import_enabled = true;
+                s.auto_import_method = "download_send".to_owned();
+                s.hydrus.access_key = "synthetic-key".into();
+            })),
+            setup: Some(Box::new(|paths: &hatate_core::paths::Paths| {
+                // A file where the staging directory has to be.
+                let staging = paths.auto_import_staging_dir();
+                std::fs::create_dir_all(staging.parent().unwrap()).unwrap();
+                std::fs::write(&staging, b"in the way").unwrap();
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.activate("toggle-search");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert!(f.w.s.failed_banner.root.is_visible());
+    let said = texts_under(f.w.s.failed_banner.root.upcast_ref());
+    let all = said.join(" | ");
+    assert!(all.contains("Run failed"), "{all}");
+    assert!(
+        all.contains("Everything searched so far is saved, and 2 were not reached."),
+        "{all}"
+    );
+    assert!(
+        all.contains("Searched") && all.contains("Not searched"),
+        "{all}"
+    );
+    let body = f.w.s.failed_banner.parts.body.text().to_string();
+    for bad in ["/", "os error", "Not a directory"] {
+        assert!(!body.contains(bad), "the banner body shows {bad:?}: {body}");
+    }
+    assert!(
+        !all.contains(&*f.dir.path().to_string_lossy()),
+        "no path: {all}"
+    );
+    assert_eq!(
+        f.w.s.shell.run_note_label.text(),
+        "last run failed \u{2014} see log"
+    );
+    assert_eq!(statuses(&f), vec![MatchStatus::NotSearched; 2]);
+    assert_eq!(
+        f.script.count_shown(),
+        0,
+        "a failed run is not a modal crash"
+    );
+    assert!(!f.w.s.queue.borrow().search_running());
+    f.w.s.failed_banner.dismiss.emit_clicked();
+    assert!(!f.w.s.failed_banner.root.is_visible());
+    assert_eq!(f.w.s.shell.run_note_label.text(), "");
+    f.close();
+}
+
+/// A row with `n` matches whose URLs the scripted host answers by path.
+fn row_with_matches(path: &str, urls: &[&str]) -> hatate_core::model::Entry {
+    let mut e = entry(path, MatchStatus::Good);
+    e.candidates = urls
+        .iter()
+        .map(|u| hatate_core::model::Candidate::new(*u))
+        .collect();
+    e
+}
+
+/// `_check_match_availability` / `_on_availability_finished` / `_remove_dead_candidates`: the
+/// refusals, the all-clear text, the Yes/No offer with the dead list, and Yes dropping them.
+fn the_availability_check_offers_to_drop_the_dead_matches(app: &adw::Application) {
+    // No match: said so, nothing started.
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: vec![entry("/pics/none.png", MatchStatus::NotFound)],
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let id = f.w.s.queue.borrow().id_at(0).unwrap();
+    f.w.run_menu_action(Action::CheckAvailability, &[id]);
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Check Match Availability");
+    assert_eq!(shown.text, "This image has no matches to check.");
+    f.close();
+
+    // Every match is `unreachable.invalid`-free: the pre-set verdicts stand in for a network the
+    // test never touches; the check itself is `hatate_core`'s (tests/availability_https.rs). Here
+    // the shell is driven with the answer the worker would hand back.
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: vec![row_with_matches(
+                "/pics/two.png",
+                &["https://a.test/1", "https://a.test/2"],
+            )],
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let id = f.w.s.queue.borrow().id_at(0).unwrap();
+    let mut done = f.w.s.queue.borrow().entry(id).cloned().unwrap();
+    done.candidates[0].remote_available = Some(false);
+    done.candidates[1].remote_available = None;
+    f.script.push(Answer::Msg(Response::Yes));
+    f.w.on_availability_finished(
+        id,
+        done,
+        hatate_core::availability::EntryCheck {
+            gone: 1,
+            checked: 2,
+        },
+    );
+    let shown = f.script.last_shown();
+    assert_eq!(shown.kind, Kind::Question);
+    assert_eq!(shown.buttons, Buttons::YesNo);
+    assert!(
+        shown.text.starts_with(
+            "1 of 2 match(es) are no longer available.\n\nRemove them from this image's match list?"
+        ),
+        "{}",
+        shown.text
+    );
+    assert!(
+        shown
+            .text
+            .contains("(1 other(s) couldn't be checked conclusively and will be kept.)")
+    );
+    assert!(shown.text.contains("a.test \u{2014} https://a.test/1"));
+    assert_eq!(shown.default, Response::No);
+    assert_eq!(f.say(), "Removed 1 unavailable match(es)");
+    let urls: Vec<String> =
+        f.w.s
+            .queue
+            .borrow()
+            .entry(id)
+            .unwrap()
+            .candidates
+            .iter()
+            .map(|c| c.url.clone())
+            .collect();
+    assert_eq!(urls, ["https://a.test/2"]);
+
+    // No: kept, and said so.
+    let mut done = f.w.s.queue.borrow().entry(id).cloned().unwrap();
+    done.candidates[0].remote_available = Some(false);
+    f.script.push(Answer::Msg(Response::No));
+    f.w.on_availability_finished(
+        id,
+        done,
+        hatate_core::availability::EntryCheck {
+            gone: 1,
+            checked: 1,
+        },
+    );
+    assert_eq!(f.say(), "Availability check finished: 1 gone (kept)");
+    assert_eq!(f.w.s.queue.borrow().entry(id).unwrap().candidates.len(), 1);
+
+    // Nothing gone: the all-clear.
+    let mut done = f.w.s.queue.borrow().entry(id).cloned().unwrap();
+    done.candidates[0].remote_available = Some(true);
+    f.w.on_availability_finished(
+        id,
+        done,
+        hatate_core::availability::EntryCheck {
+            gone: 0,
+            checked: 1,
+        },
+    );
+    assert_eq!(
+        f.script.last_shown().text,
+        "All 1 match(es) still appear to be available."
+    );
+    assert_eq!(f.say(), "Availability check finished: nothing gone");
+
+    // A window that is closing says nothing (`test_availability_finished_is_a_no_op_while_closing`).
+    let shown_before = f.script.count_shown();
+    f.w.s.closing.set(true);
+    let mut done = f.w.s.queue.borrow().entry(id).cloned().unwrap();
+    done.candidates[0].remote_available = Some(false);
+    f.w.on_availability_finished(
+        id,
+        done,
+        hatate_core::availability::EntryCheck {
+            gone: 1,
+            checked: 1,
+        },
+    );
+    assert_eq!(f.script.count_shown(), shown_before);
+    f.close();
+}
+
+/// `_check_rows_for_upscaling`: the worker runs the real heuristics over a synthetic PNG, each row
+/// gets a verdict and its detail, and the summary says how many were flagged.
+fn the_upscale_check_marks_rows_and_summarises(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 2);
+    let ids: Vec<_> = {
+        let q = f.w.s.queue.borrow();
+        (0..2).map(|r| q.id_at(r).unwrap()).collect()
+    };
+    f.w.run_menu_action(Action::CheckUpscaling, &ids);
+    assert_eq!(f.say(), "Checking 2 image(s) for upscaling\u{2026}");
+    // Running: a second request is refused.
+    f.w.run_menu_action(Action::CheckUpscaling, &ids);
+    assert_eq!(f.script.last_shown().text, "A check is already running.");
+    assert!(pump_until(20_000, || f.script.count_shown() >= 2));
+    {
+        let q = f.w.s.queue.borrow();
+        for e in q.entries() {
+            assert!(
+                matches!(e.upscale_verdict.as_deref(), Some("flagged" | "clear")),
+                "{:?}",
+                e.upscale_verdict
+            );
+            assert!(
+                e.upscale_check_detail
+                    .as_deref()
+                    .is_some_and(|d| !d.is_empty())
+            );
+            assert_eq!((e.local_width, e.local_height), (Some(4), Some(3)));
+        }
+    }
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Upscale Check Results");
+    assert!(
+        shown
+            .text
+            .contains(" of 2 image(s) show possible signs of upscaling.")
+    );
+    assert!(shown.text.contains("img0.png:\n"));
+    assert!(f.say().starts_with("Upscale check finished: "));
+    f.close();
+}
+
+/// A probe that answers from a script after a pause, so a test can watch the window meanwhile.
+struct ScriptedProbe {
+    results: Vec<hatate_gtk::parser_health::ProbeResult>,
+    pause: std::time::Duration,
+}
+
+impl hatate_gtk::parser_health::ProbeRunner for ScriptedProbe {
+    fn run(
+        &self,
+        _timeout: f64,
+        on_progress: &dyn Fn(usize, usize, &str),
+    ) -> Vec<hatate_gtk::parser_health::ProbeResult> {
+        for (i, r) in self.results.iter().enumerate() {
+            on_progress(i, self.results.len(), &r.site);
+            std::thread::sleep(self.pause);
+        }
+        self.results.clone()
+    }
+}
+
+/// `action_parser_health`, `ParserHealthDialog`, `_warn_about_broken_parsers`.
+fn parser_health_dialog_and_warning(app: &adw::Application) {
+    use hatate_gtk::parser_health::ProbeResult;
+    let probe = |site: &str, ok: bool, problem: Option<&str>| ProbeResult {
+        site: site.to_owned(),
+        ok,
+        tags: 7,
+        width: Some(800),
+        height: Some(600),
+        has_preview: true,
+        has_file_url: true,
+        problem: problem.map(str::to_owned),
+        restricted: None,
+    };
+    let f = Fx::new_with(app, Opts::default(), |env| {
+        env.probe = Some(Arc::new(ScriptedProbe {
+            results: vec![
+                probe("danbooru", true, None),
+                probe("e621", false, Some("fetched, but produced no tags")),
+            ],
+            pause: std::time::Duration::from_millis(150),
+        }));
+    });
+    assert!(f.w.win.lookup_action("parser-health").unwrap().is_enabled());
+    f.activate("parser-health");
+    let dialog =
+        f.w.s
+            .parser_health_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog is up");
+    let cells = dialog.texts();
+    assert_eq!(
+        cells[0],
+        ["Site", "This session", "Live check", "Last problem"]
+    );
+    assert_eq!(cells.len(), 1 + 13, "every site, before anything is known");
+    assert!(
+        cells[1..]
+            .iter()
+            .all(|r| r[1] == "not used yet" && r[2] == "\u{2014}")
+    );
+
+    // The live check runs off the main thread: the window's timers keep turning while it waits,
+    // the button is off, and the progress and the summary line follow.
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let id = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    dialog.check_button.emit_clicked();
+    assert!(!dialog.check_button.is_sensitive());
+    assert!(dialog.progress.is_visible());
+    assert_eq!(dialog.status.text(), "Checking\u{2026}");
+    pump_for(120);
+    assert!(ticks.get() >= 3, "the loop kept turning: {}", ticks.get());
+    assert!(pump_until(5_000, || dialog.check_button.is_sensitive()));
+    id.remove();
+    assert!(!dialog.progress.is_visible());
+    assert!(
+        dialog
+            .status
+            .text()
+            .starts_with("1 of 2 sites have a problem: e621. A site being down")
+    );
+    let rows = dialog.texts();
+    let e621 = rows.iter().find(|r| r[0] == "e621").unwrap();
+    assert_eq!(e621[2], "fetched, but produced no tags");
+    assert_eq!(e621[3], "fetched, but produced no tags");
+    let dan = rows.iter().find(|r| r[0] == "danbooru").unwrap();
+    assert_eq!(dan[2], "7 tags, 800x600, preview, file");
+    dialog.window.close();
+
+    // `_warn_about_broken_parsers`: once per site, only after three empties and no success.
+    let backend = f.w.s.search.backend_if_built().unwrap();
+    let health = &backend.engine.booru.health;
+    for _ in 0..2 {
+        health.record_empty("rule34", "https://rule34.xxx/p/1");
+    }
+    f.w.warn_about_broken_parsers();
+    assert_eq!(f.say(), "Ready", "two empties are not yet a fault");
+    health.record_empty("rule34", "https://rule34.xxx/p/1");
+    f.w.warn_about_broken_parsers();
+    assert_eq!(
+        f.say(),
+        "rule34: no tags in 3 attempts - see Help > Parser Health"
+    );
+    f.w.say("Ready");
+    f.w.warn_about_broken_parsers();
+    assert_eq!(f.say(), "Ready", "reported once");
+    f.close();
+
+    // Without a live check the button says so and stays off.
+    let f = fx(app);
+    f.activate("parser-health");
+    let dialog = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    pump_for(150);
+    // Opening it must not leave a site name looking picked: no label holds a selection, and the
+    // first focus is on Close (DAN-2297 item A).
+    let mut labels = Vec::new();
+    let mut stack = vec![dialog.window.child().unwrap()];
+    while let Some(w) = stack.pop() {
+        if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+            labels.push(l.clone());
+        }
+        let mut c = w.first_child();
+        while let Some(x) = c {
+            c = x.next_sibling();
+            stack.push(x);
+        }
+    }
+    assert!(
+        labels.iter().any(|l| l.is_selectable()),
+        "the site names stay selectable so they can be copied"
+    );
+    assert!(
+        labels.iter().all(|l| l.selection_bounds().is_none()),
+        "a site name opened already selected"
+    );
+    let focus =
+        gtk4::prelude::GtkWindowExt::focus(&dialog.window).expect("the dialog has a first focus");
+    assert_eq!(
+        focus
+            .downcast_ref::<gtk4::Button>()
+            .and_then(|b| b.label())
+            .as_deref(),
+        Some("Close"),
+        "first focus is Close"
+    );
+    assert!(!dialog.check_button.is_sensitive());
+    assert_eq!(
+        dialog.texts()[0],
+        ["Site", "This session", "Last problem"],
+        "no Live check column when no live check runs"
+    );
+    assert_eq!(
+        dialog.check_button.tooltip_text().unwrap(),
+        "The live check is not part of this build yet."
+    );
+    // And the same words as a caption, so the reason is on screen without a hover.
+    assert!(
+        texts_under(dialog.window.child().unwrap().upcast_ref())
+            .iter()
+            .any(|t| t == "The live check is not part of this build yet.")
+    );
+    dialog.window.close();
+    f.close();
+}
+
+/// A log source whose text the test changes.
+struct MovingLog(std::cell::RefCell<String>);
+
+impl hatate_gtk::logview::LogSource for MovingLog {
+    fn log_path(&self) -> PathBuf {
+        PathBuf::from("/synthetic/logs/hatate-rs.log")
+    }
+    fn recent_log(&self) -> String {
+        self.0.borrow().clone()
+    }
+    fn crash_log_path(&self) -> PathBuf {
+        PathBuf::from("/synthetic/logs/crash.log")
+    }
+    fn recent_crash_log(&self) -> String {
+        String::new()
+    }
+}
+
+/// `ActivityViewMixin`: the engine line-up read from the settings, the pipeline sentence, the log
+/// pane that tails only while the page is on screen and the follow toggle is on.
+fn activity_page_states_the_engines_and_tails_the_log(app: &adw::Application) {
+    let log = Rc::new(MovingLog(std::cell::RefCell::new(String::new())));
+    let l2 = log.clone();
+    let f = Fx::new_with(
+        app,
+        Opts {
+            tweak: Some(Box::new(|s: &mut hatate_core::config::Settings| {
+                s.primary_engine = "iqdb".to_owned();
+                s.secondary_engine_mode = "fallback".to_owned();
+                s.enable_ascii2d = true;
+                s.extras_only_as_fallback = true;
+                s.delay_min_seconds = 45.0;
+                s.delay_max_seconds = 75.0;
+                s.use_search_cache = false;
+            })),
+            ..Opts::default()
+        },
+        move |env| env.logs = Some(l2),
+    );
+    let page = f.w.s.activity.clone();
+    // Built with the window: the chips and the sentences are there before the page is shown.
+    let chips: Vec<(String, bool)> = page.chip_texts().into_iter().map(|c| (c.0, c.1)).collect();
+    assert_eq!(chips.len(), 10);
+    assert_eq!(chips[0], ("IQDB \u{b7} primary".to_owned(), true));
+    assert_eq!(chips[1], ("SauceNAO \u{b7} fallback".to_owned(), true));
+    assert_eq!(chips[2], ("ascii2d \u{b7} fallback".to_owned(), true));
+    assert_eq!(chips[3], ("trace.moe \u{b7} off".to_owned(), false));
+    assert_eq!(page.chip_texts()[3].2, "Switched off in Settings > Engine.");
+    assert_eq!(page.chip_texts()[0].2, "Runs on every image.");
+    assert!(page.pipeline.text().contains("IQDB"));
+    assert_eq!(
+        page.summary.text(),
+        "Paced at 45\u{2013}75s an image.  The search cache is off."
+    );
+    assert!(
+        page.footer
+            .text()
+            .ends_with("/synthetic/logs/hatate-rs.log")
+    );
+    assert_eq!(page.log_text(), hatate_gtk::activity::NO_LOG_YET);
+
+    // Off the page, nothing tails.
+    assert!(page.timer.borrow().is_none());
+    f.w.set_mode("activity");
+    assert!(page.timer.borrow().is_some(), "on the page the log follows");
+    *log.0.borrow_mut() = "first line\nsecond line".to_owned();
+    f.w.tail_log();
+    assert_eq!(page.log_text(), "first line\nsecond line");
+    // The follow toggle off stops the tail; on, it reads at once and starts again.
+    page.follow.set_active(false);
+    assert!(page.timer.borrow().is_none());
+    *log.0.borrow_mut() = "first line\nsecond line\nthird".to_owned();
+    page.follow.set_active(true);
+    assert_eq!(page.log_text(), "first line\nsecond line\nthird");
+    assert!(page.timer.borrow().is_some());
+    // The folder button hands the log's folder to the desktop.
+    page.open_folder.emit_clicked();
+    assert_eq!(
+        f.opened.borrow().last().unwrap(),
+        &PathBuf::from("/synthetic/logs")
+    );
+    // Leaving the page stops the tail; Show in Queue goes to Queue.
+    page.show_in_queue.emit_clicked();
+    assert_eq!(f.w.s.shell.current_mode(), "queue");
+    assert!(page.timer.borrow().is_none());
+    // Back on the page the engines are restated from the settings as they are now.
+    f.w.s.settings.lock().unwrap().enable_tracemoe = true;
+    f.w.set_mode("activity");
+    assert_eq!(page.chip_texts()[3].0, "trace.moe \u{b7} fallback");
+    // DAN-2297 ruling 2: the chips are not Tab stops. Walking Tab from the top of the page never
+    // lands in the chip row (the tooltips stay for the pointer), and the walk gets past it to the
+    // controls after it: marking only the FlowBox's wrappers unfocusable left the walk stuck on
+    // Start Search.
+    pump_for(150);
+    f.w.win.set_focus_visible(true);
+    let mut landed = Vec::new();
+    for _ in 0..12 {
+        f.w.win.child_focus(gtk4::DirectionType::TabForward);
+        let w = gtk4::prelude::GtkWindowExt::focus(&f.w.win).expect("Tab leaves focus somewhere");
+        assert!(
+            !w.is_ancestor(page.chips.upcast_ref::<gtk4::Widget>())
+                && &w != page.chips.upcast_ref::<gtk4::Widget>(),
+            "a chip took the Tab focus"
+        );
+        landed.push(w);
+    }
+    assert!(
+        landed.windows(2).any(|p| p[0] != p[1]),
+        "Tab never moved off one widget"
+    );
+    assert!(
+        landed.contains(&page.parser_health.clone().upcast::<gtk4::Widget>()),
+        "Tab never reached the control after the chips"
+    );
+    f.close();
 }
 
 /// The first widget under `w` (itself included) with the CSS class `class`.
@@ -1477,6 +2630,40 @@ fn a_dialog_shows_the_ring_on_its_default(app: &adw::Application) {
         "the default button, and the focused one, is No"
     );
     assert_eq!(answered.get(), None, "nothing answered the question");
+    f.close();
+}
+
+/// `LensConnection` reaches the window from the Lens client's thread through the inbox and is said
+/// in the status line; `Ready` says nothing (Lens answered, nothing to report).
+fn lens_connection_is_said_in_the_status_line(app: &adw::Application) {
+    use hatate_core::engines::lens_search::LensConnection as C;
+    use hatate_gtk::search_run::BusEvent;
+    let f = fx(app);
+    let bus = f.w.s.search.bus.clone();
+    let say_after = |c: C| {
+        f.w.say("Ready");
+        // From another thread, as the Lens client posts it.
+        let b = bus.clone();
+        std::thread::spawn(move || b.post(BusEvent::Lens(c)))
+            .join()
+            .unwrap();
+        pump_for(60);
+        f.say()
+    };
+    assert_eq!(
+        say_after(C::NotReachable),
+        "Google Lens: the browser could not be reached - see Help > View Logs"
+    );
+    assert_eq!(
+        say_after(C::WaitingForLens),
+        "Google Lens: waiting for an answer\u{2026}"
+    );
+    assert_eq!(
+        say_after(C::Blocked),
+        "Google Lens: standing down for this run"
+    );
+    assert_eq!(say_after(C::Ready), "Ready");
+    assert_eq!(f.w.s.search.lens.get(), Some(C::Ready));
     f.close();
 }
 
