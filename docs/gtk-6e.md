@@ -216,8 +216,8 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 | 756 | `_build_sites_menu` | `menu.rs` Sites menu table, built from `all_site_options()`; its check items are `install_site_actions` |  |
 | 781 | `_on_site_toggled` | `hatate-gtk/src/search_run.rs:488` `on_site_toggled` |  |
 | 791 | `_set_all_sites` | `hatate-gtk/src/search_run.rs:509` `set_all_sites` |  |
-| 2201 | `action_parser_health` | `hatate-gtk/src/parser_health.rs:455` `action_parser_health` |  |
-| 2217 | `_warn_about_broken_parsers` | `hatate-gtk/src/parser_health.rs:463` `warn_about_broken_parsers` |  |
+| 2201 | `action_parser_health` | `hatate-gtk/src/parser_health.rs:459` `action_parser_health` |  |
+| 2217 | `_warn_about_broken_parsers` | `hatate-gtk/src/parser_health.rs:467` `warn_about_broken_parsers` |  |
 | 2264 | `action_toggle_search` | `hatate-gtk/src/search_run.rs:534` `action_toggle_search` |  |
 | 2270 | `action_start_search` | `hatate-gtk/src/search_run.rs:543` `action_start_search` |  |
 | 2282 | `action_stop_search` | `hatate-gtk/src/search_run.rs:574` `action_stop_search` |  |
@@ -272,11 +272,11 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 | 46 | `__init__ (the worker)` | `ProbeRunner` (the seam the live check will use) | **left to Phase 7 per DAN-2290**: no probe ships |
 | 50 | `run (the worker)` | `ProbeRunner::run` | **left to Phase 7 per DAN-2290** |
 | 66 | `__init__ (the dialog)` | `hatate-gtk/src/parser_health.rs:218` `ParserHealthDialog::build` |  |
-| 120 | `_populate` | `hatate-gtk/src/parser_health.rs:312` `populate` |  |
-| 155 | `_start_probe` | `hatate-gtk/src/parser_health.rs:379` (the check button; disabled in this build, DAN-2290) |  |
-| 168 | `_on_progress` | `hatate-gtk/src/parser_health.rs:413` `on_progress` |  |
-| 174 | `_on_done` | `hatate-gtk/src/parser_health.rs:424` `on_done` |  |
-| 198 | `closeEvent` | `hatate-gtk/src/parser_health.rs:379` `start_probe`: the worker's callback holds a weak handle, so a result that arrives after the dialog is gone is dropped |  |
+| 120 | `_populate` | `hatate-gtk/src/parser_health.rs:316` `populate` |  |
+| 155 | `_start_probe` | `hatate-gtk/src/parser_health.rs:383` (the check button; disabled in this build, DAN-2290) |  |
+| 168 | `_on_progress` | `hatate-gtk/src/parser_health.rs:417` `on_progress` |  |
+| 174 | `_on_done` | `hatate-gtk/src/parser_health.rs:428` `on_done` |  |
+| 198 | `closeEvent` | `hatate-gtk/src/parser_health.rs:383` `start_probe`: the worker's callback holds a weak handle, so a result that arrives after the dialog is gone is dropped |  |
 
 ### `core/desktop_attention.py`
 

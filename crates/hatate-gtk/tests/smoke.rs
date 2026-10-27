@@ -12,6 +12,7 @@ mod common;
 use common::*;
 use gtk4::gio;
 use gtk4::prelude::*;
+use hatate_core::engines::saucenao::SauceNaoQuota;
 use hatate_core::model::MatchStatus;
 use hatate_core::quota_pause::{QuotaPause, QuotaPauseFile};
 use hatate_core::session::{LoadOptions, SessionStore, named};
@@ -1609,12 +1610,31 @@ fn a_quota_pause_shows_the_banner_and_continue_resumes(app: &adw::Application) {
             .saucenao
             .push(common::search::scripted::Step::Return(Ok(Vec::new())));
     }
+    // The quota SauceNAO's last response reported: the strip's readout is "SauceNAO " (no colon)
+    // plus the daily count, and its tooltip is the burst window (DAN-2326).
+    *f.search.last_quota.lock().unwrap() = Some(SauceNaoQuota {
+        short_remaining: Some(4),
+        short_limit: Some(6),
+        long_remaining: Some(198),
+        long_limit: Some(200),
+    });
     // The allowance is spent after the first request.
     f.search
         .quota_after_calls
         .store(1, std::sync::atomic::Ordering::SeqCst);
     f.activate("toggle-search");
     assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    let readout = &f.w.s.shell.saucenao_quota_label;
+    assert_eq!(readout.text(), "SauceNAO 2/200 used today");
+    assert_eq!(
+        readout.root.tooltip_text().as_deref(),
+        Some("2/6 used in the current ~30s window")
+    );
+    // The banner's disabled Review button says why (DAN-2326).
+    assert_eq!(
+        f.w.s.quota_banner.review.tooltip_text().as_deref(),
+        Some("Review arrives in a later step.")
+    );
     assert_eq!(
         statuses(&f),
         vec![
