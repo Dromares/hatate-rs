@@ -713,6 +713,10 @@ impl MainWindow {
         });
         // DEFERRED(6.d/6.f): "Review the waiting" needs the table's row selection and Review.
         self.s.quota_banner.review.set_sensitive(false);
+        self.s
+            .quota_banner
+            .review
+            .set_tooltip_text(Some("Review arrives in a later step."));
         // The empty state's three buttons. Query Hydrus follows its (disabled) action.
     }
 }

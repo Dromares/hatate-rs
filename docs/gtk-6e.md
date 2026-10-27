@@ -216,8 +216,8 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 | 756 | `_build_sites_menu` | `menu.rs` Sites menu table, built from `all_site_options()`; its check items are `install_site_actions` |  |
 | 781 | `_on_site_toggled` | `hatate-gtk/src/search_run.rs:488` `on_site_toggled` |  |
 | 791 | `_set_all_sites` | `hatate-gtk/src/search_run.rs:509` `set_all_sites` |  |
-| 2201 | `action_parser_health` | `hatate-gtk/src/parser_health.rs:455` `action_parser_health` |  |
-| 2217 | `_warn_about_broken_parsers` | `hatate-gtk/src/parser_health.rs:463` `warn_about_broken_parsers` |  |
+| 2201 | `action_parser_health` | `hatate-gtk/src/parser_health.rs:459` `action_parser_health` |  |
+| 2217 | `_warn_about_broken_parsers` | `hatate-gtk/src/parser_health.rs:467` `warn_about_broken_parsers` |  |
 | 2264 | `action_toggle_search` | `hatate-gtk/src/search_run.rs:534` `action_toggle_search` |  |
 | 2270 | `action_start_search` | `hatate-gtk/src/search_run.rs:543` `action_start_search` |  |
 | 2282 | `action_stop_search` | `hatate-gtk/src/search_run.rs:574` `action_stop_search` |  |
@@ -272,11 +272,11 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 | 46 | `__init__ (the worker)` | `ProbeRunner` (the seam the live check will use) | **left to Phase 7 per DAN-2290**: no probe ships |
 | 50 | `run (the worker)` | `ProbeRunner::run` | **left to Phase 7 per DAN-2290** |
 | 66 | `__init__ (the dialog)` | `hatate-gtk/src/parser_health.rs:218` `ParserHealthDialog::build` |  |
-| 120 | `_populate` | `hatate-gtk/src/parser_health.rs:312` `populate` |  |
-| 155 | `_start_probe` | `hatate-gtk/src/parser_health.rs:379` (the check button; disabled in this build, DAN-2290) |  |
-| 168 | `_on_progress` | `hatate-gtk/src/parser_health.rs:413` `on_progress` |  |
-| 174 | `_on_done` | `hatate-gtk/src/parser_health.rs:424` `on_done` |  |
-| 198 | `closeEvent` | `hatate-gtk/src/parser_health.rs:379` `start_probe`: the worker's callback holds a weak handle, so a result that arrives after the dialog is gone is dropped |  |
+| 120 | `_populate` | `hatate-gtk/src/parser_health.rs:316` `populate` |  |
+| 155 | `_start_probe` | `hatate-gtk/src/parser_health.rs:383` (the check button; disabled in this build, DAN-2290) |  |
+| 168 | `_on_progress` | `hatate-gtk/src/parser_health.rs:417` `on_progress` |  |
+| 174 | `_on_done` | `hatate-gtk/src/parser_health.rs:428` `on_done` |  |
+| 198 | `closeEvent` | `hatate-gtk/src/parser_health.rs:383` `start_probe`: the worker's callback holds a weak handle, so a result that arrives after the dialog is gone is dropped |  |
 
 ### `core/desktop_attention.py`
 
@@ -346,7 +346,7 @@ The set to map is the union of two, so a test that exercises 6.e behaviour witho
 | 272 | `TestMainWindowSignalHandlers.test_search_progress_handlers` | **6.e**: `smoke::start_search_runs_the_batch` asserts the gauge, the per-row results and the finish; the rate-limit status line and the `waiting Ns` countdown text are `eta::the_countdown_rounds_halves_to_even`, and the window's handler for them is not driven by a test: the action differential compares it after every step (evidence from a run, not a test in the tree) (`wait`, `status`) |
 | 282 | `TestMainWindowSignalHandlers.test_progress_label_shows_the_count_then_the_estimate` | **6.e**: the strip's text is `eta::the_run_strip_follows_the_state_of_the_run`; `smoke::start_search_runs_the_batch` asserts the `0/3` and `3/3 searched` counts; the window's live `ETA ~…` reading is not asserted by a window test: the action differential compares it after every step (evidence from a run, not a test in the tree) (`run_eta`) |
 | 303 | `TestMainWindowSignalHandlers.test_a_finished_run_keeps_the_count_and_drops_the_estimate` | **6.e**: `smoke::start_search_runs_the_batch` asserts the count stays and the ETA returns to the idle reading after the run; `eta::a_finished_run_has_nothing_left` |
-| 350 | `TestMainWindowSignalHandlers.test_saucenao_quota_label_survives_odd_data` | **6.e**: does not apply as written: `SauceNaoQuota` is a typed struct, so a limit that arrives as a string cannot be built (the parse that tolerates it is the engine client's, Phase 4); the label's text is `saucenao::the_daily_allowance_reads_as_used_out_of_the_limit_else_what_is_left_else_nothing`; the action differential compares it after every step (evidence from a run, not a test in the tree) (`quota_label`) |
+| 350 | `TestMainWindowSignalHandlers.test_saucenao_quota_label_survives_odd_data` | **6.e**: does not apply as written: `SauceNaoQuota` is a typed struct, so a limit that arrives as a string cannot be built (the parse that tolerates it is the engine client's, Phase 4); the label's text is `saucenao::the_daily_allowance_reads_as_used_out_of_the_limit_else_what_is_left_else_nothing`; `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` asserts the window's label (`SauceNAO 2/200 used today`, no colon) and its burst-window tooltip after a live pause; the action differential also compares it after every step (evidence from a run, not a test in the tree) (`quota_label`) |
 | 403 | `TestEngineAlertsReachTheUser.test_the_channel_is_open_only_while_a_search_is_running` | **6.e**: `smoke::engine_alerts_reach_the_user_only_during_a_run`: nobody hears an alert before the run, one box during it, nobody after it (the listener comes off at the end); `engine_alerts::an_unsubscribed_listener_stops_hearing` for the channel itself |
 | 427 | `TestEngineAlertsReachTheUser.test_closing_mid_run_takes_the_listener_off_too` | **6.e**: not asserted: a run that is stopped part-way never reaches the finish handler in Python, so its listener has to come off at close; in Rust `SearchRun::close` calls the same `drop_listener`, and `smoke::close_saves_and_marks_a_clean_exit` closes a window, but no test closes mid-run and then raises an alert |
 | 438 | `TestEngineAlertsReachTheUser.test_a_forwarder_whose_window_is_gone_is_harmless` | **6.e**: does not apply: Python's forwarder emits a Qt signal on a window whose C++ half can already be gone. The Rust listener posts to a `Send` inbox and the window drains it only while it is alive (`SearchRun::post`, `MainWindow::downgrade` / `upgrade`); there is no object to emit on |
@@ -447,7 +447,7 @@ The set to map is the union of two, so a test that exercises 6.e behaviour witho
 | 248 | `TestActions.test_review_is_hidden_when_nothing_is_waiting` | **6.e**: not asserted: Python hides the button when nothing is waiting; here it is disabled for every state (see 241) |
 | 254 | `TestActions.test_continue_launches_without_saucenao_and_clears_the_banner` | **6.e**: `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` |
 | 270 | `TestActions.test_clearing_the_list_retires_the_banner` | **6.e/6.c**: not asserted by a test for the quota banner specifically: `hide_quota_banner` is the one path; `smoke::clear_session_matches_the_empty_list_quirk` clears the list, and the strip's note is asserted cleared by `a_quota_pause_shows_the_banner_and_continue_resumes` after Continue |
-| 319 | `TestStrip.test_the_strip_reads_paused_the_count_and_eta_paused` | **6.e**: `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` asserts the note `paused — quota exhausted` and `ETA paused` after a live pause. Not asserted in CI: the SauceNAO `200/200` readout (`saucenao_quota_label`); the action differential compares it after every step, which is a run, not a test |
+| 319 | `TestStrip.test_the_strip_reads_paused_the_count_and_eta_paused` | **6.e**: `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` asserts the note `paused — quota exhausted` and `ETA paused` after a live pause. The SauceNAO readout (`saucenao_quota_label`) is pinned in the same scenario (`SauceNAO 2/200 used today`); the action differential also compares it after every step, which is a run, not a test |
 | 327 | `TestStrip.test_the_run_ending_does_not_wipe_the_pause_from_the_strip` | **6.e**: the same scenario asserts, after the run has ended (`Search finished`), that the note and `ETA paused` are still there |
 
 #### `tests/test_render_states.py` (1)
@@ -469,7 +469,7 @@ The set to map is the union of two, so a test that exercises 6.e behaviour witho
 | 116 | `TestStripGeometry.test_eta_is_right_aligned_and_last` | 6.c: geometry of the strip, judged in the shot set |
 | 144 | `TestStripVoice.test_mockup_vocabulary_while_running` | **6.e**: `eta::the_run_strip_follows_the_state_of_the_run` and `eta::the_countdown_rounds_halves_to_even` for the words; `shell::tests` holds the strip's sample text; the window assembling them while running is the action differential compares it after every step (evidence from a run, not a test in the tree) |
 | 151 | `TestStripVoice.test_gauge_means_searched_and_sent_is_a_separate_count` | **6.e**: `smoke::start_search_runs_the_batch` asserts `3/3 searched` and the sent count separately (`run_strip_and_sent_count_follow_the_list` for the sent half) |
-| 160 | `TestStripVoice.test_quota_reads_without_a_colon` | **6.e**: `saucenao::the_daily_allowance_reads_as_used_out_of_the_limit_else_what_is_left_else_nothing` for the text (Python's label drops the colon: `refresh_saucenao_quota_label` does the same, `replacen("SauceNAO: ", "SauceNAO ")`); the window's label is the action differential compares it after every step (evidence from a run, not a test in the tree) (`quota_label`) |
+| 160 | `TestStripVoice.test_quota_reads_without_a_colon` | **6.e**: `saucenao::the_daily_allowance_reads_as_used_out_of_the_limit_else_what_is_left_else_nothing` for the text (Python's label drops the colon: `refresh_saucenao_quota_label` does the same, `replacen("SauceNAO: ", "SauceNAO ")`); the window's label is pinned by `smoke::a_quota_pause_shows_the_banner_and_continue_resumes` (`SauceNAO 2/200 used today`: the colon is gone and nothing else was added), and the action differential also compares it after every step (evidence from a run, not a test in the tree) (`quota_label`) |
 | 170 | `TestStripVoice.test_eta_reads_in_its_own_readout` | **6.e**: `eta::nothing_is_said_until_two_intervals_have_passed`, `eta::the_baseline_is_the_first_signal_and_the_total_is_reread`, `eta::the_run_strip_follows_the_state_of_the_run` |
 | 184 | `TestStripVoice.test_figures_are_bold_and_labels_are_mono` | 6.c: bold figures and mono labels are judged in the shot set |
 | 213 | `TestStripVoice.test_a_new_reading_leaves_no_old_text_under_it` | does not apply: Qt painted stale child labels; a `gtk::Label` has one text |
