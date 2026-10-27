@@ -223,7 +223,11 @@ fn render(label: &gtk::Label, cell: &CellView) {
     }
 }
 
-fn text_factory(column: Column) -> gtk::SignalListItemFactory {
+/// Which row each drawn cell widget belongs to (by the widget's address), so a pointer position
+/// can be turned back into a row.
+type CellRows = Rc<RefCell<HashMap<usize, EntryId>>>;
+
+fn text_factory(column: Column, cells: CellRows) -> gtk::SignalListItemFactory {
     let factory = gtk::SignalListItemFactory::new();
     factory.connect_setup(|_, item| {
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
@@ -235,6 +239,7 @@ fn text_factory(column: Column) -> gtk::SignalListItemFactory {
         label.add_css_class("queue-cell");
         item.set_child(Some(&label));
     });
+    let bound_cells = cells.clone();
     factory.connect_bind(move |_, item| {
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
             return;
@@ -247,6 +252,14 @@ fn text_factory(column: Column) -> gtk::SignalListItemFactory {
         };
         if let Some(cell) = row.cell(column) {
             render(&label, &cell);
+        }
+        bound_cells
+            .borrow_mut()
+            .insert(label.as_ptr() as usize, row.id());
+    });
+    factory.connect_unbind(move |_, item| {
+        if let Some(label) = item.downcast_ref::<gtk::ListItem>().and_then(|i| i.child()) {
+            cells.borrow_mut().remove(&(label.as_ptr() as usize));
         }
     });
     factory
@@ -280,7 +293,7 @@ fn paint_thumb(frame: &gtk::Picture, row: &RowObject) {
 }
 
 /// The thumbnail cell: a 40 px frame, loading or failed until the worker's texture lands.
-fn thumb_factory(bound: BoundCallback) -> gtk::SignalListItemFactory {
+fn thumb_factory(bound: BoundCallback, cells: CellRows) -> gtk::SignalListItemFactory {
     let factory = gtk::SignalListItemFactory::new();
     // The `thumb-changed` handler each recycled cell holds, so unbinding can drop it.
     let handlers: Rc<RefCell<HashMap<usize, (RowObject, glib::SignalHandlerId)>>> = Rc::default();
@@ -298,6 +311,7 @@ fn thumb_factory(bound: BoundCallback) -> gtk::SignalListItemFactory {
         item.set_child(Some(&frame));
     });
     let held = handlers.clone();
+    let unbound_cells = cells.clone();
     factory.connect_bind(move |_, item| {
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
             return;
@@ -321,6 +335,7 @@ fn thumb_factory(bound: BoundCallback) -> gtk::SignalListItemFactory {
         });
         held.borrow_mut()
             .insert(item.as_ptr() as usize, (row.clone(), id));
+        cells.borrow_mut().insert(frame.as_ptr() as usize, row.id());
         let callback = bound.borrow().clone();
         if let Some(callback) = callback {
             callback(row.id());
@@ -329,6 +344,11 @@ fn thumb_factory(bound: BoundCallback) -> gtk::SignalListItemFactory {
     factory.connect_unbind(move |_, item| {
         if let Some((row, id)) = handlers.borrow_mut().remove(&(item.as_ptr() as usize)) {
             row.disconnect(id);
+        }
+        if let Some(frame) = item.downcast_ref::<gtk::ListItem>().and_then(|i| i.child()) {
+            unbound_cells
+                .borrow_mut()
+                .remove(&(frame.as_ptr() as usize));
         }
     });
     factory
@@ -374,6 +394,7 @@ pub struct QueueView {
     /// `self._thumb_icon_cache`: what each file's thumbnail is, filed by path and decode size.
     thumbs: RefCell<ThumbBook<gdk::Texture>>,
     on_row_bound: BoundCallback,
+    cell_rows: CellRows,
 }
 
 impl QueueView {
@@ -392,12 +413,13 @@ impl QueueView {
         view.set_model(Some(&selection));
 
         let bound: BoundCallback = Rc::default();
+        let cell_rows: CellRows = Rc::default();
         let widths = table_cells::default_column_widths(1000, THUMB_COLUMN_SIZE as i32 + 32);
         let mut columns = Vec::new();
         for column in Column::ALL {
             let factory = match column {
-                Column::Thumb => thumb_factory(bound.clone()),
-                _ => text_factory(column),
+                Column::Thumb => thumb_factory(bound.clone(), cell_rows.clone()),
+                _ => text_factory(column, cell_rows.clone()),
             };
             let col = gtk::ColumnViewColumn::new(Some(column.title()), Some(factory));
             col.set_resizable(column != Column::Thumb);
@@ -445,6 +467,7 @@ impl QueueView {
             scheme: Cell::new(Scheme::Dark),
             thumbs: RefCell::new(ThumbBook::default()),
             on_row_bound: bound,
+            cell_rows,
         });
 
         let weak = Rc::downgrade(&this);
@@ -591,6 +614,66 @@ impl QueueView {
             row.imp().cells.replace(snapshot(entry));
         }
         self.store.items_changed(pos, 1, 1);
+    }
+
+    /// The row under a point of the view (`indexAt(pos)`): `None` over the header, the empty
+    /// area below the last row or anything else.
+    pub fn row_id_at(&self, x: f64, y: f64) -> Option<EntryId> {
+        let cells = self.cell_rows.borrow();
+        let mut widget = self.view.pick(x, y, gtk::PickFlags::DEFAULT)?;
+        loop {
+            if let Some(id) = cells.get(&(widget.as_ptr() as usize)) {
+                return Some(*id);
+            }
+            if let Some(id) = widget
+                .first_child()
+                .and_then(|c| cells.get(&(c.as_ptr() as usize)))
+            {
+                return Some(*id);
+            }
+            if widget == *self.view.upcast_ref::<gtk::Widget>() {
+                return None;
+            }
+            widget = widget.parent()?;
+        }
+    }
+
+    /// Calls `f(row under the pointer, x, y)` on a right click, and `f(None, 0, 0)` from the
+    /// keyboard (Menu, Shift+F10), where the menu opens over the first selected row.
+    pub fn connect_context_menu(self: &Rc<Self>, f: impl Fn(Option<EntryId>, f64, f64) + 'static) {
+        let f = Rc::new(f);
+        let click = gtk::GestureClick::new();
+        click.set_button(gdk::BUTTON_SECONDARY);
+        click.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let (weak, g) = (Rc::downgrade(self), f.clone());
+        click.connect_pressed(move |gesture, _, x, y| {
+            let Some(this) = weak.upgrade() else { return };
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+            let hit = this.row_id_at(x, y);
+            // Qt selects the row a right press lands on, unless it is already part of the
+            // selection (so a menu over several selected rows keeps them).
+            if let Some(id) = hit
+                && !this.selected_ids().contains(&id)
+            {
+                this.select_ids(&[id]);
+            }
+            g(hit, x, y);
+        });
+        self.view.add_controller(click);
+
+        let keys = gtk::ShortcutController::new();
+        for trigger in ["Menu", "<Shift>F10"] {
+            let g = f.clone();
+            let shortcut = gtk::Shortcut::new(
+                gtk::ShortcutTrigger::parse_string(trigger),
+                Some(gtk::CallbackAction::new(move |_, _| {
+                    g(None, 0.0, 0.0);
+                    glib::Propagation::Stop
+                })),
+            );
+            keys.add_shortcut(shortcut);
+        }
+        self.view.add_controller(keys);
     }
 
     /// Called with the id of every row as it is drawn, so its thumbnail can be asked for.

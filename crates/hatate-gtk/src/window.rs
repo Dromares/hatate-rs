@@ -315,6 +315,7 @@ impl MainWindow {
         let _ = handle.set(window.downgrade());
         window.install_actions(app);
         window.wire_thumbnails();
+        window.wire_table_context_menu();
         window.wire_banners();
         window.apply_theme(&theme_setting(&window.s));
         window.refresh_queue_empty_state();

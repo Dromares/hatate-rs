@@ -37,6 +37,9 @@ pub enum Buttons {
     /// Write Tag Files' three-way box: "Keep existing files" (the default), "Replace them" (the
     /// destructive one) and Cancel, which Escape means.
     KeepReplaceCancel,
+    /// A destructive confirmation (design gate 2.6): Cancel is the default and what Escape
+    /// means; the destructive button is never the default.
+    RemoveCancel,
 }
 
 /// What the user pressed.
@@ -47,6 +50,7 @@ pub enum Response {
     No,
     Keep,
     Replace,
+    Remove,
     Cancel,
 }
 
@@ -121,6 +125,7 @@ pub fn default_response(kind: Kind, buttons: Buttons) -> Response {
         (Kind::Question, Buttons::YesNo) => Response::No,
         (_, Buttons::YesNo) => Response::No,
         (_, Buttons::KeepReplaceCancel) => Response::Keep,
+        (_, Buttons::RemoveCancel) => Response::Cancel,
         (_, Buttons::Ok) => Response::Ok,
     }
 }
@@ -216,6 +221,12 @@ impl Prompter for AdwPrompter {
                 dialog.set_default_response(Some("keep"));
                 dialog.set_close_response("cancel");
             }
+            Buttons::RemoveCancel => {
+                dialog.add_responses(&[("cancel", "Cancel"), ("remove", "Remove")]);
+                dialog.set_response_appearance("remove", adw::ResponseAppearance::Destructive);
+                dialog.set_default_response(Some("cancel"));
+                dialog.set_close_response("cancel");
+            }
         }
         // A keyboard-first app: the default button shows its focus ring the moment the dialog
         // opens (GTK would draw it only after a key press), so the answer Enter gives is visible
@@ -227,6 +238,7 @@ impl Prompter for AdwPrompter {
                 "no" => Response::No,
                 "keep" => Response::Keep,
                 "replace" => Response::Replace,
+                "remove" => Response::Remove,
                 "cancel" => Response::Cancel,
                 _ => Response::Ok,
             });
@@ -353,6 +365,14 @@ mod tests {
         assert_eq!(
             default_response(Kind::Warning, Buttons::YesNo),
             Response::No
+        );
+    }
+
+    #[test]
+    fn a_remove_confirmation_defaults_to_cancel() {
+        assert_eq!(
+            default_response(Kind::Question, Buttons::RemoveCancel),
+            Response::Cancel
         );
     }
 

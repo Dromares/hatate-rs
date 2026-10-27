@@ -106,6 +106,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_view_thumbnails_load_fail_and_stay_off_the_main_loop,
     ),
     (
+        "queue_context_menu_selects_marks_resets_and_removes",
+        queue_context_menu_selects_marks_resets_and_removes,
+    ),
+    (
         "queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order",
         queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order,
     ),
@@ -1668,6 +1672,93 @@ fn queue_view_thumbnails_load_fail_and_stay_off_the_main_loop(app: &adw::Applica
     view.rebuild();
     assert_eq!(view.thumb_state(ids[0]), ThumbState::Loaded);
     assert!(!f.w.s.thumbs.is_running());
+    f.close();
+}
+
+fn queue_context_menu_selects_marks_resets_and_removes(app: &adw::Application) {
+    use hatate_core::table_menu::Predicate;
+    let mut seed = seeded(12, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % MatchStatus::ALL.len()];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    // Nothing selected: only the four "Select by" menus.
+    assert!(f.w.table_menu(&[]).rows.is_none());
+
+    f.w.select_rows_by_status(MatchStatus::Good);
+    assert_eq!(view.selected_ids().len(), 2);
+    assert_eq!(
+        f.say(),
+        "Selected 2 image(s) matching status \"Found (good)\""
+    );
+    f.w.select_rows_by_predicate(Predicate::MissingFromDisk.description(), |e| {
+        Predicate::MissingFromDisk.test(e)
+    });
+    assert!(
+        view.selected_ids().is_empty(),
+        "a new selection replaces the old one"
+    );
+    assert_eq!(f.say(), "No images matching Missing from disk");
+
+    // The menu over those two rows says "2", and its wired entries have handlers.
+    f.w.select_rows_by_status(MatchStatus::Good);
+    let ids = view.selected_ids();
+    let rows = f.w.table_menu(&ids).rows.unwrap();
+    assert!(rows.tail.iter().any(|l| matches!(l,
+        hatate_core::table_menu::Line::Item(i) if i.label == "Remove 2 selected files")));
+
+    // Reviewed: no question, the status line counts what is left to review.
+    f.w.set_rows_reviewed(&ids, true);
+    assert!(
+        f.say()
+            .starts_with("Marked 2 image(s) as reviewed \u{2014} ")
+    );
+    f.w.set_rows_reviewed(&ids, true);
+    assert!(
+        f.say().starts_with("Marked 2"),
+        "nothing changed, nothing said"
+    );
+
+    // Reset asks first, and the question defaults to No.
+    f.w.reset_rows(&ids);
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.buttons, shown.default),
+        (Buttons::YesNo, Response::No)
+    );
+    assert!(
+        shown
+            .text
+            .starts_with("Discard the search results for 2 images?")
+    );
+    assert!(
+        view.cell(1, hatate_core::table_cells::Column::Status)
+            .is_some()
+    );
+    f.script.push(Answer::Msg(Response::Yes));
+    f.w.reset_rows(&ids);
+    assert_eq!(f.say(), "Reset 2 images to Not searched");
+
+    // Remove asks with Cancel as the default, and acts only on Remove.
+    f.w.remove_rows(&ids);
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.buttons, shown.default),
+        (Buttons::RemoveCancel, Response::Cancel)
+    );
+    assert_eq!(f.len(), 12, "the default answer removes nothing");
+    f.script.push(Answer::Msg(Response::Remove));
+    f.w.remove_rows(&ids);
+    assert_eq!(f.len(), 10);
+    assert_eq!(f.say(), "Removed 2 file(s) from the list");
     f.close();
 }
 
