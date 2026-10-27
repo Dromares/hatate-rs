@@ -257,12 +257,15 @@ impl MainWindow {
         );
         {
             let mut q = self.s.queue.borrow_mut();
+            let mut added = Vec::with_capacity(unique.len());
             for p in &unique {
                 let mut entry = Entry::new(p.to_string_lossy().into_owned());
                 // Already computed: avoid re-hashing.
                 entry.hydrus_hash = path_to_hash.get(p).cloned();
-                q.push(entry);
+                added.push(q.push(entry));
             }
+            // `_register_new_entries`: so the header cycle can restore insertion order.
+            self.s.queue_view.register_new(&added);
         }
         self.list_changed();
         let total = self.s.queue.borrow().len();
@@ -272,11 +275,11 @@ impl MainWindow {
         }
         self.say(&status);
         // DEFERRED(6.g): `_lookup_existing_hydrus_tags(new_entries)`.
-        // DEFERRED(6.d): `_schedule_viewport_thumbnails` / `_start_thumbnail_generation`.
+        self.thumbnails_for_new_entries();
     }
 
     /// What `_refresh_table()` does for this ticket: the list changed, so the empty state, the
-    /// ghost glyph and the count follow it. 6.d's view hangs its refresh here.
+    /// ghost glyph, the table and the count follow it (`_refresh_table`).
     pub fn list_changed(&self) {
         self.refresh_queue_empty_state();
         self.refresh_sent_count_label();
@@ -407,9 +410,8 @@ impl MainWindow {
         let count = entries.len();
         {
             let mut q = self.s.queue.borrow_mut();
-            for e in entries.iter().cloned() {
-                q.push(e);
-            }
+            let added: Vec<_> = entries.iter().cloned().map(|e| q.push(e)).collect();
+            self.s.queue_view.register_new(&added);
         }
         self.list_changed();
         if self.s.unclean_shutdown {
@@ -424,7 +426,7 @@ impl MainWindow {
         }
         self.start_missing_file_check(&entries);
         // DEFERRED(6.g): `_start_hydrus_reconcile(quiet=True)`.
-        // DEFERRED(6.d): the viewport pass or `_start_thumbnail_generation(entries)`.
+        self.thumbnails_for_new_entries();
     }
 
     /// `_start_missing_file_check(entries)`: whether a restored session's files are still on disk,
@@ -642,12 +644,18 @@ impl MainWindow {
             entries.len()
         ));
         self.start_missing_file_check(&entries);
-        // DEFERRED(6.d): the viewport pass or `_start_thumbnail_generation(entries)`.
+        self.thumbnails_for_new_entries();
     }
 
     /// Replaces the working list wholesale (Python rebinds `self.entries`).
     fn replace_entries(&self, entries: Vec<Entry>) {
         *self.s.queue.borrow_mut() = QueueModel::new(entries, self.s.settings.clone());
+        let ids: Vec<_> = {
+            let q = self.s.queue.borrow();
+            (0..q.len() as i64).filter_map(|r| q.id_at(r)).collect()
+        };
+        // `_register_new_entries(entries)`; the sort column and direction are left as they were.
+        self.s.queue_view.register_new(&ids);
         self.list_changed();
     }
 
@@ -655,7 +663,8 @@ impl MainWindow {
     /// replaced, and drops its results (`retire_attrs(..., clear=True)`).
     pub fn stop_background_workers(&self) {
         self.s.file_hash_worker.retire();
-        // DEFERRED(6.d): `thumbnail_worker`; DEFERRED(6.e): `availability_worker`.
+        self.s.thumbs.retire();
+        // DEFERRED(6.e): `availability_worker`.
     }
 
     /// `clear_session()`: discards the automatic session, both stores. `true` when nothing went
@@ -846,7 +855,14 @@ impl MainWindow {
         if let Some(id) = self.s.autosave_timer.borrow_mut().take() {
             id.remove();
         }
-        // DEFERRED(6.e): `lens_browser.shutdown()`. DEFERRED(6.d): `_save_table_header_state()`.
+        // DEFERRED(6.e): `lens_browser.shutdown()`.
+        {
+            // `_save_table_header_state()`.
+            let sections = self.s.queue_view.header_sections();
+            let mut s = self.s.settings.lock().unwrap();
+            s.table_header_state = hatate_core::table_cells::encode_header_state(&sections);
+            s.table_header_columns = hatate_core::table_cells::COLUMNS.len() as i64;
+        }
         let restore = self.s.settings.lock().unwrap().restore_session_on_start;
         if restore {
             self.save_session_now();

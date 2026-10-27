@@ -408,6 +408,25 @@ mod tests {
     }
 
     #[test]
+    fn a_reviewed_entry_exports_reviewed_true_and_an_unreviewed_one_false() {
+        let column = HEADERS.iter().position(|&h| h == "reviewed").unwrap();
+        let mut e = Entry::new("/pics/c.png");
+        e.reviewed = true;
+        let csv = to_csv([&e], None);
+        let cells: Vec<&str> = csv.split("\r\n").nth(1).unwrap().split(',').collect();
+        assert_eq!(cells.len(), HEADERS.len(), "no cell here needs quoting");
+        assert_eq!(cells[column], "TRUE");
+        assert!(to_json([&e], Some(0.0), None).contains("      \"reviewed\": true,"));
+        e.reviewed = false;
+        let csv = to_csv([&e], None);
+        assert_eq!(
+            csv.split("\r\n").nth(1).unwrap().split(',').nth(column),
+            Some("FALSE")
+        );
+        assert!(to_json([&e], Some(0.0), None).contains("      \"reviewed\": false,"));
+    }
+
+    #[test]
     fn an_entry_with_no_match_leaves_the_match_columns_blank() {
         let mut e = Entry::new("/pics/b.png");
         e.error_message = Some("boom".to_owned());

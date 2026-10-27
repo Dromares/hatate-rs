@@ -8,8 +8,10 @@
 //! and nothing in it can be clicked into an empty handler.
 
 use crate::dialogs::{AdwPrompter, Prompter};
+use crate::filter_bar::FilterBar;
 use crate::logview::{LogSource, RingLogs};
 use crate::menu::{self, Owner};
+use crate::queue_view::QueueView;
 use crate::shell::{self, Shell};
 use crate::theme;
 use crate::tokens::Scheme;
@@ -111,9 +113,15 @@ fn open_with_desktop(path: &Path) {
 pub struct State {
     pub paths: Paths,
     pub settings: Arc<Mutex<Settings>>,
-    pub queue: RefCell<QueueModel>,
+    pub queue: Rc<RefCell<QueueModel>>,
+    /// The Queue table (`self.table`, `self.table_model`).
+    pub queue_view: Rc<QueueView>,
+    /// `self.filter_bar`.
+    pub filter_bar: Rc<FilterBar>,
     pub workers: Workers,
     pub file_hash_worker: Slot,
+    /// The thumbnail scheduler (`thumbnail_worker`, `_thumbs_in_flight`).
+    pub thumbs: crate::thumbnails::Scheduler,
     pub missing_file_worker: Slot,
     pub autosave_worker: Slot,
     /// Set while an autosave write is on the pool, so close can wait for it.
@@ -126,6 +134,8 @@ pub struct State {
     pub logs: Rc<dyn LogSource>,
     pub run_session: RefCell<Option<RunSession>>,
     pub shell: Rc<Shell>,
+    /// The Help menu's Clear Search Cache item, whose label carries the cache size.
+    pub clear_cache_item: menu::ClearCacheItem,
     pub queue_stack: gtk::Stack,
     pub drop_zone: gtk::Overlay,
     pub run_banner: widgets::RunBanner,
@@ -187,11 +197,42 @@ fn scheme_for(setting: &str) -> Scheme {
     theme::resolve_scheme(setting, system)
 }
 
+/// `_restore_table_header_state`: applies the saved column layout, or resets the settings key
+/// the way Python does when the value cannot be used (the Qt blob a Python build wrote included).
+fn restore_table_header_state(settings: &Mutex<Settings>, view: &QueueView) {
+    use hatate_core::table_cells::{HeaderRestore, restore_header_state};
+    let mut s = settings.lock().unwrap();
+    match restore_header_state(&s.table_header_state, s.table_header_columns) {
+        HeaderRestore::NothingSaved => {}
+        HeaderRestore::WrongColumnCount => {
+            tracing::info!(
+                "Discarding saved column layout: saved with {} column(s), this build has {}",
+                s.table_header_columns,
+                hatate_core::table_cells::COLUMNS.len()
+            );
+            s.table_header_state.clear();
+            s.table_header_columns = 0;
+        }
+        HeaderRestore::Unreadable => {
+            tracing::warn!("Could not restore table column layout (invalid saved state)");
+            s.table_header_state.clear();
+        }
+        HeaderRestore::Restored { sections, repaired } => {
+            view.apply_header_sections(&sections);
+            if !repaired.is_empty() {
+                tracing::info!("Repaired restored column layout: {}", repaired.join(", "));
+            }
+        }
+    }
+}
+
 impl MainWindow {
     pub fn new(app: &adw::Application, env: Env) -> MainWindow {
         let loaded = Settings::load(&env.paths);
         let settings = Arc::new(Mutex::new(loaded.settings));
-        let queue = QueueModel::new(Vec::new(), settings.clone());
+        let queue = Rc::new(RefCell::new(QueueModel::new(Vec::new(), settings.clone())));
+        let queue_view = QueueView::new(queue.clone());
+        restore_table_header_state(&settings, &queue_view);
 
         let win = adw::ApplicationWindow::builder()
             .application(app)
@@ -226,7 +267,34 @@ impl MainWindow {
 
         let queue_stack = gtk::Stack::new();
         queue_stack.set_vexpand(true);
-        queue_stack.add_named(&placeholder_rows(), Some("rows"));
+        // `table_layout`: the filter band over the list.
+        let filter_bar = FilterBar::new(queue.clone());
+        {
+            let view = Rc::downgrade(&queue_view);
+            let bar = filter_bar.clone();
+            filter_bar.connect_changed(move || {
+                if let Some(view) = view.upgrade() {
+                    view.set_filter(bar.current_filter());
+                }
+            });
+            let view = Rc::downgrade(&queue_view);
+            let bar = filter_bar.clone();
+            queue_view.connect_rebuilt(move || {
+                if let Some(view) = view.upgrade() {
+                    bar.rebuild_menus();
+                    bar.refresh(
+                        view.visible_count(),
+                        view.total_count(),
+                        view.filter().is_active(),
+                    );
+                }
+            });
+        }
+        let rows_page = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        rows_page.append(&filter_bar.root);
+        queue_view.root.set_vexpand(true);
+        rows_page.append(&queue_view.root);
+        queue_stack.add_named(&rows_page, Some("rows"));
         let drop_zone = build_drop_zone();
         queue_stack.add_named(&drop_zone, Some("empty"));
         queue_stack.set_visible_child_name("empty");
@@ -258,7 +326,8 @@ impl MainWindow {
             call(&handle, |w| w.activate_action("preferences")),
         );
 
-        let menubar = gtk::PopoverMenuBar::from_model(Some(&menu::model()));
+        let (menu_model, clear_cache_item) = menu::model();
+        let menubar = gtk::PopoverMenuBar::from_model(Some(&menu_model));
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.append(&menubar);
         shell.root.root.set_vexpand(true);
@@ -270,9 +339,12 @@ impl MainWindow {
         let state = Rc::new(State {
             paths: env.paths.clone(),
             settings: settings.clone(),
-            queue: RefCell::new(queue),
+            queue,
+            queue_view,
+            filter_bar,
             workers: Workers::new(),
             file_hash_worker: Slot::new(),
+            thumbs: Default::default(),
             missing_file_worker: Slot::new(),
             autosave_worker: Slot::new(),
             autosave_inflight: Arc::new(AtomicBool::new(false)),
@@ -284,6 +356,7 @@ impl MainWindow {
             logs,
             run_session: RefCell::new(env.run_session),
             shell,
+            clear_cache_item,
             queue_stack,
             drop_zone,
             run_banner,
@@ -307,12 +380,44 @@ impl MainWindow {
         };
         let _ = handle.set(window.downgrade());
         window.install_actions(app);
+        window.wire_thumbnails();
+        window.wire_clear_cache_label(&menubar);
+        window.wire_table_context_menu();
         window.wire_banners();
         window.apply_theme(&theme_setting(&window.s));
         window.refresh_queue_empty_state();
         window.connect_close();
         window.startup();
         window
+    }
+
+    /// Rows ask for their thumbnail as they are drawn.
+    /// `_update_clear_cache_action_label`.
+    pub fn update_clear_cache_label(&self) {
+        let size = hatate_core::cache::SearchCache::new(&self.s.paths).size_bytes();
+        self.s
+            .clear_cache_item
+            .set_label(&hatate_core::table_menu::clear_cache_label(size));
+    }
+
+    /// GTK's menubar has no about-to-show signal, so the label is refreshed on the press that
+    /// opens a menu (capture phase, before the popover is built) and on startup.
+    fn wire_clear_cache_label(&self, menubar: &gtk::PopoverMenuBar) {
+        let w = self.clone();
+        let press = gtk::GestureClick::new();
+        press.set_propagation_phase(gtk::PropagationPhase::Capture);
+        press.connect_pressed(move |_, _, _, _| w.update_clear_cache_label());
+        menubar.add_controller(press);
+        self.update_clear_cache_label();
+    }
+
+    fn wire_thumbnails(&self) {
+        let w = self.downgrade();
+        self.s.queue_view.connect_row_bound(move |id| {
+            if let Some(w) = w.upgrade() {
+                w.on_row_drawn(id);
+            }
+        });
     }
 
     pub fn downgrade(&self) -> MainWindowWeak {
@@ -396,12 +501,7 @@ impl MainWindow {
             let ghost = self.ghost_glyph_for("queue");
             self.s.shell.root.set_glyph(&ghost);
         }
-        if let Some(count) = self.s.queue_stack.child_by_name("rows") {
-            let n = self.s.queue.borrow().len();
-            if let Some(label) = count.first_child().and_downcast::<gtk::Label>() {
-                label.set_text(&rows_text(n));
-            }
-        }
+        self.s.queue_view.rebuild();
     }
 
     /// `status_label.setText`.
@@ -480,6 +580,9 @@ impl MainWindow {
                 "clear-session" => w.action_clear_session(),
                 "open-log" => w.action_open_log(),
                 "view-logs" => w.action_view_logs(),
+                "export-results" => w.action_export_results(None),
+                "write-tag-files" => w.action_write_tag_files(None),
+                "clear-search-cache" => w.action_clear_search_cache(),
                 "quit" => w.win.close(),
                 other => tracing::warn!("no handler for action {other}"),
             }
@@ -517,25 +620,6 @@ impl MainWindow {
 /// The stored `theme` setting.
 fn theme_setting(s: &State) -> String {
     s.settings.lock().unwrap().theme.clone()
-}
-
-/// What the Queue's list page says until 6.d replaces it with the `ColumnView`.
-fn rows_text(n: usize) -> String {
-    if n == 0 {
-        "The list view arrives in 6.d.".to_owned()
-    } else {
-        format!("{n} image(s) in the list. The list view arrives in 6.d.")
-    }
-}
-
-fn placeholder_rows() -> gtk::Widget {
-    let page = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let label = widgets::muted(&rows_text(0));
-    label.set_halign(gtk::Align::Center);
-    label.set_valign(gtk::Align::Center);
-    label.set_vexpand(true);
-    page.append(&label);
-    page.upcast()
 }
 
 /// Review's frame at its minimum footprint, until 6.f fills it: two previews of at least
