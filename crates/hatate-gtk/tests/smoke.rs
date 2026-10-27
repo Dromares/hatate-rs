@@ -124,6 +124,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_view_thumbnails_load_fail_and_stay_off_the_main_loop,
     ),
     (
+        "queue_view_thumbnails_stay_off_when_the_source_is_off",
+        queue_view_thumbnails_stay_off_when_the_source_is_off,
+    ),
+    (
         "queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded",
         queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded,
     ),
@@ -1780,6 +1784,24 @@ fn queue_select_by_status_under_a_filter_never_selects_a_hidden_row(app: &adw::A
         f.say(),
         format!("Selected 2 image(s) matching status \"{}\"", part.label())
     );
+    // Reset on every visible row leaves the hidden ones as they were
+    // (`test_resetting_only_resets_visible_rows`).
+    f.w.select_rows_by_predicate("every visible row", |_| true);
+    let shown_ids = view.selected_ids();
+    assert_eq!(shown_ids.len(), 3, "img1, img10 and img11");
+    let before_reset = snapshot(&f);
+    f.script.push(Answer::Msg(Response::Yes));
+    f.w.reset_rows(&shown_ids);
+    for ((path, status, _), (_, old_status, _)) in snapshot(&f).iter().zip(&before_reset) {
+        if path.contains("img1") {
+            assert_eq!(*status, MatchStatus::NotSearched, "{path} is visible");
+        } else {
+            assert_eq!(
+                status, old_status,
+                "reset a row the filter had hidden: {path}"
+            );
+        }
+    }
     // With no filter nothing is hidden, so the old wording stands.
     bar.clear.emit_clicked();
     f.w.select_rows_by_predicate("nothing", |_| false);
@@ -1933,6 +1955,38 @@ fn queue_view_thumbnails_load_fail_and_stay_off_the_main_loop(app: &adw::Applica
     // A row rebuilt from the cache keeps its picture without a second decode.
     view.rebuild();
     assert_eq!(view.thumb_state(ids[0]), ThumbState::Loaded);
+    assert!(!f.w.s.thumbs.is_running());
+    f.close();
+}
+
+fn queue_view_thumbnails_stay_off_when_the_source_is_off(app: &adw::Application) {
+    // `test_off_reads_no_files_at_all_but_still_finishes`: no file is read, no pass is left
+    // running, and the progress strip is not left showing a pass that never ends.
+    let pics = tempfile::tempdir().unwrap();
+    let good = pics.path().join("good.png");
+    image::RgbaImage::from_pixel(64, 64, image::Rgba([10, 120, 200, 255]))
+        .save(&good)
+        .unwrap();
+    let mut seed = seeded(2, MatchStatus::Good);
+    seed[0].path = good.to_string_lossy().into_owned();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            tweak: Some(Box::new(|s| s.thumbnail_source = "off".into())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    pump_for(500);
+    for id in view.visible_ids() {
+        assert!(
+            !view.thumb_known(id),
+            "a picture was decoded with the source off"
+        );
+    }
+    assert_eq!(f.w.s.thumbs.in_flight(), 0);
     assert!(!f.w.s.thumbs.is_running());
     f.close();
 }
@@ -2278,6 +2332,15 @@ fn queue_header_layout_is_saved_on_close_and_restored_repaired_or_discarded(
     assert_eq!(
         got[4].width, 130,
         "an ordinary column keeps its saved width"
+    );
+    // A saved layout is not overwritten by the window changing size
+    // (`test_a_saved_layout_is_not_overwritten_by_the_defaults`).
+    f.w.win.set_default_size(1500, 900);
+    pump_for(300);
+    let resized = f.w.s.queue_view.header_sections();
+    assert_eq!(
+        resized[4].width, 130,
+        "a resize rewrote a saved column width"
     );
     f.w.close_teardown();
     // Closing saves the live layout in this build's format, with the column count. Read before the

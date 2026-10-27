@@ -643,4 +643,25 @@ mod tests {
             "the hint rule names hover and focus"
         );
     }
+
+    /// `test_the_zebra_stripe_is_quiet_but_visible` and
+    /// `test_ink_tiers_resolve_to_distinct_colours_per_theme`.
+    #[test]
+    fn the_zebra_is_quiet_but_visible_and_the_ink_tiers_are_distinct() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            assert_ne!(p.zebra(), p.raised, "{scheme:?}: the stripe is invisible");
+            let ratio = contrast(p.zebra(), p.raised);
+            assert!(
+                ratio > 1.0 && ratio < 1.2,
+                "{scheme:?}: a zebra of {ratio:.3}:1 is noise or nothing"
+            );
+            let tiers = [p.ink, p.ink_65, p.ink_58, p.ink_46].map(|c| c.over(p.raised));
+            for (i, a) in tiers.iter().enumerate() {
+                for b in &tiers[i + 1..] {
+                    assert_ne!(a, b, "{scheme:?}: two ink tiers paint the same colour");
+                }
+            }
+        }
+    }
 }
