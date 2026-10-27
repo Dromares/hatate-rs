@@ -192,12 +192,42 @@ fn scheme_for(setting: &str) -> Scheme {
     theme::resolve_scheme(setting, system)
 }
 
+/// `_restore_table_header_state`: applies the saved column layout, or resets the settings key
+/// the way Python does when the value cannot be used (the Qt blob a Python build wrote included).
+fn restore_table_header_state(settings: &Mutex<Settings>, view: &QueueView) {
+    use hatate_core::table_cells::{HeaderRestore, restore_header_state};
+    let mut s = settings.lock().unwrap();
+    match restore_header_state(&s.table_header_state, s.table_header_columns) {
+        HeaderRestore::NothingSaved => {}
+        HeaderRestore::WrongColumnCount => {
+            tracing::info!(
+                "Discarding saved column layout: saved with {} column(s), this build has {}",
+                s.table_header_columns,
+                hatate_core::table_cells::COLUMNS.len()
+            );
+            s.table_header_state.clear();
+            s.table_header_columns = 0;
+        }
+        HeaderRestore::Unreadable => {
+            tracing::warn!("Could not restore table column layout (invalid saved state)");
+            s.table_header_state.clear();
+        }
+        HeaderRestore::Restored { sections, repaired } => {
+            view.apply_header_sections(&sections);
+            if !repaired.is_empty() {
+                tracing::info!("Repaired restored column layout: {}", repaired.join(", "));
+            }
+        }
+    }
+}
+
 impl MainWindow {
     pub fn new(app: &adw::Application, env: Env) -> MainWindow {
         let loaded = Settings::load(&env.paths);
         let settings = Arc::new(Mutex::new(loaded.settings));
         let queue = Rc::new(RefCell::new(QueueModel::new(Vec::new(), settings.clone())));
         let queue_view = QueueView::new(queue.clone());
+        restore_table_header_state(&settings, &queue_view);
 
         let win = adw::ApplicationWindow::builder()
             .application(app)

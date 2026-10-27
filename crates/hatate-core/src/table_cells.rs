@@ -782,8 +782,14 @@ mod tests {
     fn a_header_state_this_build_cannot_read_is_never_partly_parsed() {
         assert_eq!(restore_header_state("", 0), HeaderRestore::NothingSaved);
         let good = encode_header_state(&sections(100));
-        assert_eq!(restore_header_state(&good, 11), HeaderRestore::WrongColumnCount);
-        assert_eq!(restore_header_state(&good, 0), HeaderRestore::WrongColumnCount);
+        assert_eq!(
+            restore_header_state(&good, 11),
+            HeaderRestore::WrongColumnCount
+        );
+        assert_eq!(
+            restore_header_state(&good, 0),
+            HeaderRestore::WrongColumnCount
+        );
         // A Qt saveState() blob (base64) with the right column count.
         for bad in [
             "AAAA/wAAAAAAAAABAAAAAQEAAAAAAAAAAAAAAAAAAAAAAADIAAA=",
@@ -794,7 +800,11 @@ mod tests {
             "hatate-rs:1:100,100,100,100,100,100,100,100,100,100,100,-5",
             "hatate-rs:1:100,100,100,100,100,100,100,100,100,100,100,",
         ] {
-            assert_eq!(restore_header_state(bad, 12), HeaderRestore::Unreadable, "{bad}");
+            assert_eq!(
+                restore_header_state(bad, 12),
+                HeaderRestore::Unreadable,
+                "{bad}"
+            );
         }
     }
 }

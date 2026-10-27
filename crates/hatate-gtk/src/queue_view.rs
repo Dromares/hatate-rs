@@ -736,6 +736,32 @@ impl QueueView {
         }
     }
 
+    /// `_save_table_header_state`'s capture: the width and visibility of each column. A column
+    /// that was never given a fixed width (the expanding Upscale one) reports the default.
+    pub fn header_sections(&self) -> Vec<table_cells::HeaderSection> {
+        self.columns
+            .iter()
+            .map(|c| table_cells::HeaderSection {
+                width: match c.fixed_width() {
+                    w if w > 0 => w,
+                    _ => table_cells::DEFAULT_COLUMN_WIDTH,
+                },
+                hidden: !c.is_visible(),
+            })
+            .collect()
+    }
+
+    /// Applies a restored (already repaired) layout. Thumb keeps its fixed cell width and the
+    /// expanding Upscale column keeps expanding, as in the default layout.
+    pub fn apply_header_sections(&self, sections: &[table_cells::HeaderSection]) {
+        for ((col, kind), section) in self.columns.iter().zip(Column::ALL).zip(sections) {
+            col.set_visible(!section.hidden);
+            if !matches!(kind, Column::Thumb | Column::Upscale) {
+                col.set_fixed_width(section.width);
+            }
+        }
+    }
+
     /// `(self._sort_column, self._sort_ascending)`.
     pub fn sort_state(&self) -> Option<(Column, bool)> {
         self.sort.get()

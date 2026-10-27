@@ -855,7 +855,14 @@ impl MainWindow {
         if let Some(id) = self.s.autosave_timer.borrow_mut().take() {
             id.remove();
         }
-        // DEFERRED(6.e): `lens_browser.shutdown()`. DEFERRED(6.d): `_save_table_header_state()`.
+        // DEFERRED(6.e): `lens_browser.shutdown()`.
+        {
+            // `_save_table_header_state()`.
+            let sections = self.s.queue_view.header_sections();
+            let mut s = self.s.settings.lock().unwrap();
+            s.table_header_state = hatate_core::table_cells::encode_header_state(&sections);
+            s.table_header_columns = hatate_core::table_cells::COLUMNS.len() as i64;
+        }
         let restore = self.s.settings.lock().unwrap().restore_session_on_start;
         if restore {
             self.save_session_now();
