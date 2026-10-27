@@ -146,6 +146,10 @@ const SCENARIOS: &[Scenario] = &[
         "a_dialog_shows_the_ring_on_its_default",
         a_dialog_shows_the_ring_on_its_default,
     ),
+    (
+        "the_log_viewer_opens_on_close_and_selects_in_ink",
+        the_log_viewer_opens_on_close_and_selects_in_ink,
+    ),
 ];
 
 fn main() {
@@ -2340,6 +2344,36 @@ fn design_follow_ups_paint_as_specified(app: &adw::Application) {
             pal.ink_46.3,
             edge_alpha(&folder)
         );
+        // `.card` sets `border-radius: 0` for the framed variant: no 6.c page draws one, but
+        // `widgets::card(_, true)` is the API the later pages build on, and libadwaita's own
+        // `.card` would round its hairline to radius 12 (the corner pixel would then be clear).
+        {
+            let framed = hatate_gtk::widgets::card(Some("Framed"), true);
+            let host = gtk4::Window::new();
+            host.set_default_size(300, 120);
+            host.set_child(Some(&framed));
+            host.present();
+            pump_for(300);
+            let img = render(framed.upcast_ref(), 0);
+            let corner = f64::from(px(&img, 0, 0)[3]) / 255.0;
+            assert!(
+                (corner - pal.ink_18.3).abs() < 0.02,
+                "{name}: a framed card's corner is a square ink-18 hairline ({}), got alpha {corner}",
+                pal.ink_18.3
+            );
+            host.close();
+        }
+        // D3 (DAN-2245): a disabled hollow control keeps its border at ink-46. libadwaita fades a
+        // disabled button with `opacity` / `filter: opacity()`, which would take the edge to half of
+        // this; the rule that cancels it (`opacity: 1; filter: none`) is what this reads.
+        let query = find_button(&root, "Query Hydrus\u{2026}").expect("Query Hydrus");
+        assert!(!query.is_sensitive(), "Query Hydrus waits for 6.g");
+        assert!(
+            (edge_alpha(&query) - pal.ink_46.3).abs() < 0.02,
+            "{name}: a disabled hollow control keeps its ink-46 border ({}), got {}",
+            pal.ink_46.3,
+            edge_alpha(&query)
+        );
         folder.set_state_flags(gtk4::StateFlags::PRELIGHT, false);
         pump_for(100);
         // The hover wash (ink-10) is painted under the border, so the edge pixel is the two over each other.
@@ -2432,4 +2466,146 @@ fn lens_connection_is_said_in_the_status_line(app: &adw::Application) {
     assert_eq!(say_after(C::Ready), "Ready");
     assert_eq!(f.w.s.search.lens.get(), Some(C::Ready));
     f.close();
+}
+
+/// DAN-2245 item 1: the log viewer opens with focus on Close, nothing selected, and selected text
+/// (the path line, the log body; focused or not) is ink on an ink-18 wash, at least 4.5:1, not
+/// libadwaita's accent blue (3.48:1 dark, 3.40:1 light under the path line), wherever the toolkit
+/// paints a selection in this headless session (GTK 4.24 does; 4.14 paints none here, and its
+/// numbers come from the shot set).
+fn the_log_viewer_opens_on_close_and_selects_in_ink(app: &adw::Application) {
+    use hatate_gtk::tokens::{Palette, Rgba, Scheme, contrast};
+    for (name, scheme) in [("dark", Scheme::Dark), ("light", Scheme::Light)] {
+        let f = Fx::new(
+            app,
+            Opts {
+                tweak: Some(Box::new(move |c| c.theme = name.to_owned())),
+                ..Opts::default()
+            },
+        );
+        f.activate("view-logs");
+        pump_for(400);
+        let viewer = f.w.s.log_viewer.borrow().clone().expect("the log viewer");
+        let pal = Palette::of(scheme);
+        let focus = GtkWindowExt::focus(&viewer.window).expect("the viewer has a focus");
+        assert_eq!(
+            focus
+                .downcast_ref::<gtk4::Button>()
+                .and_then(|b| b.label())
+                .as_deref(),
+            Some("Close"),
+            "{name}: the viewer opens on Close, not on the selectable path line"
+        );
+        assert_eq!(
+            viewer.path_label.selection_bounds(),
+            None,
+            "{name}: and nothing is selected"
+        );
+
+        // What a selection looks like: the background pixel is the wash over the surface under it,
+        // and the pixel farthest from it (a glyph) clears 4.5:1.
+        // The widget's own render has no surface under it: lay each pixel over the one it sits on.
+        // An unfocused selection is not painted at all by every toolkit (GTK 4.14 draws none for a label
+        // that is not focused), so it is only read when something is painted; a focused one must be.
+        // Every state is read before the scenario fails, so one run on a new toolkit lists them all.
+        let problems = std::cell::RefCell::new(Vec::<String>::new());
+        let check = |what: &str,
+                     w: &gtk4::Widget,
+                     surface: Rgba,
+                     crop: (usize, usize),
+                     must_paint: bool| {
+            let to_rgba = |p: [u8; 4]| {
+                Rgba(
+                    f64::from(p[0]),
+                    f64::from(p[1]),
+                    f64::from(p[2]),
+                    f64::from(p[3]) / 255.0,
+                )
+                .over(surface)
+            };
+            pump_for(150);
+            let img = render(w, 0);
+            let wash = pal.ink_18.over(surface);
+            // The most common pixel of a selected line is its background.
+            let mut seen: std::collections::HashMap<[u8; 4], usize> = Default::default();
+            let (cw, ch) = (img.0.min(crop.0), img.1.min(crop.1));
+            for i in 0..cw * ch {
+                *seen.entry(px(&img, i % cw, i / cw)).or_default() += 1;
+            }
+            let bg = to_rgba(*seen.iter().max_by_key(|(_, n)| **n).expect("pixels").0);
+            if bg.hex() == surface.hex() {
+                // GTK 4.14 paints no selection in a label or view that this headless session has not
+                // made "active" (found by hosted ci on DAN-2245): nothing to measure. The rule itself
+                // is pinned in `theme::tests` and the shot set measures what each toolkit draws.
+                eprintln!(
+                    "note: {name}: {what}: no selection is painted on this toolkit ({must_paint})"
+                );
+                return;
+            }
+            if (bg.0 - wash.0).abs() > 1.0
+                || (bg.1 - wash.1).abs() > 1.0
+                || (bg.2 - wash.2).abs() > 1.0
+            {
+                problems.borrow_mut().push(format!(
+                    "{name}: {what}: the selection is the ink-18 wash {}, got {}",
+                    wash.hex(),
+                    bg.hex()
+                ));
+            }
+            let worst = (0..cw * ch)
+                .map(|i| contrast(to_rgba(px(&img, i % cw, i / cw)), wash))
+                .fold(0.0_f64, f64::max);
+            if worst < 4.5 {
+                problems.borrow_mut().push(format!(
+                    "{name}: {what}: selected text reaches {worst:.2}:1, below 4.5"
+                ));
+            }
+        };
+        // The log body is one short line in a tall view: read the first line's box only.
+        // The path line, selected while Close holds focus (the window is never active under Xvfb,
+        // so this is the backdrop state), then focused.
+        viewer.path_label.select_region(0, -1);
+        check(
+            "path line",
+            viewer.path_label.upcast_ref(),
+            pal.page,
+            (usize::MAX, usize::MAX),
+            false,
+        );
+        viewer.path_label.grab_focus();
+        viewer.path_label.select_region(0, -1);
+        check(
+            "path line, focused",
+            viewer.path_label.upcast_ref(),
+            pal.page,
+            (usize::MAX, usize::MAX),
+            true,
+        );
+        // The log body.
+        let buffer = viewer.text.buffer();
+        buffer.select_range(&buffer.start_iter(), &buffer.end_iter());
+        check(
+            "log body",
+            viewer.text.upcast_ref(),
+            pal.sunken,
+            (130, 14),
+            false,
+        );
+        viewer.text.grab_focus();
+        buffer.select_range(&buffer.start_iter(), &buffer.end_iter());
+        check(
+            "log body, focused",
+            viewer.text.upcast_ref(),
+            pal.sunken,
+            (130, 14),
+            true,
+        );
+        assert!(
+            problems.borrow().is_empty(),
+            "{}",
+            problems.borrow().join("; ")
+        );
+        viewer.window.close();
+        f.close();
+    }
 }

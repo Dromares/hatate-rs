@@ -165,6 +165,9 @@ impl LogViewer {
         row.append(&close);
         column.append(&row);
         window.set_child(Some(&column));
+        // A selectable label that takes the first focus opens with its text selected (the path line
+        // lit up before anyone touched it): focus starts on Close, which is also the way out.
+        GtkWindowExt::set_focus(&window, Some(&close));
 
         let viewer = Rc::new(LogViewer {
             window: window.clone(),
