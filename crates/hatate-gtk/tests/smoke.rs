@@ -2206,17 +2206,6 @@ fn activity_page_states_the_engines_and_tails_the_log(app: &adw::Application) {
     assert_eq!(chips[2], ("ascii2d \u{b7} fallback".to_owned(), true));
     assert_eq!(chips[3], ("trace.moe \u{b7} off".to_owned(), false));
     assert_eq!(page.chip_texts()[3].2, "Switched off in Settings > Engine.");
-    // DAN-2297 ruling 2: no chip is a Tab stop, and the page's own chip row is not either; the
-    // tooltips above are what is left to the pointer.
-    assert!(!page.chips.is_focusable());
-    let mut child = page.chips.first_child();
-    let mut seen = 0;
-    while let Some(c) = child {
-        assert!(!c.is_focusable(), "a chip wrapper is a Tab stop");
-        seen += 1;
-        child = c.next_sibling();
-    }
-    assert_eq!(seen, 10);
     assert_eq!(page.chip_texts()[0].2, "Runs on every image.");
     assert!(page.pipeline.text().contains("IQDB"));
     assert_eq!(
@@ -2258,6 +2247,31 @@ fn activity_page_states_the_engines_and_tails_the_log(app: &adw::Application) {
     f.w.s.settings.lock().unwrap().enable_tracemoe = true;
     f.w.set_mode("activity");
     assert_eq!(page.chip_texts()[3].0, "trace.moe \u{b7} fallback");
+    // DAN-2297 ruling 2: the chips are not Tab stops. Walking Tab from the top of the page never
+    // lands in the chip row (the tooltips stay for the pointer), and the walk gets past it to the
+    // controls after it: marking only the FlowBox's wrappers unfocusable left the walk stuck on
+    // Start Search.
+    pump_for(150);
+    f.w.win.set_focus_visible(true);
+    let mut landed = Vec::new();
+    for _ in 0..12 {
+        f.w.win.child_focus(gtk4::DirectionType::TabForward);
+        let w = gtk4::prelude::GtkWindowExt::focus(&f.w.win).expect("Tab leaves focus somewhere");
+        assert!(
+            !w.is_ancestor(page.chips.upcast_ref::<gtk4::Widget>())
+                && &w != page.chips.upcast_ref::<gtk4::Widget>(),
+            "a chip took the Tab focus"
+        );
+        landed.push(w);
+    }
+    assert!(
+        landed.windows(2).any(|p| p[0] != p[1]),
+        "Tab never moved off one widget"
+    );
+    assert!(
+        landed.contains(&page.parser_health.clone().upcast::<gtk4::Widget>()),
+        "Tab never reached the control after the chips"
+    );
     f.close();
 }
 

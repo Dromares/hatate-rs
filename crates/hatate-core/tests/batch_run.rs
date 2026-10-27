@@ -939,7 +939,11 @@ async fn continue_without_saucenao_carries_on_and_says_so_once() {
     // `test_the_later_images_are_searched_without_saucenao`: asked once, while the allowance was
     // still there, and not again for the rest of the batch.
     assert_eq!(
-        w.engines.calls().iter().filter(|c| **c == "saucenao").count(),
+        w.engines
+            .calls()
+            .iter()
+            .filter(|c| **c == "saucenao")
+            .count(),
         1,
         "{:?}",
         w.engines.calls()

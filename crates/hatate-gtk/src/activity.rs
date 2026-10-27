@@ -308,12 +308,10 @@ impl MainWindow {
         }
         // DAN-2297 ruling 2: the chips say how the engines are set, and Settings is where that is
         // changed, so none of them is a Tab stop. The tooltips stay for the pointer.
+        // `can-focus` is the one that takes the whole subtree out of the Tab chain; with only the
+        // wrappers made unfocusable the FlowBox still swallows the Tab and the walk never leaves it.
+        page.chips.set_can_focus(false);
         page.chips.set_focusable(false);
-        let mut child = page.chips.first_child();
-        while let Some(c) = child {
-            c.set_focusable(false);
-            child = c.next_sibling();
-        }
         page.pipeline.set_text(&pipeline_summary(&settings));
         page.summary.set_text(&engine_summary(&settings));
         let _ = engine_ids::IQDB;
