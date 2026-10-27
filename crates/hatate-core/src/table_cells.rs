@@ -476,6 +476,106 @@ pub fn header_layout_is_usable(
     saved_columns == current_columns.unwrap_or(COLUMNS.len() as i64)
 }
 
+/// `MIN_COLUMN_WIDTH` (`gui/main_window.py:135`): below this a header cell shows no title.
+pub const MIN_COLUMN_WIDTH: i32 = 24;
+/// `DEFAULT_COLUMN_WIDTH` (`gui/main_window.py:136`): what a too-narrow restored column becomes.
+pub const DEFAULT_COLUMN_WIDTH: i32 = 90;
+/// What starts a `table_header_state` this build wrote (ruling on DAN-2293: Rust writes its own
+/// format into the same key; Python's value there is a Qt `saveState()` blob, base64, which is
+/// never parsed, not even partially).
+pub const HEADER_STATE_PREFIX: &str = "hatate-rs:1:";
+
+/// One column of a saved layout: its width and whether it was hidden.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeaderSection {
+    pub width: i32,
+    pub hidden: bool,
+}
+
+/// `_save_table_header_state`: the layout as the string stored in `table_header_state`
+/// (`hatate-rs:1:` and one `<width>` or `<width>h` per column, in logical column order).
+pub fn encode_header_state(sections: &[HeaderSection]) -> String {
+    let body: Vec<String> = sections
+        .iter()
+        .map(|s| format!("{}{}", s.width, if s.hidden { "h" } else { "" }))
+        .collect();
+    format!("{HEADER_STATE_PREFIX}{}", body.join(","))
+}
+
+/// `_restore_table_header_state`'s outcomes, so the window applies the right settings change.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HeaderRestore {
+    /// Nothing was saved: first run, the default widths apply.
+    NothingSaved,
+    /// Saved with another column count: `table_header_state` and `table_header_columns` are reset
+    /// (Python sets the state to `""` and the count to `0`).
+    WrongColumnCount,
+    /// The value is not one this build can read (a Qt blob, or damaged): `table_header_state` is
+    /// reset to `""`, the column count stays (Python's `restoreState() == False` path).
+    Unreadable,
+    /// The layout to apply, already repaired; `repaired` is the log line's parts.
+    Restored {
+        sections: Vec<HeaderSection>,
+        repaired: Vec<String>,
+    },
+}
+
+fn decode_header_sections(state: &str) -> Option<Vec<HeaderSection>> {
+    let body = state.strip_prefix(HEADER_STATE_PREFIX)?;
+    let sections: Option<Vec<HeaderSection>> = body
+        .split(',')
+        .map(|tok| {
+            let (digits, hidden) = match tok.strip_suffix('h') {
+                Some(d) => (d, true),
+                None => (tok, false),
+            };
+            if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            Some(HeaderSection {
+                width: digits.parse().ok()?,
+                hidden,
+            })
+        })
+        .collect();
+    sections.filter(|s| s.len() == COLUMNS.len())
+}
+
+/// `_repair_header_after_restore`: a hidden column is shown again and one narrower than
+/// [`MIN_COLUMN_WIDTH`] gets [`DEFAULT_COLUMN_WIDTH`]. Returns the log line's parts.
+pub fn repair_header_sections(sections: &mut [HeaderSection]) -> Vec<String> {
+    let mut repaired = Vec::new();
+    for (index, section) in sections.iter_mut().enumerate() {
+        let name = COLUMNS.get(index).copied().unwrap_or("?");
+        if section.hidden {
+            section.hidden = false;
+            repaired.push(format!("{name} (hidden)"));
+        }
+        if section.width < MIN_COLUMN_WIDTH {
+            section.width = DEFAULT_COLUMN_WIDTH;
+            repaired.push(format!("{name} (too narrow to show its title)"));
+        }
+    }
+    repaired
+}
+
+/// `_restore_table_header_state(saved_state, saved_columns)`: what to apply and what to reset.
+pub fn restore_header_state(saved_state: &str, saved_columns: i64) -> HeaderRestore {
+    if saved_state.is_empty() {
+        return HeaderRestore::NothingSaved;
+    }
+    if !header_layout_is_usable(saved_state, saved_columns, None) {
+        return HeaderRestore::WrongColumnCount;
+    }
+    match decode_header_sections(saved_state) {
+        None => HeaderRestore::Unreadable,
+        Some(mut sections) => {
+            let repaired = repair_header_sections(&mut sections);
+            HeaderRestore::Restored { sections, repaired }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -637,5 +737,64 @@ mod tests {
         assert!(!header_layout_is_usable("state", 10, None));
         assert!(header_layout_is_usable("state", 9, Some(9)));
         assert_eq!(COLUMNS.len(), Column::ALL.len());
+    }
+
+    fn sections(width: i32) -> Vec<HeaderSection> {
+        vec![
+            HeaderSection {
+                width,
+                hidden: false
+            };
+            COLUMNS.len()
+        ]
+    }
+
+    #[test]
+    fn a_header_state_round_trips_and_is_repaired() {
+        let mut s = sections(120);
+        s[2].hidden = true;
+        s[5].width = 10;
+        let text = encode_header_state(&s);
+        assert!(text.starts_with(HEADER_STATE_PREFIX));
+        match restore_header_state(&text, 12) {
+            HeaderRestore::Restored { sections, repaired } => {
+                assert!(!sections[2].hidden);
+                assert_eq!(sections[5].width, DEFAULT_COLUMN_WIDTH);
+                assert_eq!(sections[0].width, 120);
+                assert_eq!(
+                    repaired,
+                    vec![
+                        format!("{} (hidden)", COLUMNS[2]),
+                        format!("{} (too narrow to show its title)", COLUMNS[5]),
+                    ]
+                );
+            }
+            other => panic!("expected a restored layout, got {other:?}"),
+        }
+        let clean = encode_header_state(&sections(MIN_COLUMN_WIDTH));
+        assert!(matches!(
+            restore_header_state(&clean, 12),
+            HeaderRestore::Restored { ref repaired, .. } if repaired.is_empty()
+        ));
+    }
+
+    #[test]
+    fn a_header_state_this_build_cannot_read_is_never_partly_parsed() {
+        assert_eq!(restore_header_state("", 0), HeaderRestore::NothingSaved);
+        let good = encode_header_state(&sections(100));
+        assert_eq!(restore_header_state(&good, 11), HeaderRestore::WrongColumnCount);
+        assert_eq!(restore_header_state(&good, 0), HeaderRestore::WrongColumnCount);
+        // A Qt saveState() blob (base64) with the right column count.
+        for bad in [
+            "AAAA/wAAAAAAAAABAAAAAQEAAAAAAAAAAAAAAAAAAAAAAADIAAA=",
+            "hatate-rs:2:1,2,3,4,5,6,7,8,9,10,11,12",
+            "hatate-rs:1:1,2,3",
+            "hatate-rs:1:100,100,100,100,100,100,100,100,100,100,100,x",
+            "hatate-rs:1:100,100,100,100,100,100,100,100,100,100,100,100,100",
+            "hatate-rs:1:100,100,100,100,100,100,100,100,100,100,100,-5",
+            "hatate-rs:1:100,100,100,100,100,100,100,100,100,100,100,",
+        ] {
+            assert_eq!(restore_header_state(bad, 12), HeaderRestore::Unreadable, "{bad}");
+        }
     }
 }
