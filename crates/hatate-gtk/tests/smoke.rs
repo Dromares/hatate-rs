@@ -1063,7 +1063,7 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
     for scheme in ["dark", "light"] {
         let tweak = move |s: &mut hatate_core::config::Settings| s.theme = scheme.to_owned();
         type Build = fn(&adw::Application, &str) -> Fx;
-        let states: [(&str, Build, &str); 6] = [
+        let states: [(&str, Build, &str); 8] = [
             (
                 "queue-empty",
                 |app, scheme| {
@@ -1177,6 +1177,55 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
                     )
                 },
                 "review",
+            ),
+            (
+                "queue-failed-banner",
+                |app, scheme| {
+                    let f = Fx::new(
+                        app,
+                        Opts {
+                            seed: seeded(5, MatchStatus::NotSearched),
+                            missing: Some(Arc::new(|_, _| HashSet::new())),
+                            tweak: Some(Box::new({
+                                let s = scheme.to_owned();
+                                move |c| c.theme = s.clone()
+                            })),
+                            ..Opts::default()
+                        },
+                    );
+                    f.w.show_failed_banner(
+                        "Hatate could not make its temporary folder for automatic imports. Check \
+                         that the cache folder exists and can be written to.",
+                    );
+                    f
+                },
+                "queue",
+            ),
+            (
+                "activity",
+                |app, scheme| {
+                    Fx::new(
+                        app,
+                        Opts {
+                            tweak: Some(Box::new({
+                                let s = scheme.to_owned();
+                                move |c| {
+                                    c.theme = s.clone();
+                                    // Every extra on: the widest chip row the page can have.
+                                    c.enable_tracemoe = true;
+                                    c.enable_iqdb3d = true;
+                                    c.enable_google_images = true;
+                                    c.enable_google_lens = true;
+                                    c.enable_yandex = true;
+                                    c.enable_pawchive = true;
+                                    c.secondary_engine_mode = "always".to_owned();
+                                }
+                            })),
+                            ..Opts::default()
+                        },
+                    )
+                },
+                "activity",
             ),
         ];
         let _ = tweak;
