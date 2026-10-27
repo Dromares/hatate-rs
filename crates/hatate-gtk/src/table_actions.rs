@@ -237,7 +237,20 @@ impl MainWindow {
         };
         self.s.queue_view.select_ids(&[]);
         if matching.is_empty() {
-            self.say(&format!("No images matching {description}"));
+            // Python selects the rows the filter hides (DAN-2310: not ported, because Remove and
+            // Reset would then act on rows the user cannot see). Say what is true when that is
+            // the only reason nothing was selected.
+            let hidden = {
+                let q = self.s.queue.borrow();
+                q.entries().iter().filter(|e| predicate(e)).count()
+            };
+            if hidden > 0 {
+                self.say(&format!(
+                    "No visible images matching {description} ({hidden} hidden by the filter)"
+                ));
+            } else {
+                self.say(&format!("No images matching {description}"));
+            }
             return;
         }
         self.s.queue_view.select_ids(&matching);

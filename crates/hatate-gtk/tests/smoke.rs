@@ -106,6 +106,14 @@ const SCENARIOS: &[Scenario] = &[
         queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears,
     ),
     (
+        "queue_select_by_status_under_a_filter_never_selects_a_hidden_row",
+        queue_select_by_status_under_a_filter_never_selects_a_hidden_row,
+    ),
+    (
+        "queue_clear_re_ticks_every_filter_menu_so_the_ticks_summary_and_count_agree",
+        queue_clear_re_ticks_every_filter_menu_so_the_ticks_summary_and_count_agree,
+    ),
+    (
         "queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row",
         queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row,
     ),
@@ -1698,6 +1706,121 @@ fn queue_filter_bar_narrows_by_text_and_menus_reads_hidden_and_clears(app: &adw:
     assert_eq!(status.label().unwrap().as_str(), "Status: All");
     // A filter hides rows from the table, never from the queue.
     assert_eq!(f.w.s.queue.borrow().len(), 12);
+    f.close();
+}
+
+fn queue_select_by_status_under_a_filter_never_selects_a_hidden_row(app: &adw::Application) {
+    // DAN-2310 class 1: Python selects the rows its filter hides, and Remove / Reset / Mark
+    // reviewed then act on rows nobody can see. Here a hidden row is never selected.
+    let mut seed = seeded(12, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % 3];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let bar = f.w.s.filter_bar.clone();
+    // What a save would write: the rows, their statuses and their reviewed marks.
+    let snapshot = |f: &Fx| -> Vec<(String, MatchStatus, bool)> {
+        f.w.s
+            .queue
+            .borrow()
+            .entries()
+            .iter()
+            .map(|e| (e.path.clone(), e.status, e.reviewed))
+            .collect()
+    };
+    let before = snapshot(&f);
+
+    // "img1" shows img1, img10 and img11 (statuses 1, 1, 2); the four rows of status 0 are hidden.
+    bar.text.set_text("img1");
+    assert_eq!(view.visible_count(), 3);
+    let hidden_status = MatchStatus::ALL[0];
+    f.w.select_rows_by_status(hidden_status);
+    assert!(view.selected_ids().is_empty(), "a hidden row was selected");
+    assert_eq!(
+        f.say(),
+        format!(
+            "No visible images matching status \"{}\" (4 hidden by the filter)",
+            hidden_status.label()
+        )
+    );
+    // Remove and Mark reviewed act on the (empty) selection and change nothing.
+    let none = view.selected_ids();
+    f.w.remove_rows(&none);
+    f.w.set_rows_reviewed(&none, true);
+    assert_eq!(
+        snapshot(&f),
+        before,
+        "the queue changed under an empty selection"
+    );
+
+    // A status that is partly visible selects only the visible rows and counts only those.
+    let part = MatchStatus::ALL[1];
+    f.w.select_rows_by_status(part);
+    assert_eq!(
+        view.selected_ids().len(),
+        2,
+        "img1 and img10, not img4 or img7"
+    );
+    assert_eq!(
+        f.say(),
+        format!("Selected 2 image(s) matching status \"{}\"", part.label())
+    );
+    // With no filter nothing is hidden, so the old wording stands.
+    bar.clear.emit_clicked();
+    f.w.select_rows_by_predicate("nothing", |_| false);
+    assert_eq!(f.say(), "No images matching nothing");
+    f.close();
+}
+
+fn queue_clear_re_ticks_every_filter_menu_so_the_ticks_summary_and_count_agree(
+    app: &adw::Application,
+) {
+    // DAN-2310 class 2: Python's Clear leaves the Status / Site / Upscale ticks as they were,
+    // so toggling a stale tick does the opposite of what it shows. Here the ticks follow the filter.
+    let mut seed = seeded(12, MatchStatus::NotSearched);
+    for (i, e) in seed.iter_mut().enumerate() {
+        e.status = MatchStatus::ALL[i % 3];
+    }
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let bar = f.w.s.filter_bar.clone();
+    let status = bar.button("Status");
+    status.activate_action("fstatus.v0", None).unwrap();
+    assert!(!bar.ticked("Status", 0), "the tick was not removed");
+    assert_eq!(view.visible_count(), 8);
+    assert_eq!(bar.count.label().as_str(), "4 hidden");
+    bar.text.set_text("img1");
+    assert!(bar.clear.is_sensitive());
+
+    bar.clear.emit_clicked();
+    for prefix in ["Status", "Site", "Upscale"] {
+        for n in 0..bar.present(prefix).len() {
+            assert!(
+                bar.ticked(prefix, n),
+                "{prefix} entry {n} is still unticked after Clear"
+            );
+        }
+    }
+    assert_eq!(status.label().unwrap().as_str(), "Status: All");
+    assert_eq!(bar.text.text().as_str(), "");
+    assert_eq!(view.visible_count(), 12);
+    assert_eq!(bar.count.label().as_str(), "");
+    assert!(!bar.clear.is_sensitive());
     f.close();
 }
 
