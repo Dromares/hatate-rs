@@ -10,6 +10,7 @@
 use crate::dialogs::{AdwPrompter, Prompter};
 use crate::logview::{LogSource, RingLogs};
 use crate::menu::{self, Owner};
+use crate::search_run::{SearchBackend, SearchRun};
 use crate::shell::{self, Shell};
 use crate::theme;
 use crate::tokens::Scheme;
@@ -79,6 +80,11 @@ pub struct Env {
     pub log_ring: LogRing,
     /// This run's crash marker; consumed at a clean close (`mark_clean_shutdown`).
     pub run_session: Option<RunSession>,
+    /// The search engines a run uses; the shipped window builds the real ones on the first Start
+    /// Search, a test gives its own.
+    pub search: Option<SearchBackend>,
+    /// `time.monotonic()`, for the run's pace estimate.
+    pub monotonic: Rc<dyn Fn() -> f64>,
 }
 
 impl Env {
@@ -93,8 +99,20 @@ impl Env {
             logs: None,
             log_ring: LogRing::new(),
             run_session: None,
+            search: None,
+            monotonic: Rc::new(system_monotonic),
         }
     }
+}
+
+/// Seconds from a fixed origin, never going back.
+fn system_monotonic() -> f64 {
+    use std::sync::OnceLock;
+    static ORIGIN: OnceLock<std::time::Instant> = OnceLock::new();
+    ORIGIN
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_secs_f64()
 }
 
 /// Hands a file or folder to the desktop's default handler.
@@ -152,6 +170,8 @@ pub struct State {
     pub win: adw::ApplicationWindow,
     /// The dialogs that are open (the log viewer), so a test can find them.
     pub log_viewer: RefCell<Option<Rc<crate::logview::LogViewer>>>,
+    /// The search run: backend, inbox, estimate, alert listener.
+    pub search: Rc<SearchRun>,
 }
 
 /// The window and its state.
@@ -188,7 +208,7 @@ fn scheme_for(setting: &str) -> Scheme {
 }
 
 impl MainWindow {
-    pub fn new(app: &adw::Application, env: Env) -> MainWindow {
+    pub fn new(app: &adw::Application, mut env: Env) -> MainWindow {
         let loaded = Settings::load(&env.paths);
         let settings = Arc::new(Mutex::new(loaded.settings));
         let queue = QueueModel::new(Vec::new(), settings.clone());
@@ -299,6 +319,7 @@ impl MainWindow {
             scheme: Cell::new(Scheme::Dark),
             win: win.clone(),
             log_viewer: RefCell::new(None),
+            search: SearchRun::new(env.search.take(), env.monotonic.clone()),
         });
         let window = MainWindow {
             win: win.clone(),
@@ -306,6 +327,7 @@ impl MainWindow {
         };
         let _ = handle.set(window.downgrade());
         window.install_actions(app);
+        window.start_search_inbox();
         window.wire_banners();
         window.apply_theme(&theme_setting(&window.s));
         window.refresh_queue_empty_state();
@@ -450,7 +472,14 @@ impl MainWindow {
         self.win.add_action(&site);
         // `toggle-search` is the Start Search button's action (6.e wires it).
         let toggle = gio::SimpleAction::new("toggle-search", None);
-        toggle.set_enabled(false); // DEFERRED(6.e)
+        {
+            let w = self.downgrade();
+            toggle.connect_activate(move |_, _| {
+                if let Some(w) = w.upgrade() {
+                    w.action_toggle_search();
+                }
+            });
+        }
         self.win.add_action(&toggle);
 
         for (action, accel) in menu::accelerators() {
@@ -505,10 +534,26 @@ impl MainWindow {
                 }
             }
         });
-        // DEFERRED(6.e): Resume Queue, "Review the waiting", "Continue with other engines".
-        self.s.run_banner.resume.set_sensitive(false);
+        // `run_banner.resume -> action_start_search`.
+        self.s.run_banner.resume.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.action_start_search();
+                }
+            }
+        });
+        // `continue_button -> _resume_without_saucenao`.
+        self.s.quota_banner.keep_going.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.resume_without_saucenao();
+                }
+            }
+        });
+        // DEFERRED(6.d/6.f): "Review the waiting" needs the table's row selection and Review.
         self.s.quota_banner.review.set_sensitive(false);
-        self.s.quota_banner.keep_going.set_sensitive(false);
         // The empty state's three buttons. Query Hydrus follows its (disabled) action.
     }
 }

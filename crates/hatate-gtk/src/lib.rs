@@ -9,6 +9,7 @@ pub mod fonts;
 pub mod logsink;
 pub mod logview;
 pub mod menu;
+pub mod search_run;
 pub mod session_ops;
 pub mod shell;
 pub mod startup;
