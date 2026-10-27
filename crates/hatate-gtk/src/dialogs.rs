@@ -34,6 +34,9 @@ pub enum Kind {
 pub enum Buttons {
     Ok,
     YesNo,
+    /// Write Tag Files' three-way box: "Keep existing files" (the default), "Replace them" (the
+    /// destructive one) and Cancel, which Escape means.
+    KeepReplaceCancel,
 }
 
 /// What the user pressed.
@@ -42,6 +45,9 @@ pub enum Response {
     Ok,
     Yes,
     No,
+    Keep,
+    Replace,
+    Cancel,
 }
 
 /// One dialog as it was shown, for a test to read.
@@ -90,6 +96,23 @@ pub trait Prompter {
     fn open_file(&self, title: &str, filter: &str, done: Done<Option<PathBuf>>);
     /// `QFileDialog.getSaveFileName`.
     fn save_file(&self, title: &str, default_name: &str, filter: &str, done: Done<Option<PathBuf>>);
+    /// `QFileDialog.getSaveFileName` when the caller also needs the filter the user left selected
+    /// (Export Results picks CSV or JSON by it). A prompter that cannot report one answers with
+    /// the empty string, which makes the caller fall back to the file's extension.
+    fn save_file_with_filter(
+        &self,
+        title: &str,
+        default_name: &str,
+        filter: &str,
+        done: Done<Option<(PathBuf, String)>>,
+    ) {
+        self.save_file(
+            title,
+            default_name,
+            filter,
+            Box::new(move |p| done(p.map(|p| (p, String::new())))),
+        );
+    }
 }
 
 /// The default button of a message box: Cancel (No) on a question, the only button otherwise.
@@ -97,6 +120,7 @@ pub fn default_response(kind: Kind, buttons: Buttons) -> Response {
     match (kind, buttons) {
         (Kind::Question, Buttons::YesNo) => Response::No,
         (_, Buttons::YesNo) => Response::No,
+        (_, Buttons::KeepReplaceCancel) => Response::Keep,
         (_, Buttons::Ok) => Response::Ok,
     }
 }
@@ -182,6 +206,16 @@ impl Prompter for AdwPrompter {
                 }));
                 dialog.set_close_response("no");
             }
+            Buttons::KeepReplaceCancel => {
+                dialog.add_responses(&[
+                    ("cancel", "Cancel"),
+                    ("keep", "Keep existing files"),
+                    ("replace", "Replace them"),
+                ]);
+                dialog.set_response_appearance("replace", adw::ResponseAppearance::Destructive);
+                dialog.set_default_response(Some("keep"));
+                dialog.set_close_response("cancel");
+            }
         }
         // A keyboard-first app: the default button shows its focus ring the moment the dialog
         // opens (GTK would draw it only after a key press), so the answer Enter gives is visible
@@ -191,6 +225,9 @@ impl Prompter for AdwPrompter {
             done(match answer.as_str() {
                 "yes" => Response::Yes,
                 "no" => Response::No,
+                "keep" => Response::Keep,
+                "replace" => Response::Replace,
+                "cancel" => Response::Cancel,
                 _ => Response::Ok,
             });
         });
@@ -244,6 +281,63 @@ impl Prompter for AdwPrompter {
             done(r.ok().and_then(|f| f.path()));
         });
     }
+
+    /// `FileDialog` does not say which filter was selected when it returned; the native chooser
+    /// does, so this one uses it (the portal reports it too).
+    #[allow(deprecated)]
+    fn save_file_with_filter(
+        &self,
+        title: &str,
+        default_name: &str,
+        filter: &str,
+        done: Done<Option<(PathBuf, String)>>,
+    ) {
+        let chooser = gtk::FileChooserNative::new(
+            Some(title),
+            Some(&self.parent),
+            gtk::FileChooserAction::Save,
+            Some("Save"),
+            Some("Cancel"),
+        );
+        let _ = chooser.set_file(&gio::File::for_path(default_name));
+        for part in filter.split(";;").filter(|p| !p.is_empty()) {
+            let f = gtk::FileFilter::new();
+            let name = part.split('(').next().unwrap_or(part).trim();
+            f.set_name(Some(part_name(name, part)));
+            let patterns = part
+                .split_once('(')
+                .and_then(|(_, rest)| rest.split_once(')'))
+                .map_or("", |(inner, _)| inner);
+            for pat in patterns.split_whitespace() {
+                f.add_pattern(pat);
+            }
+            chooser.add_filter(&f);
+        }
+        let held = chooser.clone();
+        let done = std::cell::RefCell::new(Some(done));
+        chooser.connect_response(move |native, response| {
+            let picked = (response == gtk::ResponseType::Accept)
+                .then(|| native.file().and_then(|f| f.path()))
+                .flatten()
+                .map(|path| {
+                    let name = native
+                        .filter()
+                        .and_then(|f| f.name())
+                        .map(|n| n.to_string())
+                        .unwrap_or_default();
+                    (path, name)
+                });
+            if let Some(done) = done.borrow_mut().take() {
+                done(picked);
+            }
+            held.destroy();
+        });
+        chooser.show();
+    }
+}
+
+fn part_name<'a>(name: &'a str, part: &'a str) -> &'a str {
+    if name.is_empty() { part } else { name }
 }
 
 #[cfg(test)]

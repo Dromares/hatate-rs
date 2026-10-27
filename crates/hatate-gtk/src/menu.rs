@@ -83,7 +83,6 @@ pub fn all_site_options() -> Vec<String> {
 pub fn menus() -> Vec<Menu> {
     use Owner::{Later, Shell};
     // DEFERRED(6.g): Query Hydrus, Re-check Queued Imports, Pawchive Index, the two Send items.
-    // DEFERRED(6.d): Export Results, Write Tag Files, Clear Search Cache.
     // DEFERRED(6.e): Parser Health, the Sites menu.
     // DEFERRED(6.f): Edit Match Conditions.
     // DEFERRED(6.h): Preferences.
@@ -104,8 +103,8 @@ pub fn menus() -> Vec<Menu> {
             ),
             keyed("Open Session\u{2026}", "open-session", "<Ctrl>o", Shell),
             Entry::Separator,
-            item("Export Results\u{2026}", "export-results", Later("6.d")),
-            item("Write Tag Files\u{2026}", "write-tag-files", Later("6.d")),
+            item("Export Results\u{2026}", "export-results", Shell),
+            item("Write Tag Files\u{2026}", "write-tag-files", Shell),
             Entry::Separator,
             item("Open Matched URLs Log", "open-log", Shell),
             Entry::Separator,
@@ -174,11 +173,7 @@ pub fn menus() -> Vec<Menu> {
         entries: vec![
             item("View Logs\u{2026}", "view-logs", Shell),
             item("Parser Health\u{2026}", "parser-health", Later("6.e")),
-            item(
-                "Clear Search Cache\u{2026}",
-                "clear-search-cache",
-                Later("6.d"),
-            ),
+            item("Clear Search Cache\u{2026}", "clear-search-cache", Shell),
             item(
                 "Clear List and Saved Session\u{2026}",
                 "clear-session",

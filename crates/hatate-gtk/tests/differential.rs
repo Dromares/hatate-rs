@@ -296,6 +296,9 @@ fn button(r: Response) -> &'static str {
         Response::Ok => "ok",
         Response::Yes => "yes",
         Response::No => "no",
+        Response::Keep => "keep",
+        Response::Replace => "replace",
+        Response::Cancel => "cancel",
     }
 }
 
@@ -335,7 +338,11 @@ fn digest(
         .map(|(d, r)| {
             json!({
                 "kind": kind(d.kind), "title": d.title, "text": d.text,
-                "buttons": if d.buttons == Buttons::YesNo { "yes_no" } else { "ok" },
+                "buttons": match d.buttons {
+                    Buttons::YesNo => "yes_no",
+                    Buttons::KeepReplaceCancel => "keep_replace_cancel",
+                    Buttons::Ok => "ok",
+                },
                 "default": button(d.default),
                 "result": if d.buttons == Buttons::Ok { "ok" } else { button(*r) },
             })

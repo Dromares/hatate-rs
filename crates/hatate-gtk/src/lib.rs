@@ -13,6 +13,7 @@ pub mod queue_view;
 pub mod session_ops;
 pub mod shell;
 pub mod startup;
+pub mod table_actions;
 pub mod text;
 pub mod theme;
 pub mod tokens;

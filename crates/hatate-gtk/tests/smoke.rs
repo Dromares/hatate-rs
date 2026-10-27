@@ -105,6 +105,18 @@ const SCENARIOS: &[Scenario] = &[
         "queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order",
         queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order,
     ),
+    (
+        "export_results_writes_the_format_the_name_says",
+        export_results_writes_the_format_the_name_says,
+    ),
+    (
+        "write_tag_files_asks_then_writes_and_keeps_what_is_there",
+        write_tag_files_asks_then_writes_and_keeps_what_is_there,
+    ),
+    (
+        "clear_search_cache_asks_then_removes_the_saved_results",
+        clear_search_cache_asks_then_removes_the_saved_results,
+    ),
 ];
 
 fn main() {
@@ -1652,5 +1664,169 @@ fn queue_view_header_cycle_sorts_the_queue_in_place_and_restores_the_order(app: 
         ["c.png", "A.png", "b.png", "d.png"],
         "back to insertion order"
     );
+    f.close();
+}
+
+fn tagged_seed(dir: &std::path::Path, names: &[&str]) -> Vec<hatate_core::model::Entry> {
+    make_images(dir, names)
+        .into_iter()
+        .map(|p| {
+            let mut e = entry(&p.to_string_lossy(), MatchStatus::Good);
+            e.tags = vec![hatate_core::model::Tag {
+                name: "cat".to_owned(),
+                namespace: None,
+                source: hatate_core::model::TagSource::User,
+            }];
+            e
+        })
+        .collect()
+}
+
+fn export_results_writes_the_format_the_name_says(app: &adw::Application) {
+    // An empty list says so and asks nothing.
+    let f = fx(app);
+    f.activate("export-results");
+    assert_eq!(
+        f.script.last_shown().text,
+        "There's nothing in the list to export."
+    );
+    assert!(f.script.asked.borrow().is_empty());
+    f.close();
+
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: seeded(2, MatchStatus::Good),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.script.push(Answer::Path(Some(f.dir.path().join("out"))));
+    f.activate("export-results");
+    let csv = f.dir.path().join("out.csv");
+    let text = std::fs::read_to_string(&csv).expect("the .csv is added to a bare name");
+    assert!(
+        text.contains("\r\n") && text.contains("img0.png"),
+        "{text:?}"
+    );
+    assert_eq!(f.say(), "Exported 2 image(s) to out.csv");
+    let Asked::SaveFile {
+        title,
+        default_name,
+        filter,
+    } = f.script.asked.borrow().last().cloned().unwrap()
+    else {
+        panic!("not a save chooser")
+    };
+    assert_eq!(title, "Export Results");
+    assert!(
+        default_name.contains("hatate-results-") && default_name.ends_with(".csv"),
+        "{default_name}"
+    );
+    assert_eq!(
+        filter,
+        "CSV spreadsheet (*.csv);;JSON (*.json);;All files (*)"
+    );
+    // A name that says JSON, with no filter to say otherwise, writes JSON.
+    f.script
+        .push(Answer::Path(Some(f.dir.path().join("out.json"))));
+    f.activate("export-results");
+    let json = std::fs::read_to_string(f.dir.path().join("out.json")).unwrap();
+    assert!(
+        json.starts_with('{') && json.contains("\"count\": 2"),
+        "{json:?}"
+    );
+    // An unwritable path warns and says nothing was exported.
+    f.script.push(Answer::Path(Some(PathBuf::from(
+        "/nonexistent-dir-for-test/x.csv",
+    ))));
+    f.activate("export-results");
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.kind, shown.title.as_str()),
+        (Kind::Warning, "Export Results")
+    );
+    assert!(
+        shown
+            .text
+            .starts_with("Could not write the results to:\n/nonexistent-dir-for-test/x.csv\n\n")
+    );
+    assert!(!shown.text.contains("os error"), "{}", shown.text);
+    f.close();
+}
+
+fn write_tag_files_asks_then_writes_and_keeps_what_is_there(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = tagged_seed(dir.path(), &["a.png", "b.png"]);
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    std::fs::write(dir.path().join("a.png.txt"), "mine\n").unwrap();
+    // `ask` with a file in the way: the three-way box, Keep existing files the default.
+    f.script.push(Answer::Msg(Response::Keep));
+    f.activate("write-tag-files");
+    let shown = f.script.last_shown();
+    assert_eq!(shown.buttons, Buttons::KeepReplaceCancel);
+    assert_eq!(shown.default, Response::Keep);
+    assert!(
+        shown.text.contains("1 of them already exist, for example:"),
+        "{}",
+        shown.text
+    );
+    assert!(shown.text.ends_with("This app cannot tell a tag file it wrote on an earlier run from a text file you wrote yourself."));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.png.txt")).unwrap(),
+        "mine\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("b.png.txt")).unwrap(),
+        "cat\n"
+    );
+    assert_eq!(
+        f.say(),
+        "Wrote 1 tag file(s), 1 already existed and were kept"
+    );
+    // Replace them replaces; Cancel writes nothing.
+    f.script.push(Answer::Msg(Response::Cancel));
+    std::fs::remove_file(dir.path().join("b.png.txt")).unwrap();
+    f.activate("write-tag-files");
+    assert!(!dir.path().join("b.png.txt").exists());
+    f.script.push(Answer::Msg(Response::Replace));
+    f.activate("write-tag-files");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.png.txt")).unwrap(),
+        "cat\n"
+    );
+    assert_eq!(f.say(), "Wrote 2 tag file(s)");
+    f.close();
+}
+
+fn clear_search_cache_asks_then_removes_the_saved_results(app: &adw::Application) {
+    let f = fx(app);
+    let cache = hatate_core::cache::SearchCache::new(&f.paths);
+    std::fs::create_dir_all(cache.dir()).unwrap();
+    for n in ["a", "b"] {
+        std::fs::write(cache.dir().join(format!("{n}.json")), "{}").unwrap();
+    }
+    // The question defaults to No (design gate 2.6), so nothing is deleted without a Yes.
+    f.activate("clear-search-cache");
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.buttons, shown.default),
+        (Buttons::YesNo, Response::No)
+    );
+    assert_eq!(std::fs::read_dir(cache.dir()).unwrap().count(), 2);
+    f.script.push(Answer::Msg(Response::Yes));
+    f.activate("clear-search-cache");
+    assert_eq!(
+        f.script.last_shown().text,
+        "Removed 2 cached search result(s)."
+    );
+    assert_eq!(std::fs::read_dir(cache.dir()).unwrap().count(), 0);
     f.close();
 }

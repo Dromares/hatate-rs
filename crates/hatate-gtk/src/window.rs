@@ -479,6 +479,9 @@ impl MainWindow {
                 "clear-session" => w.action_clear_session(),
                 "open-log" => w.action_open_log(),
                 "view-logs" => w.action_view_logs(),
+                "export-results" => w.action_export_results(None),
+                "write-tag-files" => w.action_write_tag_files(None),
+                "clear-search-cache" => w.action_clear_search_cache(),
                 "quit" => w.win.close(),
                 other => tracing::warn!("no handler for action {other}"),
             }
