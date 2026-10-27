@@ -8,9 +8,9 @@
 //! all). Why not `xdotool`: it did not reach GTK here (DAN-2242), and it would be a tool the CI
 //! image does not have.
 //!
-//! It only ever talks to `$DISPLAY`, which the smoke requires to be a headless server (`xvfb-run`);
-//! nothing here can reach the board's session unless the harness pointed `DISPLAY` there, and the
-//! smoke is only ever run under Xvfb (CLAUDE.md: never inject input into the board's live session).
+//! It only ever talks to `$DISPLAY`, and `Xtest::connect` refuses (before it opens the socket)
+//! unless that display is demonstrably the headless server the runner started: see
+//! `check_headless`. CLAUDE.md: never inject input into the board's live session.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -100,9 +100,62 @@ fn cookie(num: &str) -> Option<Vec<u8>> {
     None
 }
 
+/// The runner states the display is its own headless server with this variable (set by the CI
+/// step and by the documented `xvfb-run` invocation, `docs/gtk-shell.md`).
+pub const HEADLESS_FLAG: &str = "HATATE_SMOKE_XVFB";
+
+/// Why key injection is refused, or `Ok` when the display is demonstrably the headless server the
+/// runner started. Two independent conditions, both required, because neither alone is enough:
+///
+/// 1. `HATATE_SMOKE_XVFB=1`: an explicit statement by the runner. Alone it is only a promise, so
+/// 2. `XAUTHORITY` names a file `xvfb-run` created (`<tmp>/xvfb-run.XXXXXX/Xauthority.XXXXXX`).
+///    A live desktop's cookie is `~/.Xauthority`, `$XDG_RUNTIME_DIR/xauth_*` or the display
+///    manager's; none of those sits in an `xvfb-run.*` directory, so `HATATE_SMOKE_XVFB=1
+///    DISPLAY=:0` is still refused. The X vendor string cannot do this job: Xvfb and a real Xorg
+///    both answer "The X.Org Foundation".
+///
+/// A hand-started `Xvfb` (no `xvfb-run`) or `xvfb-run -f` is refused too; the documented invocation
+/// is the only supported one. Pure, so it is unit-tested without an X server (`xtest_guard.rs`).
+pub fn check_headless(
+    display: Option<&str>,
+    flag: Option<&str>,
+    xauthority: Option<&std::ffi::OsStr>,
+) -> Result<(), String> {
+    let display = display.ok_or_else(|| "DISPLAY is not set".to_owned())?;
+    if flag != Some("1") {
+        return Err(format!(
+            "refusing to inject keys into DISPLAY={display}: {HEADLESS_FLAG}=1 is not set (it \
+             states that the display is a headless Xvfb the runner started; run under xvfb-run)"
+        ));
+    }
+    let auth = std::path::Path::new(xauthority.ok_or_else(|| {
+        format!("refusing to inject keys into DISPLAY={display}: XAUTHORITY is not set, so it is not an xvfb-run display")
+    })?);
+    let file = auth.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let dir = auth
+        .parent()
+        .and_then(|d| d.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    if !(file.starts_with("Xauthority.") && dir.starts_with("xvfb-run.")) {
+        return Err(format!(
+            "refusing to inject keys into DISPLAY={display}: XAUTHORITY={} is not a file xvfb-run \
+             created, so the display may be a live session",
+            auth.display()
+        ));
+    }
+    Ok(())
+}
+
 impl Xtest {
-    /// Connects to `$DISPLAY` (`:N` or `:N.S`, the local Unix socket only) and finds XTEST.
+    /// Connects to `$DISPLAY` (`:N` or `:N.S`, the local Unix socket only) and finds XTEST. Refuses
+    /// first, with no socket opened, unless `check_headless` passes.
     pub fn connect() -> Result<Xtest, String> {
+        check_headless(
+            std::env::var("DISPLAY").ok().as_deref(),
+            std::env::var(HEADLESS_FLAG).ok().as_deref(),
+            std::env::var_os("XAUTHORITY").as_deref(),
+        )?;
         let display = std::env::var("DISPLAY").map_err(|_| "DISPLAY is not set".to_owned())?;
         let num = display
             .strip_prefix(':')
