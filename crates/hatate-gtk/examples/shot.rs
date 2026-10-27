@@ -12,7 +12,7 @@
 //! Status, the chevron showing), `queue-filter` (a filename filter with the hidden count),
 //! `queue-filter-empty` (a filter that hides every row), `queue-menu` (the row context menu over a
 //! selected row), `queue-remove` (the Remove question), `queue-focus` (the first row focused with
-//! the ring showing), `queue-5000` (5,000 rows, scrolled into the middle) and `queue-5000-scroll`
+//! the ring showing) and `queue-focus-selected` (the same row, selected), `queue-5000` (5,000 rows, scrolled into the middle) and `queue-5000-scroll`
 //! (the same, printing the scroll frame timing). The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
@@ -549,10 +549,26 @@ fn prepare_queue(window: &MainWindow, state: &str) {
             view.select_ids(&ids[1..3]);
             window.remove_rows(&ids[1..3]);
         }
-        "queue-focus" => {
+        "queue-focus" | "queue-focus-selected" => {
             window.win.set_focus_visible(true);
-            view.select_row(2);
+            if state == "queue-focus-selected" {
+                view.select_row(0);
+            }
             view.view.grab_focus();
+            // What holds focus, for the verdict (and for a ring that does not show).
+            let win = window.win.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
+                if let Some(f) = GtkWindowExt::focus(&win) {
+                    let b = f.compute_bounds(&win);
+                    println!(
+                        "FOCUS {} classes={:?} focus_visible={} bounds={:?}",
+                        describe(&f),
+                        f.css_classes(),
+                        f.has_visible_focus(),
+                        b.map(|b| (b.x(), b.y(), b.width(), b.height()))
+                    );
+                }
+            });
         }
         "queue-5000" => {
             let adj = view.scroller.vadjustment();

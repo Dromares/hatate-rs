@@ -204,7 +204,7 @@ entry.field { padding: 7px 10px; }
 menubutton.field > button { padding: 6px 14px; }
 entry.field:hover, menubutton.field > button:hover { border-color: @ink_58; }
 entry.field:focus-within { border-color: @ink; }
-entry.field text > placeholder { color: @ink_65; }
+entry.field text > placeholder { color: @ink_65; opacity: 1; }
 .filter-count { font-family: %mono%; font-size: %label%px; color: @ink_65; }
 
 /* ---- keycaps (the mockup's .kbd) and the key-hint bar ---- */
@@ -300,10 +300,16 @@ textview.log, textview.log text { background: @sunken; color: @ink; font-family:
   min-height: 28px; font-family: %mono%; font-size: %micro%px; font-weight: 700; letter-spacing: 0.1em;
   text-transform: uppercase; }
 .queue > header > button:hover { background: @ink_10; color: @ink; }
+.queue > header > button label { opacity: 1; color: @ink_65; }
+.queue > header > button:hover label { color: @ink; }
 .queue > header > button sort-indicator { color: @ink; min-width: 10px; min-height: 10px; }
 .queue > listview > row { min-height: 48px; border-bottom: 1px solid @ink_18; background: @raised; padding: 0; }
 .queue > listview > row:selected { background: @stamp_bg; color: @stamp_fg; }
 .queue > listview > row:selected label { color: @stamp_fg; }
+/* the row is clipped by the list, so the global 2px ring at offset 2 falls outside it and never shows;
+   draw it inside, in ink on the row and in the stamp's own ink on a selected one (design gate 1.1) */
+.queue > listview > row:focus:focus-visible { outline-offset: -4px; }
+.queue > listview > row:selected:focus:focus-visible { outline-color: @stamp_fg; }
 .queue-cell { padding: 0 %space_3%px; font-size: %body%px; color: @ink; }
 .queue-cell.ink-45 { color: @ink_45; }
 .queue-cell.ink-65 { color: @ink_65; }
@@ -314,13 +320,13 @@ textview.log, textview.log text { background: @sunken; color: @ink; font-family:
 .queue-cell.cell-mono, .queue-cell.cell-mono-bold { font-family: %mono%; font-size: 11px; }
 .queue-cell.cell-mono { font-weight: 500; }
 .queue-cell.cell-mono-bold { font-weight: 700; }
-.queue .thumb { margin: 0 %space_3%px; border: 1px solid @ink_28; background: @sunken; }
+.queue .thumb { margin: 0 %space_3%px; border: 1px solid @ink_58; background: @sunken; }
 .queue .thumb.thumb-failed { border-color: @ink_46; }
 
 /* scrolled windows draw soft edge gradients where content continues; flat has none */
 undershoot, overshoot, undershoot.top, undershoot.bottom, undershoot.left, undershoot.right {
   background: none; background-image: none; box-shadow: none; }
-scrollbar slider { background: @ink_28; border-radius: 0; min-width: 6px; min-height: 6px; }
+scrollbar slider { background: @ink_58; border-radius: 0; min-width: 6px; min-height: 6px; }
 scrollbar, scrollbar trough { background: transparent; }
 "#;
 
@@ -593,6 +599,29 @@ mod tests {
             assert!(
                 contrast(p.ink_18.over(p.page), p.page) < 3.0,
                 "ink-18 is the quiet tier"
+            );
+        }
+    }
+
+    /// DAN-2217: the Queue's non-text boundaries (thumbnail frame, scrollbar thumb) clear 3:1 on the
+    /// row and on the page, and the two libadwaita rules that dim text below 4.5:1 are overridden.
+    #[test]
+    fn queue_boundaries_clear_three_to_one_and_header_and_placeholder_are_not_dimmed() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            for ground in [p.raised, p.page] {
+                let r = contrast(p.ink_58.over(ground), ground);
+                assert!(r >= 3.0, "{scheme:?} ink-58 on {ground:?}: {r:.2}:1");
+            }
+            let sheet = css(scheme);
+            assert!(
+                sheet.contains(".queue > header > button label { opacity: 1;"),
+                "the header label is dimmed by the toolkit again"
+            );
+            assert!(
+                sheet.contains("entry.field text > placeholder { color:")
+                    && sheet.contains("opacity: 1; }\n.filter-count"),
+                "the placeholder is dimmed by the toolkit again"
             );
         }
     }
