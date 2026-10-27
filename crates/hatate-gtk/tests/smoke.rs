@@ -131,6 +131,10 @@ const SCENARIOS: &[Scenario] = &[
         activity_page_states_the_engines_and_tails_the_log,
     ),
     (
+        "lens_connection_is_said_in_the_status_line",
+        lens_connection_is_said_in_the_status_line,
+    ),
+    (
         "re_search_uses_the_engine_it_was_asked_for",
         re_search_uses_the_engine_it_was_asked_for,
     ),
@@ -2393,5 +2397,39 @@ fn a_dialog_shows_the_ring_on_its_default(app: &adw::Application) {
         "the default button, and the focused one, is No"
     );
     assert_eq!(answered.get(), None, "nothing answered the question");
+    f.close();
+}
+
+/// `LensConnection` reaches the window from the Lens client's thread through the inbox and is said
+/// in the status line; `Ready` says nothing (Lens answered, nothing to report).
+fn lens_connection_is_said_in_the_status_line(app: &adw::Application) {
+    use hatate_core::engines::lens_search::LensConnection as C;
+    use hatate_gtk::search_run::BusEvent;
+    let f = fx(app);
+    let bus = f.w.s.search.bus.clone();
+    let say_after = |c: C| {
+        f.w.say("Ready");
+        // From another thread, as the Lens client posts it.
+        let b = bus.clone();
+        std::thread::spawn(move || b.post(BusEvent::Lens(c)))
+            .join()
+            .unwrap();
+        pump_for(60);
+        f.say()
+    };
+    assert_eq!(
+        say_after(C::NotReachable),
+        "Google Lens: the browser could not be reached - see Help > View Logs"
+    );
+    assert_eq!(
+        say_after(C::WaitingForLens),
+        "Google Lens: waiting for an answer\u{2026}"
+    );
+    assert_eq!(
+        say_after(C::Blocked),
+        "Google Lens: standing down for this run"
+    );
+    assert_eq!(say_after(C::Ready), "Ready");
+    assert_eq!(f.w.s.search.lens.get(), Some(C::Ready));
     f.close();
 }

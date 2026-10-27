@@ -200,7 +200,7 @@ pub struct Bus {
 }
 
 impl Bus {
-    fn post(&self, event: BusEvent) {
+    pub fn post(&self, event: BusEvent) {
         let _ = self.tx.try_send(event);
     }
 }
