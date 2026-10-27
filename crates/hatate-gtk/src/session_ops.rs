@@ -659,7 +659,8 @@ impl MainWindow {
     /// replaced, and drops its results (`retire_attrs(..., clear=True)`).
     pub fn stop_background_workers(&self) {
         self.s.file_hash_worker.retire();
-        // DEFERRED(6.d): `thumbnail_worker`; DEFERRED(6.e): `availability_worker`.
+        self.s.availability_worker.retire();
+        // DEFERRED(6.d): `thumbnail_worker`.
     }
 
     /// `clear_session()`: discards the automatic session, both stores. `true` when nothing went
@@ -838,6 +839,7 @@ impl MainWindow {
         // never shown (`retire_attrs(..., grace_ms=2000)`).
         self.s.file_hash_worker.retire();
         self.s.missing_file_worker.retire();
+        self.retire_checks();
         // Waits for an in-flight write and stops the timer, before the final save: a background
         // write landing afterwards would put a slightly older session on top of the one meant to
         // be authoritative (`SessionAutosaver.shutdown`).

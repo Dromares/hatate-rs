@@ -3,6 +3,7 @@
 
 pub mod app;
 pub mod banners;
+pub mod checks;
 pub mod dialogs;
 pub mod error;
 pub mod fonts;

@@ -410,6 +410,34 @@ impl Entry {
         self.add_tags(booru, Some(TagSource::Booru));
     }
 
+    /// `ImageEntry.drop_unavailable_candidates`: removes the candidates confirmed gone
+    /// (`remote_available == Some(false)`; `None` is "not checked or unreachable" and stays), and
+    /// returns how many went. The selection keeps pointing at the same match where it survives
+    /// (found by value, as Python's `surviving.index`); an entry with nothing left goes back to a
+    /// no-match state.
+    pub fn drop_unavailable_candidates(&mut self) -> usize {
+        let previously_selected = self.selected_candidate().cloned();
+        let before = self.candidates.len();
+        self.candidates
+            .retain(|c| c.remote_available != Some(false));
+        let removed = before - self.candidates.len();
+        if self.candidates.is_empty() {
+            self.selected_candidate_index = 0;
+            self.stale_matched_url = None;
+            self.stale_source_name = None;
+            self.stale_similarity = None;
+            self.stale_similarity_measured = false;
+            self.status = MatchStatus::NotFound;
+            return removed;
+        }
+        // Nothing selected, or a selection that did not survive: the best remaining.
+        let new_index = previously_selected
+            .and_then(|prev| self.candidates.iter().position(|c| *c == prev))
+            .unwrap_or(0);
+        self.select_candidate(new_index);
+        removed
+    }
+
     /// `ImageEntry.add_tags`: optionally drop every tag of `replace_source` first, then append
     /// the new ones that are not already present by `(namespace, name)`.
     pub fn add_tags(&mut self, new_tags: Vec<Tag>, replace_source: Option<TagSource>) {

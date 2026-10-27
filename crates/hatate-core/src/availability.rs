@@ -823,3 +823,117 @@ pub async fn recheck_cached_candidates(
     }
     live
 }
+
+/// `AvailabilityWorker.MAX_CONCURRENT_CHECKS`.
+pub const MAX_CONCURRENT_CHECKS: usize = 6;
+
+/// What [`check_entry_candidates`] did: `gone` candidates confirmed gone out of `checked`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntryCheck {
+    pub gone: usize,
+    pub checked: usize,
+}
+
+/// `AvailabilityWorker.run` (`workers/availability_worker.py`): checks whether each of the
+/// entry's candidates still exists, at most [`MAX_CONCURRENT_CHECKS`] at a time, and records each
+/// verdict on its candidate. Unlike the search-time sweep it overwrites a verdict already known:
+/// this is the user asking again. `on_progress(done, total)` follows every finished check (also
+/// one that raised). A raised `stop` ends the run between checks: those not started are not
+/// checked and not counted.
+///
+/// Which URL is tested depends on the site: normally the image file (a post page can render after
+/// its image is removed), but for sites that signal deletion on the post page (Pixiv) the page.
+pub async fn check_entry_candidates(
+    net: &NetClient,
+    entry: &mut crate::model::Entry,
+    access: &SettingsAccess<'_>,
+    on_progress: &(dyn Fn(usize, usize) + Sync),
+    stop: &std::sync::atomic::AtomicBool,
+) -> EntryCheck {
+    let total = entry.candidates.len();
+    info!(
+        "Checking availability of {total} candidate(s) for {}",
+        entry.filename()
+    );
+    type Verdict = (usize, Option<Result<Option<bool>, CheckFailed>>);
+    let done = std::sync::atomic::AtomicUsize::new(0);
+    let jobs: Vec<Pin<Box<dyn Future<Output = Verdict> + '_>>> = entry
+        .candidates
+        .iter()
+        .enumerate()
+        .map(|(index, candidate)| {
+            let candidate = candidate.clone();
+            let done = &done;
+            let job: Pin<Box<dyn Future<Output = Verdict> + '_>> = Box::pin(async move {
+                if stop.load(std::sync::atomic::Ordering::SeqCst) {
+                    return (index, None);
+                }
+                let outcome = check_one_candidate(net, &candidate, access).await;
+                let n = done.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                on_progress(n, total);
+                (index, Some(outcome))
+            });
+            job
+        })
+        .collect();
+    let workers = MAX_CONCURRENT_CHECKS.min(total.max(1));
+    let results = run_bounded(jobs, workers).await;
+
+    let now = now_epoch();
+    let mut gone = 0usize;
+    let mut checked = 0usize;
+    for (index, outcome) in results {
+        let Some(outcome) = outcome else { continue };
+        checked += 1;
+        match outcome {
+            Ok(available) => {
+                entry.candidates[index].record_availability(available, now);
+                if available == Some(false) {
+                    gone += 1;
+                }
+            }
+            Err(e) => warn!("Availability check raised: {e}"),
+        }
+    }
+    info!(
+        "Availability check finished for {}: {gone}/{checked} candidate(s) confirmed gone",
+        entry.filename()
+    );
+    EntryCheck { gone, checked }
+}
+
+/// `AvailabilityWorker._check_one`.
+async fn check_one_candidate(
+    net: &NetClient,
+    candidate: &Candidate,
+    access: &SettingsAccess<'_>,
+) -> Result<Option<bool>, CheckFailed> {
+    let page_url = if candidate.url.is_empty() {
+        None
+    } else {
+        Some(normalize_url_for_hydrus(&candidate.url).map_err(CheckFailed::Url)?)
+    };
+    let target: Option<String> = match &page_url {
+        Some(page) if has_soft_404_detection(page) => Some(page.clone()),
+        _ => candidate
+            .direct_file_url
+            .clone()
+            .filter(|u| !u.is_empty())
+            .or_else(|| Some(candidate.url.clone()).filter(|u| !u.is_empty())),
+    };
+    let referer = remote::referer_for_candidate(candidate, target.as_deref());
+    let cookies = target
+        .as_deref()
+        .and_then(|t| site::cookies_for_url(t, &access.credentials()));
+    check_url_available(
+        net,
+        target.as_deref(),
+        access.timeout(),
+        referer.as_deref(),
+        None,
+        cookies,
+        Some(access),
+    )
+    .await
+    .map_err(CheckFailed::Raised)
+}

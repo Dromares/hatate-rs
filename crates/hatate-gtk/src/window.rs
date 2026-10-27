@@ -134,6 +134,9 @@ pub struct State {
     pub file_hash_worker: Slot,
     pub missing_file_worker: Slot,
     pub autosave_worker: Slot,
+    /// `self.availability_worker` and `self.upscale_check_worker`.
+    pub availability_worker: Slot,
+    pub upscale_check_worker: Slot,
     /// Set while an autosave write is on the pool, so close can wait for it.
     pub autosave_inflight: Arc<AtomicBool>,
     pub autosave_timer: RefCell<Option<glib::SourceId>>,
@@ -299,6 +302,8 @@ impl MainWindow {
             file_hash_worker: Slot::new(),
             missing_file_worker: Slot::new(),
             autosave_worker: Slot::new(),
+            availability_worker: Slot::new(),
+            upscale_check_worker: Slot::new(),
             autosave_inflight: Arc::new(AtomicBool::new(false)),
             autosave_timer: RefCell::new(None),
             prompter,

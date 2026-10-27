@@ -115,6 +115,14 @@ const SCENARIOS: &[Scenario] = &[
         a_failed_run_is_shown_as_failed_not_as_a_crash,
     ),
     (
+        "the_availability_check_offers_to_drop_the_dead_matches",
+        the_availability_check_offers_to_drop_the_dead_matches,
+    ),
+    (
+        "the_upscale_check_marks_rows_and_summarises",
+        the_upscale_check_marks_rows_and_summarises,
+    ),
+    (
         "re_search_uses_the_engine_it_was_asked_for",
         re_search_uses_the_engine_it_was_asked_for,
     ),
@@ -1717,5 +1725,168 @@ fn a_failed_run_is_shown_as_failed_not_as_a_crash(app: &adw::Application) {
     f.w.s.failed_banner.dismiss.emit_clicked();
     assert!(!f.w.s.failed_banner.root.is_visible());
     assert_eq!(f.w.s.shell.run_note_label.text(), "");
+    f.close();
+}
+
+/// A row with `n` matches whose URLs the scripted host answers by path.
+fn row_with_matches(path: &str, urls: &[&str]) -> hatate_core::model::Entry {
+    let mut e = entry(path, MatchStatus::Good);
+    e.candidates = urls
+        .iter()
+        .map(|u| hatate_core::model::Candidate::new(*u))
+        .collect();
+    e
+}
+
+/// `_check_match_availability` / `_on_availability_finished` / `_remove_dead_candidates`: the
+/// refusals, the all-clear text, the Yes/No offer with the dead list, and Yes dropping them.
+fn the_availability_check_offers_to_drop_the_dead_matches(app: &adw::Application) {
+    // No match: said so, nothing started.
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: vec![entry("/pics/none.png", MatchStatus::NotFound)],
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let id = f.w.s.queue.borrow().id_at(0).unwrap();
+    f.w.check_match_availability(id);
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Check Match Availability");
+    assert_eq!(shown.text, "This image has no matches to check.");
+    f.close();
+
+    // Every match is `unreachable.invalid`-free: the pre-set verdicts stand in for a network the
+    // test never touches; the check itself is `hatate_core`'s (tests/availability_https.rs). Here
+    // the shell is driven with the answer the worker would hand back.
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: vec![row_with_matches(
+                "/pics/two.png",
+                &["https://a.test/1", "https://a.test/2"],
+            )],
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let id = f.w.s.queue.borrow().id_at(0).unwrap();
+    let mut done = f.w.s.queue.borrow().entry(id).cloned().unwrap();
+    done.candidates[0].remote_available = Some(false);
+    done.candidates[1].remote_available = None;
+    f.script.push(Answer::Msg(Response::Yes));
+    f.w.on_availability_finished(
+        id,
+        done,
+        hatate_core::availability::EntryCheck {
+            gone: 1,
+            checked: 2,
+        },
+    );
+    let shown = f.script.last_shown();
+    assert_eq!(shown.kind, Kind::Question);
+    assert_eq!(shown.buttons, Buttons::YesNo);
+    assert!(
+        shown.text.starts_with(
+            "1 of 2 match(es) are no longer available.\n\nRemove them from this image's match list?"
+        ),
+        "{}",
+        shown.text
+    );
+    assert!(
+        shown
+            .text
+            .contains("(1 other(s) couldn't be checked conclusively and will be kept.)")
+    );
+    assert!(shown.text.contains("a.test \u{2014} https://a.test/1"));
+    assert_eq!(shown.default, Response::No);
+    assert_eq!(f.say(), "Removed 1 unavailable match(es)");
+    let urls: Vec<String> =
+        f.w.s
+            .queue
+            .borrow()
+            .entry(id)
+            .unwrap()
+            .candidates
+            .iter()
+            .map(|c| c.url.clone())
+            .collect();
+    assert_eq!(urls, ["https://a.test/2"]);
+
+    // No: kept, and said so.
+    let mut done = f.w.s.queue.borrow().entry(id).cloned().unwrap();
+    done.candidates[0].remote_available = Some(false);
+    f.script.push(Answer::Msg(Response::No));
+    f.w.on_availability_finished(
+        id,
+        done,
+        hatate_core::availability::EntryCheck {
+            gone: 1,
+            checked: 1,
+        },
+    );
+    assert_eq!(f.say(), "Availability check finished: 1 gone (kept)");
+    assert_eq!(f.w.s.queue.borrow().entry(id).unwrap().candidates.len(), 1);
+
+    // Nothing gone: the all-clear.
+    let mut done = f.w.s.queue.borrow().entry(id).cloned().unwrap();
+    done.candidates[0].remote_available = Some(true);
+    f.w.on_availability_finished(
+        id,
+        done,
+        hatate_core::availability::EntryCheck {
+            gone: 0,
+            checked: 1,
+        },
+    );
+    assert_eq!(
+        f.script.last_shown().text,
+        "All 1 match(es) still appear to be available."
+    );
+    assert_eq!(f.say(), "Availability check finished: nothing gone");
+    f.close();
+}
+
+/// `_check_rows_for_upscaling`: the worker runs the real heuristics over a synthetic PNG, each row
+/// gets a verdict and its detail, and the summary says how many were flagged.
+fn the_upscale_check_marks_rows_and_summarises(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = search_fx(app, pics.path(), 2);
+    let ids: Vec<_> = {
+        let q = f.w.s.queue.borrow();
+        (0..2).map(|r| q.id_at(r).unwrap()).collect()
+    };
+    f.w.check_rows_for_upscaling(&ids);
+    assert_eq!(f.say(), "Checking 2 image(s) for upscaling\u{2026}");
+    // Running: a second request is refused.
+    f.w.check_rows_for_upscaling(&ids);
+    assert_eq!(f.script.last_shown().text, "A check is already running.");
+    assert!(pump_until(20_000, || f.script.count_shown() >= 2));
+    {
+        let q = f.w.s.queue.borrow();
+        for e in q.entries() {
+            assert!(
+                matches!(e.upscale_verdict.as_deref(), Some("flagged" | "clear")),
+                "{:?}",
+                e.upscale_verdict
+            );
+            assert!(
+                e.upscale_check_detail
+                    .as_deref()
+                    .is_some_and(|d| !d.is_empty())
+            );
+            assert_eq!((e.local_width, e.local_height), (Some(4), Some(3)));
+        }
+    }
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Upscale Check Results");
+    assert!(
+        shown
+            .text
+            .contains(" of 2 image(s) show possible signs of upscaling.")
+    );
+    assert!(shown.text.contains("img0.png:\n"));
+    assert!(f.say().starts_with("Upscale check finished: "));
     f.close();
 }

@@ -266,7 +266,7 @@ impl SearchRun {
     }
 
     /// The backend, built on first use.
-    fn backend(&self, paths: &Paths) -> Result<SearchBackend, String> {
+    pub(crate) fn backend(&self, paths: &Paths) -> Result<SearchBackend, String> {
         if let Some(b) = self.backend.borrow().as_ref() {
             return Ok(b.clone());
         }
@@ -704,7 +704,7 @@ impl MainWindow {
     }
 
     /// The gauge, in Qt's terms: `progress_bar.setMaximum(total); setValue(done)`.
-    fn set_progress_gauge(&self, done: usize, total: usize) {
+    pub(crate) fn set_progress_gauge(&self, done: usize, total: usize) {
         self.s.run_progress.set((done as i64, total as i64));
         let fraction = if total == 0 {
             0.0
