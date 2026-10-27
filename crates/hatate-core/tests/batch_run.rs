@@ -398,6 +398,41 @@ async fn a_persistent_failure_is_retried_exactly_once() {
     assert_eq!(w.engines.calls(), ["iqdb", "iqdb"]);
 }
 
+/// `test_several_failures_are_all_retried`: every failed image gets its one extra attempt after
+/// the first pass, and the image that succeeded is not searched again.
+#[tokio::test]
+async fn several_failures_are_all_retried_and_the_image_that_succeeded_is_not() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png", "b.png", "c.png"]);
+    let fault = || Step::Return(Err(IqdbError("timeout".to_owned())));
+    let found = || Step::Return(Ok(vec![iqdb_match(URL, 96.5)]));
+    // First pass: a fails, b is found, c fails. Retry pass: a, then c.
+    w.engines.iqdb.push(fault());
+    w.engines.iqdb.push(found());
+    w.engines.iqdb.push(fault());
+    w.engines.iqdb.push(found());
+    w.engines.iqdb.push(found());
+    let mut entries = Vec::new();
+    let (outcome, _) = w.run(&dir, &mut entries).await;
+    assert_eq!(outcome.searched, 5, "three images and two retries");
+    assert_eq!(w.engines.calls(), ["iqdb"; 5]);
+    assert!(entries.iter().all(|e| e.status == MatchStatus::Good));
+    assert!(w.lines().iter().any(|l| l.contains("retrying 2 image(s)")));
+}
+
+/// `test_a_not_found_is_not_a_failure`: a verdict of "no match" is final and is not retried.
+#[tokio::test]
+async fn a_not_found_is_not_a_failure_and_is_not_retried() {
+    let w = world().await;
+    let dir = w.pictures(&["a.png"]);
+    w.engines.iqdb.push(Step::Return(Ok(Vec::new())));
+    let mut entries = Vec::new();
+    let (outcome, _) = w.run(&dir, &mut entries).await;
+    assert_eq!(outcome.searched, 1);
+    assert_eq!(entries[0].status, MatchStatus::NotFound);
+    assert_eq!(w.engines.calls(), ["iqdb"]);
+}
+
 #[tokio::test]
 async fn retries_off_means_one_attempt() {
     let w = world().await;
@@ -901,6 +936,14 @@ async fn continue_without_saucenao_carries_on_and_says_so_once() {
         .filter(|l| l.contains("carrying on without it"))
         .count();
     assert_eq!(said, 1);
+    // `test_the_later_images_are_searched_without_saucenao`: asked once, while the allowance was
+    // still there, and not again for the rest of the batch.
+    assert_eq!(
+        w.engines.calls().iter().filter(|c| **c == "saucenao").count(),
+        1,
+        "{:?}",
+        w.engines.calls()
+    );
     assert!(QuotaPauseFile::new(&w.paths).read().is_none());
     // `test_those_results_are_marked_provisional`: the images searched without SauceNAO say so,
     // and are kept out of the cache so a later run searches them in full.

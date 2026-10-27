@@ -306,6 +306,14 @@ impl MainWindow {
             chip.set_tooltip_text(Some(chip_tooltip(note)));
             page.chips.append(&chip);
         }
+        // DAN-2297 ruling 2: the chips say how the engines are set, and Settings is where that is
+        // changed, so none of them is a Tab stop. The tooltips stay for the pointer.
+        page.chips.set_focusable(false);
+        let mut child = page.chips.first_child();
+        while let Some(c) = child {
+            c.set_focusable(false);
+            child = c.next_sibling();
+        }
         page.pipeline.set_text(&pipeline_summary(&settings));
         page.summary.set_text(&engine_summary(&settings));
         let _ = engine_ids::IQDB;

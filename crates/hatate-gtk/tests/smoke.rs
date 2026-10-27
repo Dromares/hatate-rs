@@ -124,6 +124,10 @@ const SCENARIOS: &[Scenario] = &[
         the_upscale_check_marks_rows_and_summarises,
     ),
     (
+        "starting_a_search_clears_the_stopped_note",
+        starting_a_search_clears_the_stopped_note,
+    ),
+    (
         "parser_health_dialog_and_warning",
         parser_health_dialog_and_warning,
     ),
@@ -1393,6 +1397,37 @@ fn start_search_runs_the_batch(app: &adw::Application) {
     f.close();
 }
 
+/// `test_starting_a_search_clears_it` (test_interrupted_banner.py): after a crash the strip says
+/// "stopped 2h 14m ago"; starting a search forgets that, because it describes the run before.
+fn starting_a_search_clears_the_stopped_note(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = Fx::new(
+        app,
+        Opts {
+            unclean: true,
+            seed: unsearched(pics.path(), 2),
+            tweak: Some(search_tweak()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    assert!(
+        f.w.s.shell.run_note_label.text().starts_with("stopped "),
+        "{}",
+        f.w.s.shell.run_note_label.text()
+    );
+    for _ in 0..2 {
+        f.search
+            .engines
+            .iqdb
+            .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    }
+    f.activate("toggle-search");
+    assert_eq!(f.w.s.shell.run_note_label.text(), "");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    f.close();
+}
+
 /// `action_start_search`'s two refusals.
 fn start_search_with_nothing_to_do_or_one_running(app: &adw::Application) {
     let pics = tempfile::tempdir().unwrap();
@@ -2171,6 +2206,17 @@ fn activity_page_states_the_engines_and_tails_the_log(app: &adw::Application) {
     assert_eq!(chips[2], ("ascii2d \u{b7} fallback".to_owned(), true));
     assert_eq!(chips[3], ("trace.moe \u{b7} off".to_owned(), false));
     assert_eq!(page.chip_texts()[3].2, "Switched off in Settings > Engine.");
+    // DAN-2297 ruling 2: no chip is a Tab stop, and the page's own chip row is not either; the
+    // tooltips above are what is left to the pointer.
+    assert!(!page.chips.is_focusable());
+    let mut child = page.chips.first_child();
+    let mut seen = 0;
+    while let Some(c) = child {
+        assert!(!c.is_focusable(), "a chip wrapper is a Tab stop");
+        seen += 1;
+        child = c.next_sibling();
+    }
+    assert_eq!(seen, 10);
     assert_eq!(page.chip_texts()[0].2, "Runs on every image.");
     assert!(page.pipeline.text().contains("IQDB"));
     assert_eq!(
