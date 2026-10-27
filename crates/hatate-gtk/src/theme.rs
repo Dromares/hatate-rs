@@ -321,7 +321,7 @@ textview.log, textview.log text { background: @sunken; color: @ink; font-family:
 .queue-cell.cell-mono { font-weight: 500; }
 .queue-cell.cell-mono-bold { font-weight: 700; }
 .queue .thumb { margin: 0 %space_3%px; border: 1px solid @ink_58; background: @sunken; }
-.queue .thumb.thumb-failed { border-color: @ink_46; }
+.queue .thumb.thumb-failed { border-color: @ink_58; }
 
 /* scrolled windows draw soft edge gradients where content continues; flat has none */
 undershoot, overshoot, undershoot.top, undershoot.bottom, undershoot.left, undershoot.right {
@@ -612,6 +612,30 @@ mod tests {
             for ground in [p.raised, p.page] {
                 let r = contrast(p.ink_58.over(ground), ground);
                 assert!(r >= 3.0, "{scheme:?} ink-58 on {ground:?}: {r:.2}:1");
+            }
+            // the thumb frame is a 1px border painted over the thumb's own sunken fill, and it
+            // sits next to the row, the zebra stripe and the page (DAN-2325: ink-46 gave 2.91:1);
+            // the tier is read from the failed rule itself, so a weaker token goes red here
+            let rule = RULES
+                .lines()
+                .find(|l| l.starts_with(".queue .thumb.thumb-failed"))
+                .expect("the failed thumb rule");
+            let tier = match rule
+                .split("border-color: @")
+                .nth(1)
+                .and_then(|t| t.split(';').next())
+            {
+                Some("ink_58") => p.ink_58,
+                Some("ink_46") => p.ink_46,
+                other => panic!("the failed thumb frame uses {other:?}"),
+            };
+            let frame = tier.over(p.sunken);
+            for ground in [p.raised, p.zebra(), p.page] {
+                let r = contrast(frame, ground);
+                assert!(
+                    r >= 3.0,
+                    "{scheme:?} failed thumb frame on {ground:?}: {r:.2}:1"
+                );
             }
             let sheet = css(scheme);
             assert!(
