@@ -280,6 +280,10 @@ impl ParserHealthDialog {
         row.append(&close);
         column.append(&row);
         window.set_child(Some(&column));
+        // The site names are selectable (so they can be copied), and a selectable label that takes
+        // the dialog's first focus selects its whole text: the first site then looks chosen
+        // (DAN-2297 item A). Close takes the first focus instead.
+        gtk::prelude::GtkWindowExt::set_focus(&window, Some(&close));
 
         let dialog = Rc::new(ParserHealthDialog {
             window: window.clone(),

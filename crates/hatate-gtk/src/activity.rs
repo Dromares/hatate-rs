@@ -161,6 +161,10 @@ pub fn build(log_path: &std::path::Path) -> Rc<ActivityPage> {
     chips.set_selection_mode(gtk::SelectionMode::None);
     chips.set_homogeneous(false);
     chips.set_max_children_per_line(10);
+    // GTK 4.14 answers a height question with no width by laying the chips out at the FlowBox's
+    // minimum width, one per line, and the page then asks for 909 px of a 780 px window (DAN-2324).
+    // Five to a line bounds that answer at two rows.
+    chips.set_min_children_per_line(5);
     chips.set_column_spacing(8);
     chips.set_row_spacing(8);
     chips.set_margin_bottom(ENGINE_ROW_GAP);

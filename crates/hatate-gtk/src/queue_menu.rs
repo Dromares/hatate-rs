@@ -160,3 +160,31 @@ impl MainWindow {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 6.e gives the re-search, upscale-check and availability entries their handlers; Compare
+    /// (6.f) and the Hydrus entries (6.g) stay off.
+    #[test]
+    fn the_entries_6e_owns_are_wired_and_the_later_ones_are_not() {
+        for a in [
+            Action::Research,
+            Action::ResearchWithEngine("iqdb"),
+            Action::ResearchWithOppositeEngine,
+            Action::CheckUpscaling,
+            Action::CheckAvailability,
+        ] {
+            assert!(is_wired(a), "{a:?}");
+        }
+        for a in [
+            Action::Compare,
+            Action::SendToHydrus,
+            Action::ShowInHydrus,
+            Action::DeleteFromHydrus,
+        ] {
+            assert!(!is_wired(a), "{a:?}");
+        }
+    }
+}

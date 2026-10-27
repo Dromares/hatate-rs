@@ -439,11 +439,7 @@ mod tests {
     fn every_deferred_action_names_a_ticket() {
         let d = deferred();
         assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
-        for want in [
-            "query-hydrus",
-            "preferences",
-            "edit-conditions",
-        ] {
+        for want in ["query-hydrus", "preferences", "edit-conditions"] {
             assert!(d.iter().any(|(n, _)| *n == want), "{want} not deferred");
         }
         for working in [

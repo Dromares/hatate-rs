@@ -1331,8 +1331,11 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
             let content = libadwaita::prelude::AdwApplicationWindowExt::content(&f.w.win).unwrap();
             let (cw, ch) = (content.width(), content.height());
             let (_, need_h_at_cw, _, _) = content.measure(gtk4::Orientation::Vertical, cw);
+            // What the toplevel asks for before it knows a width (GTK 4.14's FlowBox answers this
+            // with its chips stacked in one column: the Activity page then wanted 909 px, DAN-2324).
+            let (need_h_unconstrained, _, _, _) = content.measure(gtk4::Orientation::Vertical, -1);
             println!(
-                "OUTER {name} {scheme} window={}x{} content={cw}x{ch} needs={w}x{need_h_at_cw}",
+                "OUTER {name} {scheme} window={}x{} content={cw}x{ch} needs={w}x{need_h_at_cw} unconstrained_min_h={need_h_unconstrained}",
                 f.w.win.width(),
                 f.w.win.height()
             );
@@ -1343,6 +1346,17 @@ fn minimum_size_fits_every_state_in_both_schemes(app: &adw::Application) {
             assert!(
                 cw >= w && ch >= need_h_at_cw,
                 "{name} ({scheme}) needs {w}x{need_h_at_cw} but the stated minimum gives it {cw}x{ch}"
+            );
+            // The content must also fit INSIDE the window: a child given more than the window
+            // has runs off its bottom edge, and `ch >= need` above cannot see that.
+            assert!(
+                ch <= f.w.win.height(),
+                "{name} ({scheme}): the content is allocated {ch} px in a window {} px tall; it runs off the bottom",
+                f.w.win.height()
+            );
+            assert!(
+                need_h_unconstrained <= MIN_HEIGHT,
+                "{name} ({scheme}): asked for {need_h_unconstrained} px before a width is known; the stated minimum is {MIN_HEIGHT}"
             );
             worst = (worst.0.max(w), worst.1.max(need_h_at_cw));
             f.close();
@@ -2207,6 +2221,39 @@ fn parser_health_dialog_and_warning(app: &adw::Application) {
     let f = fx(app);
     f.activate("parser-health");
     let dialog = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    pump_for(150);
+    // Opening it must not leave a site name looking picked: no label holds a selection, and the
+    // first focus is on Close (DAN-2297 item A).
+    let mut labels = Vec::new();
+    let mut stack = vec![dialog.window.child().unwrap()];
+    while let Some(w) = stack.pop() {
+        if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+            labels.push(l.clone());
+        }
+        let mut c = w.first_child();
+        while let Some(x) = c {
+            c = x.next_sibling();
+            stack.push(x);
+        }
+    }
+    assert!(
+        labels.iter().any(|l| l.is_selectable()),
+        "the site names stay selectable so they can be copied"
+    );
+    assert!(
+        labels.iter().all(|l| l.selection_bounds().is_none()),
+        "a site name opened already selected"
+    );
+    let focus =
+        gtk4::prelude::GtkWindowExt::focus(&dialog.window).expect("the dialog has a first focus");
+    assert_eq!(
+        focus
+            .downcast_ref::<gtk4::Button>()
+            .and_then(|b| b.label())
+            .as_deref(),
+        Some("Close"),
+        "first focus is Close"
+    );
     assert!(!dialog.check_button.is_sensitive());
     assert_eq!(
         dialog.texts()[0],
