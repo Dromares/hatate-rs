@@ -15,6 +15,7 @@ use gtk4::prelude::*;
 use hatate_core::model::MatchStatus;
 use hatate_core::quota_pause::{QuotaPause, QuotaPauseFile};
 use hatate_core::session::{LoadOptions, SessionStore, named};
+use hatate_core::table_menu::Action;
 use hatate_gtk::dialogs::{Asked, Buttons, Kind, Response};
 use hatate_gtk::menu::{self, Owner};
 use hatate_gtk::shell::{EMPTY_GHOST_GLYPH, IDLE_ETA, IDLE_PROGRESS, RUN_FAILED_NOTE};
@@ -1837,7 +1838,7 @@ fn re_search_uses_the_engine_it_was_asked_for(app: &adw::Application) {
         .engines
         .saucenao
         .push(common::search::scripted::Step::Return(Ok(Vec::new())));
-    f.w.research_rows_with_engine(&ids[..1], "saucenao");
+    f.w.run_menu_action(Action::ResearchWithEngine("saucenao"), &ids[..1]);
     assert_eq!(f.say(), "Searching (SauceNAO only) 1 image(s)\u{2026}");
     assert!(pump_until(10_000, || !f.w.s.run_active.get()));
     assert_eq!(f.search.engines.calls(), vec!["saucenao"]);
@@ -1846,7 +1847,7 @@ fn re_search_uses_the_engine_it_was_asked_for(app: &adw::Application) {
         .engines
         .saucenao
         .push(common::search::scripted::Step::Return(Ok(Vec::new())));
-    f.w.research_rows_with_opposite_engine(&ids[1..]);
+    f.w.run_menu_action(Action::ResearchWithOppositeEngine, &ids[1..]);
     assert_eq!(f.say(), "Searching (opposite engine) 1 image(s)\u{2026}");
     assert!(pump_until(10_000, || !f.w.s.run_active.get()));
     assert_eq!(f.search.engines.calls(), vec!["saucenao", "saucenao"]);
@@ -1855,7 +1856,7 @@ fn re_search_uses_the_engine_it_was_asked_for(app: &adw::Application) {
         .engines
         .iqdb
         .push(common::search::scripted::Step::Return(Ok(Vec::new())));
-    f.w.research_rows(&ids[..1]);
+    f.w.run_menu_action(Action::Research, &ids[..1]);
     assert_eq!(f.say(), "Re-searching 1 image(s)\u{2026}");
     assert!(pump_until(10_000, || !f.w.s.run_active.get()));
     assert_eq!(f.search.engines.calls()[2], "iqdb");
@@ -1949,7 +1950,7 @@ fn the_availability_check_offers_to_drop_the_dead_matches(app: &adw::Application
         },
     );
     let id = f.w.s.queue.borrow().id_at(0).unwrap();
-    f.w.check_match_availability(id);
+    f.w.run_menu_action(Action::CheckAvailability, &[id]);
     let shown = f.script.last_shown();
     assert_eq!(shown.title, "Check Match Availability");
     assert_eq!(shown.text, "This image has no matches to check.");
@@ -2070,10 +2071,10 @@ fn the_upscale_check_marks_rows_and_summarises(app: &adw::Application) {
         let q = f.w.s.queue.borrow();
         (0..2).map(|r| q.id_at(r).unwrap()).collect()
     };
-    f.w.check_rows_for_upscaling(&ids);
+    f.w.run_menu_action(Action::CheckUpscaling, &ids);
     assert_eq!(f.say(), "Checking 2 image(s) for upscaling\u{2026}");
     // Running: a second request is refused.
-    f.w.check_rows_for_upscaling(&ids);
+    f.w.run_menu_action(Action::CheckUpscaling, &ids);
     assert_eq!(f.script.last_shown().text, "A check is already running.");
     assert!(pump_until(20_000, || f.script.count_shown() >= 2));
     {
