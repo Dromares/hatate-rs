@@ -77,7 +77,8 @@ fn main() -> glib::ExitCode {
     };
     let mut unclean = false;
     match state.as_str() {
-        "rows" | "dialog" | "failed" | "activity" | "parser-health" => save(&rows(12)),
+        "rows" | "dialog" | "failed" | "activity" | "parser-health" | "tab-failed"
+        | "tab-activity" => save(&rows(12)),
         "crashed" => {
             unclean = true;
             let mut r = rows(8);
@@ -144,13 +145,12 @@ fn main() -> glib::ExitCode {
             } else {
                 None
             };
-            let logs_window = other
-                .and_then(|title| {
-                    gtk4::Window::list_toplevels()
-                        .into_iter()
-                        .filter_map(|w| w.downcast::<gtk4::Window>().ok())
-                        .find(|w| w.title().as_deref() == Some(title) && w.is_mapped())
-                });
+            let logs_window = other.and_then(|title| {
+                gtk4::Window::list_toplevels()
+                    .into_iter()
+                    .filter_map(|w| w.downcast::<gtk4::Window>().ok())
+                    .find(|w| w.title().as_deref() == Some(title) && w.is_mapped())
+            });
             let main_app = win.application();
             let win: &gtk4::Window = logs_window.as_ref().unwrap_or(win.upcast_ref());
             let renderer = win.native().and_then(|n| n.renderer()).expect("renderer");
@@ -236,8 +236,16 @@ fn prepare(window: &MainWindow, state: &str) {
                 p.popup();
             }
         }
-        "tab" => {
+        "tab" | "tab-failed" | "tab-activity" => {
             // Walks Tab from the top and prints what takes focus, for the verdict's Tab order.
+            // `tab-failed` and `tab-activity` do it with the Failed banner up or on the Activity page.
+            match state {
+                "tab-failed" => {
+                    window.show_failed_banner("The run stopped on a fault (synthetic).")
+                }
+                "tab-activity" => window.set_mode("activity"),
+                _ => {}
+            }
             window.win.set_focus_visible(true);
             let win = window.win.clone();
             glib::idle_add_local_once(move || {
