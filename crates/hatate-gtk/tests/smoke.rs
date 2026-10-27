@@ -111,6 +111,10 @@ const SCENARIOS: &[Scenario] = &[
         the_sites_menu_toggles_and_saves,
     ),
     (
+        "a_failed_run_is_shown_as_failed_not_as_a_crash",
+        a_failed_run_is_shown_as_failed_not_as_a_crash,
+    ),
+    (
         "re_search_uses_the_engine_it_was_asked_for",
         re_search_uses_the_engine_it_was_asked_for,
     ),
@@ -1649,5 +1653,69 @@ fn re_search_uses_the_engine_it_was_asked_for(app: &adw::Application) {
     assert_eq!(f.say(), "Re-searching 1 image(s)\u{2026}");
     assert!(pump_until(10_000, || !f.w.s.run_active.get()));
     assert_eq!(f.search.engines.calls()[2], "iqdb");
+    f.close();
+}
+
+/// `Ending::Failed`: the worker dies on a staging directory that cannot be made. The window shows
+/// a failed run (banner, strip note, counts), the message holds no path and no OS text, nothing
+/// crashed, the rows stay as they were, and Dismiss clears it.
+fn a_failed_run_is_shown_as_failed_not_as_a_crash(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: unsearched(pics.path(), 2),
+            tweak: Some(Box::new(|s: &mut hatate_core::config::Settings| {
+                search_tweak()(s);
+                s.auto_import_enabled = true;
+                s.auto_import_method = "download_send".to_owned();
+                s.hydrus.access_key = "synthetic-key".into();
+            })),
+            setup: Some(Box::new(|paths: &hatate_core::paths::Paths| {
+                // A file where the staging directory has to be.
+                let staging = paths.auto_import_staging_dir();
+                std::fs::create_dir_all(staging.parent().unwrap()).unwrap();
+                std::fs::write(&staging, b"in the way").unwrap();
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.activate("toggle-search");
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert!(f.w.s.failed_banner.root.is_visible());
+    let said = texts_under(f.w.s.failed_banner.root.upcast_ref());
+    let all = said.join(" | ");
+    assert!(all.contains("Run failed"), "{all}");
+    assert!(
+        all.contains("Everything searched so far is saved, and 2 were not reached."),
+        "{all}"
+    );
+    assert!(
+        all.contains("Searched") && all.contains("Not searched"),
+        "{all}"
+    );
+    let body = f.w.s.failed_banner.parts.body.text().to_string();
+    for bad in ["/", "os error", "Not a directory"] {
+        assert!(!body.contains(bad), "the banner body shows {bad:?}: {body}");
+    }
+    assert!(
+        !all.contains(&*f.dir.path().to_string_lossy()),
+        "no path: {all}"
+    );
+    assert_eq!(
+        f.w.s.shell.run_note_label.text(),
+        "last run failed \u{2014} see log"
+    );
+    assert_eq!(statuses(&f), vec![MatchStatus::NotSearched; 2]);
+    assert_eq!(
+        f.script.count_shown(),
+        0,
+        "a failed run is not a modal crash"
+    );
+    assert!(!f.w.s.queue.borrow().search_running());
+    f.w.s.failed_banner.dismiss.emit_clicked();
+    assert!(!f.w.s.failed_banner.root.is_visible());
+    assert_eq!(f.w.s.shell.run_note_label.text(), "");
     f.close();
 }

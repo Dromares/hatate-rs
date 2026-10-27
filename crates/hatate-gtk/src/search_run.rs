@@ -102,7 +102,23 @@ impl SearchBackend {
         let clock: Arc<dyn Clock> = Arc::new(SystemClock::default());
         let net = NetClient::new(NetConfig::default())
             .map_err(|e| format!("could not build the network client: {e}"))?;
-        let mut live = LiveEngines::for_profile(net.clone(), clock.clone(), paths);
+        // `hatate batch` keeps the Lens window as it is; the window keeps it off the taskbar on
+        // Plasma (`core/desktop_attention.py`), and does nothing anywhere else.
+        let mut lens_settings =
+            hatate_core::lens_browser::LensSettings::shipped(paths.lens_profile_dir());
+        lens_settings.attention =
+            Arc::new(hatate_core::desktop_attention::KdeAttention::from_process());
+        let sites = Arc::new(hatate_core::engines::lens_sites::OnlineSites::new(
+            net.clone(),
+        ));
+        let mut live = LiveEngines::new(net.clone(), clock.clone())
+            .with_lens_browser(
+                hatate_core::lens_browser::LensBrowser::with_settings(lens_settings),
+                sites,
+            )
+            .with_pawchive_index(hatate_core::pawchive_index::PawchiveIndex::new(
+                paths.pawchive_index_db(),
+            ));
         live.lens = live.lens.clone().with_connection_sink(lens);
         let live = Arc::new(live);
         let runner = EngineRunner::new(live.clone(), clock.clone());
@@ -588,6 +604,7 @@ impl MainWindow {
             tracing::warn!("Could not clear the SauceNAO quota pause: {e}");
         }
         self.hide_quota_banner();
+        self.s.failed_banner.root.set_visible(false);
 
         // Copies of the rows, in the order asked; a row named twice is searched twice.
         let (batch, pending, run_ids): (Vec<Entry>, Vec<usize>, Vec<EntryId>) = {
@@ -852,20 +869,69 @@ impl MainWindow {
         self.s.shell.search_toggle_btn.set_sensitive(true);
         self.s.search.run_id.set(0);
         if let Ending::Failed(fault) = ending {
-            // Shown as a failed run, not a crash: the message is the fault's own, without a path.
+            // The banner came with `Ended`; the raw text goes to the log only.
             tracing::warn!("The search run failed: {}", fault.detail());
-            self.on_run_ended(&RunEnd::Failed(fault.user_message()));
         }
     }
 
-    /// The channel's reading of how the run ended. `DEFERRED(A2)`: the Failed banner.
+    /// The channel's reading of how the run ended. A failed run is shown as one (the Failed
+    /// banner, call 2b), not as a crash: the session is kept and the rest is unsearched.
     fn on_run_ended(&self, end: &RunEnd) {
         if let RunEnd::Failed(message) = end {
-            self.s
-                .shell
-                .run_note_label
-                .set_text("last run failed \u{2014} see log");
-            self.say(message);
+            self.show_failed_banner(message);
+        }
+    }
+
+    /// Populates and shows the Failed banner: the fault's own path-free message, then what is
+    /// saved and what was not reached, with the run strip's counts as the meta line.
+    pub fn show_failed_banner(&self, message: &str) {
+        let (unreached, searched, total) = {
+            let q = self.s.queue.borrow();
+            let n = q
+                .entries()
+                .iter()
+                .filter(|e| e.status == MatchStatus::NotSearched)
+                .count();
+            let (done, total) = self.s.run_progress.get();
+            (n as i64, done, total)
+        };
+        let b = &self.s.failed_banner;
+        b.parts.body.set_text(&format!(
+            "{message} Everything searched so far is saved, and {unreached} {} not reached.",
+            if unreached == 1 { "was" } else { "were" }
+        ));
+        let items = vec![
+            (
+                "Searched".to_owned(),
+                format!(
+                    "{}/{}",
+                    crate::banners::thousands(searched),
+                    crate::banners::thousands(total)
+                ),
+            ),
+            (
+                "Not searched".to_owned(),
+                crate::banners::thousands(unreached),
+            ),
+        ];
+        while let Some(child) = b.parts.meta_slot.first_child() {
+            b.parts.meta_slot.remove(&child);
+        }
+        b.parts
+            .meta_slot
+            .append(&crate::widgets::meta_line(&items, false, None));
+        self.s
+            .shell
+            .run_note_label
+            .set_text("last run failed \u{2014} see log");
+        b.root.set_visible(true);
+    }
+
+    /// Dismiss: the banner and the strip's note describe a run that is over.
+    pub fn hide_failed_banner(&self) {
+        self.s.failed_banner.root.set_visible(false);
+        if self.s.shell.run_note_label.text() == "last run failed \u{2014} see log" {
+            self.s.shell.run_note_label.set_text("");
         }
     }
 

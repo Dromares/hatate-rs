@@ -562,6 +562,34 @@ pub fn banner_shell(glyph_text: &str, head_text: &str) -> (gtk::Overlay, BannerP
     )
 }
 
+/// The Failed banner's widgets (`phase6-calls` call 2b): a run that ended on `Ending::Failed`.
+pub struct FailedBanner {
+    pub root: gtk::Overlay,
+    pub parts: BannerParts,
+    pub resume: gtk::Button,
+    pub view_log: gtk::Button,
+    pub dismiss: gtk::Button,
+}
+
+/// `failed_banner()`: `Run failed \u{2014} the rest was not searched`, `Resume Queue` primary,
+/// `View Log`, and the quiet link `Dismiss`.
+pub fn failed_banner() -> FailedBanner {
+    let (root, parts) = banner_shell("\u{D7}", "Run failed \u{2014} the rest was not searched");
+    let resume = pill_button("Resume Queue", true, true);
+    let view_log = pill_button("View Log", false, true);
+    let dismiss = link_button("Dismiss");
+    parts.actions.append(&resume);
+    parts.actions.append(&view_log);
+    parts.actions.append(&dismiss);
+    FailedBanner {
+        root,
+        parts,
+        resume,
+        view_log,
+        dismiss,
+    }
+}
+
 /// The Crashed banner's widgets (`run_banner`).
 pub struct RunBanner {
     pub root: gtk::Overlay,

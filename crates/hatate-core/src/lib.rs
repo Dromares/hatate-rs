@@ -8,6 +8,7 @@ pub mod cache;
 pub mod clock;
 pub mod config;
 pub mod crash_marker;
+pub mod desktop_attention;
 pub mod engine_alerts;
 pub mod engine_backends;
 pub mod engine_ids;

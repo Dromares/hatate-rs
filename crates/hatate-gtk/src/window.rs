@@ -148,6 +148,8 @@ pub struct State {
     pub drop_zone: gtk::Overlay,
     pub run_banner: widgets::RunBanner,
     pub quota_banner: widgets::QuotaBanner,
+    /// The banner of a run that ended on `Ending::Failed` (call 2b).
+    pub failed_banner: widgets::FailedBanner,
     /// The Crashed "Nothing survived." variant of the empty state, while it is showing.
     pub nothing_survived: RefCell<Option<widgets::NothingSurvived>>,
     /// `self._unclean_shutdown`.
@@ -243,6 +245,9 @@ impl MainWindow {
         let quota_banner = widgets::quota_pause_banner();
         quota_banner.root.set_visible(false);
         queue_page.append(&quota_banner.root);
+        let failed_banner = widgets::failed_banner();
+        failed_banner.root.set_visible(false);
+        queue_page.append(&failed_banner.root);
 
         let queue_stack = gtk::Stack::new();
         queue_stack.set_vexpand(true);
@@ -307,6 +312,7 @@ impl MainWindow {
             drop_zone,
             run_banner,
             quota_banner,
+            failed_banner,
             nothing_survived: RefCell::new(None),
             unclean_shutdown: env.unclean_shutdown,
             closing: Cell::new(false),
@@ -544,6 +550,32 @@ impl MainWindow {
             move |_| {
                 if let Some(w) = w.upgrade() {
                     w.resume_without_saucenao();
+                }
+            }
+        });
+        // The Failed banner: Resume Queue starts a search, View Log opens the log viewer, Dismiss
+        // closes it and clears the strip's note.
+        self.s.failed_banner.resume.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.action_start_search();
+                }
+            }
+        });
+        self.s.failed_banner.view_log.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.action_view_logs();
+                }
+            }
+        });
+        self.s.failed_banner.dismiss.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.hide_failed_banner();
                 }
             }
         });
