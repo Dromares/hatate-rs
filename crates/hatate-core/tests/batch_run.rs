@@ -1303,3 +1303,202 @@ async fn a_worker_that_dies_is_failed_with_a_message_that_names_no_path() {
         "Failed is never persisted"
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// What a window launch can set (DAN-2218): `search_pending_with`.
+// ---------------------------------------------------------------------------------------------
+
+use hatate_core::batch::{PendingOptions, search_pending_with};
+
+/// Runs `search_pending_with` over `entries` (all of them pending) with `reporter` in the loop's
+/// hands, the world's quota flag and a manual clock.
+async fn pending_with(
+    w: &World,
+    entries: &mut [Entry],
+    reporter: Arc<dyn Reporter>,
+    opts: &PendingOptions,
+) -> hatate_core::batch::SearchEnd {
+    let quota_file = QuotaPauseFile::new(&w.paths);
+    let engines = w.engines.clone();
+    let threshold = &w.quota_after_calls;
+    let quota = move || engines.calls().len() >= threshold.load(Ordering::SeqCst);
+    let random = || 0.5;
+    let reset = || {};
+    let env = BatchEnv {
+        engine: &w.engine,
+        settings: &w.settings,
+        stop: w.stop.clone(),
+        quota_exhausted: &quota,
+        quota_file: &quota_file,
+        sink: &w.sink(),
+        reporter: reporter.clone(),
+        unit_random: &random,
+        reset_run_state: &reset,
+        hydrus_client: &|s| hatate_core::hydrus_client::HydrusClient::new(s),
+    };
+    let mut autosave = hatate_core::batch::Autosave::new(env.sink, &*reporter, 0.0);
+    let pending = (0..entries.len()).collect();
+    search_pending_with(&env, entries, pending, &mut autosave, opts).await
+}
+
+/// Keeps `updated`, `progress` and `continuing_without_saucenao` in the order they arrive.
+#[derive(Default)]
+struct Hooks(Mutex<Vec<String>>);
+
+impl Reporter for Hooks {
+    fn line(&self, _text: &str) {}
+    fn countdown(&self, _label: &str, _remaining: f64, _total: f64) {}
+    fn updated(&self, index: usize, entry: &Entry) {
+        self.0
+            .lock()
+            .unwrap()
+            .push(format!("updated {index} {}", entry.status.as_str()));
+    }
+    fn progress(&self, done: usize, total: usize) {
+        self.0
+            .lock()
+            .unwrap()
+            .push(format!("progress {done}/{total}"));
+    }
+    fn continuing_without_saucenao(&self, searched: i64, remaining: i64) {
+        self.0
+            .lock()
+            .unwrap()
+            .push(format!("continuing {searched} {remaining}"));
+    }
+}
+
+fn rows(w: &World, names: &[&str]) -> Vec<Entry> {
+    let dir = w.pictures(names);
+    names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            let mut e = Entry::new(dir.join(n).to_string_lossy());
+            e.hydrus_hash = Some(format!("{:064x}", i + 1));
+            e
+        })
+        .collect()
+}
+
+/// `SearchWorker.image_updated` after a search comes before `progress`, once per image, with the
+/// searched entry and its place in the slice.
+#[tokio::test]
+async fn updated_comes_after_each_search_and_before_its_progress() {
+    let w = world().await;
+    let mut entries = rows(&w, &["a.png", "b.png"]);
+    let hooks = Arc::new(Hooks::default());
+    let end = pending_with(&w, &mut entries, hooks.clone(), &PendingOptions::default()).await;
+    assert_eq!(end.ending, Ending::Finished);
+    assert_eq!(
+        *hooks.0.lock().unwrap(),
+        [
+            "updated 0 not_found",
+            "progress 1/2",
+            "updated 1 not_found",
+            "progress 2/2"
+        ]
+    );
+}
+
+/// `override_engines`: the named engine runs for that row whatever the configured order is.
+#[tokio::test]
+async fn an_override_engine_replaces_the_configured_order_for_its_row_only() {
+    let w = world().await;
+    let mut entries = rows(&w, &["a.png", "b.png"]);
+    let opts = PendingOptions {
+        override_engines: [(1usize, "saucenao".to_owned())].into_iter().collect(),
+        ..PendingOptions::default()
+    };
+    pending_with(&w, &mut entries, Arc::new(Hooks::default()), &opts).await;
+    assert_eq!(w.engines.calls(), ["iqdb", "saucenao"]);
+}
+
+/// `bypass_cache`: a re-search does not read the cache the first search wrote.
+#[tokio::test]
+async fn bypass_cache_searches_again_what_the_cache_holds() {
+    let w = world().await;
+    w.settings.lock().unwrap().use_search_cache = true;
+    let mut entries = rows(&w, &["a.png"]);
+    pending_with(
+        &w,
+        &mut entries,
+        Arc::new(Hooks::default()),
+        &PendingOptions::default(),
+    )
+    .await;
+    assert_eq!(w.engines.calls().len(), 1);
+    pending_with(
+        &w,
+        &mut entries,
+        Arc::new(Hooks::default()),
+        &PendingOptions::default(),
+    )
+    .await;
+    assert_eq!(w.engines.calls().len(), 1, "the second search was cached");
+    pending_with(
+        &w,
+        &mut entries,
+        Arc::new(Hooks::default()),
+        &PendingOptions {
+            bypass_cache: true,
+            ..PendingOptions::default()
+        },
+    )
+    .await;
+    assert_eq!(w.engines.calls().len(), 2, "a bypassing search asks again");
+}
+
+/// `force_continue_without_saucenao`: the one-shot override finishes the batch despite the saved
+/// setting being off, says so once, and without it the run pauses.
+#[tokio::test]
+async fn the_one_shot_override_continues_without_saucenao_and_without_it_the_run_pauses() {
+    let w = world().await;
+    {
+        let mut s = w.settings.lock().unwrap();
+        s.secondary_engine_mode = "always".to_owned();
+        s.continue_without_saucenao_on_quota = false;
+    }
+    w.quota_after_calls.store(1, Ordering::SeqCst);
+    let mut entries = rows(&w, &["a.png", "b.png", "c.png"]);
+    let end = pending_with(
+        &w,
+        &mut entries,
+        Arc::new(Hooks::default()),
+        &PendingOptions::default(),
+    )
+    .await;
+    assert_eq!(
+        end.ending,
+        Ending::PausedForQuota {
+            searched: 1,
+            remaining: 2
+        }
+    );
+
+    let mut entries = rows(&w, &["a.png", "b.png", "c.png"]);
+    let hooks = Arc::new(Hooks::default());
+    let opts = PendingOptions {
+        force_continue_without_saucenao: true,
+        ..PendingOptions::default()
+    };
+    let end = pending_with(&w, &mut entries, hooks.clone(), &opts).await;
+    assert_eq!(end.ending, Ending::Finished);
+    assert_eq!(end.searched, 3);
+    assert_eq!(
+        hooks
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|l| l.starts_with("continuing"))
+            .collect::<Vec<_>>(),
+        ["continuing 1 2"]
+    );
+    assert!(
+        !w.settings
+            .lock()
+            .unwrap()
+            .continue_without_saucenao_on_quota
+    );
+}
