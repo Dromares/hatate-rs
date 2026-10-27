@@ -305,6 +305,7 @@ impl MainWindow {
         content.append(&shell.root.root);
         content.append(&shell.status_bar);
         win.set_content(Some(&content));
+        crate::menubar_keys::install(&win, &menubar);
 
         let state = Rc::new(State {
             paths: env.paths.clone(),

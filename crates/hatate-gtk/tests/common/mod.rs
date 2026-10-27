@@ -7,6 +7,7 @@
 #![allow(dead_code)]
 
 pub mod search;
+pub mod xtest;
 
 use gtk4::glib;
 use gtk4::prelude::*;
