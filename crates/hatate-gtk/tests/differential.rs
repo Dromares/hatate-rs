@@ -589,6 +589,7 @@ fn digest(
             } => json!({"kind": "save_file", "title": title,
                         "default_name": Path::new(default_name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
                         "filter": filter}),
+            Asked::AddTags { prompt } => json!({"kind": "add_tags", "prompt": prompt}),
         })
         .collect();
     let rb = &s.run_banner;
