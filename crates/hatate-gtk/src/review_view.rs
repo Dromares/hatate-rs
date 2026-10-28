@@ -602,6 +602,10 @@ impl ReviewPage {
                 .iter()
                 .any(|t| !t.is_empty()),
         );
+        // The row under the header follows now, not a frame later when `fit_readout` next runs: a
+        // readout set while it is there would otherwise sit in a hidden row for that frame.
+        self.readout_row
+            .set_visible(!self.readout_in_header() && self.readout_root.get_visible());
         self.readout_generation
             .set(self.readout_generation.get() + 1);
     }
