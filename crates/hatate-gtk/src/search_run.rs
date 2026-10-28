@@ -744,7 +744,7 @@ impl MainWindow {
     }
 
     /// `_on_wait_countdown(label, remaining, total)`.
-    fn on_wait_countdown(&self, label: &str, remaining: f64, _total: f64) {
+    pub(crate) fn on_wait_countdown(&self, label: &str, remaining: f64, _total: f64) {
         let readout = &self.s.shell.wait_countdown_label;
         if label.is_empty() || remaining <= 0.0 {
             readout.set_text("");

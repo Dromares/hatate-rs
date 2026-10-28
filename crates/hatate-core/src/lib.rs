@@ -47,7 +47,7 @@ pub mod progress;
 pub mod provenance_note;
 mod pyalpha;
 mod pycase;
-mod pycompat;
+pub mod pycompat;
 mod pycsv;
 mod pyfnmatch;
 mod pyimage;

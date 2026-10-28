@@ -2,6 +2,7 @@
 //! for Hatate. The cut and the method map are in `docs/gtk-shell.md`.
 
 pub mod activity;
+pub mod add_tags;
 pub mod app;
 pub mod banners;
 pub mod checks;
@@ -16,6 +17,9 @@ pub mod menubar_keys;
 pub mod parser_health;
 pub mod queue_menu;
 pub mod queue_view;
+pub mod review_keys;
+pub mod review_ops;
+pub mod review_view;
 pub mod search_run;
 pub mod session_ops;
 pub mod shell;

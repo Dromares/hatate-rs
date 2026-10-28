@@ -117,6 +117,11 @@ pub trait Prompter {
             Box::new(move |p| done(p.map(|p| (p, String::new())))),
         );
     }
+    /// `AddTagsDialog`: a box with `prompt` over a text field, OK and Cancel. `done` runs with
+    /// the text on OK, `None` on Cancel. A prompter with no way to ask answers Cancel.
+    fn add_tags(&self, _prompt: &str, done: Done<Option<String>>) {
+        done(None);
+    }
 }
 
 /// The default button of a message box: Cancel (No) on a question, the only button otherwise.
@@ -243,6 +248,33 @@ impl Prompter for AdwPrompter {
                 _ => Response::Ok,
             });
         });
+    }
+
+    fn add_tags(&self, prompt: &str, done: Done<Option<String>>) {
+        let dialog = adw::AlertDialog::new(Some("Add tags"), Some(prompt));
+        let text = gtk::TextView::new();
+        text.set_accepts_tab(false);
+        text.set_monospace(true);
+        let scroller = gtk::ScrolledWindow::new();
+        scroller.set_child(Some(&text));
+        scroller.set_min_content_height(140);
+        scroller.set_min_content_width(320);
+        scroller.add_css_class("field");
+        dialog.set_extra_child(Some(&scroller));
+        dialog.add_responses(&[("cancel", "Cancel"), ("ok", "OK")]);
+        dialog.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("ok"));
+        dialog.set_close_response("cancel");
+        self.parent.set_focus_visible(true);
+        let buffer = text.buffer();
+        dialog.choose(Some(&self.parent), gio::Cancellable::NONE, move |answer| {
+            done((answer.as_str() == "ok").then(|| {
+                buffer
+                    .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                    .to_string()
+            }));
+        });
+        text.grab_focus();
     }
 
     fn open_files(&self, title: &str, filter: &str, done: Done<Vec<PathBuf>>) {

@@ -76,6 +76,8 @@ pub struct Env {
     pub missing_files: MissingFiles,
     /// `QDesktopServices.openUrl(QUrl.fromLocalFile(path))`.
     pub open_path: Rc<dyn Fn(&Path)>,
+    /// `QDesktopServices.openUrl(QUrl(url))`: a match's page in the browser.
+    pub open_url: Rc<dyn Fn(&str)>,
     /// The log viewer's source.
     pub logs: Option<Rc<dyn LogSource>>,
     /// The ring the log viewer reads when `logs` is not given; `main` fills it from the log layer.
@@ -100,6 +102,7 @@ impl Env {
             clock: Rc::new(hatate_core::session::now_epoch),
             missing_files: default_missing_files(),
             open_path: Rc::new(open_with_desktop),
+            open_url: Rc::new(open_url_with_desktop),
             logs: None,
             log_ring: LogRing::new(),
             run_session: None,
@@ -126,6 +129,15 @@ fn open_with_desktop(path: &Path) {
     gtk::FileLauncher::new(Some(&file)).launch(None::<&gtk::Window>, gio::Cancellable::NONE, |r| {
         if let Err(e) = r {
             tracing::warn!("could not open a file with the desktop: {e}");
+        }
+    });
+}
+
+/// Hands a web address to the desktop's default browser.
+fn open_url_with_desktop(url: &str) {
+    gtk::UriLauncher::new(url).launch(None::<&gtk::Window>, gio::Cancellable::NONE, |r| {
+        if let Err(e) = r {
+            tracing::warn!("could not open a link with the desktop: {e}");
         }
     });
 }
@@ -160,6 +172,7 @@ pub struct State {
     pub clock: Rc<dyn Fn() -> f64>,
     pub missing_files: MissingFiles,
     pub open_path: Rc<dyn Fn(&Path)>,
+    pub open_url: Rc<dyn Fn(&str)>,
     pub logs: Rc<dyn LogSource>,
     pub run_session: RefCell<Option<RunSession>>,
     pub shell: Rc<Shell>,
@@ -197,6 +210,19 @@ pub struct State {
     pub search: Rc<SearchRun>,
     /// The Activity page.
     pub activity: Rc<crate::activity::ActivityPage>,
+    /// The Review page (`review_page` and the widgets Python hangs on `self`).
+    pub review: Rc<crate::review_view::ReviewPage>,
+    /// `self._tags_editable`.
+    pub tags_editable: Cell<bool>,
+    /// For each row of the tag list, the index of its tag in the entry's `tags`.
+    pub tag_rows: RefCell<Vec<usize>>,
+    /// `self._local_pixmap_cache`, trimmed.
+    pub local_pictures: RefCell<crate::review_ops::LocalPictures>,
+    pub local_pending: RefCell<HashSet<hatate_core::queue::EntryId>>,
+    /// `self.candidate_worker`.
+    pub candidate_worker: Slot,
+    /// The review keys' controllers, to take down when the bindings change.
+    pub review_controllers: RefCell<Vec<(gtk::Widget, gtk::ShortcutController)>>,
 }
 
 /// The window and its state.
@@ -339,6 +365,7 @@ impl MainWindow {
         queue_page.append(&queue_stack);
 
         let activity = crate::activity::build(&logs.log_path());
+        let review = MainWindow::build_review_page(&settings);
         let handle: Rc<OnceCell<MainWindowWeak>> = Rc::new(OnceCell::new());
         let call = |handle: &Rc<OnceCell<MainWindowWeak>>, f: fn(&MainWindow)| {
             let handle = handle.clone();
@@ -352,7 +379,7 @@ impl MainWindow {
         let shell = Shell::new(
             &[
                 ("queue", queue_page.clone().upcast()),
-                ("review", review_frame()),
+                ("review", review.root.clone().upcast()),
                 ("activity", activity.root.clone().upcast()),
             ],
             move |key| {
@@ -398,6 +425,7 @@ impl MainWindow {
             clock: env.clock.clone(),
             missing_files: env.missing_files.clone(),
             open_path: env.open_path.clone(),
+            open_url: env.open_url.clone(),
             logs,
             run_session: RefCell::new(env.run_session),
             shell,
@@ -421,6 +449,13 @@ impl MainWindow {
             log_viewer: RefCell::new(None),
             search: SearchRun::new(env.search.take(), env.monotonic.clone()),
             activity,
+            review,
+            tags_editable: Cell::new(false),
+            tag_rows: RefCell::new(Vec::new()),
+            local_pictures: RefCell::new(Default::default()),
+            local_pending: RefCell::new(HashSet::new()),
+            candidate_worker: Slot::new(),
+            review_controllers: RefCell::new(Vec::new()),
         });
         let window = MainWindow {
             win: win.clone(),
@@ -435,6 +470,8 @@ impl MainWindow {
         window.wire_thumbnails();
         window.wire_clear_cache_label(&menubar);
         window.wire_table_context_menu();
+        window.wire_review_page();
+        window.wire_selection();
         window.wire_banners();
         window.apply_theme(&theme_setting(&window.s));
         window.refresh_queue_empty_state();
@@ -528,9 +565,40 @@ impl MainWindow {
     }
 
     /// `_on_mode_changed(key)`: whichever mode just came to the front gets brought up to date.
-    /// Activity tails the log while it is on screen. DEFERRED(6.f): `refresh_review`.
+    /// Activity tails the log while it is on screen; Review describes one selected entry, and
+    /// selections change while it is out of sight.
     fn on_mode_changed(&self, key: &str) {
+        if key == "review" {
+            self.enter_review();
+        }
         self.set_activity_live(key == "activity");
+    }
+
+    /// The table's selection drives the preview, the tag list and the candidate fetch
+    /// (`selectionChanged -> _on_selection_changed`).
+    fn wire_selection(&self) {
+        let w = self.downgrade();
+        self.s.queue_view.connect_selection(move |_| {
+            if let Some(w) = w.upgrade() {
+                w.on_selection_changed();
+            }
+        });
+        self.on_selection_changed();
+    }
+
+    /// `_review_the_waiting`: Review opens on the first image whose match is decided and still
+    /// waiting on you.
+    pub fn review_the_waiting(&self) {
+        let ids = self.s.queue_view.visible_ids();
+        let row = {
+            let q = self.s.queue.borrow();
+            ids.iter()
+                .position(|id| q.entry(*id).is_some_and(crate::text::is_waiting_review))
+        };
+        if let Some(row) = row {
+            self.s.queue_view.select_row(row as u32);
+        }
+        self.set_mode("review");
     }
 
     /// `_refresh_queue_empty_state()`: an empty list shows the drop zone instead of an empty grid.
@@ -711,12 +779,15 @@ impl MainWindow {
                 }
             }
         });
-        // DEFERRED(6.d/6.f): "Review the waiting" needs the table's row selection and Review.
-        self.s.quota_banner.review.set_sensitive(false);
-        self.s
-            .quota_banner
-            .review
-            .set_tooltip_text(Some("Review arrives in a later step."));
+        // `quota_parts['review_button'].clicked -> _review_the_waiting`.
+        self.s.quota_banner.review.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.review_the_waiting();
+                }
+            }
+        });
         // The empty state's three buttons. Query Hydrus follows its (disabled) action.
     }
 }
@@ -724,29 +795,6 @@ impl MainWindow {
 /// The stored `theme` setting.
 fn theme_setting(s: &State) -> String {
     s.settings.lock().unwrap().theme.clone()
-}
-
-/// Review's frame at its minimum footprint, until 6.f fills it: two previews of at least
-/// 280 x 260 (`review_view.py:308,321`) beside the 340 px right rail (`review.html`).
-fn review_frame() -> gtk::Widget {
-    let row = gtk::Box::new(gtk::Orientation::Horizontal, 16);
-    row.set_vexpand(true);
-    for caption in ["Your copy", "The match"] {
-        let frame = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        frame.set_size_request(280, 260);
-        frame.set_hexpand(true);
-        frame.append(&widgets::muted(caption));
-        row.append(&widgets::image_frame(&frame));
-    }
-    let rail = gtk::Box::new(gtk::Orientation::Vertical, 12);
-    rail.set_size_request(340, -1);
-    rail.add_css_class("review-rail");
-    rail.append(&widgets::section_label("01 // Review"));
-    row.append(&rail);
-    let page = gtk::Box::new(gtk::Orientation::Vertical, widgets::QUEUE_BODY_GAP);
-    page.append(&widgets::screen_title("Review."));
-    page.append(&row);
-    page.upcast()
 }
 
 /// `_build_drop_zone()`: what an empty Queue says instead of an empty grid.

@@ -73,6 +73,37 @@ pub fn decode_thumbnail(path: &str, limit: u32) -> Option<ThumbPixels> {
     })
 }
 
+/// `Image.open(path)` as `preview_text` uses it: the stored size and PIL's name for the format,
+/// read from the header (no pixels). `None` for a file that is missing or not a picture
+/// (PIL's `OSError` / `UnidentifiedImageError`).
+pub fn image_header_info(path: &str) -> Option<crate::preview_text::ImageInfo> {
+    let reader = ImageReader::open(path).ok()?.with_guessed_format().ok()?;
+    let format = reader.format().map(pil_format_name);
+    let (width, height) = reader.into_dimensions().ok()?;
+    Some(crate::preview_text::ImageInfo {
+        width: i64::from(width),
+        height: i64::from(height),
+        format,
+    })
+}
+
+/// PIL's `Image.format` for a decoder's format: upper case, `JPEG` and not `JPG`.
+fn pil_format_name(format: image::ImageFormat) -> String {
+    use image::ImageFormat as F;
+    match format {
+        F::Png => "PNG",
+        F::Jpeg => "JPEG",
+        F::Gif => "GIF",
+        F::WebP => "WEBP",
+        F::Bmp => "BMP",
+        F::Tiff => "TIFF",
+        F::Ico => "ICO",
+        F::Avif => "AVIF",
+        other => return format!("{other:?}").to_uppercase(),
+    }
+    .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,5 +222,18 @@ mod tests {
             let t = decode_thumbnail(&p, 96).unwrap();
             assert_eq!((t.width, t.height), want, "orientation {o}");
         }
+    }
+
+    #[test]
+    fn the_header_gives_the_stored_size_and_pils_format_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write_png(dir.path(), "a.png", 50, 30);
+        let info = image_header_info(&p).unwrap();
+        assert_eq!((info.width, info.height), (50, 30));
+        assert_eq!(info.format.as_deref(), Some("PNG"));
+        assert!(image_header_info(&format!("{p}.missing")).is_none());
+        let junk = dir.path().join("junk.png");
+        std::fs::write(&junk, b"not a picture").unwrap();
+        assert!(image_header_info(junk.to_str().unwrap()).is_none());
     }
 }
