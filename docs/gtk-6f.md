@@ -110,6 +110,7 @@ After the fix every state above is 1001 x 780 at `min`, except one:
 | D6 | The picker marks an estimated score with `~` only where Python's `score_is_measured` says so: the flag **or** an engine that reports a real similarity. | Found by the differential's `detail` key (section 5); `review_ops::tests::picker_item_marks_only_estimated_scores`. |
 | D7 | Wipe, Differences, Pop out, the Hydrus buttons and the Shortcuts list are present and insensitive with a tooltip that says so. | Section 2. |
 | D8 | The Add tags dialog is an `AlertDialog` with a text view, and the Edit match conditions dialog an `AlertDialog` over four controls. | The dialog seam (`Prompter`), as 6.c's D1. |
+| D9 | The `01 // Compare` title ellipsizes. | Hosted `ci`'s fonts are wider than the author's and the header asked 1016 px of the stated 1010 (measured on `ci`: the header 596 px against the pictures' 580); with the title able to elide the column's width is the pictures', 580, on both hosts. The window's content minimum is 1000 on both. |
 
 `docs/gtk-6e.md` D5 (the status line after a run reads `Search finished` where Python's ends at `Ready`) is
 changed there to the ruled race class; section 5 has the counts.
