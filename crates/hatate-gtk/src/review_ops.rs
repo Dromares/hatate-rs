@@ -17,6 +17,7 @@ use gtk4 as gtk;
 use gtk4::prelude::*;
 use gtk4::{gdk, gio, glib, pango};
 use hatate_core::config::OrderedMap;
+use hatate_core::engine_ids::reports_real_similarity;
 use hatate_core::model::{Candidate, Entry, Tag, TagSource};
 use hatate_core::preview_text::{
     ComparisonReadout, comparison_readout, local_frame_meta, matched_caption, matched_frame_label,
@@ -110,7 +111,10 @@ pub fn candidate_item_text(c: &Candidate) -> String {
     // The dropdown is where candidates are compared against one another, so a ranking sitting
     // next to a real score is most likely to be read as the same kind of number: same "~" as the
     // table.
-    let score = similarity_label(Some(c.similarity), c.similarity_measured);
+    // `MatchCandidate.score_is_measured`: the flag is set only by the local re-measure, which skips
+    // IQDB and SauceNAO because their own score is already a measurement.
+    let measured = c.similarity_measured || reports_real_similarity(Some(&c.engine));
+    let score = similarity_label(Some(c.similarity), measured);
     format!("{site} \u{2014} {score} ({}) \u{2014} {}", c.engine, c.url)
 }
 
@@ -1299,5 +1303,32 @@ impl MainWindow {
         tracing::debug!(
             "Installed {installed} review shortcut(s) on the image table and the Review page"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn candidate(engine: &str, measured: bool) -> Candidate {
+        let mut c = Candidate::new("https://example.invalid/post/3");
+        c.engine = engine.to_owned();
+        c.similarity = 95.0;
+        c.similarity_measured = measured;
+        c.source_name = Some("Other".to_owned());
+        c
+    }
+
+    /// `_populate_candidate_combo` marks a ranking with the `~` and a real score without it, and
+    /// IQDB and SauceNAO scores are real even though the flag reads False for them.
+    #[test]
+    fn picker_item_marks_only_estimated_scores() {
+        let text = |c| candidate_item_text(&c);
+        assert_eq!(
+            text(candidate("IQDB", false)),
+            "Other \u{2014} 95% (IQDB) \u{2014} https://example.invalid/post/3"
+        );
+        assert!(text(candidate("Google Lens", false)).contains("~95%"));
+        assert!(text(candidate("Google Lens", true)).contains(" 95% "));
     }
 }
