@@ -1630,11 +1630,9 @@ fn a_quota_pause_shows_the_banner_and_continue_resumes(app: &adw::Application) {
         readout.root.tooltip_text().as_deref(),
         Some("2/6 used in the current ~30s window")
     );
-    // The banner's disabled Review button says why (DAN-2326).
-    assert_eq!(
-        f.w.s.quota_banner.review.tooltip_text().as_deref(),
-        Some("Review arrives in a later step.")
-    );
+    // The banner's Review button works now (6.f): no reason to give for a disabled button.
+    assert!(f.w.s.quota_banner.review.is_sensitive());
+    assert_eq!(f.w.s.quota_banner.review.tooltip_text(), None);
     assert_eq!(
         statuses(&f),
         vec![

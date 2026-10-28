@@ -1179,7 +1179,6 @@ impl MainWindow {
             "toggle_reviewed" => self.toggle_reviewed(),
             other => tracing::warn!("No handler for review shortcut {other:?}"),
         }
-        let _ = ();
     }
 
     /// `review_shortcuts._step_candidate`: the dropdown's own change does the fetching and the

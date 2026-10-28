@@ -230,6 +230,30 @@ button.disclosure { background: none; border: none; box-shadow: none; padding: 0
 .corner.br { border-bottom: 2px solid @ink_65; border-right: 2px solid @ink_65; }
 .frame-caption { font-size: %label%px; letter-spacing: 0.08em; color: @ink_65; }
 
+/* ---- Review (gui/review_view.py; mockup review.html): the readout in the compare header, the match
+   stepper, the candidate picker, the ruled tag list and the footer rule ---- */
+.preview-text { color: @ink_65; font-size: %body%px; padding: %space_5%px; }
+.readout-glyph, .readout-value { font-family: %serif%; font-size: 22px; font-weight: 600; color: @ink; }
+.readout-glyph { font-family: %status%; font-size: 17px; }
+.readout-label { font-family: %mono%; font-size: %label%px; letter-spacing: 0.1em; color: @ink_65; }
+.readout-diff { font-family: %mono%; font-size: %label%px; letter-spacing: 0.06em; color: @ink_65; }
+.readout-diff.tier-ink_100 { color: @ink; font-weight: 700; }
+.readout-diff.tier-ink_65, .readout-diff.tier-ink_45 { color: @ink_65; }
+.match-nav { border: 1px solid @ink_28; padding: %space_2%px %space_3%px %space_2%px %space_4%px; }
+.match-label { font-family: %mono%; font-size: %label%px; letter-spacing: 0.1em; color: @ink; }
+dropdown.candidate-picker > button { background: transparent; color: @ink; border: 1px solid @ink_46; border-radius: 0;
+  box-shadow: none; padding: %space_2%px %space_3%px; min-height: 0; font-family: %mono%; font-size: %label%px; }
+dropdown.candidate-picker > button:hover { border-color: @ink_58; }
+.tag-scroller { background: @sunken; border: 1px solid @ink_28; }
+.tag-list, .tag-list > row { background: transparent; color: @ink; }
+.tag-list > row { border-bottom: 1px solid @ink_18; min-height: 0; padding: 6px %space_4%px; }
+.tag-list > row:selected { background: @stamp_bg; color: @stamp_fg; }
+.tag-row { font-family: %mono%; font-size: 13px; color: @ink; }
+.review-switch button { padding: 4px 6px; }
+.review-rail button.pill { padding: 5px %space_2%px; }
+.commit-caption { font-family: %mono%; font-size: %micro%px; letter-spacing: 0.06em; color: @ink_65; }
+separator.footer-rule { background: @ink_18; min-height: 1px; }
+
 /* ---- the ghost kanji: ink-05, 420px, bleeding off the top-right (design gate 2.9). `line-height: 100%`
    makes the label box 420 px tall, as `tokens.css` `.kanji-ghost` (`line-height: 1`) does in a browser;
    GTK reads a bare `1` as a factor of the font's own line height, 604 px for this face ---- */

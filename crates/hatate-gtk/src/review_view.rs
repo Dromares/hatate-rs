@@ -7,8 +7,8 @@
 
 use crate::widgets::{self, FrameCaption, KeyHintBar, Piece};
 use gtk4 as gtk;
-use gtk4::gdk;
 use gtk4::prelude::*;
+use gtk4::{gdk, glib};
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
@@ -110,12 +110,65 @@ impl PreviewPane {
 pub struct Keyed {
     pub button: gtk::Button,
     pub cap: gtk::Label,
+    row: gtk::Box,
+    label: gtk::Label,
 }
 
 impl Keyed {
     fn new(text: &str, key: &str, primary: bool) -> Keyed {
         let (button, cap) = widgets::keyed_button(text, key, primary);
-        Keyed { button, cap }
+        let row = button
+            .child()
+            .and_downcast::<gtk::Box>()
+            .expect("keyed_button's row");
+        let label = row
+            .first_child()
+            .and_downcast::<gtk::Label>()
+            .expect("keyed_button's label");
+        let k = Keyed {
+            button,
+            cap,
+            row,
+            label,
+        };
+        k.wrap_when_narrow();
+        k
+    }
+
+    /// `.btn-grid .btn--keyed { flex-wrap: wrap; row-gap: 2px }` (review.html): in a column too
+    /// narrow for both, the key drops under the label instead of widening the rail. The button
+    /// asks for no width of its own, so the grid's 50/50 split decides.
+    fn wrap_when_narrow(&self) {
+        self.button.set_size_request(1, -1);
+        self.row.set_size_request(1, -1);
+        let (row, label, cap) = (self.row.clone(), self.label.clone(), self.cap.clone());
+        let seen = Cell::new(-1);
+        self.button.add_tick_callback(move |_, _| {
+            let width = row.width();
+            if width != seen.get() {
+                seen.set(width);
+                let nat = |w: &gtk::Label| w.measure(gtk::Orientation::Horizontal, -1).1;
+                let beside = nat(&label)
+                    + if cap.is_visible() {
+                        nat(&cap) + row.spacing()
+                    } else {
+                        0
+                    };
+                let wrapped = beside > width;
+                row.set_orientation(if wrapped {
+                    gtk::Orientation::Vertical
+                } else {
+                    gtk::Orientation::Horizontal
+                });
+                row.set_spacing(if wrapped { 2 } else { 10 });
+                cap.set_halign(if wrapped {
+                    gtk::Align::Start
+                } else {
+                    gtk::Align::Center
+                });
+            }
+            glib::ControlFlow::Continue
+        });
     }
 
     /// `KeyedButton.set_key(key)`: an unbound action shows no cap.
@@ -126,25 +179,11 @@ impl Keyed {
 
     /// The label text (without the cap).
     pub fn text(&self) -> String {
-        self.button
-            .child()
-            .and_downcast::<gtk::Box>()
-            .and_then(|b| b.first_child())
-            .and_downcast::<gtk::Label>()
-            .map(|l| l.text().to_string())
-            .unwrap_or_default()
+        self.label.text().to_string()
     }
 
     pub fn set_text(&self, text: &str) {
-        if let Some(label) = self
-            .button
-            .child()
-            .and_downcast::<gtk::Box>()
-            .and_then(|b| b.first_child())
-            .and_downcast::<gtk::Label>()
-        {
-            label.set_text(text);
-        }
+        self.label.set_text(text);
         self.button
             .update_property(&[gtk::accessible::Property::Label(text)]);
     }
@@ -157,11 +196,19 @@ pub struct ReviewPage {
     pub stack: gtk::Stack,
     pub view_buttons: BTreeMap<String, gtk::ToggleButton>,
     pub readout_root: gtk::Box,
+    /// The header row, and the line under it the readout drops to when the column is too narrow
+    /// for both ([`ReviewPage::fit_readout`]).
+    header: gtk::Box,
+    spacer: gtk::Box,
+    readout_row: gtk::Box,
+    compare_col: gtk::Box,
     pub readout_glyph: gtk::Label,
     pub readout_value: gtk::Label,
     pub readout_label: gtk::Label,
     pub readout_diff: gtk::Label,
     readout_tier: RefCell<String>,
+    /// Bumped when the readout's words change, so the fit is measured again.
+    readout_generation: Cell<u32>,
     pub pop_out_btn: gtk::Button,
     pub shortcuts_btn: gtk::Button,
     pub show_in_queue_btn: gtk::Button,
@@ -211,6 +258,7 @@ impl ReviewPage {
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
         header.append(&widgets::section_label("01 // Compare"));
         let (switch, view_buttons) = widgets::segmented(&VIEWS, "pair", |_| {});
+        switch.add_css_class("review-switch");
         header.append(&switch);
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         spacer.set_hexpand(true);
@@ -230,9 +278,17 @@ impl ReviewPage {
         let readout_label = mk("readout-label");
         readout_label.add_css_class("caps");
         let readout_diff = mk("readout-diff");
+        // Parts elide before they push the header past the column (the window's minimum is the
+        // stated one, DAN-2025 2.5).
+        for l in [&readout_label, &readout_diff] {
+            l.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            l.set_width_chars(0);
+        }
         readout_root.set_tooltip_text(Some(READOUT_TOOLTIP));
         readout_root.set_visible(false);
-        header.append(&readout_root);
+        // Under the header until the column is wide enough to hold it beside the tools.
+        let readout_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        readout_row.append(&readout_root);
 
         let pop_out_btn = widgets::icon_button(
             "\u{29c9}",
@@ -279,11 +335,12 @@ impl ReviewPage {
         let compare_col = gtk::Box::new(gtk::Orientation::Vertical, widgets::QUEUE_BODY_GAP);
         compare_col.set_hexpand(true);
         compare_col.append(&header);
+        compare_col.append(&readout_row);
         compare_col.append(&stack);
         compare_col.append(&note);
 
         // -- the decision card
-        let rail = gtk::Box::new(gtk::Orientation::Vertical, 12);
+        let rail = gtk::Box::new(gtk::Orientation::Vertical, 6);
         rail.set_size_request(RAIL_WIDTH, -1);
         rail.add_css_class("review-rail");
 
@@ -326,17 +383,24 @@ impl ReviewPage {
         let scroller = gtk::ScrolledWindow::new();
         scroller.set_child(Some(&tag_list));
         scroller.set_vexpand(true);
-        scroller.set_min_content_height(96);
+        scroller.set_min_content_height(72);
         scroller.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         scroller.add_css_class("tag-scroller");
         rail.append(&scroller);
 
         let tag_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        tag_row.set_homogeneous(true);
         let add_tags_btn = widgets::pill_button("Add tags\u{2026}", false, false);
         let remove_tags_btn = widgets::pill_button("Remove", false, false);
         let edit_tags_btn = gtk::ToggleButton::with_label("Edit Tags");
         edit_tags_btn.add_css_class("pill");
         edit_tags_btn.add_css_class("plain");
+        // "Editing Tags (click to stop)" elides rather than widen the rail.
+        if let Some(l) = edit_tags_btn.child().and_downcast::<gtk::Label>() {
+            l.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            l.set_width_chars(0);
+        }
+        edit_tags_btn.set_size_request(1, -1);
         edit_tags_btn.set_tooltip_text(Some(
             "When on, double-click a tag to edit it in place (namespace:name, or just name). \
              Clear a tag's text entirely to delete it. Its source (User/Booru/etc.) is kept \
@@ -435,11 +499,16 @@ impl ReviewPage {
             stack,
             view_buttons,
             readout_root,
+            header: header.clone(),
+            spacer: spacer.clone(),
+            readout_row,
+            compare_col: compare_col.clone(),
             readout_glyph,
             readout_value,
             readout_label,
             readout_diff,
             readout_tier: RefCell::new(String::new()),
+            readout_generation: Cell::new(0),
             pop_out_btn,
             shortcuts_btn,
             show_in_queue_btn,
@@ -473,6 +542,18 @@ impl ReviewPage {
             next_btn,
             hint_slot,
             hint_bar: RefCell::new(hint_bar),
+        });
+        let weak = Rc::downgrade(&page);
+        let seen = Cell::new((-1, 0u32));
+        page.compare_col.add_tick_callback(move |col, _| {
+            if let Some(page) = weak.upgrade() {
+                let key = (col.width(), page.readout_generation.get());
+                if key != seen.get() {
+                    seen.set(key);
+                    page.fit_readout();
+                }
+            }
+            glib::ControlFlow::Continue
         });
         // Wipe and Differences arrive with the next step.
         for key in ["wipe", "diff"] {
@@ -511,6 +592,36 @@ impl ReviewPage {
                 .iter()
                 .any(|t| !t.is_empty()),
         );
+        self.readout_generation
+            .set(self.readout_generation.get() + 1);
+    }
+
+    /// Whether the readout sits in the header row (`true`) or on the line under it.
+    pub fn readout_in_header(&self) -> bool {
+        self.readout_root.parent().as_ref() == Some(self.header.upcast_ref())
+    }
+
+    /// The mockup puts the readout in the header beside the tools; at the window's minimum width
+    /// that does not fit, and the readout takes the line under the header instead.
+    pub fn fit_readout(&self) {
+        let nat = |w: &gtk::Box| w.measure(gtk::Orientation::Horizontal, -1).1;
+        let inside = self.readout_in_header();
+        let need = if inside {
+            nat(&self.header)
+        } else {
+            nat(&self.header) + self.header.spacing() + nat(&self.readout_root)
+        };
+        let fits = self.compare_col.width() >= need;
+        if fits && !inside {
+            self.readout_row.remove(&self.readout_root);
+            self.header
+                .insert_child_after(&self.readout_root, Some(&self.spacer));
+        } else if !fits && inside {
+            self.header.remove(&self.readout_root);
+            self.readout_row.append(&self.readout_root);
+        }
+        self.readout_row
+            .set_visible(!self.readout_in_header() && self.readout_root.is_visible());
     }
 
     /// The footer's hint bar, rebuilt from `groups` (`KeyHintBar.set_groups`).
