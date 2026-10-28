@@ -226,7 +226,18 @@ fn main() -> glib::ExitCode {
             // Where every label is, for the measuring script (`<shot>.rects`, tab separated:
             // x y w h state text); the contrast table is computed from the pixels under each box.
             let mut rects = String::new();
-            label_rects(win.upcast_ref(), win.upcast_ref(), &mut rects);
+            // Behind a dialog the page is under the scrim and is not what a person reads: only the
+            // dialog's own labels are measured.
+            let dialog = if matches!(state.as_str(), "review-addtags" | "review-conditions") {
+                find_type(win.upcast_ref(), "AdwAlertDialog")
+            } else {
+                None
+            };
+            label_rects(
+                dialog.as_ref().unwrap_or(win.upcast_ref()),
+                win.upcast_ref(),
+                &mut rects,
+            );
             std::fs::write(out.with_extension("rects"), rects).expect("rects");
             // The dialog's widget tree, for reading a toolkit-specific paint artefact (DAN-2245
             // item 4): type, css classes, border box in window coordinates, mapped, first text.
@@ -858,6 +869,21 @@ fn first_button(w: &gtk4::Widget) -> Option<gtk4::Button> {
     while let Some(child) = c {
         if let Some(b) = first_button(&child) {
             return Some(b);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
+/// The first widget under `w` whose type is named `name`.
+fn find_type(w: &gtk4::Widget, name: &str) -> Option<gtk4::Widget> {
+    if w.type_().name() == name {
+        return Some(w.clone());
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(f) = find_type(&child, name) {
+            return Some(f);
         }
         c = child.next_sibling();
     }
