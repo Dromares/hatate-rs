@@ -138,7 +138,13 @@ impl Keyed {
     /// `.btn-grid .btn--keyed { flex-wrap: wrap; row-gap: 2px }` (review.html): in a column too
     /// narrow for both, the key drops under the label instead of widening the rail. The button
     /// asks for no width of its own, so the grid's 50/50 split decides.
+    ///
+    /// The label may ellipsize, so its minimum is not its text: with the key beside it the button's
+    /// minimum would be the full line, and a window that first opened wide (1100 px by default)
+    /// could never be narrowed to the stated minimum, because the wrap below only fires when the
+    /// column is narrower than that line.
     fn wrap_when_narrow(&self) {
+        self.label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         self.button.set_size_request(1, -1);
         self.row.set_size_request(1, -1);
         let (row, label, cap) = (self.row.clone(), self.label.clone(), self.cap.clone());

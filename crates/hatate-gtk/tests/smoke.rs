@@ -52,6 +52,14 @@ const SCENARIOS: &[Scenario] = &[
         review_keys_step_mark_skip_and_open_the_match,
     ),
     (
+        "review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide",
+        review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide,
+    ),
+    (
+        "a_fresh_hint_bar_asks_for_its_first_group_only",
+        a_fresh_hint_bar_asks_for_its_first_group_only,
+    ),
+    (
         "window_menus_and_deferred_actions",
         window_menus_and_deferred_actions,
     ),
@@ -4263,6 +4271,50 @@ fn review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_l
     tick.remove();
     held.join().unwrap();
     f.close();
+}
+
+/// DAN-2219: the window opens 1100 px wide, and the Review page with a match selected must still
+/// ask for no more than the stated minimum. Its keyed buttons put the key beside the label while
+/// the column is wide, and the label's own minimum used to keep them that way (430 px of rail
+/// instead of 340): a window opened wide could not be narrowed to 1010, and the minimum-size
+/// scenario never saw it because it opens Review with an empty queue.
+fn review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide(app: &adw::Application) {
+    use hatate_gtk::window::{MIN_HEIGHT, MIN_WIDTH};
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    pump_for(200);
+    let (w, h) = content_min(&f);
+    println!("MINSIZE review-selected content_min={w}x{h}");
+    assert!(
+        w <= MIN_WIDTH && h <= MIN_HEIGHT,
+        "Review with a match selected asks for {w}x{h}; the stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}"
+    );
+    f.close();
+}
+
+/// A box's minimum is its children's: a hint bar that has not yet been given a width must not ask
+/// for all of its groups, or a window that opens at the stated minimum is sized 1028 px wide.
+fn a_fresh_hint_bar_asks_for_its_first_group_only(_app: &adw::Application) {
+    use hatate_gtk::widgets::{KeyHintBar, Piece};
+    let groups: Vec<Vec<Piece>> = (0..4)
+        .map(|i| {
+            vec![
+                Piece::Strong(format!("{i} of 9")),
+                Piece::Text("a fairly long group of words".to_owned()),
+            ]
+        })
+        .collect();
+    let bar = KeyHintBar::new(&groups);
+    let (first, _, _, _) = bar.root.measure(gtk4::Orientation::Horizontal, -1);
+    let one = KeyHintBar::new(&groups[..1]);
+    let (alone, _, _, _) = one.root.measure(gtk4::Orientation::Horizontal, -1);
+    assert_eq!(
+        first, alone,
+        "a four-group bar asked for {first} px before its first tick; its first group alone is {alone}"
+    );
 }
 
 /// `review_shortcuts`: the keys on the Review page move, mark and skip, and a text field keeps

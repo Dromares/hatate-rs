@@ -14,7 +14,10 @@
 //! `queue-filter-empty` (a filter that hides every row), `queue-menu` (the row context menu over a
 //! selected row), `queue-remove` (the Remove question), `queue-focus` (the first row focused with
 //! the ring showing) and `queue-focus-selected` (the same row, selected), `queue-5000` (5,000 rows, scrolled into the middle) and `queue-5000-scroll`
-//! (the same, printing the scroll frame timing). The size `min` is the window's stated minimum.
+//! (the same, printing the scroll frame timing). The Review states (6.f) are `review` (a Good row with two
+//! matches and a tag list, Side by side), `review-empty` (nothing selected), `review-nomatch` (a Not found row),
+//! `review-picker` (the candidate picker open), `review-addtags` and `review-conditions` (the two dialogs) and
+//! `review-focus-<combo|mark|addtags|taglist|view|next>` (that control focused with the ring showing). The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -88,6 +91,11 @@ fn main() -> glib::ExitCode {
     std::fs::create_dir_all(paths.config_dir()).expect("profile dir");
     let mut settings = Settings::with_defaults(&paths);
     settings.theme = scheme;
+    if state.starts_with("review") {
+        // Everything the page shows is already in the rows: nothing to fetch.
+        settings.retrieve_tags_from_booru = false;
+        settings.drop_dead_matches = false;
+    }
     settings.save(&paths).expect("save settings");
     if let Err(e) = fonts::load(&home.path().join("fonts")) {
         eprintln!("fonts: {e}");
@@ -122,6 +130,7 @@ fn main() -> glib::ExitCode {
     match state.as_str() {
         "rows" | "dialog" | "dialog-nolabel" | "failed" | "activity" | "parser-health"
         | "tab-failed" | "tab-activity" => save(&rows(12)),
+        st if st.starts_with("review") && st != "review-bare" => save(&review_rows(&pics)),
         st if st.starts_with("queue") => save(&queue_rows(
             &pics,
             if st.starts_with("queue-5000") {
@@ -188,6 +197,7 @@ fn main() -> glib::ExitCode {
             let settle = match state.as_str() {
                 "menu-hover" => 60,
                 "queue-5000-scroll" => 400,
+                st if st.starts_with("review") => 60,
                 _ => 14,
             };
             if frames.get() < settle {
@@ -258,6 +268,7 @@ fn main() -> glib::ExitCode {
 fn prepare(window: &MainWindow, state: &str) {
     match state {
         st if st.starts_with("queue") => prepare_queue(window, st),
+        st if st.starts_with("review") => prepare_review(window, st),
         "dialog" => window.activate_action("clear-session"),
         // The control for the glyph fragment under the dialog (DAN-2256): the same shot with the
         // Queue page's placeholder label hidden, so any pixel under the dialog's border that
@@ -375,7 +386,7 @@ fn prepare(window: &MainWindow, state: &str) {
 /// Every mapped label under `w` with its box in `root`'s coordinates.
 fn label_rects(w: &gtk4::Widget, root: &gtk4::Widget, out: &mut String) {
     // A popover is its own surface: its labels are measured against its own snapshot.
-    if w.is::<gtk4::PopoverMenu>() && !std::ptr::eq(w.as_ptr(), root.as_ptr()) {
+    if w.is::<gtk4::Popover>() && !std::ptr::eq(w.as_ptr(), root.as_ptr()) {
         return;
     }
     if let Some(l) = w.downcast_ref::<gtk4::Label>() {
@@ -540,11 +551,8 @@ fn texture_of(w: &gtk4::Widget, renderer: &gtk4::gsk::Renderer) -> Option<gdk::T
 }
 
 /// A popover menu that is open now (the menubar's closed ones are in the tree too).
-fn visible_popover_menu(w: &gtk4::Widget) -> Option<gtk4::PopoverMenu> {
-    if let Some(p) = w
-        .downcast_ref::<gtk4::PopoverMenu>()
-        .filter(|p| p.is_visible())
-    {
+fn visible_popover_menu(w: &gtk4::Widget) -> Option<gtk4::Popover> {
+    if let Some(p) = w.downcast_ref::<gtk4::Popover>().filter(|p| p.is_visible()) {
         return Some(p.clone());
     }
     let mut c = w.first_child();
@@ -555,6 +563,138 @@ fn visible_popover_menu(w: &gtk4::Widget) -> Option<gtk4::PopoverMenu> {
         c = child.next_sibling();
     }
     None
+}
+
+/// The Review states' rows: real pictures (a gradient and a nearby one, so the pane has something
+/// to decode and draw), a Good row with two matches and tags, a Not found row, a Good row with one.
+fn review_rows(pics: &std::path::Path) -> Vec<Entry> {
+    use hatate_core::model::{Tag, TagSource};
+    let tag = |ns: Option<&str>, name: &str, source| Tag {
+        name: name.to_owned(),
+        namespace: ns.map(str::to_owned),
+        source,
+    };
+    let mut rows = Vec::new();
+    for (i, (status, tags, cands)) in [
+        (MatchStatus::Good, 3, 2),
+        (MatchStatus::NotFound, 0, 0),
+        (MatchStatus::Good, 0, 1),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let path = pics.join(format!("review-{i}.png"));
+        review_picture(640, 480, i as u8)
+            .save(&path)
+            .expect("picture");
+        let mut e = Entry::new(path.to_string_lossy().into_owned());
+        e.status = status;
+        e.hydrus_hash = Some(format!("{i:064x}"));
+        for (n, (url, sim, site)) in [
+            ("https://danbooru.donmai.us/posts/1", 96.0, "Danbooru"),
+            ("https://gelbooru.com/index.php?id=2", 80.0, "Gelbooru"),
+        ]
+        .into_iter()
+        .take(cands)
+        .enumerate()
+        {
+            let mut c = Candidate::new(url);
+            c.similarity = sim;
+            c.similarity_measured = true;
+            c.engine = "IQDB".to_owned();
+            c.source_name = Some(site.to_owned());
+            c.width = Some(1280 + 40 * n as i64);
+            c.height = Some(960 + 30 * n as i64);
+            e.candidates.push(c);
+        }
+        if tags > 0 {
+            e.tags = vec![
+                tag(None, "solo", TagSource::Booru),
+                tag(Some("character"), "reimu", TagSource::User),
+                tag(None, "sketch", TagSource::Hydrus),
+            ];
+        }
+        rows.push(e);
+    }
+    rows
+}
+
+/// A synthetic picture: a colour field with a diagonal bar, `seed` shifting the hue.
+fn review_picture(w: u32, h: u32, seed: u8) -> image::RgbaImage {
+    image::RgbaImage::from_fn(w, h, |x, y| {
+        let bar = (x as i32 - y as i32).abs() < 24;
+        let hue = seed.wrapping_mul(50);
+        if bar {
+            image::Rgba([240, 220, 90, 255])
+        } else {
+            image::Rgba([
+                hue.wrapping_add((x * 255 / w) as u8),
+                70 + (y * 120 / h) as u8,
+                200u8.wrapping_sub(hue),
+                255,
+            ])
+        }
+    })
+}
+
+/// What a Review state does once the window is up.
+fn prepare_review(window: &MainWindow, state: &str) {
+    // A session keeps no picture bytes and no "fetched" flags; these rows are as a search left them.
+    {
+        let mut q = window.s.queue.borrow_mut();
+        let ids: Vec<_> = (0..q.len() as i64).filter_map(|i| q.id_at(i)).collect();
+        for id in ids {
+            for (n, c) in q.entry_mut(id).unwrap().candidates.iter_mut().enumerate() {
+                let mut png = std::io::Cursor::new(Vec::new());
+                review_picture(640, 480, 1 + n as u8)
+                    .write_to(&mut png, image::ImageFormat::Png)
+                    .expect("png");
+                c.thumb_bytes = Some(png.into_inner());
+                c.booru_tags_fetched = true;
+                c.remote_info_fetched = true;
+            }
+        }
+    }
+    let r = window.s.review.clone();
+    window.set_mode("review");
+    let row = if state == "review-nomatch" { 1 } else { 0 };
+    if !matches!(state, "review-empty" | "review-bare") {
+        window.s.queue_view.select_row(row);
+    }
+    let win = window.win.clone();
+    match state {
+        "review-picker" => {
+            // After the pictures have loaded, so the popup opens over the settled page.
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+                r.candidate_combo.activate();
+            });
+        }
+        "review-addtags" => window.add_tags_to_current(),
+        "review-conditions" => window.action_edit_conditions(),
+        st if st.starts_with("review-focus-") => {
+            win.set_focus_visible(true);
+            let target: gtk4::Widget = match &st["review-focus-".len()..] {
+                "combo" => r.candidate_combo.clone().upcast(),
+                "mark" => r.mark_btn.button.clone().upcast(),
+                "next" => r.next_btn.button.clone().upcast(),
+                "addtags" => r.add_tags_btn.clone().upcast(),
+                "taglist" => r.tag_list.clone().upcast(),
+                "view" => r.view_buttons.values().next().unwrap().clone().upcast(),
+                other => panic!("no focus target {other}"),
+            };
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+                target.grab_focus();
+                let b = target.compute_bounds(&win);
+                println!(
+                    "FOCUS {} focus_visible={} bounds={:?}",
+                    describe(&target),
+                    target.has_visible_focus(),
+                    b.map(|b| (b.x(), b.y(), b.width(), b.height()))
+                );
+            });
+        }
+        _ => {}
+    }
 }
 
 /// What a Queue state does once the window is up.

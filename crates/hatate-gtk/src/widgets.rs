@@ -259,6 +259,15 @@ impl KeyHintBar {
             groups: boxes,
             separators: seps,
         });
+        // Until the first tick has read the width it was given, the bar shows its first group only:
+        // a box's minimum is its children's, so the full bar at the first layout would size a
+        // window that opens at the stated minimum 1028 px wide, and a window never gets smaller.
+        for g in bar.groups.iter().skip(1) {
+            g.set_visible(false);
+        }
+        for s in &bar.separators {
+            s.set_visible(false);
+        }
         let weak = Rc::downgrade(&bar);
         let last = Rc::new(Cell::new(-1));
         bar.root.add_tick_callback(move |root, _| {
