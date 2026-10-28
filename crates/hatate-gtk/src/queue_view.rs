@@ -588,9 +588,15 @@ impl QueueView {
 
     /// `select_table_row(row)`.
     pub fn select_row(&self, row: u32) {
-        if row < self.store.n_items() {
-            self.selection.unselect_all();
-            self.selection.select_item(row, true);
+        let n = self.store.n_items();
+        if row < n {
+            // One update, as `QItemSelectionModel.select(ClearAndSelect)` is: selecting the one row
+            // that is already the whole selection reports no change, and a change is what the
+            // preview, the tag list and the candidate fetch follow.
+            self.selection.set_selection(
+                &gtk::Bitset::new_range(row, 1),
+                &gtk::Bitset::new_range(0, n),
+            );
         }
     }
 
