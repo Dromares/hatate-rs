@@ -35,6 +35,8 @@ pub enum Answer {
     Save(Option<(PathBuf, String)>),
     Files(Vec<PathBuf>),
     Path(Option<PathBuf>),
+    /// The Add tags box: the text typed, or `None` for Cancel.
+    Text(Option<String>),
 }
 
 /// A prompter that answers at once from a script and keeps a record of every question.
@@ -135,6 +137,16 @@ impl Prompter for Script {
         match self.next_pick() {
             Some(Answer::Save(p)) => done(p),
             Some(Answer::Path(p)) => done(p.map(|p| (p, String::new()))),
+            _ => done(None),
+        }
+    }
+
+    fn add_tags(&self, prompt: &str, done: Done<Option<String>>) {
+        self.asked.borrow_mut().push(Asked::AddTags {
+            prompt: prompt.to_owned(),
+        });
+        match self.next_pick() {
+            Some(Answer::Text(t)) => done(t),
             _ => done(None),
         }
     }

@@ -353,6 +353,9 @@ impl MainWindow {
             r.set_readout(&ComparisonReadout::default());
             self.set_review_captions(None);
             self.populate_candidate_combo(None);
+            // Python returns here without `refresh_review`, which leaves "Match 1 of 3" and the
+            // steppers of the row that was just deselected; the page follows the empty selection.
+            self.refresh_review();
             return;
         };
         let id = id.unwrap();
@@ -736,7 +739,7 @@ impl MainWindow {
 
     /// `_on_tag_item_edited(item)`: clearing a tag's text deletes it; otherwise it is renamed in
     /// place with the namespace remap, keeping its source.
-    fn on_tag_item_edited(&self, row: i32, text: &str) {
+    pub fn on_tag_item_edited(&self, row: i32, text: &str) {
         let Some(id) = self.current_id() else { return };
         let Some(target) = usize::try_from(row)
             .ok()
@@ -1155,6 +1158,9 @@ impl MainWindow {
                 .iter()
                 .all(|id| self.s.queue.borrow().entry(*id).is_some_and(|e| e.reviewed));
         self.set_rows_reviewed(&ids, !already);
+        // Python flips the button's label only when the selection next changes; here it follows
+        // the mark at once.
+        self.refresh_review();
     }
 
     /// `_toggle_reviewed_from_review`.

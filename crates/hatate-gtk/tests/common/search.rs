@@ -43,11 +43,17 @@ pub struct Scripted {
 
 impl Scripted {
     pub fn new(paths: &Paths) -> (SearchBackend, Scripted) {
+        Scripted::with_net(paths, NetConfig::default())
+    }
+
+    /// As [`Scripted::new`], over a net layer a test has pointed at its own sockets
+    /// (`host_overrides`), for the fetches that go to a site and not to an engine.
+    pub fn with_net(paths: &Paths, net: NetConfig) -> (SearchBackend, Scripted) {
         install_crypto_provider();
         let clock = Arc::new(ManualClock::new(super::NOW, 0.0));
         let engines = Arc::new(ScriptedEngines::default());
         let runner = EngineRunner::new(engines.clone(), clock.clone());
-        let net = NetClient::new(NetConfig::default()).expect("the net client");
+        let net = NetClient::new(net).expect("the net client");
         let engine = Arc::new(SearchEngine::with_recorder(
             net,
             runner,

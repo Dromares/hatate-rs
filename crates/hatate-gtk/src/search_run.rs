@@ -769,6 +769,7 @@ impl MainWindow {
         let name = entry.filename().to_owned();
         if let Some(id) = id {
             self.replace_row(id, entry);
+            self.refresh_entry_row(id);
         }
         if searching {
             self.say(&format!("Searching {name}\u{2026}"));
@@ -776,7 +777,17 @@ impl MainWindow {
             self.refresh_saucenao_quota_label();
             self.warn_about_broken_parsers();
         }
-        // DEFERRED(6.d): select the row and refresh the preview and the tag list.
+        // A row to SELECT is a position on screen: the filter may hide it, and then there is
+        // nothing to select or preview.
+        let Some(id) = id else { return };
+        let Some(row) = self.s.queue_view.row_of(id) else {
+            return;
+        };
+        self.s.queue_view.select_row(row);
+        self.update_preview(Some(id));
+        // The tag panel is told explicitly: a selection only reports a change when it MOVES, and
+        // during a search this row is already the selected one.
+        self.refresh_tag_list(Some(id));
     }
 
     /// Puts the worker's copy in the model and raises the row's change.

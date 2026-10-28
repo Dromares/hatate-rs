@@ -84,6 +84,10 @@ pub enum Asked {
         default_name: String,
         filter: String,
     },
+    /// The Add tags box, with the line above its field.
+    AddTags {
+        prompt: String,
+    },
 }
 
 pub type Done<T> = Box<dyn FnOnce(T)>;
