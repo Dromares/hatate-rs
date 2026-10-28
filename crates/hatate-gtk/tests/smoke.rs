@@ -1209,6 +1209,45 @@ fn fonts_cover_the_status_glyphs_and_kanji(app: &adw::Application) {
     f.close();
 }
 
+/// The chain of widgets that sets a width: each step is the child asking the most, with all the
+/// children's minimums beside it. Printed so a host whose fonts differ from the author's can say
+/// what its number was made of.
+fn widest_chain(root: &gtk4::Widget) -> String {
+    let mut out = Vec::new();
+    let mut w = root.clone();
+    for _ in 0..40 {
+        let min = w.measure(gtk4::Orientation::Horizontal, -1).0;
+        let label = w
+            .downcast_ref::<gtk4::Label>()
+            .map(|l| format!(" {:?}", l.text()))
+            .unwrap_or_default();
+        let mut kids = Vec::new();
+        let mut best: Option<(i32, gtk4::Widget)> = None;
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            if child.is_visible() {
+                let m = child.measure(gtk4::Orientation::Horizontal, -1).0;
+                kids.push(m.to_string());
+                if best.as_ref().is_none_or(|(b, _)| m > *b) {
+                    best = Some((m, child.clone()));
+                }
+            }
+            c = child.next_sibling();
+        }
+        out.push(format!(
+            "{}[{}]={min}{label} ({})",
+            w.type_().name(),
+            w.css_name(),
+            kids.join("+")
+        ));
+        match best {
+            Some((_, b)) => w = b,
+            None => break,
+        }
+    }
+    out.join(" > ")
+}
+
 /// The content's own minimum, with no `set_size_request` floor: width, then height at that width.
 fn content_min(f: &Fx) -> (i32, i32) {
     let content =
@@ -4292,6 +4331,8 @@ fn review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide(app: 
     pump_for(200);
     let (w, h) = content_min(&f);
     println!("MINSIZE review-selected content_min={w}x{h}");
+    let content = libadwaita::prelude::AdwApplicationWindowExt::content(&f.w.win).unwrap();
+    println!("MINCHAIN {}", widest_chain(&content));
     assert!(
         w <= MIN_WIDTH && h <= MIN_HEIGHT,
         "Review with a match selected asks for {w}x{h}; the stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}"

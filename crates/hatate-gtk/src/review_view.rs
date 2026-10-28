@@ -262,7 +262,11 @@ impl ReviewPage {
     pub fn new(key_for: &dyn Fn(&str) -> String) -> Rc<ReviewPage> {
         // -- the comparison card
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        header.append(&widgets::section_label("01 // Compare"));
+        // It elides before the header asks for more than the window's minimum: hosted `ci`'s fonts
+        // are wider than the author's and the header asked 1016 px of 1010 (DAN-2219).
+        let title = widgets::section_label("01 // Compare");
+        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        header.append(&title);
         let (switch, view_buttons) = widgets::segmented(&VIEWS, "pair", |_| {});
         switch.add_css_class("review-switch");
         header.append(&switch);
