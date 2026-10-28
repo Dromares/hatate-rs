@@ -56,6 +56,10 @@ const SCENARIOS: &[Scenario] = &[
         review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide,
     ),
     (
+        "the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there",
+        the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there,
+    ),
+    (
         "a_fresh_hint_bar_asks_for_its_first_group_only",
         a_fresh_hint_bar_asks_for_its_first_group_only,
     ),
@@ -4291,6 +4295,36 @@ fn review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide(app: 
     assert!(
         w <= MIN_WIDTH && h <= MIN_HEIGHT,
         "Review with a match selected asks for {w}x{h}; the stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}"
+    );
+    f.close();
+}
+
+/// DAN-2219: the readout moves between the header and the row under it as the column narrows. The
+/// row was shown only if `readout_root.is_visible()`, which also asks the row, so a row hidden
+/// while the readout sat in the header stayed hidden once the readout dropped into it: a match was
+/// selected and the readout was nowhere. (Hosted `ci` caught it: its fonts need more width.)
+fn the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.win.set_default_size(1500, 900);
+    pump_for(200);
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    pump_for(200);
+    let r = f.w.s.review.clone();
+    assert!(r.readout_root.is_visible());
+    assert!(
+        r.readout_in_header(),
+        "at 1500 px the readout sits beside the tools"
+    );
+    // Squeeze the compare column until the readout no longer fits beside the tools.
+    f.w.win.set_default_size(1, 1);
+    assert!(pump_until(5_000, || !r.readout_in_header()));
+    pump_for(200);
+    assert!(
+        r.readout_root.is_visible(),
+        "the readout is on the line under the header"
     );
     f.close();
 }

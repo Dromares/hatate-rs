@@ -626,8 +626,9 @@ impl ReviewPage {
             self.header.remove(&self.readout_root);
             self.readout_row.append(&self.readout_root);
         }
+        // `get_visible`, not `is_visible`: the latter also asks the row, which would keep itself hidden.
         self.readout_row
-            .set_visible(!self.readout_in_header() && self.readout_root.is_visible());
+            .set_visible(!self.readout_in_header() && self.readout_root.get_visible());
     }
 
     /// The footer's hint bar, rebuilt from `groups` (`KeyHintBar.set_groups`).
