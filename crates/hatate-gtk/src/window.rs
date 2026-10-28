@@ -705,6 +705,7 @@ impl MainWindow {
                 "sites-select-none" => w.set_all_sites(false),
                 "parser-health" => w.action_parser_health(),
                 "open-log" => w.action_open_log(),
+                "edit-conditions" => w.action_edit_conditions(),
                 "view-logs" => w.action_view_logs(),
                 "export-results" => w.action_export_results(None),
                 "write-tag-files" => w.action_write_tag_files(None),

@@ -37,6 +37,8 @@ pub enum Answer {
     Path(Option<PathBuf>),
     /// The Add tags box: the text typed, or `None` for Cancel.
     Text(Option<String>),
+    /// The Edit match conditions box: the values on OK, or `None` for Cancel.
+    Conditions(Option<hatate_core::config::MatchConditions>),
 }
 
 /// A prompter that answers at once from a script and keeps a record of every question.
@@ -147,6 +149,26 @@ impl Prompter for Script {
         });
         match self.next_pick() {
             Some(Answer::Text(t)) => done(t),
+            _ => done(None),
+        }
+    }
+
+    fn match_conditions(
+        &self,
+        current: &hatate_core::config::MatchConditions,
+        done: Done<Option<hatate_core::config::MatchConditions>>,
+    ) {
+        self.asked.borrow_mut().push(Asked::MatchConditions {
+            opened_on: format!(
+                "{} {} {} {}",
+                current.min_tags_for_good,
+                current.min_width_gain_percent,
+                current.min_height_gain_percent,
+                current.require_larger_than_local
+            ),
+        });
+        match self.next_pick() {
+            Some(Answer::Conditions(c)) => done(c),
             _ => done(None),
         }
     }

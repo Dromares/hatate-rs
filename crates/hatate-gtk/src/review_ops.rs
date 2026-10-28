@@ -804,6 +804,26 @@ impl MainWindow {
         self.list_changed();
     }
 
+    /// `action_edit_conditions`: the dialog opens on the settings' conditions, and OK stores them
+    /// and saves.
+    pub fn action_edit_conditions(&self) {
+        let current = self.s.settings.lock().unwrap().match_conditions.clone();
+        let w = self.downgrade();
+        self.s.prompter.match_conditions(
+            &current,
+            Box::new(move |answer| {
+                let (Some(w), Some(conditions)) = (w.upgrade(), answer) else {
+                    return;
+                };
+                let mut s = w.s.settings.lock().unwrap();
+                s.match_conditions = conditions;
+                if let Err(e) = s.save(&w.s.paths) {
+                    tracing::warn!("could not save the settings: {e}");
+                }
+            }),
+        );
+    }
+
     /// `_add_tags_to_current`.
     pub fn add_tags_to_current(&self) {
         let ids = self.s.queue_view.selected_ids();

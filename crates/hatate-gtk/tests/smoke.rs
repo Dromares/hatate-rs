@@ -36,6 +36,10 @@ const SCENARIOS: &[Scenario] = &[
         review_page_follows_the_selection,
     ),
     (
+        "edit_conditions_stores_and_saves_on_ok_and_nothing_on_cancel",
+        edit_conditions_stores_and_saves_on_ok_and_nothing_on_cancel,
+    ),
+    (
         "review_tag_panel_adds_removes_and_edits_in_place",
         review_tag_panel_adds_removes_and_edits_in_place,
     ),
@@ -975,6 +979,49 @@ fn persisted_quota_pause(app: &adw::Application) {
             .text()
             .contains("Nothing was lost.")
     );
+    f.close();
+}
+
+/// `action_edit_conditions` and `MatchConditionsDialog`: the box opens on the stored values; OK
+/// stores and saves them, Cancel leaves them.
+fn edit_conditions_stores_and_saves_on_ok_and_nothing_on_cancel(app: &adw::Application) {
+    use hatate_core::config::MatchConditions;
+    let f = fx(app);
+    let saved = |f: &Fx| {
+        hatate_core::config::Settings::load(&f.paths)
+            .settings
+            .match_conditions
+    };
+    assert_eq!(saved(&f), MatchConditions::default());
+
+    f.script.push(Answer::Conditions(None));
+    f.w.activate_action("edit-conditions");
+    assert!(matches!(
+        f.script.asked.borrow().last(),
+        Some(Asked::MatchConditions { opened_on }) if opened_on == "5 10 10 true"
+    ));
+    assert_eq!(
+        f.w.s.settings.lock().unwrap().match_conditions,
+        MatchConditions::default()
+    );
+
+    let new = MatchConditions {
+        min_tags_for_good: 8,
+        min_width_gain_percent: 12.5,
+        min_height_gain_percent: 0.0,
+        require_larger_than_local: false,
+    };
+    f.script.push(Answer::Conditions(Some(new.clone())));
+    f.w.activate_action("edit-conditions");
+    assert_eq!(f.w.s.settings.lock().unwrap().match_conditions, new);
+    assert_eq!(saved(&f), new);
+
+    // It reopens on what was stored.
+    f.w.activate_action("edit-conditions");
+    assert!(matches!(
+        f.script.asked.borrow().last(),
+        Some(Asked::MatchConditions { opened_on }) if opened_on == "8 12.5 0 false"
+    ));
     f.close();
 }
 

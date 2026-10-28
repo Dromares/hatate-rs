@@ -84,7 +84,6 @@ pub fn all_site_options() -> Vec<String> {
 pub fn menus() -> Vec<Menu> {
     use Owner::{Later, Shell};
     // DEFERRED(6.g): Query Hydrus, Re-check Queued Imports, Pawchive Index, the two Send items.
-    // DEFERRED(6.f): Edit Match Conditions.
     // DEFERRED(6.h): Preferences.
     let files = Menu {
         title: "_Files",
@@ -150,11 +149,7 @@ pub fn menus() -> Vec<Menu> {
         title: "_Settings",
         entries: vec![
             item("Preferences\u{2026}", "preferences", Later("6.h")),
-            item(
-                "Edit Match Conditions\u{2026}",
-                "edit-conditions",
-                Later("6.f"),
-            ),
+            item("Edit Match Conditions\u{2026}", "edit-conditions", Shell),
             Entry::Separator,
             Entry::Radio {
                 title: "Theme",
@@ -439,7 +434,7 @@ mod tests {
     fn every_deferred_action_names_a_ticket() {
         let d = deferred();
         assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
-        for want in ["query-hydrus", "preferences", "edit-conditions"] {
+        for want in ["query-hydrus", "preferences"] {
             assert!(d.iter().any(|(n, _)| *n == want), "{want} not deferred");
         }
         for working in [
@@ -460,6 +455,7 @@ mod tests {
             "export-results",
             "write-tag-files",
             "clear-search-cache",
+            "edit-conditions",
         ] {
             assert!(!d.iter().any(|(n, _)| *n == working), "{working} is wired");
         }
