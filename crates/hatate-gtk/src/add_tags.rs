@@ -126,6 +126,14 @@ mod tests {
     }
 
     #[test]
+    fn the_target_is_named_in_the_prompt() {
+        assert_eq!(
+            prompt("7 selected images"),
+            "Add tags to 7 selected images (one per line, optionally namespace:tag):"
+        );
+    }
+
+    #[test]
     fn a_colon_alone_is_an_empty_name() {
         // Python keeps `Tag(name="", namespace=None)` for a line that is only ":".
         assert_eq!(pairs(":"), vec![(None, String::new())]);

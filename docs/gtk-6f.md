@@ -298,16 +298,31 @@ All 44 definitions (`CompareView`, `CompareDialog` and their helpers, 857 lines)
 ## 8. Python test map
 
 An `ast` walk over every `tests/test_*.py` at `76c85c4` (`worktrees/DAN-2219-tools/map/scan6f.py`, run outside the repo)
-finds **69** tests whose source mentions a symbol this ticket ports (the method names of the ticket, the modules
+finds **114** tests whose source mentions a symbol this ticket ports (the method names of the ticket, the modules
 `review_view`, `review_shortcuts`, `preview_text`, `compare_dialog`, `add_tags_dialog`, `match_conditions_dialog`). The
-rows below are the **178** that `docs/gtk-shell.md` section 7 assigns to 6.f (or to 6.d/6.f) plus the tests the
-walk finds that section does not list; the walk's other hits are rows that section already maps to another ticket
-(6.c: 2, 6.d: 2, 6.h: 3, n/a: 4) and are not repeated. Submitted at zero unmapped (the generator prints the count).
+walk follows class helpers as well as test bodies: a test also owns `setUp`, `setUpClass` and every `self.<m>()` it
+reaches, transitively. The first version read test bodies only and missed the 16 tests of `AddTagsDialog.get_tags` in
+`tests/test_add_tags_dialog.py` and `tests/test_thin_modules.py`, which build the dialog in `setUp` and `_dialog`
+(DAN-2347). The rows below are the **194** that `docs/gtk-shell.md` section 7 assigns to 6.f (or to 6.d/6.f) plus the
+tests the walk finds that section does not list; the walk's other hits are rows that section already maps to another
+ticket (6.c: 2, 6.d: 2, 6.h: 3, core: 2, n/a: 4) and are not repeated. Submitted at zero unmapped by the
+class-helper-aware walk (101 hits are rows here, 13 are another owner's, 0 are in neither).
 
 `smoke::` is a scenario of `crates/hatate-gtk/tests/smoke.rs`; `module::tests::` is a unit test in that module;
 `preview_text::tests::` is in `hatate-core`. A row that says `not asserted` names a Python assertion no Rust test
 makes; `geometry` rows are judged in the shot set and the measured tables, as in the earlier Phase 6 docs.
 
+
+#### `tests/test_add_tags_dialog.py` (6)
+
+| Line | Test | Disposition |
+|---|---|---|
+| 45 | `GetTags.test_a_plain_line_has_no_namespace` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: `  cat ` is `(None, "cat")` |
+| 51 | `GetTags.test_namespace_colon_name_splits_cleanly` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: ` character : reimu ` is `(Some("character"), "reimu")`; `add_tags::tests::only_the_first_colon_splits`; `smoke::review_tag_panel_adds_removes_and_edits_in_place`: ` series : touhou ` adds `[User] series:touhou`. The tight `character:reimu` is not its own input; it is the same split |
+| 56 | `GetTags.test_a_space_before_the_colon_must_not_end_up_in_the_namespace` | DAN-81 regression. `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: the namespace is `character`, not `character `. Reverting `strip(head)` in `parse_added_tags` turns it red (DAN-2347 `worktrees/DAN-2219-selfcheck-2347.log`) |
+| 67 | `GetTags.test_a_trailing_space_before_the_colon_alone_is_also_stripped` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`, through the same `strip(head)` line. not asserted as its own input: `character :reimu` (a space on one side only) is not fed; the both-sides input is |
+| 71 | `GetTags.test_blank_lines_are_skipped` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: the empty line between `cat` and `character : reimu` is dropped. not asserted: a whitespace-only line (`   `) is not fed; `strip` runs before the empty filter, so it takes the same path |
+| 75 | `GetTags.test_one_tag_per_line` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: three tags from four lines (one blank), in order; `add_tags::tests::python_line_boundaries_end_a_tag`: five lines on five different line boundaries give five tags |
 
 #### `tests/test_app_chrome.py` (1)
 
@@ -535,6 +550,21 @@ makes; `geometry` rows are judged in the shot set and the measured tables, as in
 | 202 | `ThePreviewPanelSaysIt.test_a_measured_caption_is_unchanged` | `preview_text::tests::the_caption_says_a_ranking_is_not_a_measurement` |
 | 207 | `ThePreviewPanelSaysIt.test_an_ordinal_caption_says_so_in_words` | `preview_text::tests::the_caption_says_a_ranking_is_not_a_measurement` |
 | 212 | `ThePreviewPanelSaysIt.test_the_banner_marks_a_ranking` | `preview_text::tests::the_readout_splits_the_banner_into_parts` |
+
+#### `tests/test_thin_modules.py` (10)
+
+| Line | Test | Disposition |
+|---|---|---|
+| 410 | `AddTagsDialog.test_the_target_is_named_in_the_prompt` | `add_tags::tests::the_target_is_named_in_the_prompt` (new in DAN-2347): `add_tags::prompt("7 selected images")` is the whole label; `smoke::review_tag_panel_adds_removes_and_edits_in_place` asserts the label `Prompter::add_tags` is handed for `a.png`. Reverting the `format!` line turns the new test red. The label widget itself is the `AlertDialog` body (geometry, shot set) |
+| 417 | `AddTagsDialog.test_one_tag_per_line` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`; `add_tags::tests::python_line_boundaries_end_a_tag` |
+| 421 | `AddTagsDialog.test_blank_and_whitespace_only_lines_are_dropped` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: the empty line is dropped. not asserted: tab and space-only lines (`strip` runs before the empty filter) and the trailing newline as such (`smoke::review_tag_panel_adds_removes_and_edits_in_place` ends its text with `\n` and adds no empty tag) |
+| 427 | `AddTagsDialog.test_nothing_typed_yields_no_tags` | not asserted: `parse_added_tags("")` is not fed. `splitlines("")` gives no lines, and `add_tags_to_current` returns before touching a queue entry when the list is empty (`review_ops.rs:860`); `smoke::review_tag_panel_adds_removes_and_edits_in_place` asserts the Cancel path adds nothing |
+| 430 | `AddTagsDialog.test_a_namespace_prefix_is_split_off` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: ` character : reimu ` splits; `smoke::review_tag_panel_adds_removes_and_edits_in_place`: `series : touhou` |
+| 434 | `AddTagsDialog.test_only_the_first_colon_splits` | `add_tags::tests::only_the_first_colon_splits`: `series:a:b` is `(Some("series"), "a:b")`; swapping `split_once` for `rsplit_once` turns it red |
+| 442 | `AddTagsDialog.test_both_halves_are_stripped` | DAN-81. `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`; `smoke::review_tag_panel_adds_removes_and_edits_in_place`: ` series : touhou ` is `series:touhou`. Reverting `strip(head)` or `strip(name)` turns `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped` red |
+| 451 | `AddTagsDialog.test_an_empty_namespace_half_is_no_namespace` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: `:bare` is `(None, "bare")`; `add_tags::tests::a_colon_alone_is_an_empty_name`: `:` is `(None, "")`. Keeping `Some(head)` for an empty head turns both red. not asserted: `: reimu` with a space after the colon (the name's `strip` is `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`'s) |
+| 460 | `AddTagsDialog.test_an_unnamespaced_line_has_no_namespace` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: `cat` is `(None, "cat")` |
+| 464 | `AddTagsDialog.test_everything_typed_here_is_sourced_as_USER` | `add_tags::tests::every_tag_is_a_user_tag`; `smoke::review_tag_panel_adds_removes_and_edits_in_place`: the added rows read `[User] …` |
 
 #### `tests/test_type_voice.py` (1)
 
