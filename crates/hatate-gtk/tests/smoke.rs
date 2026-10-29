@@ -56,6 +56,10 @@ const SCENARIOS: &[Scenario] = &[
         review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide,
     ),
     (
+        "the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip",
+        the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip,
+    ),
+    (
         "review_with_a_not_found_row_selected_keeps_the_stated_minimum",
         review_with_a_not_found_row_selected_keeps_the_stated_minimum,
     ),
@@ -4384,6 +4388,52 @@ fn tallest_chain(root: &gtk4::Widget, width: i32) -> String {
         }
     }
     out.join(" > ")
+}
+
+/// DAN-2219 (design read): at the stated minimum the readout sits on the line under the header, and
+/// the words there were cut to "SIMILARIT…" with 600 px free on hosted `ci`. The line takes the
+/// width of its words, and a match twice the local size says so in the chip ("▲ 2× larger"): the
+/// chip was empty in the shots because the fixture gave the local file no size.
+fn the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip(app: &adw::Application) {
+    use gtk4::pango::EllipsizeMode;
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    {
+        let mut q = f.w.s.queue.borrow_mut();
+        let id = q.id_at(0).unwrap();
+        let e = q.entry_mut(id).unwrap();
+        e.local_width = Some(640);
+        e.local_height = Some(480);
+        for c in e.candidates.iter_mut() {
+            c.width = Some(1280);
+            c.height = Some(960);
+        }
+    }
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    smallest_window(&f);
+    let r = f.w.s.review.clone();
+    assert!(
+        !r.readout_in_header(),
+        "at the stated minimum the readout is on the line under the header"
+    );
+    assert_eq!(r.readout_diff.text(), "\u{25b2} 2\u{d7} larger");
+    for l in [&r.readout_label, &r.readout_diff] {
+        assert_eq!(
+            l.ellipsize(),
+            EllipsizeMode::None,
+            "'{}' may be cut on the line under the header",
+            l.text()
+        );
+        assert!(
+            !l.layout().is_ellipsized(),
+            "'{}' is drawn cut ({} px given)",
+            l.text(),
+            l.width()
+        );
+    }
+    f.close();
 }
 
 /// The window's outer size once it is told to be as small as it can be.

@@ -288,10 +288,9 @@ impl ReviewPage {
         let readout_label = mk("readout-label");
         readout_label.add_css_class("caps");
         let readout_diff = mk("readout-diff");
-        // Parts elide before they push the header past the column (the window's minimum is the
-        // stated one, DAN-2025 2.5).
+        // The readout starts on the line under the header, where it has the column to itself and
+        // its words are never cut ([`ReviewPage::fit_readout`] sets the mode as it moves).
         for l in [&readout_label, &readout_diff] {
-            l.set_ellipsize(gtk::pango::EllipsizeMode::End);
             l.set_width_chars(0);
         }
         readout_root.set_tooltip_text(Some(READOUT_TOOLTIP));
@@ -633,6 +632,18 @@ impl ReviewPage {
         } else if !fits && inside {
             self.header.remove(&self.readout_root);
             self.readout_row.append(&self.readout_root);
+        }
+        // Beside the tools the parts elide before they push the header past the column (the
+        // window's minimum is the stated one, DAN-2025 2.5). On the line under the header they do
+        // not: it takes the width of its words. Hosted `ci`'s toolkit cut "SIMILARITY" to
+        // "SIMILARIT…" there with 600 px free (the shot shows it; the cause was not isolated).
+        let mode = if self.readout_in_header() {
+            gtk::pango::EllipsizeMode::End
+        } else {
+            gtk::pango::EllipsizeMode::None
+        };
+        for l in [&self.readout_label, &self.readout_diff] {
+            l.set_ellipsize(mode);
         }
         // `get_visible`, not `is_visible`: the latter also asks the row, which would keep itself hidden.
         self.readout_row

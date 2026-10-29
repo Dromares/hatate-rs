@@ -599,6 +599,9 @@ fn review_rows(pics: &std::path::Path) -> Vec<Entry> {
             .save(&path)
             .expect("picture");
         let mut e = Entry::new(path.to_string_lossy().into_owned());
+        // What the search worker records of the local file; without it the readout has no size chip.
+        e.local_width = Some(640);
+        e.local_height = Some(480);
         e.status = status;
         e.hydrus_hash = Some(format!("{i:064x}"));
         for (n, (url, sim, site)) in [
