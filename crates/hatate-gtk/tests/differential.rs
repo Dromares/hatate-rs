@@ -523,6 +523,40 @@ fn button(r: Response) -> &'static str {
     }
 }
 
+/// The candidate-detail pane (DAN-2339 condition 2): tag list, match label, picker, caption.
+fn review_detail(w: &MainWindow) -> Value {
+    let r = &w.s.review;
+    let mut tags = Vec::new();
+    let mut i = 0;
+    while let Some(row) = r.tag_list.row_at_index(i) {
+        let child = row.child();
+        tags.push(
+            child
+                .clone()
+                .and_downcast::<gtk4::Label>()
+                .map(|l| l.text().to_string())
+                .or_else(|| {
+                    child
+                        .and_downcast::<gtk4::EditableLabel>()
+                        .map(|l| l.text().to_string())
+                })
+                .unwrap_or_default(),
+        );
+        i += 1;
+    }
+    let combo: Vec<String> = (0..r.candidate_model.n_items())
+        .filter_map(|i| r.candidate_model.string(i))
+        .map(|s| s.to_string())
+        .collect();
+    let index = if combo.is_empty() {
+        -1
+    } else {
+        r.candidate_combo.selected() as i64
+    };
+    json!({"tags": tags, "match": r.match_label.text().to_string(), "combo": combo,
+           "combo_index": index, "matched_caption": r.matched_caption.left.text().to_string()})
+}
+
 fn digest(
     ctx: &Ctx,
     paths: &Paths,
@@ -589,6 +623,10 @@ fn digest(
             } => json!({"kind": "save_file", "title": title,
                         "default_name": Path::new(default_name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
                         "filter": filter}),
+            Asked::AddTags { prompt } => json!({"kind": "add_tags", "prompt": prompt}),
+            Asked::MatchConditions { opened_on } => {
+                json!({"kind": "match_conditions", "opened_on": opened_on})
+            }
         })
         .collect();
     let rb = &s.run_banner;
@@ -616,6 +654,7 @@ fn digest(
             "reviewed": e.reviewed, "interrupted": e.interrupted_mid_search,
         })).collect::<Vec<_>>(),
         "page": page,
+        "detail": review_detail(w),
         "ghost": sh.root.glyph(),
         "mode": sh.current_mode(),
         "run_banner": {

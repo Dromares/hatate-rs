@@ -16,6 +16,7 @@
 use gtk4 as gtk;
 use gtk4::gio;
 use gtk4::prelude::*;
+use hatate_core::config::MatchConditions;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use std::path::PathBuf;
@@ -84,6 +85,15 @@ pub enum Asked {
         default_name: String,
         filter: String,
     },
+    /// The Add tags box, with the line above its field.
+    AddTags {
+        prompt: String,
+    },
+    /// The Edit match conditions box, with the values it opened on as
+    /// `min_tags width_gain height_gain require_larger`.
+    MatchConditions {
+        opened_on: String,
+    },
 }
 
 pub type Done<T> = Box<dyn FnOnce(T)>;
@@ -116,6 +126,16 @@ pub trait Prompter {
             filter,
             Box::new(move |p| done(p.map(|p| (p, String::new())))),
         );
+    }
+    /// `AddTagsDialog`: a box with `prompt` over a text field, OK and Cancel. `done` runs with
+    /// the text on OK, `None` on Cancel. A prompter with no way to ask answers Cancel.
+    fn add_tags(&self, _prompt: &str, done: Done<Option<String>>) {
+        done(None);
+    }
+    /// `MatchConditionsDialog`: the four controls over OK and Cancel. `done` runs with the values
+    /// on OK, `None` on Cancel. A prompter with no way to ask answers Cancel.
+    fn match_conditions(&self, _current: &MatchConditions, done: Done<Option<MatchConditions>>) {
+        done(None);
     }
 }
 
@@ -243,6 +263,95 @@ impl Prompter for AdwPrompter {
                 _ => Response::Ok,
             });
         });
+    }
+
+    fn add_tags(&self, prompt: &str, done: Done<Option<String>>) {
+        let dialog = adw::AlertDialog::new(Some("Add tags"), Some(prompt));
+        let text = gtk::TextView::new();
+        text.set_accepts_tab(false);
+        text.set_monospace(true);
+        let scroller = gtk::ScrolledWindow::new();
+        scroller.set_child(Some(&text));
+        scroller.set_min_content_height(140);
+        scroller.set_min_content_width(320);
+        scroller.add_css_class("field");
+        dialog.set_extra_child(Some(&scroller));
+        dialog.add_responses(&[("cancel", "Cancel"), ("ok", "OK")]);
+        dialog.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("ok"));
+        dialog.set_close_response("cancel");
+        self.parent.set_focus_visible(true);
+        let buffer = text.buffer();
+        dialog.choose(Some(&self.parent), gio::Cancellable::NONE, move |answer| {
+            done((answer.as_str() == "ok").then(|| {
+                buffer
+                    .text(&buffer.start_iter(), &buffer.end_iter(), false)
+                    .to_string()
+            }));
+        });
+        text.grab_focus();
+    }
+
+    fn match_conditions(&self, current: &MatchConditions, done: Done<Option<MatchConditions>>) {
+        let dialog = adw::AlertDialog::new(Some("Edit match conditions"), None);
+        let min_tags = gtk::SpinButton::with_range(0.0, 200.0, 1.0);
+        min_tags.set_value(current.min_tags_for_good as f64);
+        let spin = |value: f64| {
+            let b = gtk::SpinButton::with_range(0.0, 1000.0, 1.0);
+            b.set_digits(2);
+            b.set_value(value);
+            b
+        };
+        let width = spin(current.min_width_gain_percent);
+        let height = spin(current.min_height_gain_percent);
+        let larger = gtk::CheckButton::with_label(
+            "Only flag for review when the match is larger than the local image",
+        );
+        larger.set_active(current.require_larger_than_local);
+        let grid = gtk::Grid::new();
+        grid.set_row_spacing(8);
+        grid.set_column_spacing(12);
+        let rows: [(&str, &gtk::SpinButton, &str); 3] = [
+            ("Minimum tags for a 'good' match:", &min_tags, ""),
+            ("Width gain to flag for review:", &width, "%"),
+            ("Height gain to flag for review:", &height, "%"),
+        ];
+        for (i, (label, field, suffix)) in rows.into_iter().enumerate() {
+            let l = gtk::Label::new(Some(label));
+            l.set_halign(gtk::Align::Start);
+            l.set_xalign(0.0);
+            l.set_wrap(true);
+            l.set_hexpand(true);
+            field.add_css_class("field");
+            let cell = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+            cell.append(field);
+            if !suffix.is_empty() {
+                cell.append(&gtk::Label::new(Some(suffix)));
+            }
+            grid.attach(&l, 0, i as i32, 1, 1);
+            grid.attach(&cell, 1, i as i32, 1, 1);
+        }
+        grid.attach(&larger, 0, 3, 2, 1);
+        dialog.set_extra_child(Some(&grid));
+        dialog.add_responses(&[("cancel", "Cancel"), ("ok", "OK")]);
+        dialog.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("ok"));
+        dialog.set_close_response("cancel");
+        self.parent.set_focus_visible(true);
+        let tags = min_tags.clone();
+        dialog.choose(Some(&self.parent), gio::Cancellable::NONE, move |answer| {
+            done((answer.as_str() == "ok").then(|| {
+                // `QDoubleSpinBox` keeps two decimals.
+                let cents = |b: &gtk::SpinButton| (b.value() * 100.0).round() / 100.0;
+                MatchConditions {
+                    min_tags_for_good: tags.value_as_int() as i64,
+                    min_width_gain_percent: cents(&width),
+                    min_height_gain_percent: cents(&height),
+                    require_larger_than_local: larger.is_active(),
+                }
+            }));
+        });
+        min_tags.grab_focus();
     }
 
     fn open_files(&self, title: &str, filter: &str, done: Done<Vec<PathBuf>>) {

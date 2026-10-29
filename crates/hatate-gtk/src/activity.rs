@@ -398,11 +398,6 @@ impl MainWindow {
         }
     }
 
-    /// `action_show_in_queue()`: Queue mode. DEFERRED(6.d): select the current image's row.
-    pub fn action_show_in_queue(&self) {
-        self.set_mode("queue");
-    }
-
     /// The page's buttons, wired once the window exists.
     pub(crate) fn wire_activity(&self) {
         let a = &self.s.activity;

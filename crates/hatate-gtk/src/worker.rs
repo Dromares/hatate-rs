@@ -181,6 +181,9 @@ impl Workers {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(threads.max(1))
             .thread_name("hatate-worker")
+            // The reactor too: an engine or a site fetch run on this runtime opens sockets, and a
+            // runtime without one panics at the first `TcpStream` ("IO is disabled", DAN-2219).
+            .enable_io()
             .enable_time()
             .build()
             .expect("the worker runtime starts");
@@ -542,5 +545,24 @@ mod tests {
             assert_eq!(w.running(), 0);
         })
         .unwrap();
+    }
+
+    /// The runtime a fetch runs on can open a socket: without a reactor `TcpStream` panics, and
+    /// every engine and site fetch of the window goes through it.
+    #[test]
+    fn the_worker_runtime_can_do_network_io() {
+        let (_ctx, w) = workers();
+        let handle = w.handle().expect("a runtime");
+        let bound = handle.block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+            let addr = listener.local_addr()?;
+            let client = tokio::net::TcpStream::connect(addr);
+            let (accepted, connected) = tokio::join!(listener.accept(), client);
+            accepted?;
+            connected?;
+            std::io::Result::Ok(addr)
+        });
+        assert!(bound.is_ok(), "{bound:?}");
+        w.shutdown(Duration::from_secs(2));
     }
 }

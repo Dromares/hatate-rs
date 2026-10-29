@@ -245,6 +245,10 @@ impl MainWindow {
         };
         self.say(&format!("Removed {removed} unavailable match(es)"));
         self.list_changed();
+        let entry = self.s.queue.borrow().entry(id).cloned();
+        self.populate_candidate_combo(entry.as_ref());
+        self.update_preview(Some(id));
+        self.refresh_tag_list(Some(id));
     }
 
     /// `_check_rows_for_upscaling(entries)`.

@@ -32,6 +32,54 @@ type Scenario = (&'static str, fn(&adw::Application));
 
 const SCENARIOS: &[Scenario] = &[
     (
+        "review_page_follows_the_selection",
+        review_page_follows_the_selection,
+    ),
+    (
+        "edit_conditions_stores_and_saves_on_ok_and_nothing_on_cancel",
+        edit_conditions_stores_and_saves_on_ok_and_nothing_on_cancel,
+    ),
+    (
+        "review_tag_panel_adds_removes_and_edits_in_place",
+        review_tag_panel_adds_removes_and_edits_in_place,
+    ),
+    (
+        "review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop",
+        review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop,
+    ),
+    (
+        "review_keys_step_mark_skip_and_open_the_match",
+        review_keys_step_mark_skip_and_open_the_match,
+    ),
+    (
+        "review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide",
+        review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide,
+    ),
+    (
+        "the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip",
+        the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip,
+    ),
+    (
+        "no_clipping_wrapper_on_the_review_page_is_a_tab_stop",
+        no_clipping_wrapper_on_the_review_page_is_a_tab_stop,
+    ),
+    (
+        "review_with_a_not_found_row_selected_keeps_the_stated_minimum",
+        review_with_a_not_found_row_selected_keeps_the_stated_minimum,
+    ),
+    (
+        "review_with_add_tags_open_keeps_the_stated_minimum",
+        review_with_add_tags_open_keeps_the_stated_minimum,
+    ),
+    (
+        "the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there",
+        the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there,
+    ),
+    (
+        "a_fresh_hint_bar_asks_for_its_first_group_only",
+        a_fresh_hint_bar_asks_for_its_first_group_only,
+    ),
+    (
         "window_menus_and_deferred_actions",
         window_menus_and_deferred_actions,
     ),
@@ -962,6 +1010,49 @@ fn persisted_quota_pause(app: &adw::Application) {
     f.close();
 }
 
+/// `action_edit_conditions` and `MatchConditionsDialog`: the box opens on the stored values; OK
+/// stores and saves them, Cancel leaves them.
+fn edit_conditions_stores_and_saves_on_ok_and_nothing_on_cancel(app: &adw::Application) {
+    use hatate_core::config::MatchConditions;
+    let f = fx(app);
+    let saved = |f: &Fx| {
+        hatate_core::config::Settings::load(&f.paths)
+            .settings
+            .match_conditions
+    };
+    assert_eq!(saved(&f), MatchConditions::default());
+
+    f.script.push(Answer::Conditions(None));
+    f.w.activate_action("edit-conditions");
+    assert!(matches!(
+        f.script.asked.borrow().last(),
+        Some(Asked::MatchConditions { opened_on }) if opened_on == "5 10 10 true"
+    ));
+    assert_eq!(
+        f.w.s.settings.lock().unwrap().match_conditions,
+        MatchConditions::default()
+    );
+
+    let new = MatchConditions {
+        min_tags_for_good: 8,
+        min_width_gain_percent: 12.5,
+        min_height_gain_percent: 0.0,
+        require_larger_than_local: false,
+    };
+    f.script.push(Answer::Conditions(Some(new.clone())));
+    f.w.activate_action("edit-conditions");
+    assert_eq!(f.w.s.settings.lock().unwrap().match_conditions, new);
+    assert_eq!(saved(&f), new);
+
+    // It reopens on what was stored.
+    f.w.activate_action("edit-conditions");
+    assert!(matches!(
+        f.script.asked.borrow().last(),
+        Some(Asked::MatchConditions { opened_on }) if opened_on == "8 12.5 0 false"
+    ));
+    f.close();
+}
+
 fn theme_action_saves_the_setting(app: &adw::Application) {
     let f = fx(app);
     let saved = |f: &Fx| hatate_core::config::Settings::load(&f.paths).settings.theme;
@@ -1132,6 +1223,45 @@ fn fonts_cover_the_status_glyphs_and_kanji(app: &adw::Application) {
     // `LoadOptions` is part of the public restore contract the scenarios rely on.
     let _ = (LoadOptions::at(NOW), SessionStore::new(&f.paths));
     f.close();
+}
+
+/// The chain of widgets that sets a width: each step is the child asking the most, with all the
+/// children's minimums beside it. Printed so a host whose fonts differ from the author's can say
+/// what its number was made of.
+fn widest_chain(root: &gtk4::Widget) -> String {
+    let mut out = Vec::new();
+    let mut w = root.clone();
+    for _ in 0..40 {
+        let min = w.measure(gtk4::Orientation::Horizontal, -1).0;
+        let label = w
+            .downcast_ref::<gtk4::Label>()
+            .map(|l| format!(" {:?}", l.text()))
+            .unwrap_or_default();
+        let mut kids = Vec::new();
+        let mut best: Option<(i32, gtk4::Widget)> = None;
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            if child.is_visible() {
+                let m = child.measure(gtk4::Orientation::Horizontal, -1).0;
+                kids.push(m.to_string());
+                if best.as_ref().is_none_or(|(b, _)| m > *b) {
+                    best = Some((m, child.clone()));
+                }
+            }
+            c = child.next_sibling();
+        }
+        out.push(format!(
+            "{}[{}]={min}{label} ({})",
+            w.type_().name(),
+            w.css_name(),
+            kids.join("+")
+        ));
+        match best {
+            Some((_, b)) => w = b,
+            None => break,
+        }
+    }
+    out.join(" > ")
 }
 
 /// The content's own minimum, with no `set_size_request` floor: width, then height at that width.
@@ -1630,11 +1760,9 @@ fn a_quota_pause_shows_the_banner_and_continue_resumes(app: &adw::Application) {
         readout.root.tooltip_text().as_deref(),
         Some("2/6 used in the current ~30s window")
     );
-    // The banner's disabled Review button says why (DAN-2326).
-    assert_eq!(
-        f.w.s.quota_banner.review.tooltip_text().as_deref(),
-        Some("Review arrives in a later step.")
-    );
+    // The banner's Review button works now (6.f): no reason to give for a disabled button.
+    assert!(f.w.s.quota_banner.review.is_sensitive());
+    assert_eq!(f.w.s.quota_banner.review.tooltip_text(), None);
     assert_eq!(
         statuses(&f),
         vec![
@@ -3807,6 +3935,781 @@ fn menubar_keyboard_path(app: &adw::Application) {
         focus().as_ref(),
         Some(&add_widget),
         "Escape returns focus to the widget that had it before F10"
+    );
+    f.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Review (6.f, DAN-2219)
+// ---------------------------------------------------------------------------------------------
+
+/// Settings that keep a window test off the network: no booru page, no availability probe.
+fn offline() -> Tweak {
+    Box::new(|s: &mut hatate_core::config::Settings| {
+        s.retrieve_tags_from_booru = false;
+        s.drop_dead_matches = false;
+    })
+}
+
+/// A candidate whose picture and tags are "already fetched", so selecting it asks nobody.
+fn fetched(url: &str, similarity: f64, source: &str) -> hatate_core::model::Candidate {
+    let mut c = hatate_core::model::Candidate::new(url);
+    c.similarity = similarity;
+    c.similarity_measured = true;
+    c.engine = "IQDB".to_owned();
+    c.source_name = Some(source.to_owned());
+    c.width = Some(1400);
+    c.height = Some(2200);
+    c.thumb_bytes = Some(common::search::PNG.to_vec());
+    c.booru_tags_fetched = true;
+    c.remote_info_fetched = true;
+    c
+}
+
+/// Three rows: a Good one with two matches and three tags, a Not found one, a Good one with one.
+fn review_seed(dir: &std::path::Path) -> Vec<hatate_core::model::Entry> {
+    use hatate_core::model::{Tag, TagSource};
+    let png = |name: &str| {
+        let p = dir.join(name);
+        std::fs::write(&p, common::search::PNG).unwrap();
+        p.to_string_lossy().into_owned()
+    };
+    let tag = |ns: Option<&str>, name: &str, source| Tag {
+        name: name.to_owned(),
+        namespace: ns.map(str::to_owned),
+        source,
+    };
+    let mut a = entry(&png("a.png"), MatchStatus::Good);
+    a.candidates = vec![
+        fetched("https://danbooru.donmai.us/posts/1", 96.0, "Danbooru"),
+        fetched("https://gelbooru.com/index.php?id=2", 80.0, "Gelbooru"),
+    ];
+    a.tags = vec![
+        tag(None, "solo", TagSource::Booru),
+        tag(Some("character"), "reimu", TagSource::User),
+        tag(None, "sketch", TagSource::Hydrus),
+    ];
+    let b = entry(&png("b.png"), MatchStatus::NotFound);
+    let mut c = entry(&png("c.png"), MatchStatus::Good);
+    c.candidates = vec![fetched(
+        "https://danbooru.donmai.us/posts/3",
+        91.0,
+        "Danbooru",
+    )];
+    vec![a, b, c]
+}
+
+fn review_fx(app: &adw::Application, dir: &std::path::Path) -> Fx {
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: review_seed(dir),
+            tweak: Some(offline()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    already_fetched(&f);
+    f
+}
+
+/// A session keeps no picture bytes and no "fetched" flags (`thumb_bytes` is session-only), so a
+/// restored match has everything to fetch. These rows are as a search just left them.
+fn already_fetched(f: &Fx) {
+    let mut q = f.w.s.queue.borrow_mut();
+    let ids: Vec<_> = (0..q.len() as i64).filter_map(|i| q.id_at(i)).collect();
+    for id in ids {
+        for c in q.entry_mut(id).unwrap().candidates.iter_mut() {
+            c.thumb_bytes = Some(common::search::PNG.to_vec());
+            c.booru_tags_fetched = true;
+            c.remote_info_fetched = true;
+        }
+    }
+}
+
+/// The text of each row of the tag list.
+fn tag_texts(f: &Fx) -> Vec<String> {
+    let list = &f.w.s.review.tag_list;
+    let mut out = Vec::new();
+    let mut i = 0;
+    while let Some(row) = list.row_at_index(i) {
+        let child = row.child();
+        out.push(
+            child
+                .clone()
+                .and_downcast::<gtk4::Label>()
+                .map(|l| l.text().to_string())
+                .or_else(|| {
+                    child
+                        .and_downcast::<gtk4::EditableLabel>()
+                        .map(|l| l.text().to_string())
+                })
+                .unwrap_or_default(),
+        );
+        i += 1;
+    }
+    out
+}
+
+/// `_update_preview`, `_set_review_captions`, `refresh_review`, `_refresh_tag_list` and the
+/// position strip all follow the selected row (`test_selection_and_preview_handlers`).
+fn review_page_follows_the_selection(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    pump_for(100);
+
+    // Nothing selected.
+    assert_eq!(r.local.shown_text(), "No image selected");
+    assert_eq!(r.matched.shown_text(), "No match yet");
+    assert_eq!(r.match_label.text(), "No match");
+    assert!(!r.candidate_combo.is_sensitive());
+    assert!(!r.readout_root.is_visible());
+    assert!(tag_texts(&f).is_empty());
+    assert_eq!(r.matched_caption.left.text(), "Match");
+
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || r.local.shows_picture()));
+    assert_eq!(r.match_label.text(), "Match 1 of 2");
+    assert_eq!(r.candidate_model.n_items(), 2);
+    assert_eq!(
+        r.candidate_model.string(0).as_deref(),
+        Some("Danbooru \u{2014} 96% (IQDB) \u{2014} https://danbooru.donmai.us/posts/1")
+    );
+    assert_eq!(
+        r.candidate_combo.tooltip_text().as_deref(),
+        Some("https://danbooru.donmai.us/posts/1")
+    );
+    assert!(r.matched.shows_picture());
+    assert!(r.readout_root.is_visible());
+    assert_eq!(r.readout_value.text(), "96%");
+    assert_eq!(r.readout_label.text(), "Similarity");
+    assert_eq!(r.matched_caption.left.text(), "Match \u{2014} Danbooru");
+    assert_eq!(r.matched_caption.right.text(), "1400 \u{d7} 2200");
+    assert_eq!(
+        r.local_caption.right.text(),
+        "4 \u{d7} 3 \u{b7} PNG \u{b7} 94 B"
+    );
+    assert_eq!(
+        tag_texts(&f),
+        ["[Booru] solo", "[User] character:reimu", "[Hydrus] sketch"]
+    );
+    assert_eq!(r.mark_btn.text(), "Mark reviewed");
+    assert!(!r.prev_match_btn.is_sensitive() && r.next_match_btn.is_sensitive());
+    assert!(!r.prev_btn.button.is_sensitive() && r.next_btn.button.is_sensitive());
+
+    // A row with no match says why.
+    f.w.s.queue_view.select_row(1);
+    assert_eq!(r.matched.shown_text(), "No match found");
+    assert_eq!(r.match_label.text(), "No match");
+    assert_eq!(r.matched_caption.left.text(), "Match \u{2014} none");
+    assert_eq!(r.matched_caption.right.text(), "\u{2014}");
+    assert!(!r.candidate_combo.is_sensitive());
+    assert!(!r.readout_root.is_visible());
+    assert!(tag_texts(&f).is_empty());
+    assert!(r.next_btn.button.is_sensitive() && r.prev_btn.button.is_sensitive());
+
+    // The last row has no next.
+    f.w.s.queue_view.select_row(2);
+    assert!(!r.next_btn.button.is_sensitive());
+
+    // Selecting nothing empties the page again.
+    f.w.s.queue_view.select_ids(&[]);
+    assert_eq!(r.local.shown_text(), "No image selected");
+    assert_eq!(r.match_label.text(), "No match");
+    f.close();
+}
+
+/// `_add_tags_to_current`, `_remove_selected_tags`, `_on_edit_tags_toggled`,
+/// `_on_tag_item_edited`.
+fn review_tag_panel_adds_removes_and_edits_in_place(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    let r = f.w.s.review.clone();
+    f.w.s.queue_view.select_row(0);
+    assert_eq!(tag_texts(&f).len(), 3);
+
+    // Add tags: nothing selected says so, Cancel adds nothing, text adds user tags once each.
+    f.w.s.queue_view.select_ids(&[]);
+    f.w.add_tags_to_current();
+    assert_eq!(
+        f.script.last_shown().text,
+        "Select at least one image first."
+    );
+    f.w.s.queue_view.select_row(0);
+    f.script.reset();
+    f.script.push(Answer::Text(None));
+    f.w.add_tags_to_current();
+    assert_eq!(tag_texts(&f).len(), 3);
+    f.script.push(Answer::Text(Some(
+        " series : touhou \n\nsolo\ncat\n".to_owned(),
+    )));
+    f.w.add_tags_to_current();
+    assert!(matches!(
+        f.script.asked.borrow().last(),
+        Some(Asked::AddTags { prompt })
+            if prompt == "Add tags to a.png (one per line, optionally namespace:tag):"
+    ));
+    assert_eq!(
+        tag_texts(&f),
+        [
+            "[Booru] solo",
+            "[User] character:reimu",
+            "[Hydrus] sketch",
+            "[User] series:touhou",
+            "[User] cat"
+        ],
+        "solo was already there and is not added twice"
+    );
+
+    // Remove: the picked rows go, the others stay.
+    r.tag_list.select_row(r.tag_list.row_at_index(3).as_ref());
+    r.tag_list.select_row(r.tag_list.row_at_index(4).as_ref());
+    f.w.remove_selected_tags();
+    assert_eq!(tag_texts(&f).len(), 3);
+
+    // Edit: plain `namespace:name` while editable.
+    r.edit_tags_btn.set_active(true);
+    assert_eq!(
+        r.edit_tags_btn.label().as_deref(),
+        Some("Editing Tags (click to stop)")
+    );
+    assert_eq!(
+        tag_texts(&f),
+        ["solo", "character:reimu", "sketch"],
+        "no [Source] prefix while editing"
+    );
+    let rename = |row: i32, text: &str| {
+        let field = r
+            .tag_list
+            .row_at_index(row)
+            .and_then(|row| row.child())
+            .and_downcast::<gtk4::EditableLabel>()
+            .expect("an editable row");
+        field.start_editing();
+        field.set_text(text);
+        field.stop_editing(true);
+    };
+    rename(2, "artist:someone");
+    assert_eq!(
+        tag_texts(&f),
+        ["solo", "character:reimu", "artist:someone"],
+        "renamed in place, source kept"
+    );
+    assert_eq!(
+        f.w.s.queue.borrow().entries()[0].tags[2].source,
+        hatate_core::model::TagSource::Hydrus
+    );
+    rename(0, "character:reimu");
+    assert_eq!(
+        tag_texts(&f),
+        ["character:reimu", "artist:someone"],
+        "a collision drops the older duplicate"
+    );
+    rename(1, "   ");
+    assert_eq!(
+        tag_texts(&f),
+        ["character:reimu"],
+        "clearing the text deletes the tag"
+    );
+    r.edit_tags_btn.set_active(false);
+    assert_eq!(r.edit_tags_btn.label().as_deref(), Some("Edit Tags"));
+    f.close();
+}
+
+/// `_on_candidate_combo_changed`, `_ensure_candidate_loaded`, `_on_candidate_fetched`: picking a
+/// match makes it the entry's, and the fetch of its picture runs off the main loop.
+fn review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop(
+    app: &adw::Application,
+) {
+    use std::io::Read;
+    use std::net::TcpListener;
+    let dir = tempfile::tempdir().unwrap();
+    // A site that accepts the connection and never answers: DeviantArt is on the list of hosts the
+    // lazy fetch checks, and `host_overrides` sends that name to this socket.
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = server.local_addr().unwrap();
+    let held = std::thread::spawn(move || {
+        let (mut conn, _) = server.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = conn.read(&mut buf);
+        // Hold it open until the test lets go.
+        std::thread::sleep(std::time::Duration::from_millis(900));
+    });
+    let mut seed = review_seed(dir.path());
+    let mut lazy = hatate_core::model::Candidate::new("http://www.deviantart.com/art/lazy-1");
+    lazy.engine = "IQDB".to_owned();
+    lazy.similarity = 70.0;
+    seed[0].candidates.push(lazy);
+    let f = Fx::new_with(
+        app,
+        Opts {
+            seed,
+            tweak: Some(Box::new(|s: &mut hatate_core::config::Settings| {
+                s.retrieve_tags_from_booru = false;
+                s.drop_dead_matches = true;
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+        |env| {
+            let mut net = hatate_core::net::NetConfig::default();
+            net.host_overrides
+                .push(("www.deviantart.com".to_owned(), addr));
+            let paths = env.paths.clone();
+            let (backend, _) = common::search::Scripted::with_net(&paths, net);
+            env.search = Some(backend);
+        },
+    );
+    already_fetched(&f);
+    {
+        // The third match is the one nobody has fetched yet.
+        let mut q = f.w.s.queue.borrow_mut();
+        let id = q.id_at(0).unwrap();
+        let lazy = &mut q.entry_mut(id).unwrap().candidates[2];
+        lazy.thumb_bytes = None;
+        lazy.booru_tags_fetched = false;
+    }
+    let r = f.w.s.review.clone();
+    f.w.s.queue_view.select_row(0);
+    assert_eq!(r.candidate_model.n_items(), 3);
+
+    // Picking the second match: it becomes the entry's, and the row follows.
+    r.candidate_combo.set_selected(1);
+    assert_eq!(
+        f.w.s.queue.borrow().entries()[0].selected_candidate_index,
+        1
+    );
+    assert_eq!(r.match_label.text(), "Match 2 of 3");
+    assert_eq!(r.matched_caption.left.text(), "Match \u{2014} Gelbooru");
+    assert!(r.prev_match_btn.is_sensitive() && r.next_match_btn.is_sensitive());
+    assert_eq!(
+        f.w.s
+            .queue_view
+            .cell(0, hatate_core::table_cells::Column::Booru)
+            .map(|c| c.text),
+        Some("Gelbooru".to_owned())
+    );
+
+    // The third has nothing fetched: the fetch goes to the site, which does not answer.
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    r.next_match_btn.emit_clicked();
+    assert_eq!(
+        f.w.s.queue.borrow().entries()[0].selected_candidate_index,
+        2
+    );
+    // On the last match Previous is live, Next and its bracket cap dim.
+    assert!(r.prev_match_btn.is_sensitive() && !r.next_match_btn.is_sensitive());
+    assert!(r.prev_match_key.is_sensitive() && !r.next_match_key.is_sensitive());
+    assert_eq!(r.matched.shown_text(), "Loading picture\u{2026}");
+    assert_eq!(
+        f.say(),
+        "Fetching picture and tags for the selected site\u{2026}"
+    );
+    assert!(f.w.s.candidate_worker.is_running());
+    let before = ticks.get();
+    // Actions are handled while it waits: stepping back and forth, marking a row.
+    f.w.run_review_action("toggle_reviewed");
+    assert!(f.w.s.queue.borrow().entries()[0].reviewed);
+    pump_for(200);
+    assert!(
+        ticks.get() >= before + 4,
+        "the main loop kept turning: {before} -> {}",
+        ticks.get()
+    );
+    assert!(
+        f.w.s.candidate_worker.is_running(),
+        "still waiting on the site"
+    );
+    // The site lets go; the fetch ends and the status says so.
+    assert!(pump_until(10_000, || f.say() == "Ready"));
+    assert!(!f.w.s.candidate_worker.is_running());
+    tick.remove();
+    held.join().unwrap();
+    f.close();
+}
+
+/// DAN-2219: the window opens 1100 px wide, and the Review page with a match selected must still
+/// ask for no more than the stated minimum. Its keyed buttons put the key beside the label while
+/// the column is wide, and the label's own minimum used to keep them that way (430 px of rail
+/// instead of 340): a window opened wide could not be narrowed to 1010, and the minimum-size
+/// scenario never saw it because it opens Review with an empty queue.
+fn review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide(app: &adw::Application) {
+    use hatate_gtk::window::{MIN_HEIGHT, MIN_WIDTH};
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    pump_for(200);
+    let (w, h) = content_min(&f);
+    println!("MINSIZE review-selected content_min={w}x{h}");
+    let content = libadwaita::prelude::AdwApplicationWindowExt::content(&f.w.win).unwrap();
+    println!("MINCHAIN {}", widest_chain(&content));
+    assert!(
+        w <= MIN_WIDTH && h <= MIN_HEIGHT,
+        "Review with a match selected asks for {w}x{h}; the stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}"
+    );
+    f.close();
+}
+
+/// The chain of widgets that sets a height at `width`: each step is the child asking the most.
+/// Printed when a minimum-size test fails, so a host whose toolkit differs from the author's can
+/// say what its number was made of.
+fn tallest_chain(root: &gtk4::Widget, width: i32) -> String {
+    let mut out = Vec::new();
+    let mut w = root.clone();
+    for _ in 0..40 {
+        let min = w.measure(gtk4::Orientation::Vertical, width).0;
+        let mut kids = Vec::new();
+        let mut best: Option<(i32, gtk4::Widget)> = None;
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            if child.is_visible() {
+                let m = child.measure(gtk4::Orientation::Vertical, width).0;
+                kids.push(m.to_string());
+                if best.as_ref().is_none_or(|(b, _)| m > *b) {
+                    best = Some((m, child.clone()));
+                }
+            }
+            c = child.next_sibling();
+        }
+        out.push(format!(
+            "{}[{}]={min} ({})",
+            w.type_().name(),
+            w.css_name(),
+            kids.join("+")
+        ));
+        match best {
+            Some((_, b)) => w = b,
+            None => break,
+        }
+    }
+    out.join(" > ")
+}
+
+/// DAN-2219 (design read): at the stated minimum the readout sits on the line under the header, and
+/// the words there were cut to "SIMILARIT…" with 600 px free on hosted `ci`. The line takes the
+/// width of its words, and a match twice the local size says so in the chip ("▲ 2× larger"): the
+/// chip was empty in the shots because the fixture gave the local file no size.
+fn the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip(app: &adw::Application) {
+    use gtk4::pango::EllipsizeMode;
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    {
+        let mut q = f.w.s.queue.borrow_mut();
+        let id = q.id_at(0).unwrap();
+        let e = q.entry_mut(id).unwrap();
+        e.local_width = Some(640);
+        e.local_height = Some(480);
+        for c in e.candidates.iter_mut() {
+            c.width = Some(1280);
+            c.height = Some(960);
+        }
+    }
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    smallest_window(&f);
+    let r = f.w.s.review.clone();
+    assert!(
+        !r.readout_in_header(),
+        "at the stated minimum the readout is on the line under the header"
+    );
+    assert_eq!(r.readout_diff.text(), "\u{25b2} 2\u{d7} larger");
+    for l in [&r.readout_label, &r.readout_diff] {
+        assert_eq!(
+            l.ellipsize(),
+            EllipsizeMode::None,
+            "'{}' may be cut on the line under the header",
+            l.text()
+        );
+        assert!(
+            !l.layout().is_ellipsized(),
+            "'{}' is drawn cut ({} px given)",
+            l.text(),
+            l.width()
+        );
+    }
+    f.close();
+}
+
+/// DAN-2366: `give_way` wraps the Review title and the readout's parts in a `ScrolledWindow` that
+/// only clips, and GTK4 scrolled windows take the Tab focus by default, so the first Tab on Review
+/// landed on the static "01 // Compare" title. With a match selected the readout (and its wrapper)
+/// is shown; the tag list's scroller is the one scrolled window that may be a Tab stop. The stops
+/// are read off `is_focusable` (what the Tab chain keys on): `child_focus` in a headless window
+/// stalls after the first stop, so a Tab walk here would not reach the wrappers.
+fn no_clipping_wrapper_on_the_review_page_is_a_tab_stop(app: &adw::Application) {
+    fn wrappers(w: &gtk4::Widget, out: &mut Vec<gtk4::Widget>) {
+        if w.is::<gtk4::ScrolledWindow>() || w.is::<gtk4::Viewport>() {
+            out.push(w.clone());
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            wrappers(&child, out);
+            c = child.next_sibling();
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    pump_for(300);
+    let r = f.w.s.review.clone();
+    assert!(
+        r.readout_root.is_visible() && r.readout_label.is_mapped(),
+        "the readout is shown"
+    );
+    let mut found = Vec::new();
+    wrappers(r.root.upcast_ref(), &mut found);
+    let title: Vec<_> = found.iter().filter(|w| r.title.is_ancestor(*w)).collect();
+    let readout: Vec<_> = found
+        .iter()
+        .filter(|w| r.readout_label.is_ancestor(*w))
+        .collect();
+    assert!(
+        !title.is_empty() && !readout.is_empty(),
+        "the title and the readout both sit in a clipping wrapper"
+    );
+    for (what, wrappers) in [("title", title), ("readout", readout)] {
+        for w in wrappers {
+            assert!(
+                !w.is_focusable(),
+                "{} around the {what} is a Tab stop",
+                w.type_().name()
+            );
+        }
+    }
+    f.close();
+}
+
+/// The window's outer size once it is told to be as small as it can be.
+fn smallest_window(f: &Fx) -> (i32, i32) {
+    f.w.win.set_default_size(1, 1);
+    pump_for(300);
+    (f.w.win.width(), f.w.win.height())
+}
+
+/// DAN-2219 (design read): a Not found row's frames are 372 px tall against 305 for a match, and the
+/// window had to grow to 812 px at the stated minimum.
+fn review_with_a_not_found_row_selected_keeps_the_stated_minimum(app: &adw::Application) {
+    use hatate_gtk::window::{MIN_HEIGHT, MIN_WIDTH};
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(1);
+    pump_for(300);
+    let (w, h) = smallest_window(&f);
+    println!("OUTER review-not-found window={w}x{h}");
+    assert!(
+        w <= MIN_WIDTH && h <= MIN_HEIGHT,
+        "a Not found row makes the window {w}x{h}; the stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}: {}",
+        tallest_chain(f.w.win.upcast_ref(), w)
+    );
+    f.close();
+}
+
+/// DAN-2219 (design read): the Add tags dialog (a 140 px text field and its prompt) pushed the
+/// window to 812 px at the stated minimum.
+fn review_with_add_tags_open_keeps_the_stated_minimum(app: &adw::Application) {
+    use hatate_gtk::dialogs::{AdwPrompter, Prompter};
+    use hatate_gtk::window::{MIN_HEIGHT, MIN_WIDTH};
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    AdwPrompter::new(&f.w.win).add_tags(
+        "Add tags to the selected image. One tag per line, or separated by commas.",
+        Box::new(|_| {}),
+    );
+    pump_for(300);
+    let (w, h) = smallest_window(&f);
+    println!("OUTER review-add-tags window={w}x{h}");
+    assert!(
+        w <= MIN_WIDTH && h <= MIN_HEIGHT,
+        "Add tags makes the window {w}x{h}; the stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}: {}",
+        tallest_chain(f.w.win.upcast_ref(), w)
+    );
+    f.close();
+}
+
+/// DAN-2219: the readout moves between the header and the row under it as the column narrows. The
+/// row was shown only if `readout_root.is_visible()`, which also asks the row, so a row hidden
+/// while the readout sat in the header stayed hidden once the readout dropped into it: a match was
+/// selected and the readout was nowhere. (Hosted `ci` caught it: its fonts need more width.)
+fn the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.win.set_default_size(1500, 900);
+    pump_for(200);
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    pump_for(200);
+    let r = f.w.s.review.clone();
+    assert!(r.readout_root.is_visible());
+    assert!(
+        r.readout_in_header(),
+        "at 1500 px the readout sits beside the tools"
+    );
+    // Beside the tools the words are not ellipsized: GTK allocated a tracked label its natural width
+    // and Pango cut it there, so "01 // Compare" read "01 // COMPAR…" and "SIMILARITY" "SIMILARIT…"
+    // with room to spare (the 1440 x 900 shot, host and hosted `ci` toolkits alike).
+    for l in [&r.title, &r.readout_label, &r.readout_diff] {
+        assert!(
+            !l.layout().is_ellipsized(),
+            "'{}' is drawn cut beside the tools ({} px given)",
+            l.text(),
+            l.width()
+        );
+    }
+    // Squeeze the compare column until the readout no longer fits beside the tools.
+    f.w.win.set_default_size(1, 1);
+    assert!(pump_until(5_000, || !r.readout_in_header()));
+    pump_for(200);
+    assert!(
+        r.readout_root.is_visible(),
+        "the readout is on the line under the header"
+    );
+    f.close();
+}
+
+/// A box's minimum is its children's: a hint bar that has not yet been given a width must not ask
+/// for all of its groups, or a window that opens at the stated minimum is sized 1028 px wide.
+fn a_fresh_hint_bar_asks_for_its_first_group_only(_app: &adw::Application) {
+    use hatate_gtk::widgets::{KeyHintBar, Piece};
+    let groups: Vec<Vec<Piece>> = (0..4)
+        .map(|i| {
+            vec![
+                Piece::Strong(format!("{i} of 9")),
+                Piece::Text("a fairly long group of words".to_owned()),
+            ]
+        })
+        .collect();
+    let bar = KeyHintBar::new(&groups);
+    let (first, _, _, _) = bar.root.measure(gtk4::Orientation::Horizontal, -1);
+    let one = KeyHintBar::new(&groups[..1]);
+    let (alone, _, _, _) = one.root.measure(gtk4::Orientation::Horizontal, -1);
+    assert_eq!(
+        first, alone,
+        "a four-group bar asked for {first} px before its first tick; its first group alone is {alone}"
+    );
+}
+
+/// `review_shortcuts`: the keys on the Review page move, mark and skip, and a text field keeps
+/// its characters.
+fn review_keys_step_mark_skip_and_open_the_match(app: &adw::Application) {
+    use common::xtest::{Key, Xtest};
+    let dir = tempfile::tempdir().unwrap();
+    let opened = Rc::new(std::cell::RefCell::new(Vec::<String>::new()));
+    let o = opened.clone();
+    let f = Fx::new_with(
+        app,
+        Opts {
+            seed: review_seed(dir.path()),
+            tweak: Some(offline()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+        move |env| env.open_url = Rc::new(move |u| o.borrow_mut().push(u.to_owned())),
+    );
+    already_fetched(&f);
+    let r = f.w.s.review.clone();
+    let selected = |f: &Fx| -> Vec<u32> {
+        f.w.s
+            .queue_view
+            .selected_ids()
+            .iter()
+            .filter_map(|id| f.w.s.queue_view.row_of(*id))
+            .collect()
+    };
+
+    // The handlers, by action id: J / K stop at the ends, N skips what is decided.
+    f.w.run_review_action("next_row");
+    assert_eq!(selected(&f), [0], "from nothing, next lands on the first");
+    f.w.run_review_action("next_row");
+    f.w.run_review_action("next_row");
+    f.w.run_review_action("next_row");
+    assert_eq!(selected(&f), [2], "stops at the end rather than wrapping");
+    f.w.run_review_action("prev_row");
+    assert_eq!(selected(&f), [1]);
+    f.w.s.queue_view.select_row(0);
+    f.w.run_review_action("toggle_reviewed");
+    assert_eq!(r.mark_btn.text(), "Unmark reviewed");
+    assert_eq!(
+        f.say(),
+        "Marked 1 image(s) as reviewed \u{2014} 2 still to review"
+    );
+    f.w.run_review_action("next_unreviewed");
+    assert_eq!(selected(&f), [1], "the next row still wanting a decision");
+    f.w.run_review_action("next_unreviewed");
+    assert_eq!(selected(&f), [2]);
+    f.w.run_review_action("next_unreviewed");
+    assert_eq!(f.say(), "Nothing left to review after this one");
+    assert_eq!(selected(&f), [2], "and it stays put");
+    f.w.run_review_action("prev_unreviewed");
+    assert_eq!(selected(&f), [1]);
+
+    // Open match: a status line with no match, a warning for a bad address, the browser for a good one.
+    f.w.run_review_action("open_match");
+    assert_eq!(f.say(), "Open match: this image has no match");
+    f.w.s.queue_view.select_row(2);
+    f.w.run_review_action("open_match");
+    assert_eq!(*opened.borrow(), ["https://danbooru.donmai.us/posts/3"]);
+
+    // The same handlers from the keys, on the Review page.
+    f.w.set_mode("review");
+    f.w.win.set_default_size(1100, 800);
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("review_keys: the key half is skipped ({why})");
+            f.close();
+            return;
+        }
+    };
+    for w in gtk4::Window::list_toplevels() {
+        if &w != f.w.win.upcast_ref::<gtk4::Widget>() {
+            if let Ok(w) = w.downcast::<gtk4::Window>() {
+                w.destroy();
+            }
+        }
+    }
+    pump_for(400);
+    keys.focus_window_at(300, 300).expect("focus the window");
+    f.w.s.review.root.grab_focus();
+    pump_for(200);
+    let mut press = |key: Key| {
+        keys.tap(key, &[]).expect("inject");
+        pump_for(300);
+    };
+    f.w.s.queue_view.select_row(0);
+    pump_for(100);
+    press(Key::Char('j'));
+    assert_eq!(
+        selected(&f),
+        [1],
+        "J on the Review page steps to the next image"
+    );
+    press(Key::Char('k'));
+    assert_eq!(selected(&f), [0], "K steps back");
+    press(Key::Char(' '));
+    assert!(
+        !f.w.s.queue.borrow().entries()[0].reviewed,
+        "Space unmarks the marked row"
     );
     f.close();
 }

@@ -26,7 +26,7 @@ libadwaita = { version = "0.9", features = ["v1_5"] }
 # its receiver). gtk-rs 0.11 has no `MainContext::channel`.
 async-channel = "2"
 # The one runtime the app owns (`worker::Workers`).
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "sync", "macros"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "sync", "macros", "net"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
