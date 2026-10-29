@@ -314,6 +314,38 @@ const SCENARIOS: &[Scenario] = &[
         "clear_search_cache_asks_then_removes_the_saved_results",
         clear_search_cache_asks_then_removes_the_saved_results,
     ),
+    (
+        "hydrus_send_uploads_the_selected_rows_and_marks_them_sent",
+        hydrus_send_uploads_the_selected_rows_and_marks_them_sent,
+    ),
+    (
+        "hydrus_send_works_over_https_with_the_users_verify_setting",
+        hydrus_send_works_over_https_with_the_users_verify_setting,
+    ),
+    (
+        "hydrus_send_reports_what_failed_in_one_box_and_leaves_the_rows_unsent",
+        hydrus_send_reports_what_failed_in_one_box_and_leaves_the_rows_unsent,
+    ),
+    (
+        "hydrus_actions_ask_for_a_selection_and_a_key_before_anything_goes_out",
+        hydrus_actions_ask_for_a_selection_and_a_key_before_anything_goes_out,
+    ),
+    (
+        "hydrus_delete_defaults_to_cancel_and_only_deletes_after_the_answer",
+        hydrus_delete_defaults_to_cancel_and_only_deletes_after_the_answer,
+    ),
+    (
+        "hydrus_show_opens_a_page_and_explains_a_refusal",
+        hydrus_show_opens_a_page_and_explains_a_refusal,
+    ),
+    (
+        "hydrus_reconcile_confirms_queued_rows_and_says_when_nothing_waits",
+        hydrus_reconcile_confirms_queued_rows_and_says_when_nothing_waits,
+    ),
+    (
+        "hydrus_requests_leave_the_main_loop_running_while_the_server_stalls",
+        hydrus_requests_leave_the_main_loop_running_while_the_server_stalls,
+    ),
 ];
 
 fn main() {
@@ -5444,5 +5476,396 @@ fn the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_col
         px.chunks_exact(4).any(|p| p[3] == 255 && p[0] > 150),
         "the highlighted patch is lifted toward the ramp's light end"
     );
+    f.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Hydrus (6.g, DAN-2220). Every answer comes from a scripted local server; every key is a
+// placeholder.
+// ---------------------------------------------------------------------------------------------
+
+const NEW_HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const HELD_HASH: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+/// Settings that point the window at the scripted Hydrus (`hydrus.api_url`, as the user's own
+/// setting does) and keep it off every other host.
+fn hydrus_tweak(url: &str, key: bool) -> Tweak {
+    let url = url.to_owned();
+    Box::new(move |s: &mut hatate_core::config::Settings| {
+        s.retrieve_tags_from_booru = false;
+        s.drop_dead_matches = false;
+        s.hydrus.api_url = url.clone();
+        if key {
+            s.hydrus.access_key = hatate_core::config::Secret::new(common::hydrus::KEY);
+        }
+        s.hydrus.timeout = 5.0;
+        // The scripted https server's CA is throw-away: the user's own `verify_ssl` setting.
+        s.hydrus.verify_ssl = false;
+        s.remove_after_import = false;
+    })
+}
+
+fn hydrus_fx(
+    app: &adw::Application,
+    url: &str,
+    key: bool,
+    seed: Vec<hatate_core::model::Entry>,
+) -> Fx {
+    Fx::new(
+        app,
+        Opts {
+            seed,
+            tweak: Some(hydrus_tweak(url, key)),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    )
+}
+
+fn row_ids(f: &Fx) -> Vec<hatate_core::queue::EntryId> {
+    let q = f.w.s.queue.borrow();
+    (0..q.len() as i64).filter_map(|r| q.id_at(r)).collect()
+}
+
+/// A Hydrus that takes every upload and answers `file_metadata` from `state`.
+fn accepting_hydrus(
+    state: &'static str,
+) -> impl Fn(&common::hydrus::Recorded) -> common::hydrus::Reply + Send + Sync + 'static {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    move |q| match q.target.split('?').next().unwrap_or("") {
+        "/add_files/add_file" => json_reply(json!({"status": 1, "hash": NEW_HASH, "note": ""})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": HELD_HASH, "file_id": 1, "is_local": state == "present",
+             "is_trashed": state == "trashed", "is_deleted": state == "deleted"}]})),
+        "/manage_pages/new_page" => json_reply(json!({"page_key": "k"})),
+        _ => json_reply(json!({})),
+    }
+}
+
+/// `action_send_to_hydrus`: the selected rows go up with their URL and tags, the Sent column
+/// follows, and the status line counts them.
+fn hydrus_send_uploads_the_selected_rows_and_marks_them_sent(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    f.w.action_send_to_hydrus(&[ids[0], ids[2]]);
+    assert!(pump_until(10_000, || f.say().starts_with("Sent ")));
+    assert_eq!(f.say(), "Sent 2 file(s) to Hydrus");
+    {
+        let q = f.w.s.queue.borrow();
+        for i in [0, 2] {
+            let e = &q.entries()[i];
+            assert!(e.sent_to_hydrus && e.hydrus_import_confirmed, "row {i}");
+            assert_eq!(e.hydrus_hash.as_deref(), Some(NEW_HASH));
+        }
+        assert!(
+            !q.entries()[1].sent_to_hydrus,
+            "the unselected row is untouched"
+        );
+    }
+    let calls = server.calls();
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|c| *c == "POST /add_files/add_file")
+            .count(),
+        2
+    );
+    assert!(calls.iter().any(|c| c == "POST /add_urls/associate_url"));
+    assert!(calls.iter().any(|c| c == "POST /add_tags/add_tags"));
+    assert_eq!(f.script.count_shown(), 0, "nothing to warn about");
+    f.close();
+}
+
+/// The same send over https: the scheme the shipped client uses against a TLS Hydrus.
+fn hydrus_send_works_over_https_with_the_users_verify_setting(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::https(accepting_hydrus("present"));
+    assert!(server.url.starts_with("https://"));
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    f.w.action_send_to_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.say().starts_with("Sent ")));
+    assert_eq!(f.say(), "Sent 1 file(s) to Hydrus");
+    assert!(f.w.s.queue.borrow().entries()[0].sent_to_hydrus);
+    assert!(
+        server
+            .calls()
+            .contains(&"POST /add_files/add_file".to_owned()),
+        "the upload reached the https server"
+    );
+    f.close();
+}
+
+/// A refusal is one box for the batch, with the file and Hydrus's own words in the details, and
+/// the rows stay unsent.
+fn hydrus_send_reports_what_failed_in_one_box_and_leaves_the_rows_unsent(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|_| common::hydrus::Reply::new(500, "boom"));
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    f.w.action_send_to_hydrus(&[ids[0], ids[1]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (Kind::Warning, "Send to Hydrus")
+    );
+    assert_eq!(d.text, "2 file(s) failed to import.");
+    assert!(d.detail.starts_with("a.png: "), "{}", d.detail);
+    assert!(d.detail.contains("\nb.png: "), "{}", d.detail);
+    assert_eq!(f.say(), "Sent 0 file(s) to Hydrus, 2 failed");
+    let q = f.w.s.queue.borrow();
+    assert!(q.entries().iter().all(|e| !e.sent_to_hydrus));
+    assert!(q.entries()[0].error_message.is_some(), "the row says why");
+    drop(q);
+    f.close();
+}
+
+/// The checks every Hydrus action makes first, in Python's order: a selection, then a key. No
+/// request leaves the window for either.
+fn hydrus_actions_ask_for_a_selection_and_a_key_before_anything_goes_out(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let f = hydrus_fx(app, &server.url, false, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    f.w.action_send_to_hydrus(&[]);
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Information,
+            "Send to Hydrus",
+            "Select at least one row."
+        )
+    );
+    f.w.action_send_to_hydrus(&ids[..1]);
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Warning,
+            "Send to Hydrus",
+            "Set your Hydrus access key in Settings first."
+        )
+    );
+    f.w.action_import_url_to_hydrus(&ids[..1]);
+    assert_eq!(f.script.last_shown().title, "Send URL to Hydrus's Importer");
+    f.w.action_download_and_send_to_hydrus(&ids[..1]);
+    assert_eq!(f.script.last_shown().title, "Download + Send to Hydrus");
+    f.w.show_rows_in_hydrus(&ids[..1]);
+    assert_eq!(f.script.last_shown().title, "Show in Hydrus");
+    f.w.delete_rows_from_hydrus(&ids[..1]);
+    assert_eq!(f.script.last_shown().title, "Delete from Hydrus");
+    assert_eq!(f.script.count_shown(), 6);
+    assert!(
+        server.calls().is_empty(),
+        "nothing was sent: {:?}",
+        server.calls()
+    );
+    assert!(!f.w.hydrus_configured());
+    f.close();
+}
+
+/// `_delete_rows_from_hydrus`: Hydrus is asked first, the confirmation's default is Cancel, and
+/// only a Delete answer reaches the delete endpoint and takes the rows out of the list.
+fn hydrus_delete_defaults_to_cancel_and_only_deletes_after_the_answer(app: &adw::Application) {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let deleted = Arc::new(AtomicBool::new(false));
+    let d2 = deleted.clone();
+    let server =
+        common::hydrus::Hydrus::http(move |q| match q.target.split('?').next().unwrap_or("") {
+            "/add_files/delete_files" => {
+                d2.store(true, Ordering::SeqCst);
+                json_reply(json!({}))
+            }
+            "/get_files/file_metadata" => {
+                let gone = d2.load(Ordering::SeqCst);
+                json_reply(json!({"metadata": [
+                    {"hash": HELD_HASH, "file_id": 1, "is_local": !gone,
+                     "is_trashed": gone, "is_deleted": false}]}))
+            }
+            _ => json_reply(json!({})),
+        });
+    let mut seed = review_seed(dir.path());
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    let ids = row_ids(&f);
+
+    // Unscripted: the box is answered by its default button, as Enter would.
+    f.w.delete_rows_from_hydrus(&[ids[0], ids[1]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (Kind::Warning, "Delete from Hydrus")
+    );
+    assert_eq!(d.buttons, Buttons::DeleteCancel);
+    assert_eq!(
+        d.default,
+        Response::Cancel,
+        "destructive: Cancel is the default"
+    );
+    assert!(
+        d.text.starts_with(
+            "Tell Hydrus to delete 1 file(s)?\n\n1 of the selected file(s) aren't in Hydrus"
+        ),
+        "{}",
+        d.text
+    );
+    assert_eq!(d.detail, "a.png");
+    assert!(pump_until(2_000, || f.say() == "Delete cancelled"));
+    assert!(!deleted.load(Ordering::SeqCst));
+    assert_eq!(f.len(), 3);
+
+    f.script.reset();
+    f.script.push(Answer::Msg(Response::Delete));
+    f.w.delete_rows_from_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.len() == 2));
+    assert!(deleted.load(Ordering::SeqCst));
+    assert!(
+        server
+            .calls()
+            .contains(&"POST /add_files/delete_files".to_owned())
+    );
+    let shown = f.script.shown.borrow().clone();
+    assert_eq!(shown.last().unwrap().title, "Delete from Hydrus");
+    assert_eq!(
+        shown.last().unwrap().text,
+        "Hydrus deleted 1 file(s) (now in its trash)."
+    );
+    assert_eq!(f.say(), "Hydrus deleted 1 file(s)");
+    f.close();
+}
+
+/// `_show_rows_in_hydrus` and `_explain_show_in_hydrus_failure`.
+fn hydrus_show_opens_a_page_and_explains_a_refusal(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let mut seed = review_seed(dir.path());
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed.clone());
+    let ids = row_ids(&f);
+    // A row Hydrus does not hold (the window may have hashed it by now): nothing to show.
+    f.w.show_rows_in_hydrus(&[ids[1]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let text = f.script.last_shown().text;
+    assert!(
+        text.starts_with("None of the selected files have a hash yet")
+            || text.starts_with("Hydrus doesn't have any of the selected files"),
+        "{text}"
+    );
+    f.script.reset();
+    f.w.show_rows_in_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.say().starts_with("Showing ")));
+    assert_eq!(f.say(), "Showing 1 file(s) in Hydrus");
+    assert!(
+        server
+            .calls()
+            .contains(&"POST /manage_pages/new_page".to_owned())
+    );
+    f.close();
+
+    let refusing =
+        common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+            "/get_files/file_metadata" => json_reply(json!({"metadata": [
+                {"hash": HELD_HASH, "file_id": 1, "is_local": true,
+                 "is_trashed": false, "is_deleted": false}]})),
+            "/manage_pages/new_page" => Reply::new(403, "no"),
+            _ => json_reply(json!({})),
+        });
+    let f = hydrus_fx(app, &refusing.url, true, seed);
+    let ids = row_ids(&f);
+    f.w.show_rows_in_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (Kind::Warning, "Show in Hydrus")
+    );
+    assert!(
+        d.text.starts_with(
+            "Hydrus refused this because the access key lacks the \"manage pages\" permission."
+        ),
+        "{}",
+        d.text
+    );
+    f.close();
+}
+
+/// `action_reconcile_with_hydrus` and the status it leaves.
+fn hydrus_reconcile_confirms_queued_rows_and_says_when_nothing_waits(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let mut seed = review_seed(dir.path());
+    seed[0].sent_to_hydrus = true;
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    f.w.action_reconcile_with_hydrus();
+    assert!(pump_until(10_000, || f.say() == "confirmed 1 of 1"));
+    assert!(f.w.s.queue.borrow().entries()[0].hydrus_import_confirmed);
+    f.w.action_reconcile_with_hydrus();
+    assert_eq!(
+        f.say(),
+        "Nothing is waiting on Hydrus - every sent file is confirmed"
+    );
+    f.close();
+}
+
+/// Nothing blocks the main loop: the window keeps turning (and handling actions) while Hydrus
+/// holds an upload.
+fn hydrus_requests_leave_the_main_loop_running_while_the_server_stalls(app: &adw::Application) {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| {
+        let r = json_reply(json!({"status": 1, "hash": NEW_HASH}));
+        if q.target.starts_with("/add_files/add_file") {
+            r.delayed(std::time::Duration::from_millis(900))
+        } else {
+            r
+        }
+    });
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    f.w.action_send_to_hydrus(&[ids[0]]);
+    assert!(f.w.s.hydrus_batch_worker.is_running());
+    pump_for(250);
+    let before = ticks.get();
+    // The window still answers an action while the upload waits.
+    f.w.run_review_action("toggle_reviewed");
+    pump_for(200);
+    assert!(
+        ticks.get() >= before + 4,
+        "the main loop kept turning: {before} -> {}",
+        ticks.get()
+    );
+    assert!(
+        f.w.s.hydrus_batch_worker.is_running(),
+        "still waiting on Hydrus"
+    );
+    // A second send is refused politely rather than racing the first.
+    f.w.action_send_to_hydrus(&[ids[2]]);
+    assert!(
+        f.script
+            .last_shown()
+            .text
+            .starts_with("A Hydrus request is already under way.")
+    );
+    assert!(pump_until(10_000, || f.say().starts_with("Sent ")));
+    tick.remove();
     f.close();
 }

@@ -1125,10 +1125,13 @@ dependencies = [
  "hatate-core",
  "image",
  "libadwaita",
+ "rcgen",
  "rusqlite",
+ "rustls",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-rustls",
  "tracing",
  "tracing-subscriber",
 ]

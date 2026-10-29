@@ -6,6 +6,7 @@
 
 #![allow(dead_code)]
 
+pub mod hydrus;
 pub mod search;
 pub mod xtest;
 
