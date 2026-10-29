@@ -301,8 +301,8 @@ impl MainWindow {
             }
         });
         r.matched.root.add_controller(click);
-        // Wipe, the comparison dialog and the shortcuts list are the next step's, and the Hydrus
-        // buttons are 6.g's: present, and insensitive with their reason.
+        // Pop out opens the comparison window (6.f-2). The shortcuts list is not on a ticket yet, and
+        // the Hydrus buttons are 6.g's: present, and insensitive with their reason.
         {
             let w = self.downgrade();
             r.pop_out_btn.connect_clicked(move |_| {

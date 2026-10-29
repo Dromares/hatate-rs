@@ -34,9 +34,9 @@ belongs to it says so.
 
 ## 2. Not in this PR
 
-- **6.f-2 (DAN-2340):** Wipe, Differences, the compare dialog and its zoom/pan widget, the Pop out button, and the
-  error state (design gate 2.8). The Wipe and Differences buttons, Pop out and the pane click are present and
-  insensitive with the tooltip `The comparison window arrives in a later step.`
+- **6.f-2 (DAN-2340), now in `docs/gtk-6f2.md`:** Wipe, Differences, the compare dialog and its zoom/pan widget, the
+  Pop out button, and the error state (design gate 2.8). This PR left the Wipe and Differences buttons and Pop out
+  present and insensitive; they are live from 6.f-2 on.
 - **6.g:** the Hydrus buttons (Send to Hydrus, Send URL, Download and send, Show in Hydrus) are present and
   insensitive with the tooltip `Sending to Hydrus arrives in a later step.`
 - **Not on any ticket as written: the Shortcuts list.** `_show_shortcuts_dialog` (`gui/review_view.py:619`) is not

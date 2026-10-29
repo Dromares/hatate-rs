@@ -676,6 +676,23 @@ mod tests {
     }
 
     #[test]
+    fn an_empty_view_is_safe_to_zoom() {
+        let mut g = WipeGeometry::default();
+        assert!(!g.zoom_in() && !g.zoom_out() && !g.zoom_to_actual());
+        g.set_widget_size(300.0, 300.0);
+        g.drag_to((0.0, 0.0), (50.0, 50.0));
+        assert!(g.target_rect().is_none());
+    }
+
+    #[test]
+    fn one_picture_still_zooms() {
+        // A match with no downloadable file leaves one side empty: the frame is the local picture's.
+        let mut g = geom((400.0, 400.0), (800.0, 600.0));
+        assert!(g.zoom_to_actual());
+        assert_eq!(g.zoom_percent(), 100.0);
+    }
+
+    #[test]
     fn only_the_visible_part_is_drawn() {
         let target = RectF {
             x: -1000.0,
