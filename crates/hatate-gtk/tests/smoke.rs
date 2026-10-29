@@ -72,6 +72,18 @@ const SCENARIOS: &[Scenario] = &[
         review_with_add_tags_open_keeps_the_stated_minimum,
     ),
     (
+        "review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection",
+        review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection,
+    ),
+    (
+        "review_wipe_with_an_unreadable_local_file_shows_the_error_state",
+        review_wipe_with_an_unreadable_local_file_shows_the_error_state,
+    ),
+    (
+        "review_wipe_waits_on_a_stalled_site_without_blocking_the_window",
+        review_wipe_waits_on_a_stalled_site_without_blocking_the_window,
+    ),
+    (
         "the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there",
         the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there,
     ),
@@ -4711,5 +4723,256 @@ fn review_keys_step_mark_skip_and_open_the_match(app: &adw::Application) {
         !f.w.s.queue.borrow().entries()[0].reviewed,
         "Space unmarks the marked row"
     );
+    f.close();
+}
+
+/// A flat grey picture, with a bright patch when `patch` is set.
+fn grey_png(w: u32, h: u32, patch: bool) -> Vec<u8> {
+    let mut img = image::RgbaImage::from_pixel(w, h, image::Rgba([90, 90, 90, 255]));
+    if patch {
+        for y in h / 4..h / 2 {
+            for x in w / 4..w / 2 {
+                img.put_pixel(x, y, image::Rgba([240, 240, 240, 255]));
+            }
+        }
+    }
+    let mut out = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+    out.into_inner()
+}
+
+/// The match's file as a `data:` URI, so the fetch needs no network at all.
+fn data_uri(bytes: &[u8]) -> String {
+    let mut uri = String::from("data:image/png,");
+    for b in bytes {
+        uri.push_str(&format!("%{b:02X}"));
+    }
+    uri
+}
+
+/// The review seed with real local pictures (160 x 120) and, for the rows with a match, a full file
+/// at another size (200 x 150, a patch added) that is already named, so no site is asked.
+fn wipe_seed(dir: &std::path::Path) -> Vec<hatate_core::model::Entry> {
+    let mut seed = review_seed(dir);
+    for e in seed.iter_mut() {
+        std::fs::write(&e.path, grey_png(160, 120, false)).unwrap();
+        for c in e.candidates.iter_mut() {
+            c.direct_file_url = Some(data_uri(&grey_png(200, 150, true)));
+        }
+    }
+    seed
+}
+
+fn wipe_fx(app: &adw::Application, seed: Vec<hatate_core::model::Entry>) -> Fx {
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            tweak: Some(offline()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    already_fetched(&f);
+    f
+}
+
+/// `_on_review_view_changed`, `_ensure_comparison_loaded`, `_apply_wipe_mode`, `_show_differences`,
+/// `refresh_review` (DAN-2340): Wipe fetches the full file once, Differences builds the overlay
+/// off the main loop, and a new selection lets the pair go.
+fn review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection(
+    app: &adw::Application,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = wipe_fx(app, wipe_seed(dir.path()));
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || r.local.shows_picture()));
+    assert_eq!(r.stack.visible_child_name().as_deref(), Some("pair"));
+    assert!(!r.slider_row.is_visible() && !r.zoom_tools.is_visible());
+    assert!(r.view_buttons["wipe"].is_sensitive() && r.view_buttons["diff"].is_sensitive());
+
+    // Wipe: the page switches at once and says it is loading; the pair arrives off the main loop.
+    r.view_buttons["wipe"].set_active(true);
+    assert_eq!(r.stack.visible_child_name().as_deref(), Some("comparison"));
+    assert!(r.slider_row.is_visible() && r.zoom_tools.is_visible() && r.note.is_visible());
+    assert!(
+        pump_until(10_000, || r.wipe.has_pictures() == (true, true)),
+        "both pictures arrive"
+    );
+    assert_eq!(r.note.text(), hatate_gtk::review_view::WIPE_HINT);
+    assert!(!r.wipe.showing_differences());
+    pump_for(50);
+    assert!(
+        r.zoom_label.text().ends_with('%') && r.wipe.zoom_percent() > 0.0,
+        "the zoom is reported: {:?}",
+        r.zoom_label.text()
+    );
+
+    // The slider moves the wipe.
+    r.wipe_slider.set_value(25.0);
+    assert!((r.wipe.position() - 0.25).abs() < 1e-9);
+
+    // Zoom in, then fit.
+    let fit = r.wipe.zoom_percent();
+    r.wipe.zoom_in();
+    assert!((r.wipe.zoom_percent() / fit - 1.25).abs() < 1e-9);
+    r.wipe.zoom_to_fit();
+    assert!((r.wipe.zoom_percent() - fit).abs() < 1e-9);
+
+    // Differences: the overlay is built on a worker; the note carries the verdict.
+    r.view_buttons["diff"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.showing_differences()));
+    let note = r.note.text().to_string();
+    assert!(
+        note.contains("drag the wipe to sweep the highlights across both"),
+        "{note}"
+    );
+    assert!(
+        note.starts_with(|c: char| c.is_ascii_digit()),
+        "the verdict leads: {note}"
+    );
+    assert!(
+        (r.wipe.position() - 0.25).abs() < 1e-9,
+        "the slider's place is kept"
+    );
+
+    // Back to Wipe: the highlights go, the how-to comes back.
+    r.view_buttons["wipe"].set_active(true);
+    assert!(!r.wipe.showing_differences());
+    assert_eq!(r.note.text(), hatate_gtk::review_view::WIPE_HINT);
+
+    // A new selection lets the pair go and, with the comparison showing, fetches the new one.
+    f.w.s.queue_view.select_row(2);
+    assert!(pump_until(10_000, || {
+        f.w.current_review_key() == f.w.s.comparison.borrow().loaded_for.clone()
+    }));
+    assert_eq!(r.wipe.has_pictures(), (true, true));
+
+    // A row with no match: Wipe has only the local picture, Differences is off.
+    f.w.s.queue_view.select_row(1);
+    assert!(pump_until(10_000, || {
+        f.w.current_review_key() == f.w.s.comparison.borrow().loaded_for.clone()
+    }));
+    assert_eq!(r.wipe.has_pictures(), (true, false));
+    assert!(!r.view_buttons["diff"].is_sensitive());
+    assert!(r.note.text().contains("No match image could be fetched."));
+
+    // Side by side again hides the controls.
+    r.view_buttons["pair"].set_active(true);
+    assert_eq!(r.stack.visible_child_name().as_deref(), Some("pair"));
+    assert!(!r.slider_row.is_visible());
+    f.close();
+}
+
+/// Design gate 2.8: a local file that cannot be opened says what to do in plain words, keeps the OS
+/// text in the detail line, and the slider and the hint go insensitive.
+fn review_wipe_with_an_unreadable_local_file_shows_the_error_state(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = wipe_seed(dir.path());
+    let missing = seed[0].path.clone();
+    std::fs::remove_file(&missing).unwrap();
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.error_detail.is_visible()));
+    let note = r.note.text().to_string();
+    assert!(note.contains("could not be opened"), "{note}");
+    assert!(
+        !note.contains(&missing) && !note.contains("os error"),
+        "the message leaks neither the path nor the OS text: {note}"
+    );
+    assert!(
+        r.error_detail.text().contains(&missing) && r.error_detail.text().contains("os error"),
+        "the detail line has them: {}",
+        r.error_detail.text()
+    );
+    assert!(!r.wipe_slider.is_sensitive() && !r.note.is_sensitive());
+    assert!(!r.view_buttons["diff"].is_sensitive());
+    assert_eq!(r.wipe.has_pictures(), (false, true));
+
+    // Selecting a row with a readable file leaves the error state.
+    f.w.s.queue_view.select_row(2);
+    assert!(pump_until(10_000, || !r.error_detail.is_visible()
+        && r.wipe.has_pictures() == (true, true)));
+    assert!(r.wipe_slider.is_sensitive() && r.note.is_sensitive());
+    f.close();
+}
+
+/// A site that accepts the connection and never answers: the window keeps handling actions while
+/// the full-resolution fetch waits, and a new selection lets the stale fetch go.
+fn review_wipe_waits_on_a_stalled_site_without_blocking_the_window(app: &adw::Application) {
+    use std::io::Read;
+    use std::net::TcpListener;
+    let dir = tempfile::tempdir().unwrap();
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = server.local_addr().unwrap();
+    let held = std::thread::spawn(move || {
+        let (mut conn, _) = server.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = conn.read(&mut buf);
+        std::thread::sleep(std::time::Duration::from_millis(900));
+    });
+    let mut seed = wipe_seed(dir.path());
+    seed[0].candidates[0].direct_file_url = Some("http://www.deviantart.com/full-1.png".to_owned());
+    let f = Fx::new_with(
+        app,
+        Opts {
+            seed,
+            tweak: Some(offline()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+        |env| {
+            let mut net = hatate_core::net::NetConfig::default();
+            net.host_overrides
+                .push(("www.deviantart.com".to_owned(), addr));
+            let paths = env.paths.clone();
+            let (backend, _) = common::search::Scripted::with_net(&paths, net);
+            env.search = Some(backend);
+        },
+    );
+    already_fetched(&f);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    r.view_buttons["wipe"].set_active(true);
+    assert_eq!(
+        r.note.text(),
+        "Loading the match at full resolution\u{2026}"
+    );
+    assert!(f.w.s.comparison_worker.is_running());
+    // The first frame lays the fonts out; the property is that the loop turns while the site waits.
+    pump_for(250);
+    let before = ticks.get();
+    f.w.run_review_action("toggle_reviewed");
+    assert!(f.w.s.queue.borrow().entries()[0].reviewed);
+    pump_for(200);
+    assert!(
+        ticks.get() >= before + 4,
+        "the main loop kept turning: {before} -> {}",
+        ticks.get()
+    );
+    assert!(
+        f.w.s.comparison_worker.is_running(),
+        "still waiting on the site"
+    );
+    // The site lets go; the fetch ends with no picture for the match, and the note says so.
+    assert!(pump_until(10_000, || r
+        .note
+        .text()
+        .contains("No match image could be fetched.")));
+    assert_eq!(r.wipe.has_pictures(), (true, false));
+    tick.remove();
+    held.join().unwrap();
     f.close();
 }

@@ -381,6 +381,7 @@ impl ReviewPage {
         zoom_tools.add_css_class("zoom-tools");
         zoom_tools.set_halign(gtk::Align::End);
         zoom_tools.set_valign(gtk::Align::Start);
+        zoom_tools.set_visible(false);
         zoom_tools.set_margin_top(8);
         zoom_tools.set_margin_end(8);
         for (glyph, tip, op) in [
