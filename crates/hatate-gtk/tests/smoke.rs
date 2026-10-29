@@ -80,6 +80,10 @@ const SCENARIOS: &[Scenario] = &[
         review_wipe_with_an_unreadable_local_file_shows_the_error_state,
     ),
     (
+        "review_wipe_error_state_returns_to_fit_on_re_entering_wipe",
+        review_wipe_error_state_returns_to_fit_on_re_entering_wipe,
+    ),
+    (
         "review_wipe_waits_on_a_stalled_site_without_blocking_the_window",
         review_wipe_waits_on_a_stalled_site_without_blocking_the_window,
     ),
@@ -4927,6 +4931,34 @@ fn review_wipe_with_an_unreadable_local_file_shows_the_error_state(app: &adw::Ap
     assert!(pump_until(10_000, || !r.error_detail.is_visible()
         && r.wipe.has_pictures() == (true, true)));
     assert!(r.wipe_slider.is_sensitive() && r.note.is_sensitive());
+    f.close();
+}
+
+/// `_apply_wipe_mode` runs `clear_difference_view()` -> `zoom_to_fit()` for every non-diff view, so
+/// Python goes back to fit on re-entering Wipe even when the local file cannot be opened (DAN-2380,
+/// seed 6 compare-021). The error state must not skip it.
+fn review_wipe_error_state_returns_to_fit_on_re_entering_wipe(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = wipe_seed(dir.path());
+    std::fs::remove_file(&seed[0].path).unwrap();
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.error_detail.is_visible()
+        && r.wipe.zoom_percent() > 0.0));
+    assert_eq!(r.wipe.zoom_factor(), 1.0);
+
+    r.wipe.zoom_out();
+    assert!(r.wipe.zoom_factor() < 1.0, "zoomed out in the error state");
+    r.view_buttons["pair"].set_active(true);
+    r.view_buttons["wipe"].set_active(true);
+    assert_eq!(r.wipe.zoom_factor(), 1.0, "back at fit on re-entering Wipe");
+    // Still the error state: the note, the detail line and the insensitive slider stay.
+    assert!(r.error_detail.is_visible());
+    assert!(r.note.text().contains("could not be opened"), "{}", r.note.text());
+    assert!(!r.wipe_slider.is_sensitive() && !r.note.is_sensitive());
     f.close();
 }
 

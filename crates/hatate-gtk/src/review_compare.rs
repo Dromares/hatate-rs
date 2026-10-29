@@ -355,6 +355,8 @@ impl MainWindow {
     fn apply_wipe_mode(&self, key: &str) {
         let r = &self.s.review;
         if self.s.comparison.borrow().error.is_some() {
+            // Python's `clear_difference_view` -> `zoom_to_fit` runs for every non-diff view.
+            r.wipe.clear_difference_view();
             self.show_error_state();
             return;
         }
