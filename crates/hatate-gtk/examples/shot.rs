@@ -189,6 +189,7 @@ fn main() -> glib::ExitCode {
         window.win.set_default_size(w, h);
         prepare(window, &state);
         let win = window.win.clone();
+        let main_win = window.win.clone();
         let frames = Rc::new(Cell::new(0u32));
         let out = out2.clone();
         let state = state.clone();
@@ -219,6 +220,17 @@ fn main() -> glib::ExitCode {
             });
             let main_app = win.application();
             let win: &gtk4::Window = logs_window.as_ref().unwrap_or(win.upcast_ref());
+            if state.starts_with("review") {
+                // What sets the window's height, for a toolkit whose numbers differ from the author's.
+                let content =
+                    libadwaita::prelude::AdwApplicationWindowExt::content(&main_win).unwrap();
+                println!(
+                    "TALLEST {state} win={}x{} {}",
+                    win.width(),
+                    win.height(),
+                    tallest_chain(&content, win.width())
+                );
+            }
             let renderer = win.native().and_then(|n| n.renderer()).expect("renderer");
             let tex = texture_of(win.upcast_ref(), &renderer).expect("snapshot");
             tex.save_to_png(&out).expect("png");
@@ -879,6 +891,39 @@ fn first_button(w: &gtk4::Widget) -> Option<gtk4::Button> {
 }
 
 /// The first widget under `w` whose type is named `name`.
+/// The chain of widgets that sets a height at `width`: each step is the child asking the most.
+fn tallest_chain(root: &gtk4::Widget, width: i32) -> String {
+    let mut out = Vec::new();
+    let mut w = root.clone();
+    for _ in 0..40 {
+        let min = w.measure(gtk4::Orientation::Vertical, width).0;
+        let mut kids = Vec::new();
+        let mut best: Option<(i32, gtk4::Widget)> = None;
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            if child.is_visible() {
+                let m = child.measure(gtk4::Orientation::Vertical, width).0;
+                kids.push(m.to_string());
+                if best.as_ref().is_none_or(|(b, _)| m > *b) {
+                    best = Some((m, child.clone()));
+                }
+            }
+            c = child.next_sibling();
+        }
+        out.push(format!(
+            "{}[{}]={min} ({})",
+            w.type_().name(),
+            w.css_name(),
+            kids.join("+")
+        ));
+        match best {
+            Some((_, b)) => w = b,
+            None => break,
+        }
+    }
+    out.join(" > ")
+}
+
 fn find_type(w: &gtk4::Widget, name: &str) -> Option<gtk4::Widget> {
     if w.type_().name() == name {
         return Some(w.clone());
