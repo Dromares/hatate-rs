@@ -64,6 +64,10 @@ const SCENARIOS: &[Scenario] = &[
         no_clipping_wrapper_on_the_review_page_is_a_tab_stop,
     ),
     (
+        "tab_walks_the_review_page_from_the_header_to_the_footer",
+        tab_walks_the_review_page_from_the_header_to_the_footer,
+    ),
+    (
         "review_with_a_not_found_row_selected_keeps_the_stated_minimum",
         review_with_a_not_found_row_selected_keeps_the_stated_minimum,
     ),
@@ -4488,6 +4492,84 @@ fn no_clipping_wrapper_on_the_review_page_is_a_tab_stop(app: &adw::Application) 
             );
         }
     }
+    f.close();
+}
+
+/// DAN-2384: Tab leaves the header. A `GtkScrolledWindow` that is not focusable still answers
+/// `child_focus` with `true` without moving focus, so the clipping wrappers of DAN-2366 stopped the
+/// walk at the Show in Queue button, and nothing after it was reachable by Tab. Real key events,
+/// as `review_keys` sends them.
+fn tab_walks_the_review_page_from_the_header_to_the_footer(app: &adw::Application) {
+    use common::xtest::{Key, Xtest};
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    f.w.win.set_default_size(1100, 800);
+    pump_for(300);
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("tab_walk: skipped ({why})");
+            f.close();
+            return;
+        }
+    };
+    for w in gtk4::Window::list_toplevels() {
+        if &w != f.w.win.upcast_ref::<gtk4::Widget>() {
+            if let Ok(w) = w.downcast::<gtk4::Window>() {
+                w.destroy();
+            }
+        }
+    }
+    pump_for(400);
+    keys.focus_window_at(300, 300).expect("focus the window");
+    let r = f.w.s.review.clone();
+    let win = f.w.win.clone().upcast::<gtk4::Window>();
+    let focus = || gtk4::prelude::GtkWindowExt::focus(&win);
+    let named = |w: &Option<gtk4::Widget>| match w {
+        Some(w) => format!("{} {:?}", w.type_().name(), w.tooltip_text()),
+        None => "nothing".to_owned(),
+    };
+    r.view_buttons["pair"].grab_focus();
+    pump_for(300);
+    let mut stops: Vec<gtk4::Widget> = focus().into_iter().collect();
+    let footer: gtk4::Widget = r.next_btn.button.clone().upcast();
+    let toolbar: gtk4::Widget = r.show_in_queue_btn.clone().upcast();
+    for press in 1..=30 {
+        keys.tap(Key::Tab, &[]).expect("inject");
+        pump_for(250);
+        let now = focus();
+        assert!(
+            now.as_ref() != stops.last(),
+            "Tab {press} stays on {}; the walk so far: {:?}",
+            named(&now),
+            stops.iter().map(|w| w.tooltip_text()).collect::<Vec<_>>()
+        );
+        let Some(now) = now else {
+            panic!("Tab {press} leaves focus on nothing");
+        };
+        stops.push(now.clone());
+        if now == footer {
+            break;
+        }
+    }
+    let at = |w: &gtk4::Widget| stops.iter().position(|s| s == w);
+    assert!(
+        at(&toolbar).is_some(),
+        "Tab never reached Show in Queue: {:?}",
+        stops.iter().map(|w| w.tooltip_text()).collect::<Vec<_>>()
+    );
+    assert!(
+        at(&footer) > at(&toolbar),
+        "Tab never got from Show in Queue to the Next button: {:?}",
+        stops.iter().map(|w| w.tooltip_text()).collect::<Vec<_>>()
+    );
     f.close();
 }
 
