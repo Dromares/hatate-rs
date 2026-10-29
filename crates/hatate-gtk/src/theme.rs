@@ -261,6 +261,10 @@ dropdown.candidate-picker > button:hover { border-color: @ink_58; }
 scale.wipe-slider trough { min-height: 1px; background: @ink_46; border-radius: 0; }
 scale.wipe-slider slider { min-width: 14px; min-height: 14px; background: @stamp_bg; border: 1px solid @ink;
   border-radius: 0; box-shadow: none; }
+scale.wipe-slider highlight { background: transparent; }
+window.compare-window radio { background: transparent; border: 1px solid @ink_46; border-radius: 50%;
+  box-shadow: none; color: @stamp_fg; }
+window.compare-window radio:checked { background: @stamp_bg; border-color: @stamp_bg; color: @stamp_fg; }
 .summary-line { color: @ink; }
 .summary-good { color: @ink_65; }
 .summary-strong { font-weight: 700; }

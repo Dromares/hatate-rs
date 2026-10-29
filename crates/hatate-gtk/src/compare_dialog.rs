@@ -115,6 +115,7 @@ impl CompareDialog {
             .modal(true)
             .default_width(DEFAULT_SIZE.0)
             .default_height(DEFAULT_SIZE.1)
+            .css_classes(["compare-window"])
             .build();
         let column = gtk::Box::new(gtk::Orientation::Vertical, widgets::PAGE_SPACING);
         let (l, t, r, b) = widgets::PAGE_MARGINS;
