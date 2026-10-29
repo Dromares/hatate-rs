@@ -545,6 +545,7 @@ fn settle(w: &MainWindow) {
     pump_for(30);
     pump_until(20_000, || {
         !w.s.file_hash_worker.is_running()
+            && !w.s.candidate_worker.is_running()
             && !w.s.missing_file_worker.is_running()
             && !w.s.hydrus_lookup_worker.is_running()
             && !w.s.hydrus_reconcile_worker.is_running()
