@@ -84,6 +84,14 @@ const SCENARIOS: &[Scenario] = &[
         review_wipe_waits_on_a_stalled_site_without_blocking_the_window,
     ),
     (
+        "review_zoom_readout_is_blank_while_nothing_is_loaded",
+        review_zoom_readout_is_blank_while_nothing_is_loaded,
+    ),
+    (
+        "review_differences_button_is_live_again_after_an_unopenable_row",
+        review_differences_button_is_live_again_after_an_unopenable_row,
+    ),
+    (
         "review_comparison_states_keep_the_stated_minimum",
         review_comparison_states_keep_the_stated_minimum,
     ),
@@ -4915,6 +4923,58 @@ fn review_wipe_with_an_unreadable_local_file_shows_the_error_state(app: &adw::Ap
     assert!(pump_until(10_000, || !r.error_detail.is_visible()
         && r.wipe.has_pictures() == (true, true)));
     assert!(r.wipe_slider.is_sensitive() && r.note.is_sensitive());
+    f.close();
+}
+
+/// D-C (docs/gtk-6f2.md): Python prints `0%` in the review zoom readout for an empty frame; here it
+/// is blank. The readout is visible only in the "Loading the match..." moment, which is when the
+/// frame is empty, so this is where the difference could be seen.
+fn review_zoom_readout_is_blank_while_nothing_is_loaded(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = wipe_fx(app, wipe_seed(dir.path()));
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.has_pictures() == (true, true)));
+    pump_for(50);
+    assert!(
+        r.zoom_label.text().ends_with('%'),
+        "{:?}",
+        r.zoom_label.text()
+    );
+
+    // A new selection lets the pair go and fetches the next: until it arrives the frame is empty,
+    // the readout is on screen, and it says nothing.
+    f.w.s.queue_view.select_row(2);
+    assert_eq!(r.wipe.has_pictures(), (false, false));
+    assert!(r.zoom_tools.is_visible());
+    assert_eq!(r.zoom_label.text(), "");
+    assert!(pump_until(10_000, || r.wipe.has_pictures() == (true, true)));
+    f.close();
+}
+
+/// D-E (docs/gtk-6f2.md): after an unopenable row, selecting a readable one on Side by side makes
+/// the Differences button live again at once. Python leaves it disabled until the next comparison
+/// load, so its button is dead until Wipe has been clicked once.
+fn review_differences_button_is_live_again_after_an_unopenable_row(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = wipe_seed(dir.path());
+    std::fs::remove_file(&seed[0].path).unwrap();
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.error_detail.is_visible()));
+    assert!(!r.view_buttons["diff"].is_sensitive());
+
+    // Back to Side by side and on to a readable row, with no Wipe click.
+    r.view_buttons["pair"].set_active(true);
+    f.w.s.queue_view.select_row(2);
+    assert!(pump_until(5_000, || r.local.shows_picture()));
+    assert_eq!(r.stack.visible_child_name().as_deref(), Some("pair"));
+    assert!(r.view_buttons["diff"].is_sensitive());
     f.close();
 }
 
