@@ -110,7 +110,9 @@ Two more things were wrong, found in the design read and fixed in the same PR:
    and wrapped every key under its label, so the rail's button grid asked 4 x 50 where it asks 32 + 32 + 50 + 32 once
    laid out. `key_wraps(beside, width)` is now false at width 0. Guard:
    `review_view::tests::a_row_with_no_width_yet_does_not_wrap_its_key` (red without the `width > 0`), and the hosted
-   `shot` step reading 1000 x 780 for both states. The two smoke scenarios
+   `shot` step reading 1000 x 780 for both states. That test pins the helper, not its call site: putting the call
+   `let wrapped = key_wraps(beside, width);` back to `beside > width` leaves it, and both `…keeps_the_stated_minimum`
+   scenarios, green (DAN-2366 mutation M-B); only the hosted `shot` step reads that, and it asserts nothing. The two smoke scenarios
    `review_with_a_not_found_row_selected_keeps_the_stated_minimum` and `review_with_add_tags_open_keeps_the_stated_minimum`
    assert the same outcome, but they resize a window that is already shown, so they pass before the fix as well: they are
    outcome guards, not the regression test. The Add tags dialog itself asks nothing extra (its own minimum is 0).
@@ -125,7 +127,15 @@ Two more things were wrong, found in the design read and fixed in the same PR:
    `'Similarity' is drawn cut beside the tools (76 px given)`): `smoke::the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there`,
    which asserts `layout().is_ellipsized()` is false on the title and both readout words while the readout is beside the
    tools. `smoke::the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip` reads the line under the header
-   (words not ellipsized, `▲ 2× larger` chip shown); it was not shown red against this change.
+   (words not ellipsized, `▲ 2× larger` chip shown); it goes red when the readout's parts are put back on `ellipsize End`
+   with no `give_way`: `smoke.rs:4423` at `0f8db17` (the `ellipsize()` assertion), `'Similarity' may be cut on the line under the header` (DAN-2366 mutation M-D).
+   The scrolled windows are not Tab stops (`give_way` calls `set_focusable(false)`; GTK4 scrolled windows take the focus
+   by default, so the first Tab on Review had landed on the static title, DAN-2366). Guard:
+   `smoke::no_clipping_wrapper_on_the_review_page_is_a_tab_stop`, with a match selected so the readout's wrapper exists:
+   it reads `is_focusable` on every scrolled window and viewport around the title and around the readout's label (the
+   Tab chain keys on it; `child_focus` in a headless window stalls after the first stop, so the test does not walk).
+   Red with `set_focusable(false)` removed from `give_way`: `GtkScrolledWindow around the title is a Tab stop`; red
+   with it left only on the title's wrapper: `GtkScrolledWindow around the readout is a Tab stop`.
    The chip was empty by data: the shot fixture gave the local file no size, so the comparison saw 0 x 0; it does now
    (640 x 480 against 1280 x 960 reads `▲ 2× larger`).
 
