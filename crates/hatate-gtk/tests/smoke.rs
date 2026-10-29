@@ -60,6 +60,10 @@ const SCENARIOS: &[Scenario] = &[
         the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip,
     ),
     (
+        "no_clipping_wrapper_on_the_review_page_is_a_tab_stop",
+        no_clipping_wrapper_on_the_review_page_is_a_tab_stop,
+    ),
+    (
         "review_with_a_not_found_row_selected_keeps_the_stated_minimum",
         review_with_a_not_found_row_selected_keeps_the_stated_minimum,
     ),
@@ -4432,6 +4436,57 @@ fn the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip(app: &
             l.text(),
             l.width()
         );
+    }
+    f.close();
+}
+
+/// DAN-2366: `give_way` wraps the Review title and the readout's parts in a `ScrolledWindow` that
+/// only clips, and GTK4 scrolled windows take the Tab focus by default, so the first Tab on Review
+/// landed on the static "01 // Compare" title. With a match selected the readout (and its wrapper)
+/// is shown; the tag list's scroller is the one scrolled window that may be a Tab stop. The stops
+/// are read off `is_focusable` (what the Tab chain keys on): `child_focus` in a headless window
+/// stalls after the first stop, so a Tab walk here would not reach the wrappers.
+fn no_clipping_wrapper_on_the_review_page_is_a_tab_stop(app: &adw::Application) {
+    fn wrappers(w: &gtk4::Widget, out: &mut Vec<gtk4::Widget>) {
+        if w.is::<gtk4::ScrolledWindow>() || w.is::<gtk4::Viewport>() {
+            out.push(w.clone());
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            wrappers(&child, out);
+            c = child.next_sibling();
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    pump_for(300);
+    let r = f.w.s.review.clone();
+    assert!(
+        r.readout_root.is_visible() && r.readout_label.is_mapped(),
+        "the readout is shown"
+    );
+    let mut found = Vec::new();
+    wrappers(r.root.upcast_ref(), &mut found);
+    let title: Vec<_> = found.iter().filter(|w| r.title.is_ancestor(*w)).collect();
+    let readout: Vec<_> = found
+        .iter()
+        .filter(|w| r.readout_label.is_ancestor(*w))
+        .collect();
+    assert!(
+        !title.is_empty() && !readout.is_empty(),
+        "the title and the readout both sit in a clipping wrapper"
+    );
+    for (what, wrappers) in [("title", title), ("readout", readout)] {
+        for w in wrappers {
+            assert!(
+                !w.is_focusable(),
+                "{} around the {what} is a Tab stop",
+                w.type_().name()
+            );
+        }
     }
     f.close();
 }
