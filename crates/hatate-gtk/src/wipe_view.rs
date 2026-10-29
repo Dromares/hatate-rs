@@ -13,8 +13,10 @@ use hatate_core::compare_view::{RectF, Rgba, WipeGeometry, visible_part};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// `WipeView.setMinimumSize(420, 420)`.
-pub const WIPE_MIN: i32 = 420;
+/// `WipeView.setMinimumSize(420, 420)` asks 886 px of height of the Review page, past its stated
+/// minimum (1010 x 790, DAN-2025 line 2.5): the floor is the Side by side panes' (280 x 260), so the
+/// stack asks no more for Wipe than it does for the pair.
+pub const WIPE_MIN: (i32, i32) = (280, 260);
 
 /// What the frame says where the match has no picture.
 pub const MATCH_MISSING: &str = "The match's picture\ncould not be fetched";
@@ -87,7 +89,7 @@ impl WipeView {
         area.add_css_class("wipe-view");
         area.set_hexpand(true);
         area.set_vexpand(true);
-        area.set_size_request(WIPE_MIN, WIPE_MIN);
+        area.set_size_request(WIPE_MIN.0, WIPE_MIN.1);
         area.set_focusable(true);
         area.set_cursor_from_name(Some("grab"));
         area.set_tooltip_text(Some(
@@ -180,6 +182,27 @@ impl WipeView {
 
     pub fn zoom_percent(&self) -> f64 {
         self.state.borrow().geom.zoom_percent()
+    }
+
+    /// The widget as it paints now, at its allocated size: cairo's premultiplied ARGB32 bytes
+    /// (B, G, R, A in memory) and the size. What a test samples, and what a shot would save.
+    pub fn render(&self) -> Option<(Vec<u8>, i32, i32)> {
+        let (w, h) = (self.area.width(), self.area.height());
+        if w <= 0 || h <= 0 {
+            return None;
+        }
+        let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, w, h).ok()?;
+        {
+            let cr = cairo::Context::new(&surface).ok()?;
+            self.paint(&self.area, &cr, f64::from(w), f64::from(h));
+        }
+        let stride = surface.stride() as usize;
+        let data = surface.data().ok()?;
+        let mut out = Vec::with_capacity((w * h * 4) as usize);
+        for row in 0..h as usize {
+            out.extend_from_slice(&data[row * stride..row * stride + w as usize * 4]);
+        }
+        Some((out, w, h))
     }
 
     /// Whether a picture of the pair is on show (a test reads it).

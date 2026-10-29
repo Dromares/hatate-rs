@@ -485,12 +485,11 @@ fn summarize(
     recorded: (Option<i64>, Option<i64>),
 ) -> Vec<SummaryLine> {
     let c = loaded.candidate.as_ref();
-    let size_of =
-        |p: Option<&hatate_core::compare_view::Rgba>, fallback: (Option<i64>, Option<i64>)| match p
-        {
-            Some(p) => (i64::from(p.width), i64::from(p.height)),
-            None => (fallback.0.unwrap_or(0), fallback.1.unwrap_or(0)),
-        };
+    let size_of = |p: Option<&hatate_core::compare_view::Rgba>,
+                   fallback: (Option<i64>, Option<i64>)| match p {
+        Some(p) => (i64::from(p.width), i64::from(p.height)),
+        None => (fallback.0.unwrap_or(0), fallback.1.unwrap_or(0)),
+    };
     let distance = loaded.matched_bytes.as_ref().and_then(|bytes| {
         let a = dhash(Source::Path(std::path::Path::new(path)), 8)
             .ok()

@@ -84,6 +84,18 @@ const SCENARIOS: &[Scenario] = &[
         review_wipe_waits_on_a_stalled_site_without_blocking_the_window,
     ),
     (
+        "compare_dialog_loads_the_pair_and_switches_modes",
+        compare_dialog_loads_the_pair_and_switches_modes,
+    ),
+    (
+        "the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours",
+        the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours,
+    ),
+    (
+        "compare_dialog_answers_in_a_box_when_there_is_nothing_to_compare",
+        compare_dialog_answers_in_a_box_when_there_is_nothing_to_compare,
+    ),
+    (
         "the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there",
         the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there,
     ),
@@ -4974,5 +4986,174 @@ fn review_wipe_waits_on_a_stalled_site_without_blocking_the_window(app: &adw::Ap
     assert_eq!(r.wipe.has_pictures(), (true, false));
     tick.remove();
     held.join().unwrap();
+    f.close();
+}
+
+/// `CompareDialog`: opens on "Loading…", then the summary, the pair and the four modes
+/// (`_apply_mode`), with Differences built once and off the main loop.
+fn compare_dialog_loads_the_pair_and_switches_modes(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = wipe_fx(app, wipe_seed(dir.path()));
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    let id = f.w.current_id().unwrap();
+    f.w.open_compare_dialog(id);
+    let dialog =
+        f.w.s
+            .compare_open
+            .borrow()
+            .clone()
+            .expect("the dialog is open");
+    assert_eq!(dialog.window.title().as_deref(), Some("Compare - a.png"));
+    assert!(pump_until(10_000, || dialog.view.has_pictures() == (true, true)));
+    let lines = dialog.summary_text();
+    assert!(lines[0].starts_with("Local: 160\u{d7}120"), "{lines:?}");
+    assert!(lines[1].starts_with("Match: 200\u{d7}150"), "{lines:?}");
+    assert!(
+        lines.iter().any(|l| l.starts_with("The match is ")),
+        "the size verdict: {lines:?}"
+    );
+    assert!(dialog.diff_radio.is_sensitive() && dialog.wipe_radio.is_active());
+    assert_eq!(dialog.slider_right_label.text(), "Match");
+    assert!(!dialog.diff_note.is_visible());
+
+    // Local only and Match only park the wipe at an end and lock the slider.
+    dialog.local_radio.set_active(true);
+    assert!(!dialog.slider.is_sensitive() && (dialog.view.position() - 1.0).abs() < 1e-9);
+    dialog.matched_radio.set_active(true);
+    assert!(!dialog.slider.is_sensitive() && dialog.view.position().abs() < 1e-9);
+    dialog.wipe_radio.set_active(true);
+    dialog.slider.set_value(30.0);
+    assert!(dialog.slider.is_sensitive() && (dialog.view.position() - 0.3).abs() < 1e-9);
+
+    // Differences: the slider's right-hand name changes with it; the overlay is built on a worker.
+    dialog.diff_radio.set_active(true);
+    assert_eq!(dialog.slider_right_label.text(), "Differences");
+    assert!(pump_until(10_000, || dialog.view.showing_differences()));
+    assert!(dialog.diff_note.is_visible());
+    assert!(
+        dialog
+            .diff_note
+            .text()
+            .contains("drag the wipe to sweep the highlights across both")
+    );
+    dialog.wipe_radio.set_active(true);
+    assert!(!dialog.view.showing_differences() && !dialog.diff_note.is_visible());
+
+    dialog.window.close();
+    assert!(
+        f.w.s.compare_open.borrow().is_none(),
+        "closing lets go of it"
+    );
+    f.close();
+}
+
+/// `_open_compare_dialog`'s two guards: no match, and a local file that is gone.
+fn compare_dialog_answers_in_a_box_when_there_is_nothing_to_compare(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = wipe_seed(dir.path());
+    let gone = seed[2].path.clone();
+    std::fs::remove_file(&gone).unwrap();
+    let f = wipe_fx(app, seed);
+    f.w.set_mode("review");
+
+    // Row 1 has no match.
+    f.w.s.queue_view.select_row(1);
+    let b = f.w.current_id().unwrap();
+    f.w.open_compare_dialog(b);
+    assert!(pump_until(5_000, || f.script.count_shown() == 1));
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.title.as_str(), shown.text.as_str()),
+        ("Compare", "This image has no match to compare against yet.")
+    );
+    assert!(f.w.s.compare_open.borrow().is_none());
+
+    // Row 2's file is gone.
+    f.w.s.queue_view.select_row(2);
+    let c = f.w.current_id().unwrap();
+    f.w.open_compare_dialog(c);
+    assert!(pump_until(5_000, || f.script.count_shown() == 2));
+    assert_eq!(
+        f.script.last_shown().text,
+        "The local file is no longer on disk, so there's nothing to compare the match against."
+    );
+    assert!(f.w.s.compare_open.borrow().is_none());
+
+    // The Compare key on the Review page asks the same way.
+    f.w.run_review_action("compare");
+    assert!(pump_until(5_000, || f.script.count_shown() == 3));
+    f.close();
+}
+
+/// The largest spread between a pixel's red, green and blue over a rendered pane (cairo's B, G, R, A).
+fn max_channel_spread(bgra: &[u8]) -> u8 {
+    bgra.chunks_exact(4)
+        .map(|p| p[0].max(p[1]).max(p[2]) - p[0].min(p[1]).min(p[2]))
+        .max()
+        .unwrap_or(0)
+}
+
+/// Design gate 2.2: the Differences pane is an R=G=B ramp, whatever colour the pictures are. The
+/// Wipe pane shows them in colour, which is the control that proves the sampler can see chroma.
+fn the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours(
+    app: &adw::Application,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut seed = wipe_seed(dir.path());
+    // Coloured pictures: a red local file, a blue-ish match with a bright patch.
+    let tint = |w: u32, h: u32, rgb: [u8; 3], patch: bool| {
+        let mut img =
+            image::RgbaImage::from_pixel(w, h, image::Rgba([rgb[0], rgb[1], rgb[2], 255]));
+        if patch {
+            for y in h / 4..h / 2 {
+                for x in w / 4..w / 2 {
+                    img.put_pixel(x, y, image::Rgba([250, 250, 40, 255]));
+                }
+            }
+        }
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    };
+    std::fs::write(&seed[0].path, tint(160, 120, [200, 40, 40], false)).unwrap();
+    seed[0].candidates[0].direct_file_url = Some(data_uri(&tint(200, 150, [40, 60, 200], true)));
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.has_pictures() == (true, true)));
+    assert!(pump_until(5_000, || r.wipe.area.width() > 0
+        && r.wipe.render().is_some()));
+    let (wipe_px, _, _) = r.wipe.render().unwrap();
+    assert!(
+        max_channel_spread(&wipe_px) > 100,
+        "the control: the Wipe pane carries the pictures' colour ({})",
+        max_channel_spread(&wipe_px)
+    );
+
+    r.view_buttons["diff"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.showing_differences()));
+    let (px, w, h) = r.wipe.render().unwrap();
+    assert_eq!(
+        max_channel_spread(&px),
+        0,
+        "no pixel of the {w} x {h} Differences pane has chroma"
+    );
+    // And it is not blank: the red local file's luma (87) sits at 26 + 87 * 171 / 255 = 84 on the
+    // ramp, and the overlay lifts the changed patch toward the light end.
+    let on_ramp = px
+        .chunks_exact(4)
+        .filter(|p| p[3] == 255 && p[0] == 84)
+        .count();
+    assert!(
+        on_ramp > 100,
+        "the local picture is on the ramp: {on_ramp} px"
+    );
+    assert!(
+        px.chunks_exact(4).any(|p| p[3] == 255 && p[0] > 150),
+        "the highlighted patch is lifted toward the ramp's light end"
+    );
     f.close();
 }
