@@ -362,6 +362,10 @@ const SCENARIOS: &[Scenario] = &[
         "pawchive_index_window_is_one_window_and_the_search_does_not_block_the_loop",
         pawchive_index_window_is_one_window_and_the_search_does_not_block_the_loop,
     ),
+    (
+        "hydrus_thumbnails_come_from_hydrus_for_files_it_holds_and_from_disk_for_the_rest",
+        hydrus_thumbnails_come_from_hydrus_for_files_it_holds_and_from_disk_for_the_rest,
+    ),
 ];
 
 fn main() {
@@ -2810,7 +2814,10 @@ fn design_follow_ups_paint_as_specified(app: &adw::Application) {
         // disabled button with `opacity` / `filter: opacity()`, which would take the edge to half of
         // this; the rule that cancels it (`opacity: 1; filter: none`) is what this reads.
         let query = find_button(&root, "Query Hydrus\u{2026}").expect("Query Hydrus");
-        assert!(!query.is_sensitive(), "Query Hydrus waits for 6.g");
+        // Query Hydrus is live since 6.g; the sample of a disabled hollow control is made disabled
+        // here, which is what the rule below is about.
+        query.set_sensitive(false);
+        assert!(!query.is_sensitive());
         assert!(
             (edge_alpha(&query) - pal.ink_46.3).abs() < 0.02,
             "{name}: a disabled hollow control keeps its ink-46 border ({}), got {}",
@@ -6193,5 +6200,93 @@ fn pawchive_index_window_is_one_window_and_the_search_does_not_block_the_loop(
     // The main window closing takes the Index window with it.
     f.w.close_pawchive_dialog();
     assert!(f.w.s.pawchive_dialog.borrow().is_none());
+    f.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Hydrus thumbnails (6.g, DAN-2220, DAN-2116 item 3)
+// ---------------------------------------------------------------------------------------------
+
+/// With a key and `thumbnail_source = "hydrus"`, a file Hydrus holds is drawn from Hydrus's own
+/// thumbnail (its file on disk is unreadable here, so a picture proves where it came from), a file
+/// it does not hold from disk, and a thumbnail that will not decode falls back to disk.
+fn hydrus_thumbnails_come_from_hydrus_for_files_it_holds_and_from_disk_for_the_rest(
+    app: &adw::Application,
+) {
+    use common::hydrus::{Reply, json_reply};
+    use hatate_core::thumb::ThumbState;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let broken_thumbnail = Arc::new(AtomicBool::new(false));
+    let broken = broken_thumbnail.clone();
+    let server =
+        common::hydrus::Hydrus::http(move |q| match q.target.split('?').next().unwrap_or("") {
+            "/get_files/file_metadata" => json_reply(json!({"metadata": [
+                {"hash": HELD_HASH, "file_id": 1, "is_local": true,
+                 "is_trashed": false, "is_deleted": false}]})),
+            "/get_files/thumbnail" if broken.load(Ordering::SeqCst) => {
+                Reply::ok(b"not a picture".to_vec())
+            }
+            "/get_files/thumbnail" => Reply::ok(common::search::PNG.to_vec()),
+            _ => json_reply(json!({})),
+        });
+    let mut seed = review_seed(dir.path());
+    // Row 0: held by Hydrus, and its own file cannot be read.
+    std::fs::write(&seed[0].path, b"garbage").unwrap();
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    // Row 1: Hydrus does not hold it; it has a hash all the same.
+    seed[1].hydrus_hash = Some(NEW_HASH.to_owned());
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            tweak: Some(Box::new({
+                let inner = hydrus_tweak(&server.url, true);
+                move |s| {
+                    inner(s);
+                    s.thumbnail_source = "hydrus".to_owned();
+                }
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let ids = row_ids(&f);
+    f.w.start_thumbnail_generation(&ids, true);
+    assert!(pump_until(10_000, || f.w.s.thumbs.in_flight() == 0));
+    let view = &f.w.s.queue_view;
+    assert_eq!(view.thumb_state(ids[0]), ThumbState::Loaded, "from Hydrus");
+    assert_eq!(view.thumb_state(ids[1]), ThumbState::Loaded, "from disk");
+    assert_eq!(view.thumb_state(ids[2]), ThumbState::Loaded, "from disk");
+    let calls = server.calls();
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|c| *c == "GET /get_files/thumbnail")
+            .count(),
+        1,
+        "only the held file is fetched: {calls:?}"
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|c| *c == "GET /get_files/file_metadata")
+            .count(),
+        1,
+        "one check for the whole pass"
+    );
+    f.close();
+
+    // A thumbnail that does not decode falls back to the file, which here is unreadable too.
+    broken_thumbnail.store(true, Ordering::SeqCst);
+    let mut seed = review_seed(dir.path());
+    std::fs::write(&seed[0].path, b"garbage").unwrap();
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    let ids = row_ids(&f);
+    f.w.start_thumbnail_generation(&ids[..1], true);
+    assert!(pump_until(10_000, || f.w.s.thumbs.in_flight() == 0));
+    assert_eq!(f.w.s.queue_view.thumb_state(ids[0]), ThumbState::Failed);
     f.close();
 }

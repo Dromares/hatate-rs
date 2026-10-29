@@ -433,10 +433,16 @@ mod tests {
     fn every_deferred_action_names_a_ticket() {
         let d = deferred();
         assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
-        for want in ["query-hydrus", "preferences"] {
+        // 6.g wired Query Hydrus, Pawchive Index, Re-check Queued Imports and the two Send items.
+        for want in ["preferences"] {
             assert!(d.iter().any(|(n, _)| *n == want), "{want} not deferred");
         }
         for working in [
+            "query-hydrus",
+            "pawchive-index",
+            "reconcile",
+            "send-to-hydrus",
+            "import-url-to-hydrus",
             "add-files",
             "add-folder",
             "save-session-as",

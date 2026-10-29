@@ -34,9 +34,8 @@ use std::collections::HashSet;
 /// `PREVIEW_DECODE_SIZE`: the longest side the Side by side view decodes the local file at.
 pub const PREVIEW_DECODE: u32 = 2048;
 
-/// The ids with a handler in this ticket. The Hydrus ones are 6.g's;
-/// an action with no handler is not bound ("never bind a dead key", `install`).
-pub const WIRED: [&str; 12] = [
+/// The ids with a handler (the three send ids are 6.g's). An action with no handler is not bound ("never bind a dead key", `install`).
+pub const WIRED: [&str; 15] = [
     "next_row",
     "prev_row",
     "next_unreviewed",
@@ -49,6 +48,9 @@ pub const WIRED: [&str; 12] = [
     "remove_row",
     "toggle_reviewed",
     "compare",
+    "send_upload",
+    "send_url",
+    "download_send",
 ];
 
 /// How many decoded local pictures are kept (`_local_pixmap_cache`, which Python never trims).
