@@ -31,6 +31,8 @@ tracing = "0.1"
 # The staging directory of the download-and-send loops (`tempfile.mkdtemp(prefix="hatate-linux-dl-")`);
 # already a dependency of hatate-core, so it adds nothing to the lockfile.
 tempfile = "3.27.0"
+# The artist search answers with JSON objects (`find_creators`); the same version core uses.
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
 [dev-dependencies]
@@ -44,7 +46,6 @@ image = { version = "0.25.9", default-features = false, features = ["png"] }
 # The action differential driver (tests/differential.rs) reads `session.db` and `config.json` back
 # the way the Python driver does. Same versions as hatate-core.
 rusqlite = { version = "0.40.2", features = ["bundled"] }
-serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
 
 # Needs a display, so it is its own program: it runs under `xvfb-run` with HATATE_GTK_SMOKE=1, and
 # GTK must be on the main thread, which the default test harness does not give a test. With `CI`

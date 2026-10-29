@@ -91,6 +91,9 @@ pub struct Env {
     pub monotonic: Rc<dyn Fn() -> f64>,
     /// Parser Health's live check (`core/parser_probe.py`); none in the shipped window.
     pub probe: Option<Arc<dyn crate::parser_health::ProbeRunner>>,
+    /// The Pawchive crawler the Index window uses; none builds the real one on first use. Its
+    /// hosts are fixed by its constructor, so a test points it at a local server.
+    pub pawchive: Option<Arc<hatate_core::pawchive_index::PawchiveCrawler>>,
 }
 
 impl Env {
@@ -109,6 +112,7 @@ impl Env {
             search: None,
             monotonic: Rc::new(system_monotonic),
             probe: None,
+            pawchive: None,
         }
     }
 }
@@ -236,6 +240,13 @@ pub struct State {
     pub hydrus_batch_worker: Slot,
     /// The Query Hydrus dialog's search and import, and the dialog while it is open.
     pub hydrus_query_worker: Slot,
+    /// `self.pawchive_index_worker`, the artist search, and the one Pawchive Index window
+    /// (`self._pawchive_index_dialog`).
+    pub pawchive_index_worker: Slot,
+    pub pawchive_find_worker: Slot,
+    pub pawchive_dialog: RefCell<Option<Rc<crate::pawchive_dialog::PawchiveIndexDialog>>>,
+    /// The crawler a test gave the window; the shipped one builds the real Pawchive.
+    pub pawchive_override: Option<Arc<hatate_core::pawchive_index::PawchiveCrawler>>,
     pub hydrus_query_dialog: RefCell<Option<Rc<crate::hydrus_query::HydrusQueryDialog>>>,
     /// `self._reconcile_was_quiet`.
     pub reconcile_was_quiet: Cell<bool>,
@@ -484,6 +495,10 @@ impl MainWindow {
             hydrus_import_poll_worker: Slot::new(),
             hydrus_batch_worker: Slot::new(),
             hydrus_query_worker: Slot::new(),
+            pawchive_index_worker: Slot::new(),
+            pawchive_find_worker: Slot::new(),
+            pawchive_dialog: RefCell::new(None),
+            pawchive_override: env.pawchive.take(),
             hydrus_query_dialog: RefCell::new(None),
             reconcile_was_quiet: Cell::new(false),
             poll_pending: RefCell::new(Default::default()),
@@ -744,6 +759,7 @@ impl MainWindow {
                 "clear-search-cache" => w.action_clear_search_cache(),
                 "reconcile" => w.action_reconcile_with_hydrus(),
                 "query-hydrus" => w.action_query_hydrus(),
+                "pawchive-index" => w.action_pawchive_index(),
                 "send-to-hydrus" => w.action_send_to_hydrus(&w.s.queue_view.selected_ids()),
                 "import-url-to-hydrus" => {
                     w.action_import_url_to_hydrus(&w.s.queue_view.selected_ids())

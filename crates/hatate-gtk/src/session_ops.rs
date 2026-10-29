@@ -841,7 +841,8 @@ impl MainWindow {
         if self.s.closing.replace(true) {
             return;
         }
-        // DEFERRED(6.i): stop the MCP server first. DEFERRED(6.g): close the Pawchive Index window.
+        // DEFERRED(6.i): stop the MCP server first.
+        self.close_pawchive_dialog();
         // `engine_alerts.unsubscribe`, the stop request and the engines' shutdown.
         self.close_search_run();
         self.set_activity_live(false);

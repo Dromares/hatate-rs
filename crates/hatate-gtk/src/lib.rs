@@ -18,6 +18,7 @@ pub mod logview;
 pub mod menu;
 pub mod menubar_keys;
 pub mod parser_health;
+pub mod pawchive_dialog;
 pub mod queue_menu;
 pub mod queue_view;
 pub mod review_compare;
