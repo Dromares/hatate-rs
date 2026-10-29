@@ -31,4 +31,5 @@ pub mod thumbnails;
 pub mod tokens;
 pub mod widgets;
 pub mod window;
+pub mod wipe_view;
 pub mod worker;
