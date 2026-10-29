@@ -4506,6 +4506,17 @@ fn the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there(app: 
         r.readout_in_header(),
         "at 1500 px the readout sits beside the tools"
     );
+    // Beside the tools the words are not ellipsized: GTK allocated a tracked label its natural width
+    // and Pango cut it there, so "01 // Compare" read "01 // COMPAR…" and "SIMILARITY" "SIMILARIT…"
+    // with room to spare (the 1440 x 900 shot, host and hosted `ci` toolkits alike).
+    for l in [&r.title, &r.readout_label, &r.readout_diff] {
+        assert!(
+            !l.layout().is_ellipsized(),
+            "'{}' is drawn cut beside the tools ({} px given)",
+            l.text(),
+            l.width()
+        );
+    }
     // Squeeze the compare column until the readout no longer fits beside the tools.
     f.w.win.set_default_size(1, 1);
     assert!(pump_until(5_000, || !r.readout_in_header()));

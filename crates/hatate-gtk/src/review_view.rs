@@ -203,11 +203,26 @@ impl Keyed {
     }
 }
 
+/// `child` asks its natural width and no minimum: it is clipped, never ellipsized, when the row it
+/// sits in is squeezed. A label that may ellipsize is cut with room to spare, because GTK allocates
+/// it its natural width and Pango ellipsizes a tracked label (CSS `letter-spacing`) at that very
+/// width: "01 // COMPAR…" and "SIMILARIT…" on the host and hosted `ci` toolkits alike, in the
+/// 1440 x 900 shot (DAN-2219).
+fn give_way(child: &impl IsA<gtk::Widget>) -> gtk::ScrolledWindow {
+    let sw = gtk::ScrolledWindow::new();
+    sw.set_policy(gtk::PolicyType::External, gtk::PolicyType::Never);
+    sw.set_propagate_natural_width(true);
+    sw.set_propagate_natural_height(true);
+    sw.set_child(Some(child));
+    sw
+}
+
 /// Every widget of the page, by the name Python gave it.
 pub struct ReviewPage {
     pub root: gtk::Box,
     /// `review_stack`: Side by side (page 0), then the comparison pages.
     pub stack: gtk::Stack,
+    pub title: gtk::Label,
     pub view_buttons: BTreeMap<String, gtk::ToggleButton>,
     pub readout_root: gtk::Box,
     /// The header row, and the line under it the readout drops to when the column is too narrow
@@ -270,11 +285,10 @@ impl ReviewPage {
     pub fn new(key_for: &dyn Fn(&str) -> String) -> Rc<ReviewPage> {
         // -- the comparison card
         let header = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        // It elides before the header asks for more than the window's minimum: hosted `ci`'s fonts
-        // are wider than the author's and the header asked 1016 px of 1010 (DAN-2219).
+        // It gives way before the header asks for more than the window's minimum: hosted `ci`'s
+        // fonts are wider than the author's and the header asked 1016 px of 1010 (DAN-2219).
         let title = widgets::section_label("01 // Compare");
-        title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        header.append(&title);
+        header.append(&give_way(&title));
         let (switch, view_buttons) = widgets::segmented(&VIEWS, "pair", |_| {});
         switch.add_css_class("review-switch");
         header.append(&switch);
@@ -282,13 +296,13 @@ impl ReviewPage {
         spacer.set_hexpand(true);
         header.append(&spacer);
 
-        let readout_root = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        readout_root.set_valign(gtk::Align::Center);
+        let readout_parts = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        readout_parts.set_valign(gtk::Align::Center);
         let mk = |class: &str| {
             let l = gtk::Label::new(None);
             l.add_css_class(class);
             l.set_visible(false);
-            readout_root.append(&l);
+            readout_parts.append(&l);
             l
         };
         let readout_glyph = mk("readout-glyph");
@@ -296,11 +310,11 @@ impl ReviewPage {
         let readout_label = mk("readout-label");
         readout_label.add_css_class("caps");
         let readout_diff = mk("readout-diff");
-        // The readout starts on the line under the header, where it has the column to itself and
-        // its words are never cut ([`ReviewPage::fit_readout`] sets the mode as it moves).
-        for l in [&readout_label, &readout_diff] {
-            l.set_width_chars(0);
-        }
+        // The words are never ellipsized: they take their natural width, and beside the tools the
+        // header's minimum does not include them (`give_way`).
+        let readout_root = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        readout_root.set_valign(gtk::Align::Center);
+        readout_root.append(&give_way(&readout_parts));
         readout_root.set_tooltip_text(Some(READOUT_TOOLTIP));
         readout_root.set_visible(false);
         // Under the header until the column is wide enough to hold it beside the tools.
@@ -514,6 +528,7 @@ impl ReviewPage {
         let page = Rc::new(ReviewPage {
             root,
             stack,
+            title: title.clone(),
             view_buttons,
             readout_root,
             header: header.clone(),
@@ -640,18 +655,6 @@ impl ReviewPage {
         } else if !fits && inside {
             self.header.remove(&self.readout_root);
             self.readout_row.append(&self.readout_root);
-        }
-        // Beside the tools the parts elide before they push the header past the column (the
-        // window's minimum is the stated one, DAN-2025 2.5). On the line under the header they do
-        // not: it takes the width of its words. Hosted `ci`'s toolkit cut "SIMILARITY" to
-        // "SIMILARIT…" there with 600 px free (the shot shows it; the cause was not isolated).
-        let mode = if self.readout_in_header() {
-            gtk::pango::EllipsizeMode::End
-        } else {
-            gtk::pango::EllipsizeMode::None
-        };
-        for l in [&self.readout_label, &self.readout_diff] {
-            l.set_ellipsize(mode);
         }
         // `get_visible`, not `is_visible`: the latter also asks the row, which would keep itself hidden.
         self.readout_row
