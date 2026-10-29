@@ -106,6 +106,14 @@ impl PreviewPane {
     }
 }
 
+/// Whether a keyed button drops its key under the label: the pair does not fit in the row's `width`.
+/// A row not yet allocated (width 0) is not "too narrow": read that way, every key wrapped for the
+/// first frames and the Review page asked 809 px of height where it asks 755 once laid out. A window
+/// does not shrink on every toolkit, so hosted `ci` kept 812 for the Not found row and for Add tags.
+fn key_wraps(beside: i32, width: i32) -> bool {
+    width > 0 && beside > width
+}
+
 /// A button that carries its key (`widgets.keyed_button`), and the cap to re-point.
 pub struct Keyed {
     pub button: gtk::Button,
@@ -160,7 +168,7 @@ impl Keyed {
                     } else {
                         0
                     };
-                let wrapped = beside > width;
+                let wrapped = key_wraps(beside, width);
                 row.set_orientation(if wrapped {
                     gtk::Orientation::Vertical
                 } else {
@@ -670,5 +678,18 @@ impl ReviewPage {
             .find(|(_, b)| b.is_active())
             .map(|(k, _)| k.clone())
             .unwrap_or_else(|| "pair".to_owned())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_wraps;
+
+    /// A row with no width yet is not too narrow for its key (DAN-2219, design read).
+    #[test]
+    fn a_row_with_no_width_yet_does_not_wrap_its_key() {
+        assert!(!key_wraps(120, 0), "width 0 is not allocated, not narrow");
+        assert!(key_wraps(120, 119), "too narrow for both: the key drops");
+        assert!(!key_wraps(120, 120), "exactly enough: the key stays beside");
     }
 }

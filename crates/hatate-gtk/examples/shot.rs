@@ -195,6 +195,24 @@ fn main() -> glib::ExitCode {
         let state = state.clone();
         win.add_tick_callback(move |win, _| {
             frames.set(frames.get() + 1);
+            if (state == "review-nomatch" || state == "review-addtags") && frames.get() <= 12 {
+                // The window never gets smaller once it has grown: what its minimum was while it was
+                // first laid out (hosted `ci` shows 812 where the settled minimum is 758).
+                let content =
+                    libadwaita::prelude::AdwApplicationWindowExt::content(&main_win).unwrap();
+                println!(
+                    "FRAME {state} {} win={}x{} win_min_h={} content_min_h={} content_at_width={}",
+                    frames.get(),
+                    win.width(),
+                    win.height(),
+                    win.measure(gtk4::Orientation::Vertical, win.width()).0,
+                    content.measure(gtk4::Orientation::Vertical, -1).0,
+                    content.measure(gtk4::Orientation::Vertical, win.width()).0,
+                );
+                if frames.get() == 2 {
+                    println!("FRAMECHAIN {}", tallest_chain(&content, win.width()));
+                }
+            }
             let settle = match state.as_str() {
                 "menu-hover" => 60,
                 "queue-5000-scroll" => 400,
