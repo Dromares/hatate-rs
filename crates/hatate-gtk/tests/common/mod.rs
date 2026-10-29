@@ -97,6 +97,18 @@ impl Script {
 
 impl Prompter for Script {
     fn message(&self, kind: Kind, title: &str, text: &str, buttons: Buttons, done: Done<Response>) {
+        self.message_detailed(kind, title, text, "", buttons, done);
+    }
+
+    fn message_detailed(
+        &self,
+        kind: Kind,
+        title: &str,
+        text: &str,
+        detail: &str,
+        buttons: Buttons,
+        done: Done<Response>,
+    ) {
         let default = default_response(kind, buttons);
         self.shown.borrow_mut().push(Shown {
             kind,
@@ -104,6 +116,7 @@ impl Prompter for Script {
             text: text.to_owned(),
             buttons,
             default,
+            detail: detail.to_owned(),
         });
         let answer = match self.next() {
             // An answer this box has no button for is the one a click elsewhere would give:
@@ -115,6 +128,8 @@ impl Prompter for Script {
                 (Buttons::KeepReplaceCancel, _) => Response::Cancel,
                 (Buttons::RemoveCancel, Response::Remove) => r,
                 (Buttons::RemoveCancel, _) => Response::Cancel,
+                (Buttons::DeleteCancel, Response::Delete) => r,
+                (Buttons::DeleteCancel, _) => Response::Cancel,
                 (Buttons::Ok, _) => Response::Ok,
             },
             // An unscripted box is answered by its default button, as pressing Enter would.

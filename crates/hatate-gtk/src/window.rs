@@ -228,6 +228,16 @@ pub struct State {
     pub diff_worker: Slot,
     /// The compare dialog, while it is open.
     pub compare_open: RefCell<Option<Rc<crate::compare_dialog::CompareDialog>>>,
+    /// `self.hydrus_lookup_worker`, `self.hydrus_reconcile_worker`, `self.hydrus_import_poll_worker`
+    /// and the one slot the synchronous send loops share (Python ran those on the GUI thread).
+    pub hydrus_lookup_worker: Slot,
+    pub hydrus_reconcile_worker: Slot,
+    pub hydrus_import_poll_worker: Slot,
+    pub hydrus_batch_worker: Slot,
+    /// `self._reconcile_was_quiet`.
+    pub reconcile_was_quiet: Cell<bool>,
+    /// `self._pending_poll_confirmed`, `_unconfirmed` and `_warnings`.
+    pub poll_pending: RefCell<crate::hydrus_ops::PollPending>,
     /// The review keys' controllers, to take down when the bindings change.
     pub review_controllers: RefCell<Vec<(gtk::Widget, gtk::ShortcutController)>>,
 }
@@ -466,6 +476,12 @@ impl MainWindow {
             comparison_worker: Slot::new(),
             diff_worker: Slot::new(),
             compare_open: RefCell::new(None),
+            hydrus_lookup_worker: Slot::new(),
+            hydrus_reconcile_worker: Slot::new(),
+            hydrus_import_poll_worker: Slot::new(),
+            hydrus_batch_worker: Slot::new(),
+            reconcile_was_quiet: Cell::new(false),
+            poll_pending: RefCell::new(Default::default()),
             review_controllers: RefCell::new(Vec::new()),
         });
         let window = MainWindow {
@@ -721,6 +737,11 @@ impl MainWindow {
                 "export-results" => w.action_export_results(None),
                 "write-tag-files" => w.action_write_tag_files(None),
                 "clear-search-cache" => w.action_clear_search_cache(),
+                "reconcile" => w.action_reconcile_with_hydrus(),
+                "send-to-hydrus" => w.action_send_to_hydrus(&w.s.queue_view.selected_ids()),
+                "import-url-to-hydrus" => {
+                    w.action_import_url_to_hydrus(&w.s.queue_view.selected_ids())
+                }
                 "quit" => w.win.close(),
                 other => tracing::warn!("no handler for action {other}"),
             }

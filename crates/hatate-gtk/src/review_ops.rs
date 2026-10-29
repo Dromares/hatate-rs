@@ -314,10 +314,17 @@ impl MainWindow {
         r.shortcuts_btn.set_sensitive(false);
         r.shortcuts_btn
             .set_tooltip_text(Some("The shortcuts list arrives in a later step."));
-        for b in [&r.send_btn, &r.url_btn, &r.download_btn] {
-            b.button.set_sensitive(false);
-            b.button
-                .set_tooltip_text(Some("Sending to Hydrus arrives in a later step."));
+        for (b, id) in [
+            (&r.send_btn, "send_upload"),
+            (&r.url_btn, "send_url"),
+            (&r.download_btn, "download_send"),
+        ] {
+            let w = self.downgrade();
+            b.button.connect_clicked(move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.run_review_action(id);
+                }
+            });
         }
         self.wire_review_compare();
         self.install_review_shortcuts();
@@ -1219,6 +1226,12 @@ impl MainWindow {
                 if let Some(id) = self.current_id() {
                     self.open_compare_dialog(id);
                 }
+            }
+            // The Review page's three buttons act on the selected rows, as the menu entries do.
+            "send_upload" => self.action_send_to_hydrus(&self.s.queue_view.selected_ids()),
+            "send_url" => self.action_import_url_to_hydrus(&self.s.queue_view.selected_ids()),
+            "download_send" => {
+                self.action_download_and_send_to_hydrus(&self.s.queue_view.selected_ids())
             }
             other => tracing::warn!("No handler for review shortcut {other:?}"),
         }

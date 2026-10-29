@@ -28,10 +28,12 @@ async-channel = "2"
 # The one runtime the app owns (`worker::Workers`).
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "sync", "macros", "net"] }
 tracing = "0.1"
+# The staging directory of the download-and-send loops (`tempfile.mkdtemp(prefix="hatate-linux-dl-")`);
+# already a dependency of hatate-core, so it adds nothing to the lockfile.
+tempfile = "3.27.0"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
 [dev-dependencies]
-tempfile = "3.27.0"
 image = { version = "0.25.9", default-features = false, features = ["png"] }
 # The action differential driver (tests/differential.rs) reads `session.db` and `config.json` back
 # the way the Python driver does. Same versions as hatate-core.

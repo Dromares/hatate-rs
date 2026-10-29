@@ -694,6 +694,7 @@ fn button(r: Response) -> &'static str {
         Response::Keep => "keep",
         Response::Replace => "replace",
         Response::Remove => "remove",
+        Response::Delete => "delete",
         Response::Cancel => "cancel",
     }
 }
@@ -766,17 +767,24 @@ fn digest(
         .iter()
         .zip(script.results.borrow().iter())
         .map(|(d, r)| {
-            json!({
+            let mut dialog = json!({
                 "kind": kind(d.kind), "title": d.title, "text": d.text,
                 "buttons": match d.buttons {
                     Buttons::YesNo => "yes_no",
                     Buttons::KeepReplaceCancel => "keep_replace_cancel",
                     Buttons::RemoveCancel => "remove_cancel",
+                    Buttons::DeleteCancel => "delete_cancel",
                     Buttons::Ok => "ok",
                 },
                 "default": button(d.default),
                 "result": if d.buttons == Buttons::Ok { "ok" } else { button(*r) },
-            })
+            });
+            // `setDetailedText`, when the box has any: older steps have none, so their digests
+            // do not change.
+            if !d.detail.is_empty() {
+                dialog["detail"] = json!(d.detail);
+            }
+            dialog
         })
         .collect();
     let choosers: Vec<Value> = script

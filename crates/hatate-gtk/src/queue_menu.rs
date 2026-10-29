@@ -31,6 +31,11 @@ pub fn is_wired(action: Action) -> bool {
             | Action::CheckUpscaling
             | Action::CheckAvailability
             | Action::Compare
+            | Action::SendToHydrus
+            | Action::ImportUrlToHydrus
+            | Action::DownloadAndSendToHydrus
+            | Action::ShowInHydrus
+            | Action::DeleteFromHydrus
     )
 }
 
@@ -69,8 +74,11 @@ impl MainWindow {
                     self.open_compare_dialog(*id);
                 }
             }
-            // DEFERRED(6.g): the Hydrus entries.
-            _ => {}
+            Action::SendToHydrus => self.action_send_to_hydrus(ids),
+            Action::ImportUrlToHydrus => self.action_import_url_to_hydrus(ids),
+            Action::DownloadAndSendToHydrus => self.action_download_and_send_to_hydrus(ids),
+            Action::ShowInHydrus => self.show_rows_in_hydrus(ids),
+            Action::DeleteFromHydrus => self.delete_rows_from_hydrus(ids),
         }
     }
 
@@ -171,9 +179,9 @@ mod tests {
     use super::*;
 
     /// 6.e gives the re-search, upscale-check and availability entries their handlers, 6.f-2 gives
-    /// Compare its; the Hydrus entries (6.g) stay off.
+    /// Compare its, 6.g the five Hydrus entries: every entry the menu can show has a handler.
     #[test]
-    fn the_entries_6e_owns_are_wired_and_the_later_ones_are_not() {
+    fn every_entry_the_menu_offers_is_wired() {
         for a in [
             Action::Research,
             Action::ResearchWithEngine("iqdb"),
@@ -181,15 +189,13 @@ mod tests {
             Action::CheckUpscaling,
             Action::CheckAvailability,
             Action::Compare,
-        ] {
-            assert!(is_wired(a), "{a:?}");
-        }
-        for a in [
             Action::SendToHydrus,
+            Action::ImportUrlToHydrus,
+            Action::DownloadAndSendToHydrus,
             Action::ShowInHydrus,
             Action::DeleteFromHydrus,
         ] {
-            assert!(!is_wired(a), "{a:?}");
+            assert!(is_wired(a), "{a:?}");
         }
     }
 }

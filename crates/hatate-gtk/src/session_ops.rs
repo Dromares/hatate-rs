@@ -255,7 +255,7 @@ impl MainWindow {
             "Adding {} file(s) to the list ({duplicates} duplicate(s) skipped)",
             unique.len()
         );
-        {
+        let added_ids = {
             let mut q = self.s.queue.borrow_mut();
             let mut added = Vec::with_capacity(unique.len());
             for p in &unique {
@@ -266,7 +266,8 @@ impl MainWindow {
             }
             // `_register_new_entries`: so the header cycle can restore insertion order.
             self.s.queue_view.register_new(&added);
-        }
+            added
+        };
         self.list_changed();
         let total = self.s.queue.borrow().len();
         let mut status = format!("Added {} file(s), {total} total", unique.len());
@@ -274,7 +275,7 @@ impl MainWindow {
             status.push_str(&format!(" ({duplicates} duplicate(s) skipped)"));
         }
         self.say(&status);
-        // DEFERRED(6.g): `_lookup_existing_hydrus_tags(new_entries)`.
+        self.lookup_existing_hydrus_tags(&added_ids);
         self.thumbnails_for_new_entries();
     }
 
@@ -428,7 +429,7 @@ impl MainWindow {
             self.say(&status);
         }
         self.start_missing_file_check(&entries);
-        // DEFERRED(6.g): `_start_hydrus_reconcile(quiet=True)`.
+        self.start_hydrus_reconcile(true);
         self.thumbnails_for_new_entries();
     }
 

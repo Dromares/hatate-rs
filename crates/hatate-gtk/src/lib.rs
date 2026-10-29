@@ -11,6 +11,7 @@ pub mod dialogs;
 pub mod error;
 pub mod filter_bar;
 pub mod fonts;
+pub mod hydrus_ops;
 pub mod logsink;
 pub mod logview;
 pub mod menu;
