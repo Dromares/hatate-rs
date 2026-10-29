@@ -385,6 +385,8 @@ fn do_step(
                     "wipe" => d.wipe_radio.set_active(true),
                     "local" => d.local_radio.set_active(true),
                     "match" => d.matched_radio.set_active(true),
+                    // A disabled radio cannot be clicked (`set_active` would not care).
+                    _ if !d.diff_radio.is_sensitive() => {}
                     _ => d.diff_radio.set_active(true),
                 },
                 "dlg_slider" => d.slider.set_value(step["value"].as_f64().unwrap()),
@@ -607,7 +609,7 @@ fn compare_digest(w: &MainWindow) -> Value {
         "diff_button_enabled": r.view_buttons["diff"].is_sensitive(),
         "wipe": view_of(&r.wipe),
     });
-    if (r.wipe.zoom_percent() - 100.0).abs() < 1e-6 {
+    if (r.wipe.zoom_percent() - 100.0).abs() < 0.5 {
         out["zoom_label_at_100"] = json!(r.zoom_label.text().to_string());
     }
     out["rs_error_detail"] = json!({"text": r.error_detail.text().to_string(),
