@@ -27,6 +27,7 @@ pub mod hydrus_reconcile;
 pub mod hydrus_tag_lookup;
 pub mod hydrus_url;
 pub mod image_compare;
+pub mod compare_view;
 pub mod image_diff;
 pub mod image_prep;
 pub mod lens_browser;
