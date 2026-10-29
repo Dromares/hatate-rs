@@ -12,6 +12,7 @@ pub mod error;
 pub mod filter_bar;
 pub mod fonts;
 pub mod hydrus_ops;
+pub mod hydrus_query;
 pub mod logsink;
 pub mod logview;
 pub mod menu;

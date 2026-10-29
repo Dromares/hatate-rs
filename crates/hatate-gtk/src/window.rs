@@ -234,6 +234,9 @@ pub struct State {
     pub hydrus_reconcile_worker: Slot,
     pub hydrus_import_poll_worker: Slot,
     pub hydrus_batch_worker: Slot,
+    /// The Query Hydrus dialog's search and import, and the dialog while it is open.
+    pub hydrus_query_worker: Slot,
+    pub hydrus_query_dialog: RefCell<Option<Rc<crate::hydrus_query::HydrusQueryDialog>>>,
     /// `self._reconcile_was_quiet`.
     pub reconcile_was_quiet: Cell<bool>,
     /// `self._pending_poll_confirmed`, `_unconfirmed` and `_warnings`.
@@ -480,6 +483,8 @@ impl MainWindow {
             hydrus_reconcile_worker: Slot::new(),
             hydrus_import_poll_worker: Slot::new(),
             hydrus_batch_worker: Slot::new(),
+            hydrus_query_worker: Slot::new(),
+            hydrus_query_dialog: RefCell::new(None),
             reconcile_was_quiet: Cell::new(false),
             poll_pending: RefCell::new(Default::default()),
             review_controllers: RefCell::new(Vec::new()),
@@ -738,6 +743,7 @@ impl MainWindow {
                 "write-tag-files" => w.action_write_tag_files(None),
                 "clear-search-cache" => w.action_clear_search_cache(),
                 "reconcile" => w.action_reconcile_with_hydrus(),
+                "query-hydrus" => w.action_query_hydrus(),
                 "send-to-hydrus" => w.action_send_to_hydrus(&w.s.queue_view.selected_ids()),
                 "import-url-to-hydrus" => {
                     w.action_import_url_to_hydrus(&w.s.queue_view.selected_ids())
@@ -860,7 +866,7 @@ fn build_drop_zone() -> gtk::Overlay {
     add_files.set_action_name(Some("win.add-files"));
     let add_folder = widgets::pill_button("Add folder\u{2026}", false, true);
     add_folder.set_action_name(Some("win.add-folder"));
-    // DEFERRED(6.g): Query Hydrus. The button follows the (disabled) action.
+    // Query Hydrus (6.g): the button follows the action.
     let query = widgets::pill_button("Query Hydrus\u{2026}", false, true);
     query.set_action_name(Some("win.query-hydrus"));
     for b in [&add_files, &add_folder, &query] {

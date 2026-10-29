@@ -83,14 +83,14 @@ pub fn all_site_options() -> Vec<String> {
 /// The menubar, in Python's order: Files, Hydrus, Sites, Settings, Help.
 pub fn menus() -> Vec<Menu> {
     use Owner::{Later, Shell};
-    // DEFERRED(6.g): Query Hydrus, Pawchive Index (6.g part 2).
+    // DEFERRED(6.g): Pawchive Index.
     // DEFERRED(6.h): Preferences.
     let files = Menu {
         title: "_Files",
         entries: vec![
             item("Add Files\u{2026}", "add-files", Shell),
             item("Add Folder\u{2026}", "add-folder", Shell),
-            item("Query Hydrus\u{2026}", "query-hydrus", Later("6.g")),
+            item("Query Hydrus\u{2026}", "query-hydrus", Shell),
             item("Re-check Queued Imports", "reconcile", Shell),
             item("Pawchive Index\u{2026}", "pawchive-index", Later("6.g")),
             Entry::Separator,
