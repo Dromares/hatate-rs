@@ -251,6 +251,24 @@ dropdown.candidate-picker > button:hover { border-color: @ink_58; }
 .tag-row { font-family: %mono%; font-size: 13px; color: @ink; }
 .review-switch button { padding: 4px 6px; }
 .review-rail button.pill { padding: 5px %space_2%px; }
+
+/* ---- Wipe, Differences and the compare dialog (DAN-2340): the zoom tools float in the frame, the
+   slider is a hairline with a stamp handle, the summary's tones are the Status column's ---- */
+.wipe-view { color: @ink; }
+.zoom-tools { background: @raised; border: 1px solid @ink_18; padding: 4px %space_2%px; }
+.zoom-percent { font-family: %mono%; font-size: %label%px; color: @ink_65; }
+.wipe-end-label { font-family: %mono%; font-size: %label%px; letter-spacing: 0.1em; color: @ink_65; }
+scale.wipe-slider trough { min-height: 1px; background: @ink_46; border-radius: 0; }
+scale.wipe-slider slider { min-width: 14px; min-height: 14px; background: @stamp_bg; border: 1px solid @ink;
+  border-radius: 0; box-shadow: none; }
+scale.wipe-slider highlight { background: transparent; }
+window.compare-window radio { background: transparent; border: 1px solid @ink_46; border-radius: 50%;
+  box-shadow: none; color: @stamp_fg; }
+window.compare-window radio:checked { background: @stamp_bg; border-color: @stamp_bg; color: @stamp_fg; }
+.summary-line { color: @ink; }
+.summary-good { color: @ink_65; }
+.summary-strong { font-weight: 700; }
+.summary-italic { font-style: italic; }
 .commit-caption { font-family: %mono%; font-size: %micro%px; letter-spacing: 0.06em; color: @ink_65; }
 separator.footer-rule { background: @ink_18; min-height: 1px; }
 

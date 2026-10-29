@@ -76,6 +76,50 @@ const SCENARIOS: &[Scenario] = &[
         review_with_add_tags_open_keeps_the_stated_minimum,
     ),
     (
+        "review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection",
+        review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection,
+    ),
+    (
+        "review_wipe_with_an_unreadable_local_file_shows_the_error_state",
+        review_wipe_with_an_unreadable_local_file_shows_the_error_state,
+    ),
+    (
+        "review_wipe_error_state_returns_to_fit_on_re_entering_wipe",
+        review_wipe_error_state_returns_to_fit_on_re_entering_wipe,
+    ),
+    (
+        "review_wipe_waits_on_a_stalled_site_without_blocking_the_window",
+        review_wipe_waits_on_a_stalled_site_without_blocking_the_window,
+    ),
+    (
+        "review_wipe_chrome_names_its_ends_and_zoom_buttons_and_a_fallback_warns",
+        review_wipe_chrome_names_its_ends_and_zoom_buttons_and_a_fallback_warns,
+    ),
+    (
+        "review_zoom_readout_is_blank_while_nothing_is_loaded",
+        review_zoom_readout_is_blank_while_nothing_is_loaded,
+    ),
+    (
+        "review_differences_button_is_live_again_after_an_unopenable_row",
+        review_differences_button_is_live_again_after_an_unopenable_row,
+    ),
+    (
+        "review_comparison_states_keep_the_stated_minimum",
+        review_comparison_states_keep_the_stated_minimum,
+    ),
+    (
+        "compare_dialog_loads_the_pair_and_switches_modes",
+        compare_dialog_loads_the_pair_and_switches_modes,
+    ),
+    (
+        "the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours",
+        the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours,
+    ),
+    (
+        "compare_dialog_answers_in_a_box_when_there_is_nothing_to_compare",
+        compare_dialog_answers_in_a_box_when_there_is_nothing_to_compare,
+    ),
+    (
         "the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there",
         the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there,
     ),
@@ -4792,6 +4836,613 @@ fn review_keys_step_mark_skip_and_open_the_match(app: &adw::Application) {
     assert!(
         !f.w.s.queue.borrow().entries()[0].reviewed,
         "Space unmarks the marked row"
+    );
+    f.close();
+}
+
+/// A flat grey picture, with a bright patch when `patch` is set.
+fn grey_png(w: u32, h: u32, patch: bool) -> Vec<u8> {
+    let mut img = image::RgbaImage::from_pixel(w, h, image::Rgba([90, 90, 90, 255]));
+    if patch {
+        for y in h / 4..h / 2 {
+            for x in w / 4..w / 2 {
+                img.put_pixel(x, y, image::Rgba([240, 240, 240, 255]));
+            }
+        }
+    }
+    let mut out = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+    out.into_inner()
+}
+
+/// The match's file as a `data:` URI, so the fetch needs no network at all.
+fn data_uri(bytes: &[u8]) -> String {
+    let mut uri = String::from("data:image/png,");
+    for b in bytes {
+        uri.push_str(&format!("%{b:02X}"));
+    }
+    uri
+}
+
+/// The review seed with real local pictures (160 x 120) and, for the rows with a match, a full file
+/// at another size (200 x 150, a patch added) that is already named, so no site is asked.
+fn wipe_seed(dir: &std::path::Path) -> Vec<hatate_core::model::Entry> {
+    let mut seed = review_seed(dir);
+    for e in seed.iter_mut() {
+        std::fs::write(&e.path, grey_png(160, 120, false)).unwrap();
+        for c in e.candidates.iter_mut() {
+            c.direct_file_url = Some(data_uri(&grey_png(200, 150, true)));
+        }
+    }
+    seed
+}
+
+fn wipe_fx(app: &adw::Application, seed: Vec<hatate_core::model::Entry>) -> Fx {
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            tweak: Some(offline()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    already_fetched(&f);
+    f
+}
+
+/// `_on_review_view_changed`, `_ensure_comparison_loaded`, `_apply_wipe_mode`, `_show_differences`,
+/// `refresh_review` (DAN-2340): Wipe fetches the full file once, Differences builds the overlay
+/// off the main loop, and a new selection lets the pair go.
+fn review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection(
+    app: &adw::Application,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = wipe_fx(app, wipe_seed(dir.path()));
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || r.local.shows_picture()));
+    assert_eq!(r.stack.visible_child_name().as_deref(), Some("pair"));
+    assert!(!r.slider_row.is_visible() && !r.zoom_tools.is_visible());
+    assert!(r.view_buttons["wipe"].is_sensitive() && r.view_buttons["diff"].is_sensitive());
+
+    // Wipe: the page switches at once and says it is loading; the pair arrives off the main loop.
+    r.view_buttons["wipe"].set_active(true);
+    assert_eq!(r.stack.visible_child_name().as_deref(), Some("comparison"));
+    assert!(r.slider_row.is_visible() && r.zoom_tools.is_visible() && r.note.is_visible());
+    assert!(
+        pump_until(10_000, || r.wipe.has_pictures() == (true, true)),
+        "both pictures arrive"
+    );
+    assert_eq!(r.note.text(), hatate_gtk::review_view::WIPE_HINT);
+    assert!(!r.wipe.showing_differences());
+    pump_for(50);
+    assert!(
+        r.zoom_label.text().ends_with('%') && r.wipe.zoom_percent() > 0.0,
+        "the zoom is reported: {:?}",
+        r.zoom_label.text()
+    );
+
+    // The slider moves the wipe.
+    r.wipe_slider.set_value(25.0);
+    assert!((r.wipe.position() - 0.25).abs() < 1e-9);
+
+    // Zoom in, then fit.
+    let fit = r.wipe.zoom_percent();
+    r.wipe.zoom_in();
+    assert!((r.wipe.zoom_percent() / fit - 1.25).abs() < 1e-9);
+    r.wipe.zoom_to_fit();
+    assert!((r.wipe.zoom_percent() - fit).abs() < 1e-9);
+
+    // Differences: the overlay is built on a worker; the note carries the verdict.
+    r.view_buttons["diff"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.showing_differences()));
+    let note = r.note.text().to_string();
+    assert!(
+        note.contains("drag the wipe to sweep the highlights across both"),
+        "{note}"
+    );
+    assert!(
+        note.starts_with(|c: char| c.is_ascii_digit()),
+        "the verdict leads: {note}"
+    );
+    assert!(
+        (r.wipe.position() - 0.25).abs() < 1e-9,
+        "the slider's place is kept"
+    );
+
+    // Back to Wipe: the highlights go, the how-to comes back.
+    r.view_buttons["wipe"].set_active(true);
+    assert!(!r.wipe.showing_differences());
+    assert_eq!(r.note.text(), hatate_gtk::review_view::WIPE_HINT);
+
+    // A new selection lets the pair go and, with the comparison showing, fetches the new one.
+    f.w.s.queue_view.select_row(2);
+    assert!(pump_until(10_000, || {
+        f.w.current_review_key() == f.w.s.comparison.borrow().loaded_for.clone()
+    }));
+    assert_eq!(r.wipe.has_pictures(), (true, true));
+
+    // A row with no match: Wipe has only the local picture, Differences is off.
+    f.w.s.queue_view.select_row(1);
+    assert!(pump_until(10_000, || {
+        f.w.current_review_key() == f.w.s.comparison.borrow().loaded_for.clone()
+    }));
+    assert_eq!(r.wipe.has_pictures(), (true, false));
+    assert!(!r.view_buttons["diff"].is_sensitive());
+    assert!(r.note.text().contains("No match image could be fetched."));
+
+    // Side by side again hides the controls.
+    r.view_buttons["pair"].set_active(true);
+    assert_eq!(r.stack.visible_child_name().as_deref(), Some("pair"));
+    assert!(!r.slider_row.is_visible());
+    f.close();
+}
+
+/// Design gate 2.8: a local file that cannot be opened says what to do in plain words, keeps the OS
+/// text in the detail line, and the slider goes insensitive while the note stays at its ordinary
+/// colour (DAN-2385: it is the one sentence that says what to do, not a control).
+fn review_wipe_with_an_unreadable_local_file_shows_the_error_state(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = wipe_seed(dir.path());
+    let missing = seed[0].path.clone();
+    std::fs::remove_file(&missing).unwrap();
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.error_detail.is_visible()));
+    let note = r.note.text().to_string();
+    assert!(note.contains("could not be opened"), "{note}");
+    assert!(
+        !note.contains(&missing) && !note.contains("os error"),
+        "the message leaks neither the path nor the OS text: {note}"
+    );
+    assert!(
+        r.error_detail.text().contains(&missing) && r.error_detail.text().contains("os error"),
+        "the detail line has them: {}",
+        r.error_detail.text()
+    );
+    assert!(!r.wipe_slider.is_sensitive());
+    assert!(
+        r.note.is_sensitive(),
+        "the error note is not painted at the disabled colour"
+    );
+    assert!(!r.view_buttons["diff"].is_sensitive());
+    assert_eq!(r.wipe.has_pictures(), (false, true));
+
+    // Selecting a row with a readable file leaves the error state.
+    f.w.s.queue_view.select_row(2);
+    assert!(pump_until(10_000, || !r.error_detail.is_visible()
+        && r.wipe.has_pictures() == (true, true)));
+    assert!(r.wipe_slider.is_sensitive() && r.note.is_sensitive());
+    f.close();
+}
+
+/// `_apply_wipe_mode` runs `clear_difference_view()` -> `zoom_to_fit()` for every non-diff view, so
+/// Python goes back to fit on re-entering Wipe even when the local file cannot be opened (DAN-2380,
+/// seed 6 compare-021). The error state must not skip it.
+fn review_wipe_error_state_returns_to_fit_on_re_entering_wipe(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = wipe_seed(dir.path());
+    std::fs::remove_file(&seed[0].path).unwrap();
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.error_detail.is_visible()
+        && r.wipe.zoom_percent() > 0.0));
+    assert_eq!(r.wipe.zoom_factor(), 1.0);
+
+    r.wipe.zoom_out();
+    assert!(r.wipe.zoom_factor() < 1.0, "zoomed out in the error state");
+    r.view_buttons["pair"].set_active(true);
+    r.view_buttons["wipe"].set_active(true);
+    assert_eq!(r.wipe.zoom_factor(), 1.0, "back at fit on re-entering Wipe");
+    // Still the error state: the note, the detail line and the insensitive slider stay.
+    assert!(r.error_detail.is_visible());
+    assert!(
+        r.note.text().contains("could not be opened"),
+        "{}",
+        r.note.text()
+    );
+    assert!(!r.wipe_slider.is_sensitive() && r.note.is_sensitive());
+    f.close();
+}
+
+/// `TestWipeChrome` (DAN-1393) at the parts the Python tests name: the slider's ends, the zoom row's
+/// four buttons, the one-line hint and the warning that replaces it when only a preview came down,
+/// and the chrome staying out of Side by side.
+fn review_wipe_chrome_names_its_ends_and_zoom_buttons_and_a_fallback_warns(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut seed = wipe_seed(dir.path());
+    // Row 0's match has no full file, only a preview: the comparison falls back and says so.
+    let preview = seed[0].candidates[0].direct_file_url.take();
+    seed[0].candidates[0].preview_url = preview;
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.has_pictures() == (true, true)));
+
+    let mut ends = Vec::new();
+    let mut c = r.slider_row.first_child();
+    while let Some(w) = c {
+        if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+            ends.push(l.text().to_string());
+        }
+        c = w.next_sibling();
+    }
+    assert_eq!(ends, ["Local", "Match"]);
+    let mut buttons = Vec::new();
+    let mut c = r.zoom_tools.first_child();
+    while let Some(w) = c {
+        if let Some(b) = w.downcast_ref::<gtk4::Button>() {
+            buttons.push(b.label().unwrap_or_default().to_string());
+        }
+        c = w.next_sibling();
+    }
+    assert_eq!(buttons, ["\u{2212}", "+", "Fit", "100%"]);
+    assert!(
+        r.note.text().starts_with("Showing the downscaled preview"),
+        "{}",
+        r.note.text()
+    );
+
+    // Side by side again: the slider row, the note and the zoom row go.
+    r.view_buttons["pair"].set_active(true);
+    assert!(!r.slider_row.is_visible() && !r.note.is_visible() && !r.zoom_tools.is_visible());
+    f.close();
+}
+
+/// D-C (docs/gtk-6f2.md): Python prints `0%` in the review zoom readout for an empty frame; here it
+/// is blank. The readout is visible only in the "Loading the match..." moment, which is when the
+/// frame is empty, so this is where the difference could be seen.
+fn review_zoom_readout_is_blank_while_nothing_is_loaded(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = wipe_fx(app, wipe_seed(dir.path()));
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.has_pictures() == (true, true)));
+    pump_for(50);
+    assert!(
+        r.zoom_label.text().ends_with('%'),
+        "{:?}",
+        r.zoom_label.text()
+    );
+
+    // A new selection lets the pair go and fetches the next: until it arrives the frame is empty,
+    // the readout is on screen, and it says nothing.
+    f.w.s.queue_view.select_row(2);
+    assert_eq!(r.wipe.has_pictures(), (false, false));
+    assert!(r.zoom_tools.is_visible());
+    assert_eq!(r.zoom_label.text(), "");
+    assert!(pump_until(10_000, || r.wipe.has_pictures() == (true, true)));
+    f.close();
+}
+
+/// D-E (docs/gtk-6f2.md): after an unopenable row, selecting a readable one on Side by side makes
+/// the Differences button live again at once. Python leaves it disabled until the next comparison
+/// load, so its button is dead until Wipe has been clicked once.
+fn review_differences_button_is_live_again_after_an_unopenable_row(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = wipe_seed(dir.path());
+    std::fs::remove_file(&seed[0].path).unwrap();
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.error_detail.is_visible()));
+    assert!(!r.view_buttons["diff"].is_sensitive());
+
+    // Back to Side by side and on to a readable row, with no Wipe click.
+    r.view_buttons["pair"].set_active(true);
+    f.w.s.queue_view.select_row(2);
+    assert!(pump_until(5_000, || r.local.shows_picture()));
+    assert_eq!(r.stack.visible_child_name().as_deref(), Some("pair"));
+    assert!(r.view_buttons["diff"].is_sensitive());
+    f.close();
+}
+
+/// Design gate 2.5 at the Wipe, Differences, no-match and error states (DAN-2340, DAN-2356): the
+/// window opened at the stated minimum reads exactly 1000 x 780 inside its shadow (the shot's PNG
+/// header), not 788 and not 854. The fit is measured on the shot path: the state is prepared first,
+/// then the window is given the smallest size, with no later resize.
+fn review_comparison_states_keep_the_stated_minimum(app: &adw::Application) {
+    use hatate_gtk::window::{MIN_HEIGHT, MIN_WIDTH};
+    for state in ["wipe", "differences", "error", "no-match"] {
+        let dir = tempfile::tempdir().unwrap();
+        let seed = wipe_seed(dir.path());
+        let gone = seed[0].path.clone();
+        let f = wipe_fx(app, seed);
+        let r = f.w.s.review.clone();
+        f.w.set_mode("review");
+        // The window is given the smallest size first, as a shot opens at `min`; the state is
+        // prepared after, and a state that asks for more makes the window grow.
+        smallest_window(&f);
+        f.w.s
+            .queue_view
+            .select_row(if state == "no-match" { 1 } else { 0 });
+        if state == "error" {
+            std::fs::remove_file(&gone).unwrap();
+        }
+        assert!(pump_until(5_000, || r.local.shows_picture() || state == "error"));
+        r.view_buttons[if state == "differences" {
+            "diff"
+        } else {
+            "wipe"
+        }]
+        .set_active(true);
+        assert!(
+            pump_until(10_000, || match state {
+                "error" => r.error_detail.is_visible(),
+                "no-match" => r.wipe.has_pictures() == (true, false),
+                "differences" => r.wipe.showing_differences(),
+                _ => r.wipe.has_pictures() == (true, true),
+            }),
+            "{state}: the page settles"
+        );
+        pump_for(300);
+        let (w, h) = (f.w.win.width(), f.w.win.height());
+        println!("OUTER review-{state} window={w}x{h}");
+        assert!(
+            w == MIN_WIDTH - 10 && h == MIN_HEIGHT - 10,
+            "{state}: the window at the stated minimum is {w}x{h}, not {}x{}: {}",
+            MIN_WIDTH - 10,
+            MIN_HEIGHT - 10,
+            tallest_chain(f.w.win.upcast_ref(), w)
+        );
+        f.close();
+    }
+}
+
+/// A site that accepts the connection and never answers: the window keeps handling actions while
+/// the full-resolution fetch waits, and a new selection lets the stale fetch go.
+fn review_wipe_waits_on_a_stalled_site_without_blocking_the_window(app: &adw::Application) {
+    use std::io::Read;
+    use std::net::TcpListener;
+    let dir = tempfile::tempdir().unwrap();
+    let server = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = server.local_addr().unwrap();
+    let held = std::thread::spawn(move || {
+        let (mut conn, _) = server.accept().unwrap();
+        let mut buf = [0u8; 1024];
+        let _ = conn.read(&mut buf);
+        std::thread::sleep(std::time::Duration::from_millis(900));
+    });
+    let mut seed = wipe_seed(dir.path());
+    seed[0].candidates[0].direct_file_url = Some("http://www.deviantart.com/full-1.png".to_owned());
+    let f = Fx::new_with(
+        app,
+        Opts {
+            seed,
+            tweak: Some(offline()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+        |env| {
+            let mut net = hatate_core::net::NetConfig::default();
+            net.host_overrides
+                .push(("www.deviantart.com".to_owned(), addr));
+            let paths = env.paths.clone();
+            let (backend, _) = common::search::Scripted::with_net(&paths, net);
+            env.search = Some(backend);
+        },
+    );
+    already_fetched(&f);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    r.view_buttons["wipe"].set_active(true);
+    assert_eq!(
+        r.note.text(),
+        "Loading the match at full resolution\u{2026}"
+    );
+    assert!(f.w.s.comparison_worker.is_running());
+    // The first frame lays the fonts out; the property is that the loop turns while the site waits.
+    pump_for(250);
+    let before = ticks.get();
+    f.w.run_review_action("toggle_reviewed");
+    assert!(f.w.s.queue.borrow().entries()[0].reviewed);
+    pump_for(200);
+    assert!(
+        ticks.get() >= before + 4,
+        "the main loop kept turning: {before} -> {}",
+        ticks.get()
+    );
+    assert!(
+        f.w.s.comparison_worker.is_running(),
+        "still waiting on the site"
+    );
+    // The site lets go; the fetch ends with no picture for the match, and the note says so.
+    assert!(pump_until(10_000, || r
+        .note
+        .text()
+        .contains("No match image could be fetched.")));
+    assert_eq!(r.wipe.has_pictures(), (true, false));
+    tick.remove();
+    held.join().unwrap();
+    f.close();
+}
+
+/// `CompareDialog`: opens on "Loading…", then the summary, the pair and the four modes
+/// (`_apply_mode`), with Differences built once and off the main loop.
+fn compare_dialog_loads_the_pair_and_switches_modes(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = wipe_fx(app, wipe_seed(dir.path()));
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    let id = f.w.current_id().unwrap();
+    f.w.open_compare_dialog(id);
+    let dialog =
+        f.w.s
+            .compare_open
+            .borrow()
+            .clone()
+            .expect("the dialog is open");
+    assert_eq!(dialog.window.title().as_deref(), Some("Compare - a.png"));
+    assert!(pump_until(10_000, || dialog.view.has_pictures() == (true, true)));
+    let lines = dialog.summary_text();
+    assert!(lines[0].starts_with("Local: 160\u{d7}120"), "{lines:?}");
+    assert!(lines[1].starts_with("Match: 200\u{d7}150"), "{lines:?}");
+    assert!(
+        lines.iter().any(|l| l.starts_with("The match is ")),
+        "the size verdict: {lines:?}"
+    );
+    assert!(dialog.diff_radio.is_sensitive() && dialog.wipe_radio.is_active());
+    assert_eq!(dialog.slider_right_label.text(), "Match");
+    assert!(!dialog.diff_note.is_visible());
+
+    // Local only and Match only park the wipe at an end and lock the slider.
+    dialog.local_radio.set_active(true);
+    assert!(!dialog.slider.is_sensitive() && (dialog.view.position() - 1.0).abs() < 1e-9);
+    dialog.matched_radio.set_active(true);
+    assert!(!dialog.slider.is_sensitive() && dialog.view.position().abs() < 1e-9);
+    dialog.wipe_radio.set_active(true);
+    dialog.slider.set_value(30.0);
+    assert!(dialog.slider.is_sensitive() && (dialog.view.position() - 0.3).abs() < 1e-9);
+
+    // Differences: the slider's right-hand name changes with it; the overlay is built on a worker.
+    dialog.diff_radio.set_active(true);
+    assert_eq!(dialog.slider_right_label.text(), "Differences");
+    assert!(pump_until(10_000, || dialog.view.showing_differences()));
+    assert!(dialog.diff_note.is_visible());
+    assert!(
+        dialog
+            .diff_note
+            .text()
+            .contains("drag the wipe to sweep the highlights across both")
+    );
+    dialog.wipe_radio.set_active(true);
+    assert!(!dialog.view.showing_differences() && !dialog.diff_note.is_visible());
+
+    dialog.window.close();
+    assert!(
+        f.w.s.compare_open.borrow().is_none(),
+        "closing lets go of it"
+    );
+    f.close();
+}
+
+/// `_open_compare_dialog`'s two guards: no match, and a local file that is gone.
+fn compare_dialog_answers_in_a_box_when_there_is_nothing_to_compare(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let seed = wipe_seed(dir.path());
+    let gone = seed[2].path.clone();
+    std::fs::remove_file(&gone).unwrap();
+    let f = wipe_fx(app, seed);
+    f.w.set_mode("review");
+
+    // Row 1 has no match.
+    f.w.s.queue_view.select_row(1);
+    let b = f.w.current_id().unwrap();
+    f.w.open_compare_dialog(b);
+    assert!(pump_until(5_000, || f.script.count_shown() == 1));
+    let shown = f.script.last_shown();
+    assert_eq!(
+        (shown.title.as_str(), shown.text.as_str()),
+        ("Compare", "This image has no match to compare against yet.")
+    );
+    assert!(f.w.s.compare_open.borrow().is_none());
+
+    // Row 2's file is gone.
+    f.w.s.queue_view.select_row(2);
+    let c = f.w.current_id().unwrap();
+    f.w.open_compare_dialog(c);
+    assert!(pump_until(5_000, || f.script.count_shown() == 2));
+    assert_eq!(
+        f.script.last_shown().text,
+        "The local file is no longer on disk, so there's nothing to compare the match against."
+    );
+    assert!(f.w.s.compare_open.borrow().is_none());
+
+    // The Compare key on the Review page asks the same way.
+    f.w.run_review_action("compare");
+    assert!(pump_until(5_000, || f.script.count_shown() == 3));
+    f.close();
+}
+
+/// The largest spread between a pixel's red, green and blue over a rendered pane (cairo's B, G, R, A).
+fn max_channel_spread(bgra: &[u8]) -> u8 {
+    bgra.chunks_exact(4)
+        .map(|p| p[0].max(p[1]).max(p[2]) - p[0].min(p[1]).min(p[2]))
+        .max()
+        .unwrap_or(0)
+}
+
+/// Design gate 2.2: the Differences pane is an R=G=B ramp, whatever colour the pictures are. The
+/// Wipe pane shows them in colour, which is the control that proves the sampler can see chroma.
+fn the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours(
+    app: &adw::Application,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut seed = wipe_seed(dir.path());
+    // Coloured pictures: a red local file, a blue-ish match with a bright patch.
+    let tint = |w: u32, h: u32, rgb: [u8; 3], patch: bool| {
+        let mut img =
+            image::RgbaImage::from_pixel(w, h, image::Rgba([rgb[0], rgb[1], rgb[2], 255]));
+        if patch {
+            for y in h / 4..h / 2 {
+                for x in w / 4..w / 2 {
+                    img.put_pixel(x, y, image::Rgba([250, 250, 40, 255]));
+                }
+            }
+        }
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    };
+    std::fs::write(&seed[0].path, tint(160, 120, [200, 40, 40], false)).unwrap();
+    seed[0].candidates[0].direct_file_url = Some(data_uri(&tint(200, 150, [40, 60, 200], true)));
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.has_pictures() == (true, true)));
+    assert!(pump_until(5_000, || r.wipe.area.width() > 0
+        && r.wipe.render().is_some()));
+    let (wipe_px, _, _) = r.wipe.render().unwrap();
+    assert!(
+        max_channel_spread(&wipe_px) > 100,
+        "the control: the Wipe pane carries the pictures' colour ({})",
+        max_channel_spread(&wipe_px)
+    );
+
+    r.view_buttons["diff"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.showing_differences()));
+    let (px, w, h) = r.wipe.render().unwrap();
+    assert_eq!(
+        max_channel_spread(&px),
+        0,
+        "no pixel of the {w} x {h} Differences pane has chroma"
+    );
+    // And it is not blank: the red local file's luma (87) sits at 26 + 87 * 171 / 255 = 84 on the
+    // ramp, and the overlay lifts the changed patch toward the light end.
+    let on_ramp = px
+        .chunks_exact(4)
+        .filter(|p| p[3] == 255 && p[0] == 84)
+        .count();
+    assert!(
+        on_ramp > 100,
+        "the local picture is on the ramp: {on_ramp} px"
+    );
+    assert!(
+        px.chunks_exact(4).any(|p| p[3] == 255 && p[0] > 150),
+        "the highlighted patch is lifted toward the ramp's light end"
     );
     f.close();
 }

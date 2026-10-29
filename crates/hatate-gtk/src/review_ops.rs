@@ -34,9 +34,9 @@ use std::collections::HashSet;
 /// `PREVIEW_DECODE_SIZE`: the longest side the Side by side view decodes the local file at.
 pub const PREVIEW_DECODE: u32 = 2048;
 
-/// The ids with a handler in this ticket. The Hydrus ones are 6.g's, Compare is the next step's;
+/// The ids with a handler in this ticket. The Hydrus ones are 6.g's;
 /// an action with no handler is not bound ("never bind a dead key", `install`).
-pub const WIRED: [&str; 11] = [
+pub const WIRED: [&str; 12] = [
     "next_row",
     "prev_row",
     "next_unreviewed",
@@ -48,6 +48,7 @@ pub const WIRED: [&str; 11] = [
     "reset_result",
     "remove_row",
     "toggle_reviewed",
+    "compare",
 ];
 
 /// How many decoded local pictures are kept (`_local_pixmap_cache`, which Python never trims).
@@ -300,11 +301,16 @@ impl MainWindow {
             }
         });
         r.matched.root.add_controller(click);
-        // Wipe, the comparison dialog and the shortcuts list are the next step's, and the Hydrus
-        // buttons are 6.g's: present, and insensitive with their reason.
-        r.pop_out_btn.set_sensitive(false);
-        r.pop_out_btn
-            .set_tooltip_text(Some("The comparison window arrives in a later step."));
+        // Pop out opens the comparison window (6.f-2). The shortcuts list is not on a ticket yet, and
+        // the Hydrus buttons are 6.g's: present, and insensitive with their reason.
+        {
+            let w = self.downgrade();
+            r.pop_out_btn.connect_clicked(move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.run_review_action("compare");
+                }
+            });
+        }
         r.shortcuts_btn.set_sensitive(false);
         r.shortcuts_btn
             .set_tooltip_text(Some("The shortcuts list arrives in a later step."));
@@ -313,6 +319,7 @@ impl MainWindow {
             b.button
                 .set_tooltip_text(Some("Sending to Hydrus arrives in a later step."));
         }
+        self.wire_review_compare();
         self.install_review_shortcuts();
     }
 
@@ -977,6 +984,7 @@ impl MainWindow {
     /// `refresh_review`: brings the page up to date with the selection.
     pub fn refresh_review(&self) {
         let r = &self.s.review;
+        self.sync_comparison_to_selection();
         let id = self.current_id();
         let (count, index) = (
             r.candidate_model.n_items() as usize,
@@ -1207,6 +1215,11 @@ impl MainWindow {
             "reset_result" => self.reset_rows(&self.s.queue_view.selected_ids()),
             "remove_row" => self.remove_rows(&self.s.queue_view.selected_ids()),
             "toggle_reviewed" => self.toggle_reviewed(),
+            "compare" => {
+                if let Some(id) = self.current_id() {
+                    self.open_compare_dialog(id);
+                }
+            }
             other => tracing::warn!("No handler for review shortcut {other:?}"),
         }
     }

@@ -44,12 +44,26 @@ fn reader_size(width: u32, height: u32, limit: u32) -> Option<(u32, u32)> {
 /// The thumbnail of the file at `path`, at most `limit` on a side. `None` for a file that is
 /// missing, unreadable or not a picture, and for a picture Qt would scale to nothing.
 pub fn decode_thumbnail(path: &str, limit: u32) -> Option<ThumbPixels> {
-    let mut decoder = ImageReader::open(path)
-        .ok()?
-        .with_guessed_format()
-        .ok()?
-        .into_decoder()
-        .ok()?;
+    decode_reader(ImageReader::open(path).ok()?, limit)
+}
+
+/// [`decode_thumbnail`] on bytes already in hand (`_decode_from_bytes`, and `QImage.loadFromData`
+/// in the compare dialog): `None` for bytes that are not a picture.
+pub fn decode_bytes(bytes: &[u8], limit: u32) -> Option<ThumbPixels> {
+    decode_reader(ImageReader::new(std::io::Cursor::new(bytes)), limit)
+}
+
+/// A picture at its own size (`QPixmap(path)` in the compare dialog): [`decode_thumbnail`] with no
+/// limit to apply.
+pub fn decode_full(path: &str) -> Option<ThumbPixels> {
+    decode_thumbnail(path, u32::MAX)
+}
+
+fn decode_reader<R: std::io::BufRead + std::io::Seek>(
+    reader: ImageReader<R>,
+    limit: u32,
+) -> Option<ThumbPixels> {
+    let mut decoder = reader.with_guessed_format().ok()?.into_decoder().ok()?;
     let orientation = decoder.orientation().ok();
     let mut picture = DynamicImage::from_decoder(decoder).ok()?;
     // Qt fits the picture as stored and turns it afterwards, which truncates differently from
@@ -235,5 +249,19 @@ mod tests {
         let junk = dir.path().join("junk.png");
         std::fs::write(&junk, b"not a picture").unwrap();
         assert!(image_header_info(junk.to_str().unwrap()).is_none());
+    }
+
+    #[test]
+    fn the_full_decode_keeps_the_stored_size_and_bytes_decode_the_same() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = write_png(dir.path(), "big.png", 3000, 100);
+        let t = decode_full(&p).unwrap();
+        assert_eq!((t.width, t.height), (3000, 100), "no limit to fit to");
+        let bytes = std::fs::read(&p).unwrap();
+        assert_eq!(decode_bytes(&bytes, u32::MAX).unwrap(), t);
+        let small = decode_bytes(&bytes, 300).unwrap();
+        assert_eq!((small.width, small.height), (300, 10));
+        assert!(decode_bytes(b"<html>not a picture</html>", 300).is_none());
+        assert!(decode_full("/nonexistent/none.png").is_none());
     }
 }

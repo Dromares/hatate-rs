@@ -6,6 +6,7 @@ pub mod batch;
 pub mod boorus;
 pub mod cache;
 pub mod clock;
+pub mod compare_view;
 pub mod config;
 pub mod crash_marker;
 pub mod desktop_attention;

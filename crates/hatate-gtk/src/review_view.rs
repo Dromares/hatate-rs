@@ -3,9 +3,11 @@
 //! the decision card (match stepper, candidate picker, tag list, the Hydrus buttons) and the
 //! position strip. What the page does is in [`crate::review_ops`], on `MainWindow`.
 //!
-//! Wipe and Differences are the next step's: their buttons are on the switch and insensitive.
+//! Wipe and Differences (DAN-2340) share the second stack page: the [`WipeView`] in its frame with the
+//! zoom tools floating top right, the slider row under it and the note under that.
 
 use crate::widgets::{self, FrameCaption, KeyHintBar, Piece};
+use crate::wipe_view::WipeView;
 use gtk4 as gtk;
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -36,6 +38,10 @@ pub const VIEWS: [(&str, &str, &str); 3] = [
          resolutions, so it says which AREAS differ, never which exact pixels.",
     ),
 ];
+
+/// The Wipe view's one-line how-to (mockup `review-wipe.html` `.review-note`).
+pub const WIPE_HINT: &str = "Local on the left, match on the right - drag the divider to sweep one \
+                             over the other. Scroll to zoom, drag to pan, double-click to fit.";
 
 /// The tooltip the readout has when it has nothing to say.
 pub const READOUT_TOOLTIP: &str = "How the selected match compares with your local file.";
@@ -252,6 +258,15 @@ pub struct ReviewPage {
     pub matched_caption: FrameCaption,
     pub matched_note: gtk::Label,
     pub note: gtk::Label,
+    // -- Wipe and Differences
+    pub wipe: WipeView,
+    /// `wipe_slider` and its row (`review_slider_row`): `Local ---|--- Match`.
+    pub wipe_slider: gtk::Scale,
+    pub slider_row: gtk::Box,
+    /// The error state's detail line (design gate 2.8): the raw OS text, never the message.
+    pub error_detail: gtk::Label,
+    pub zoom_tools: gtk::Box,
+    pub zoom_label: gtk::Label,
     // -- the decision card
     pub match_nav: gtk::Box,
     pub match_label: gtk::Label,
@@ -359,9 +374,93 @@ impl ReviewPage {
 
         let stack = gtk::Stack::new();
         stack.set_vexpand(true);
+        // The comparison page asks for its own height, not the pair's: the slider, the note and
+        // the error detail sit under it, and the sum has to fit the stated minimum (DAN-2340).
+        stack.set_vhomogeneous(false);
         stack.add_named(&pair, Some("pair"));
-        let comparison = gtk::Label::new(None);
-        stack.add_named(&comparison, Some("comparison"));
+        let wipe = WipeView::new();
+        let wipe_host = gtk::Overlay::new();
+        wipe_host.set_child(Some(&wipe.area));
+        // Floats inside the frame, top right (ruling R-3 on DAN-1178): in the header it would push
+        // the readout past the compare column, and showing it per view would move the pictures.
+        let zoom_tools = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+        zoom_tools.add_css_class("zoom-tools");
+        zoom_tools.set_halign(gtk::Align::End);
+        zoom_tools.set_valign(gtk::Align::Start);
+        zoom_tools.set_visible(false);
+        zoom_tools.set_margin_top(8);
+        zoom_tools.set_margin_end(8);
+        for (glyph, tip, op) in [
+            ("\u{2212}", "Zoom out (-)", 0),
+            ("+", "Zoom in (+)", 1),
+            ("Fit", "Fit the whole image (0, or double-click)", 2),
+            (
+                "100%",
+                "One image pixel per screen pixel (1) - the view that shows\ncompression artefacts \
+                 and resampling softness as they really are.",
+                3,
+            ),
+        ] {
+            let b = widgets::icon_button(glyph, tip, true);
+            let w = wipe.clone();
+            b.connect_clicked(move |_| match op {
+                0 => w.zoom_out(),
+                1 => w.zoom_in(),
+                2 => w.zoom_to_fit(),
+                _ => w.zoom_to_actual(),
+            });
+            zoom_tools.append(&b);
+        }
+        let zoom_label = widgets::muted("");
+        zoom_label.add_css_class("zoom-percent");
+        zoom_label.set_width_chars(5);
+        zoom_label.set_xalign(1.0);
+        zoom_tools.append(&zoom_label);
+        wipe_host.add_overlay(&zoom_tools);
+        {
+            let label = zoom_label.clone();
+            wipe.connect_zoom_changed(move |percent| {
+                label.set_text(&if percent == 0.0 {
+                    String::new()
+                } else {
+                    format!("{percent:.0}%")
+                });
+            });
+        }
+        stack.add_named(&widgets::image_frame(&wipe_host), Some("comparison"));
+
+        // `LOCAL ---|--- MATCH` under the frame (mockup `.wipe-slider`).
+        let wipe_slider = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
+        wipe_slider.set_value(50.0);
+        wipe_slider.set_draw_value(false);
+        wipe_slider.set_hexpand(true);
+        wipe_slider.add_css_class("wipe-slider");
+        wipe_slider.set_tooltip_text(Some("Drag to sweep the wipe across the pictures."));
+        {
+            let w = wipe.clone();
+            wipe_slider.connect_value_changed(move |s| w.set_position(s.value() / 100.0));
+        }
+        let slider_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        for text in ["Local", "Match"] {
+            let l = gtk::Label::new(Some(text));
+            l.add_css_class("wipe-end-label");
+            l.add_css_class("caps");
+            if text == "Local" {
+                slider_row.append(&l);
+                slider_row.append(&wipe_slider);
+            } else {
+                slider_row.append(&l);
+            }
+        }
+        slider_row.set_visible(false);
+        let error_detail = widgets::hint("");
+        error_detail.set_halign(gtk::Align::Center);
+        // One line, cut in the middle (the path's two ends are what tell it apart); the whole text
+        // is the tooltip and the selection (DAN-2340, design gate 2.5).
+        error_detail.set_wrap(false);
+        error_detail.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        error_detail.set_selectable(true);
+        error_detail.set_visible(false);
 
         let note = widgets::hint("");
         note.set_halign(gtk::Align::Center);
@@ -373,7 +472,9 @@ impl ReviewPage {
         compare_col.append(&header);
         compare_col.append(&readout_row);
         compare_col.append(&stack);
+        compare_col.append(&slider_row);
         compare_col.append(&note);
+        compare_col.append(&error_detail);
 
         // -- the decision card
         let rail = gtk::Box::new(gtk::Orientation::Vertical, 6);
@@ -555,6 +656,12 @@ impl ReviewPage {
             matched_caption,
             matched_note,
             note,
+            wipe,
+            wipe_slider,
+            slider_row,
+            error_detail,
+            zoom_tools,
+            zoom_label,
             match_nav,
             match_label,
             prev_match_btn,
@@ -592,12 +699,6 @@ impl ReviewPage {
             }
             glib::ControlFlow::Continue
         });
-        // Wipe and Differences arrive with the next step.
-        for key in ["wipe", "diff"] {
-            if let Some(b) = page.view_buttons.get(key) {
-                b.set_sensitive(false);
-            }
-        }
         page
     }
 

@@ -26,6 +26,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 struct Ctx {
+    /// The running scenario's `kind`: `compare` adds the Review/compare digest (DAN-2340).
+    kind: RefCell<String>,
     files: PathBuf,
     root: PathBuf,
     now: f64,
@@ -42,6 +44,7 @@ fn main() {
     }
     let out = std::env::var("HATATE_DIFF_OUT").expect("HATATE_DIFF_OUT");
     let ctx = Ctx {
+        kind: RefCell::new(String::new()),
         files: PathBuf::from(std::env::var("HATATE_DIFF_FILES").expect("HATATE_DIFF_FILES")),
         root: PathBuf::from(std::env::var("HATATE_DIFF_ROOT").expect("HATATE_DIFF_ROOT")),
         now: std::env::var("HATATE_DIFF_NOW")
@@ -126,18 +129,24 @@ fn make_files(ctx: &Ctx, spec: &Value) {
                 _ => {}
             }
             // The scenario holds the bytes as latin-1 text, as the Python driver writes them.
-            let bytes: Vec<u8> = content
-                .as_str()
-                .unwrap()
-                .chars()
-                .map(|c| c as u32 as u8)
-                .collect();
-            std::fs::write(p, bytes).unwrap();
+            // `@mode000:` is a file nobody may read (a non-root run only; DAN-2340).
+            let text = content.as_str().unwrap();
+            let (text, locked) = match text.strip_prefix("@mode000:") {
+                Some(rest) => (rest, true),
+                None => (text, false),
+            };
+            let bytes: Vec<u8> = text.chars().map(|c| c as u32 as u8).collect();
+            std::fs::write(&p, bytes).unwrap();
+            if locked {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+            }
         }
     }
 }
 
 fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
+    *ctx.kind.borrow_mut() = spec["kind"].as_str().unwrap_or("").to_owned();
     make_files(ctx, spec);
     let _ = std::fs::remove_dir_all(&ctx.root);
     let paths = temp_paths(&ctx.root);
@@ -347,7 +356,54 @@ fn do_step(
             }
         }
         "clear_cache" => w.action_clear_search_cache(),
+        "set_mode" => w.set_mode(step["key"].as_str().unwrap()),
+        "view" => {
+            // A click on a disabled button does nothing in Qt; `set_active` would not care.
+            let b = &w.s.review.view_buttons[step["key"].as_str().unwrap()];
+            if b.is_sensitive() {
+                b.set_active(true);
+            }
+        }
+        "slider" => {
+            w.s.review
+                .wipe_slider
+                .set_value(step["value"].as_f64().unwrap())
+        }
+        "zoom" => zoom(&w.s.review.wipe, step["what"].as_str().unwrap()),
+        "open_compare" => {
+            if let Some(id) = w.current_id() {
+                w.open_compare_dialog(id);
+            }
+        }
+        "dlg_mode" | "dlg_slider" | "dlg_zoom" | "dlg_close" => {
+            // The guard box answered instead of a dialog: nothing to drive.
+            let Some(d) = w.s.compare_open.borrow().clone() else {
+                return;
+            };
+            match op {
+                "dlg_mode" => match step["mode"].as_str().unwrap() {
+                    "wipe" => d.wipe_radio.set_active(true),
+                    "local" => d.local_radio.set_active(true),
+                    "match" => d.matched_radio.set_active(true),
+                    // A disabled radio cannot be clicked (`set_active` would not care).
+                    _ if !d.diff_radio.is_sensitive() => {}
+                    _ => d.diff_radio.set_active(true),
+                },
+                "dlg_slider" => d.slider.set_value(step["value"].as_f64().unwrap()),
+                "dlg_zoom" => zoom(&d.view, step["what"].as_str().unwrap()),
+                _ => d.window.close(),
+            }
+        }
         other => panic!("unknown op {other}"),
+    }
+}
+
+fn zoom(v: &hatate_gtk::wipe_view::WipeView, what: &str) {
+    match what {
+        "in" => v.zoom_in(),
+        "out" => v.zoom_out(),
+        "fit" => v.zoom_to_fit(),
+        _ => v.zoom_to_actual(),
     }
 }
 
@@ -464,6 +520,125 @@ fn settle(w: &MainWindow) {
     for _ in 0..5 {
         pump_for(10);
     }
+    settle_compare(w);
+}
+
+/// The Review wipe and the compare dialog load off the main loop (DAN-2340): wait until nothing is
+/// loading and the digest part has stopped moving. A no-op for a window that never opened them.
+fn settle_compare(w: &MainWindow) {
+    let sample = || compare_digest(w).to_string();
+    let ready = || {
+        !w.s.comparison.borrow().loading
+            && w.s
+                .compare_open
+                .borrow()
+                .as_ref()
+                .is_none_or(|d| !d.summary_text().is_empty())
+    };
+    if w.s.comparison.borrow().loaded_for.is_none()
+        && w.s.compare_open.borrow().is_none()
+        && !w.s.comparison.borrow().loading
+    {
+        return;
+    }
+    let mut last = sample();
+    let t = std::time::Instant::now();
+    loop {
+        pump_for(120);
+        let now = sample();
+        if ready() && now == last {
+            break;
+        }
+        last = now;
+        if t.elapsed() > std::time::Duration::from_secs(15) {
+            break;
+        }
+    }
+}
+
+/// The Review page and the compare dialog as the Python driver's `compare_digest` reads them.
+fn compare_digest(w: &MainWindow) -> Value {
+    fn zoom_fmt(t: &str) -> String {
+        let mut out = String::new();
+        let mut in_digits = false;
+        for c in t.chars() {
+            if c.is_ascii_digit() {
+                if !in_digits {
+                    out.push('#');
+                }
+                in_digits = true;
+            } else {
+                in_digits = false;
+                out.push(c);
+            }
+        }
+        out
+    }
+    /// The layout-free reading of the zoom: the factor (1.0 = fit) while it is a power of 1.25 from
+    /// fit, else the percentage (after a 100% click the factor is 100/fit%, the widget's business).
+    fn zoom_free(v: &hatate_gtk::wipe_view::WipeView) -> Value {
+        let f = v.zoom_factor();
+        let k = if f > 0.0 { f.ln() / 1.25f64.ln() } else { 0.0 };
+        if (k - k.round()).abs() < 1e-6 {
+            json!(["f", (f * 1e6).round() / 1e6])
+        } else {
+            json!(["p", (v.zoom_percent() * 1e3).round() / 1e3])
+        }
+    }
+    fn view_of(v: &hatate_gtk::wipe_view::WipeView) -> Value {
+        let (l, r) = v.has_pictures();
+        json!({"pictures": [l, r], "differences": v.showing_differences(),
+               "position": (v.position() * 1e6).round() / 1e6,
+               "zoom_free": zoom_free(v), "x_zoom": (v.zoom_factor() * 1e6).round() / 1e6})
+    }
+    let r = &w.s.review;
+    let row = w.current_id().and_then(|id| {
+        w.s.queue
+            .borrow()
+            .entry(id)
+            .map(|e| e.filename().to_owned())
+    });
+    let mut out = json!({
+        "mode": w.s.shell.current_mode(),
+        "row": row,
+        "view": r.current_view(),
+        "page": r.stack.visible_child_name().map(|n| n.to_string()).unwrap_or_default(),
+        "match_label": r.match_label.text().to_string(),
+        "note": r.note.text().to_string(),
+        "note_visible": r.note.is_visible(),
+        "note_enabled": r.note.is_sensitive(),
+        "slider": r.wipe_slider.value().round() as i64,
+        "slider_enabled": r.wipe_slider.is_sensitive(),
+        "slider_row_visible": r.slider_row.is_visible(),
+        "zoom_tools_visible": r.zoom_tools.is_visible(),
+        "zoom_fmt": zoom_fmt(r.zoom_label.text().as_str()),
+        "diff_button_enabled": r.view_buttons["diff"].is_sensitive(),
+        "wipe": view_of(&r.wipe),
+    });
+    if (r.wipe.zoom_percent() - 100.0).abs() < 0.5 {
+        out["zoom_label_at_100"] = json!(r.zoom_label.text().to_string());
+    }
+    out["rs_error_detail"] = json!({"text": r.error_detail.text().to_string(),
+                                 "visible": r.error_detail.is_visible()});
+    out["dialog"] = match w.s.compare_open.borrow().as_ref() {
+        None => Value::Null,
+        Some(d) => json!({
+            "title": d.window.title().map(|t| t.to_string()).unwrap_or_default(),
+            "summary": d.summary_text().iter().map(|l| l.replace('\u{a0}', " ")).collect::<Vec<_>>(),
+            "radios": [d.wipe_radio.is_active(), d.local_radio.is_active(),
+                       d.matched_radio.is_active(), d.diff_radio.is_active()],
+            "diff_radio_enabled": d.diff_radio.is_sensitive(),
+            "slider": d.slider.value().round() as i64,
+            "slider_enabled": d.slider.is_sensitive(),
+            "slider_left": d.slider_left_label.text().to_string(),
+            "slider_right": d.slider_right_label.text().to_string(),
+            "diff_note": d.diff_note.text().to_string(),
+            "diff_note_visible": d.diff_note.is_visible(),
+            "zoom_fmt": zoom_fmt(d.zoom_label.text().as_str()),
+            "view": view_of(&d.view),
+        }),
+    };
+    out
 }
 
 /// The text of every label under `w`, depth first, in tree order.
@@ -636,7 +811,7 @@ fn digest(
     let mut quota_meta = Vec::new();
     labels(qb.parts.meta_slot.upcast_ref(), &mut quota_meta);
     let _ = labels_of(&rb.parts.body);
-    json!({
+    let mut digest = json!({
         "step": step,
         "status": sh.status_text(),
         "button": sh.search_toggle_btn.label().map(|l| l.to_string()).unwrap_or_default(),
@@ -680,7 +855,11 @@ fn digest(
         "opened": opened.borrow().iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>(),
         "files": profile_files(ctx, paths),
         "pause_file": pause_file(paths),
-    })
+    });
+    if ctx.kind.borrow().as_str() == "compare" {
+        digest["compare"] = compare_digest(w);
+    }
+    digest
 }
 
 fn pause_file(paths: &Paths) -> Value {

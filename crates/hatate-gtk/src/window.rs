@@ -221,6 +221,13 @@ pub struct State {
     pub local_pending: RefCell<HashSet<hatate_core::queue::EntryId>>,
     /// `self.candidate_worker`.
     pub candidate_worker: Slot,
+    /// What the Wipe and Differences views hold (`_review_loaded_for` and friends), DAN-2340.
+    pub comparison: RefCell<crate::review_compare::ComparisonState>,
+    /// The full-resolution fetch, and the difference overlay's build.
+    pub comparison_worker: Slot,
+    pub diff_worker: Slot,
+    /// The compare dialog, while it is open.
+    pub compare_open: RefCell<Option<Rc<crate::compare_dialog::CompareDialog>>>,
     /// The review keys' controllers, to take down when the bindings change.
     pub review_controllers: RefCell<Vec<(gtk::Widget, gtk::ShortcutController)>>,
 }
@@ -455,6 +462,10 @@ impl MainWindow {
             local_pictures: RefCell::new(Default::default()),
             local_pending: RefCell::new(HashSet::new()),
             candidate_worker: Slot::new(),
+            comparison: RefCell::new(Default::default()),
+            comparison_worker: Slot::new(),
+            diff_worker: Slot::new(),
+            compare_open: RefCell::new(None),
             review_controllers: RefCell::new(Vec::new()),
         });
         let window = MainWindow {
