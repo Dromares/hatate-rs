@@ -422,6 +422,170 @@ pub fn decode_rgba(bytes: &[u8]) -> Option<Rgba> {
     })
 }
 
+// -- the compare dialog's summary (`CompareDialog._build_summary`, `_human`) ------------------------
+
+/// How a summary line is toned: `ink_65` ("good", the tier of the match being the bigger copy) or
+/// `ink_100` ("needs a decision").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    Plain,
+    Good,
+    Uncertain,
+}
+
+/// One line of the dialog's summary: an optional bold label, then the words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SummaryLine {
+    pub label: Option<String>,
+    pub text: String,
+    pub tone: Tone,
+    /// The whole line is bold (the label-less verdict lines).
+    pub strong: bool,
+    pub italic: bool,
+}
+
+impl SummaryLine {
+    fn plain(text: String) -> SummaryLine {
+        SummaryLine {
+            label: None,
+            text,
+            tone: Tone::Plain,
+            strong: false,
+            italic: false,
+        }
+    }
+}
+
+/// What `_build_summary` reads.
+#[derive(Debug, Clone, Default)]
+pub struct SummaryInput {
+    pub has_candidate: bool,
+    /// The local picture's size: the loaded picture's, else the entry's recorded one, else 0.
+    pub local_size: (i64, i64),
+    /// The match's: the loaded picture's, else the candidate's recorded one, else 0.
+    pub remote_size: (i64, i64),
+    /// `os.path.getsize(entry.path)`, `None` when that fails.
+    pub local_bytes: Option<i64>,
+    /// `len(matched_bytes)`, `None` when nothing was fetched.
+    pub matched_bytes: Option<i64>,
+    /// `candidate.remote_size_bytes`.
+    pub candidate_remote_bytes: Option<i64>,
+    /// The perceptual distance, when the match's bytes were in hand.
+    pub distance: Option<i64>,
+    pub matched_loaded: bool,
+    pub used_fallback: bool,
+}
+
+/// `_human`: `1536` is `1.5 KB`, `800` is `800 B`, nothing is `""`.
+pub fn human(num_bytes: Option<i64>) -> String {
+    let Some(n) = num_bytes.filter(|n| *n != 0) else {
+        return String::new();
+    };
+    let mut value = n as f64;
+    for unit in ["B", "KB", "MB", "GB"] {
+        if value < 1024.0 || unit == "GB" {
+            return if unit == "B" {
+                format!("{value:.0} {unit}")
+            } else {
+                format!("{value:.1} {unit}")
+            };
+        }
+        value /= 1024.0;
+    }
+    String::new()
+}
+
+/// `_build_summary`, as lines.
+pub fn build_summary(i: &SummaryInput) -> Vec<SummaryLine> {
+    use crate::image_compare::{compare_file_sizes, compare_sizes, describe_perceptual_match};
+    if !i.has_candidate {
+        return vec![SummaryLine {
+            strong: true,
+            ..SummaryLine::plain("No match selected for this image.".to_owned())
+        }];
+    }
+    let size_cmp = compare_sizes(
+        Some(i.local_size.0),
+        Some(i.local_size.1),
+        Some(i.remote_size.0),
+        Some(i.remote_size.1),
+    );
+    let file_cmp = compare_file_sizes(
+        i.local_bytes,
+        i.matched_bytes
+            .filter(|n| *n != 0)
+            .or(i.candidate_remote_bytes),
+    );
+    let tone = if size_cmp.remote_is_bigger() {
+        Tone::Good
+    } else {
+        Tone::Uncertain
+    };
+    let sized = |label: &str, size: (i64, i64), bytes: Option<i64>| {
+        let mut text = format!("{}\u{d7}{}", size.0, size.1);
+        if bytes.is_some_and(|b| b != 0) {
+            text.push_str(&format!(" \u{b7} {}", human(bytes)));
+        }
+        SummaryLine {
+            label: Some(label.to_owned()),
+            ..SummaryLine::plain(text)
+        }
+    };
+    let mut lines = vec![
+        sized("Local:", i.local_size, i.local_bytes),
+        sized("Match:", i.remote_size, i.matched_bytes),
+    ];
+    if !size_cmp.verdict.is_empty() {
+        let mut text = format!("The match is {}", size_cmp.verdict);
+        if !file_cmp.is_empty() {
+            text.push_str(&format!(" \u{b7} {file_cmp}"));
+        }
+        lines.push(SummaryLine {
+            tone,
+            strong: true,
+            ..SummaryLine::plain(text)
+        });
+    }
+    lines.push(SummaryLine::plain(describe_perceptual_match(i.distance)));
+    if !i.matched_loaded {
+        lines.push(SummaryLine {
+            tone: Tone::Uncertain,
+            strong: true,
+            ..SummaryLine::plain(
+                "The match's picture could not be fetched, so there is nothing to compare \
+                 against. The site may be refusing it, or the link may have expired - see Help > \
+                 View Logs."
+                    .to_owned(),
+            )
+        });
+    }
+    if i.used_fallback {
+        // Italic and `ink_65`, like the Status column's "searching": informational, not a
+        // decision pending on the user.
+        lines.push(SummaryLine {
+            tone: Tone::Good,
+            italic: true,
+            ..SummaryLine::plain(
+                "No full-resolution URL was available for this match, so this is the site's \
+                 downscaled preview - the quality difference shown here understates the real \
+                 one."
+                    .to_owned(),
+            )
+        });
+    }
+    if size_cmp.aspect_differs {
+        lines.push(SummaryLine {
+            italic: true,
+            ..SummaryLine::plain(
+                "The two have different proportions, so the match may be cropped differently or \
+                 be a different edit."
+                    .to_owned(),
+            )
+        });
+    }
+    lines
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -642,5 +806,91 @@ mod tests {
             .unwrap();
         let r = open_local(p.to_str().unwrap()).unwrap();
         assert_eq!((r.width, r.height, r.rgba.len()), (7, 3, 84));
+    }
+
+    fn input() -> SummaryInput {
+        SummaryInput {
+            has_candidate: true,
+            local_size: (1000, 800),
+            remote_size: (2000, 1600),
+            local_bytes: Some(300_000),
+            matched_bytes: Some(1_500_000),
+            distance: Some(2),
+            matched_loaded: true,
+            ..SummaryInput::default()
+        }
+    }
+
+    #[test]
+    fn human_sizes_read_like_the_dialog() {
+        assert_eq!(human(None), "");
+        assert_eq!(human(Some(0)), "");
+        assert_eq!(human(Some(800)), "800 B");
+        assert_eq!(human(Some(1536)), "1.5 KB");
+        assert_eq!(human(Some(5 * 1024 * 1024)), "5.0 MB");
+        assert_eq!(human(Some(3 * 1024 * 1024 * 1024 * 1024)), "3072.0 GB");
+    }
+
+    #[test]
+    fn no_candidate_says_so() {
+        let lines = build_summary(&SummaryInput::default());
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].text, "No match selected for this image.");
+        assert!(lines[0].strong);
+    }
+
+    #[test]
+    fn a_bigger_match_is_toned_good_and_carries_the_file_comparison() {
+        let lines = build_summary(&input());
+        assert_eq!(lines[0].label.as_deref(), Some("Local:"));
+        assert_eq!(lines[0].text, "1000\u{d7}800 \u{b7} 293.0 KB");
+        assert_eq!(lines[1].text, "2000\u{d7}1600 \u{b7} 1.4 MB");
+        let verdict = &lines[2];
+        assert_eq!(verdict.tone, Tone::Good);
+        assert!(
+            verdict.strong && verdict.text.starts_with("The match is "),
+            "{verdict:?}"
+        );
+        assert!(verdict.text.contains("bigger file"), "{}", verdict.text);
+        assert_eq!(lines[3].text, "Looks like the same image (difference 2/64)");
+        assert_eq!(lines.len(), 4, "nothing else to warn about");
+    }
+
+    #[test]
+    fn a_match_that_did_not_come_down_says_so_and_a_fallback_is_italic() {
+        let mut i = input();
+        i.matched_loaded = false;
+        i.matched_bytes = None;
+        i.distance = None;
+        i.used_fallback = true;
+        i.remote_size = (1000, 800);
+        let lines = build_summary(&i);
+        let texts: Vec<&str> = lines.iter().map(|l| l.text.as_str()).collect();
+        assert!(texts.contains(&"Couldn't compare the images"), "{texts:?}");
+        let missing = lines
+            .iter()
+            .find(|l| l.text.starts_with("The match's picture could not"))
+            .unwrap();
+        assert!(missing.strong && missing.tone == Tone::Uncertain);
+        let fallback = lines
+            .iter()
+            .find(|l| l.text.starts_with("No full-resolution URL"))
+            .unwrap();
+        assert!(fallback.italic && fallback.tone == Tone::Good);
+    }
+
+    #[test]
+    fn different_proportions_are_flagged() {
+        let mut i = input();
+        i.remote_size = (2000, 800);
+        let lines = build_summary(&i);
+        assert!(
+            lines
+                .last()
+                .unwrap()
+                .text
+                .starts_with("The two have different proportions")
+        );
+        assert!(lines.last().unwrap().italic);
     }
 }
