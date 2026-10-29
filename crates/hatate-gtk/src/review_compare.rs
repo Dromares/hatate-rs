@@ -52,6 +52,18 @@ pub struct Panes {
     pub verdict: String,
 }
 
+/// `build_difference_overlay` and the ramp, for the Differences pane. Heavy: call it from a worker.
+pub fn build_panes(local: &Rgba, matched: &Rgba) -> Option<Arc<Panes>> {
+    build_difference_overlay(local, matched).map(|v: DifferenceView| {
+        Arc::new(Panes {
+            local: ramp_picture(local),
+            matched: ramp_picture(matched),
+            verdict: v.diff.verdict.clone(),
+            overlay: v.overlay,
+        })
+    })
+}
+
 /// `LoadedComparison`.
 pub struct Loaded {
     pub local: Result<Rgba, PictureError>,
@@ -380,16 +392,7 @@ impl MainWindow {
                 let (l, m) = (local.clone(), matched.clone());
                 let w = self.downgrade();
                 let job = self.s.workers.run(
-                    move |_ctx: &crate::worker::Ctx<()>| {
-                        build_difference_overlay(&l, &m).map(|v: DifferenceView| {
-                            Arc::new(Panes {
-                                local: ramp_picture(&l),
-                                matched: ramp_picture(&m),
-                                verdict: v.diff.verdict.clone(),
-                                overlay: v.overlay,
-                            })
-                        })
-                    },
+                    move |_ctx: &crate::worker::Ctx<()>| build_panes(&l, &m),
                     move |event: Event<(), Option<Arc<Panes>>>| {
                         let Some(w) = w.upgrade() else { return };
                         if let Event::Done(panes) = event {

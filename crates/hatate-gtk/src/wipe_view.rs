@@ -70,12 +70,15 @@ struct State {
     drag_from: Option<(f64, f64)>,
 }
 
+/// The callback that reports the zoom.
+type ZoomCallback = Rc<RefCell<Option<Rc<dyn Fn(f64)>>>>;
+
 /// The widget, and the callback that reports the zoom.
 #[derive(Clone)]
 pub struct WipeView {
     pub area: gtk::DrawingArea,
     state: Rc<RefCell<State>>,
-    on_zoom: Rc<RefCell<Option<Rc<dyn Fn(f64)>>>>,
+    on_zoom: ZoomCallback,
 }
 
 impl WipeView {

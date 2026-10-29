@@ -30,6 +30,7 @@ pub fn is_wired(action: Action) -> bool {
             | Action::ResearchWithOppositeEngine
             | Action::CheckUpscaling
             | Action::CheckAvailability
+            | Action::Compare
     )
 }
 
@@ -63,7 +64,11 @@ impl MainWindow {
                     self.check_match_availability(*id);
                 }
             }
-            // DEFERRED(6.f): `_open_compare_dialog`.
+            Action::Compare => {
+                if let Some(id) = ids.first() {
+                    self.open_compare_dialog(*id);
+                }
+            }
             // DEFERRED(6.g): the Hydrus entries.
             _ => {}
         }
@@ -165,8 +170,8 @@ impl MainWindow {
 mod tests {
     use super::*;
 
-    /// 6.e gives the re-search, upscale-check and availability entries their handlers; Compare
-    /// (6.f) and the Hydrus entries (6.g) stay off.
+    /// 6.e gives the re-search, upscale-check and availability entries their handlers, 6.f-2 gives
+    /// Compare its; the Hydrus entries (6.g) stay off.
     #[test]
     fn the_entries_6e_owns_are_wired_and_the_later_ones_are_not() {
         for a in [
@@ -175,11 +180,11 @@ mod tests {
             Action::ResearchWithOppositeEngine,
             Action::CheckUpscaling,
             Action::CheckAvailability,
+            Action::Compare,
         ] {
             assert!(is_wired(a), "{a:?}");
         }
         for a in [
-            Action::Compare,
             Action::SendToHydrus,
             Action::ShowInHydrus,
             Action::DeleteFromHydrus,

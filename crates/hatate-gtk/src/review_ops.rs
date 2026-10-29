@@ -34,9 +34,9 @@ use std::collections::HashSet;
 /// `PREVIEW_DECODE_SIZE`: the longest side the Side by side view decodes the local file at.
 pub const PREVIEW_DECODE: u32 = 2048;
 
-/// The ids with a handler in this ticket. The Hydrus ones are 6.g's, Compare is the next step's;
+/// The ids with a handler in this ticket. The Hydrus ones are 6.g's;
 /// an action with no handler is not bound ("never bind a dead key", `install`).
-pub const WIRED: [&str; 11] = [
+pub const WIRED: [&str; 12] = [
     "next_row",
     "prev_row",
     "next_unreviewed",
@@ -48,6 +48,7 @@ pub const WIRED: [&str; 11] = [
     "reset_result",
     "remove_row",
     "toggle_reviewed",
+    "compare",
 ];
 
 /// How many decoded local pictures are kept (`_local_pixmap_cache`, which Python never trims).
@@ -302,9 +303,14 @@ impl MainWindow {
         r.matched.root.add_controller(click);
         // Wipe, the comparison dialog and the shortcuts list are the next step's, and the Hydrus
         // buttons are 6.g's: present, and insensitive with their reason.
-        r.pop_out_btn.set_sensitive(false);
-        r.pop_out_btn
-            .set_tooltip_text(Some("The comparison window arrives in a later step."));
+        {
+            let w = self.downgrade();
+            r.pop_out_btn.connect_clicked(move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.run_review_action("compare");
+                }
+            });
+        }
         r.shortcuts_btn.set_sensitive(false);
         r.shortcuts_btn
             .set_tooltip_text(Some("The shortcuts list arrives in a later step."));
@@ -1209,6 +1215,11 @@ impl MainWindow {
             "reset_result" => self.reset_rows(&self.s.queue_view.selected_ids()),
             "remove_row" => self.remove_rows(&self.s.queue_view.selected_ids()),
             "toggle_reviewed" => self.toggle_reviewed(),
+            "compare" => {
+                if let Some(id) = self.current_id() {
+                    self.open_compare_dialog(id);
+                }
+            }
             other => tracing::warn!("No handler for review shortcut {other:?}"),
         }
     }

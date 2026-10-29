@@ -6,6 +6,7 @@ pub mod add_tags;
 pub mod app;
 pub mod banners;
 pub mod checks;
+pub mod compare_dialog;
 pub mod dialogs;
 pub mod error;
 pub mod filter_bar;
