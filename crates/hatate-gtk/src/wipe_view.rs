@@ -9,7 +9,7 @@
 use gtk4 as gtk;
 use gtk4::prelude::*;
 use gtk4::{cairo, gdk};
-use hatate_core::compare_view::{Rgba, RectF, WipeGeometry, ramp_picture, visible_part};
+use hatate_core::compare_view::{RectF, Rgba, WipeGeometry, visible_part};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -137,12 +137,12 @@ impl WipeView {
     }
 
     /// `set_difference_view`: both pictures side by side, `overlay` swept across both by the wipe.
-    /// The pictures are drawn as the Differences ramp (design gate 2.2).
+    /// The pictures arrive already as the Differences ramp (`ramp_picture`, design gate 2.2).
     pub fn set_difference_view(&self, local: &Rgba, matched: &Rgba, overlay: &Rgba) {
         {
             let mut s = self.state.borrow_mut();
-            s.diff_local = Surf::new(&ramp_picture(local));
-            s.diff_match = Surf::new(&ramp_picture(matched));
+            s.diff_local = Surf::new(local);
+            s.diff_match = Surf::new(matched);
             s.diff_overlay = Surf::new(overlay);
             let size = s.diff_local.as_ref().map(|p| p.size);
             s.geom.set_differences(size);
@@ -348,7 +348,13 @@ impl WipeView {
         );
         // The toolkit's own text render; the one pango-with-cairo call this crate has, and the
         // alternative is a dependency for a two-line message.
-        gtk::render_layout(&area.style_context(), cr, rect.x, rect.y + (rect.h - f64::from(h)) / 2.0, &layout);
+        gtk::render_layout(
+            &area.style_context(),
+            cr,
+            rect.x,
+            rect.y + (rect.h - f64::from(h)) / 2.0,
+            &layout,
+        );
         let _ = cr.restore();
     }
 

@@ -313,6 +313,7 @@ impl MainWindow {
             b.button
                 .set_tooltip_text(Some("Sending to Hydrus arrives in a later step."));
         }
+        self.wire_review_compare();
         self.install_review_shortcuts();
     }
 
@@ -977,6 +978,7 @@ impl MainWindow {
     /// `refresh_review`: brings the page up to date with the selection.
     pub fn refresh_review(&self) {
         let r = &self.s.review;
+        self.sync_comparison_to_selection();
         let id = self.current_id();
         let (count, index) = (
             r.candidate_model.n_items() as usize,

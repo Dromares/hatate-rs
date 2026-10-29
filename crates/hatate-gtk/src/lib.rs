@@ -17,6 +17,7 @@ pub mod menubar_keys;
 pub mod parser_health;
 pub mod queue_menu;
 pub mod queue_view;
+pub mod review_compare;
 pub mod review_keys;
 pub mod review_ops;
 pub mod review_view;

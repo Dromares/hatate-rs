@@ -446,7 +446,11 @@ mod tests {
         let mut g = geom((400.0, 400.0), (400.0, 400.0));
         g.set_differences(Some((400.0, 400.0)));
         let t = g.target_rect().unwrap();
-        assert_eq!((t.w, t.h), (400.0, 200.0), "the pair fits the box: 800 x 400 scaled to 400 wide");
+        assert_eq!(
+            (t.w, t.h),
+            (400.0, 200.0),
+            "the pair fits the box: 800 x 400 scaled to 400 wide"
+        );
     }
 
     #[test]
@@ -454,7 +458,10 @@ mod tests {
         let mut g = geom((400.0, 400.0), (400.0, 400.0));
         let anchor = (300.0, 100.0);
         let before = g.target_rect().unwrap();
-        let (fx, fy) = ((anchor.0 - before.x) / before.w, (anchor.1 - before.y) / before.h);
+        let (fx, fy) = (
+            (anchor.0 - before.x) / before.w,
+            (anchor.1 - before.y) / before.h,
+        );
         assert!(g.apply_zoom(anchor, 2.0));
         let after = g.target_rect().unwrap();
         assert!(((anchor.0 - after.x) / after.w - fx).abs() < 1e-9);
@@ -467,7 +474,10 @@ mod tests {
         let mut g = geom((400.0, 400.0), (400.0, 400.0));
         assert!(g.apply_zoom((200.0, 200.0), 1000.0));
         assert_eq!(g.zoom(), MAX_ZOOM);
-        assert!(!g.apply_zoom((200.0, 200.0), 1000.0), "already at the ceiling");
+        assert!(
+            !g.apply_zoom((200.0, 200.0), 1000.0),
+            "already at the ceiling"
+        );
         assert!(g.apply_zoom((200.0, 200.0), 0.0001));
         assert_eq!(g.zoom(), MIN_ZOOM);
     }
@@ -503,12 +513,22 @@ mod tests {
 
     #[test]
     fn only_the_visible_part_is_drawn() {
-        let target = RectF { x: -1000.0, y: 0.0, w: 4000.0, h: 400.0 };
+        let target = RectF {
+            x: -1000.0,
+            y: 0.0,
+            w: 4000.0,
+            h: 400.0,
+        };
         let (dest, src) =
             visible_part((8000.0, 800.0), target, target, (400.0, 400.0)).expect("visible");
         assert_eq!((dest.x, dest.w), (0.0, 400.0));
         assert_eq!((src.x, src.w), (2000.0, 800.0));
-        let off = RectF { x: 500.0, y: 0.0, w: 100.0, h: 100.0 };
+        let off = RectF {
+            x: 500.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        };
         assert!(visible_part((10.0, 10.0), off, off, (400.0, 400.0)).is_none());
     }
 
@@ -529,15 +549,26 @@ mod tests {
     }
 
     fn flat(w: u32, h: u32, v: u8) -> Rgba {
-        Rgba { width: w, height: h, rgba: [v, v, v, 255].repeat((w * h) as usize) }
+        Rgba {
+            width: w,
+            height: h,
+            rgba: [v, v, v, 255].repeat((w * h) as usize),
+        }
     }
 
     #[test]
     fn identical_pictures_have_a_clear_overlay_and_a_changed_patch_does_not() {
         let a = flat(120, 90, 90);
         let same = build_difference_overlay(&a, &a).expect("comparable");
-        assert!(same.overlay.rgba.chunks_exact(4).all(|px| px[3] == 0), "nothing changed");
-        assert_eq!((same.overlay.width, same.overlay.height), (120, 90), "at the local size");
+        assert!(
+            same.overlay.rgba.chunks_exact(4).all(|px| px[3] == 0),
+            "nothing changed"
+        );
+        assert_eq!(
+            (same.overlay.width, same.overlay.height),
+            (120, 90),
+            "at the local size"
+        );
 
         let mut b = a.clone();
         for y in 20..60 {
@@ -548,15 +579,28 @@ mod tests {
         }
         let view = build_difference_overlay(&a, &b).expect("comparable");
         let alpha = |x: usize, y: usize| view.overlay.rgba[(y * 120 + x) * 4 + 3];
-        assert!(alpha(55, 40) > 100, "the patch is marked: {}", alpha(55, 40));
+        assert!(
+            alpha(55, 40) > 100,
+            "the patch is marked: {}",
+            alpha(55, 40)
+        );
         assert_eq!(alpha(5, 5), 0, "the rest is clear");
         assert!(alpha(55, 40) <= (255.0 * 0.82) as u8, "never fully opaque");
-        assert!(view.overlay.rgba.chunks_exact(4).all(|px| px[0] == px[1] && px[1] == px[2]));
+        assert!(
+            view.overlay
+                .rgba
+                .chunks_exact(4)
+                .all(|px| px[0] == px[1] && px[1] == px[2])
+        );
     }
 
     #[test]
     fn nothing_to_compare_gives_no_overlay() {
-        let empty = Rgba { width: 0, height: 0, rgba: vec![] };
+        let empty = Rgba {
+            width: 0,
+            height: 0,
+            rgba: vec![],
+        };
         assert!(build_difference_overlay(&empty, &flat(4, 4, 9)).is_none());
     }
 
@@ -566,9 +610,16 @@ mod tests {
         let e = open_local(path).unwrap_err();
         assert_eq!(e.kind(), ErrorKind::ImageUnreadable);
         let m = e.user_message();
-        assert!(!m.contains(path) && !m.contains("secret-name") && !m.contains("os error"), "{m}");
+        assert!(
+            !m.contains(path) && !m.contains("secret-name") && !m.contains("os error"),
+            "{m}"
+        );
         assert!(m.contains("select the row again"), "says what to do: {m}");
-        assert!(e.detail().contains(path) && e.detail().contains("os error"), "{}", e.detail());
+        assert!(
+            e.detail().contains(path) && e.detail().contains("os error"),
+            "{}",
+            e.detail()
+        );
     }
 
     #[test]
@@ -586,7 +637,9 @@ mod tests {
     fn a_picture_opens_at_its_own_size() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("ok.png");
-        image::RgbaImage::from_pixel(7, 3, image::Rgba([1, 2, 3, 255])).save(&p).unwrap();
+        image::RgbaImage::from_pixel(7, 3, image::Rgba([1, 2, 3, 255]))
+            .save(&p)
+            .unwrap();
         let r = open_local(p.to_str().unwrap()).unwrap();
         assert_eq!((r.width, r.height, r.rgba.len()), (7, 3, 84));
     }
