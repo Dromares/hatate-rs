@@ -342,6 +342,7 @@ impl MainWindow {
                 );
                 r.note.set_text(&e.user_message());
                 r.error_detail.set_text(&e.detail());
+                r.error_detail.set_tooltip_text(Some(&e.detail()));
                 r.error_detail.set_visible(true);
             }
             None => r.error_detail.set_visible(false),

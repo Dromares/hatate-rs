@@ -14,9 +14,10 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 /// `WipeView.setMinimumSize(420, 420)` asks 886 px of height of the Review page, past its stated
-/// minimum (1010 x 790, DAN-2025 line 2.5): the floor is the Side by side panes' (280 x 260), so the
-/// stack asks no more for Wipe than it does for the pair.
-pub const WIPE_MIN: (i32, i32) = (280, 260);
+/// minimum (1010 x 790, DAN-2025 line 2.5). The slider, the note and (in the error state) the
+/// detail line sit under the frame, so the floor is what leaves the sum inside 780 px: 170, measured
+/// in the error state, the tallest (`review_comparison_states_keep_the_stated_minimum`).
+pub const WIPE_MIN: (i32, i32) = (280, 170);
 
 /// What the frame says where the match has no picture.
 pub const MATCH_MISSING: &str = "The match's picture\ncould not be fetched";

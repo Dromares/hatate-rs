@@ -17,7 +17,11 @@
 //! (the same, printing the scroll frame timing). The Review states (6.f) are `review` (a Good row with two
 //! matches and a tag list, Side by side), `review-empty` (nothing selected), `review-nomatch` (a Not found row),
 //! `review-picker` (the candidate picker open), `review-addtags` and `review-conditions` (the two dialogs) and
-//! `review-focus-<combo|mark|addtags|taglist|view|next>` (that control focused with the ring showing). The size `min` is the window's stated minimum.
+//! `review-focus-<combo|mark|addtags|taglist|view|next>` (that control focused with the ring showing). The Wipe and Differences states (6.f-2) are
+//! `review-wipe`, `review-differences`, `review-wipe-nomatch` (only the local picture), `review-error` (the local file is gone; design
+//! gate 2.8), `review-focus-<wslider|wview|zoom|popout>` (a Wipe control focused with the ring showing), `review-compare` and
+//! `review-compare-differences` (the compare window, which is its own surface), `review-compare-nomatch` (its "no match" box) and
+//! `review-focus-compare-<slider|diff>`. The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -130,7 +134,7 @@ fn main() -> glib::ExitCode {
     match state.as_str() {
         "rows" | "dialog" | "dialog-nolabel" | "failed" | "activity" | "parser-health"
         | "tab-failed" | "tab-activity" => save(&rows(12)),
-        st if st.starts_with("review") && st != "review-bare" => save(&review_rows(&pics)),
+        st if st.starts_with("review") && st != "review-bare" => save(&review_rows(&pics, st)),
         st if st.starts_with("queue") => save(&queue_rows(
             &pics,
             if st.starts_with("queue-5000") {
@@ -219,7 +223,7 @@ fn main() -> glib::ExitCode {
                 st if st.starts_with("review") => 60,
                 _ => 14,
             };
-            if frames.get() < settle {
+            if frames.get() < settle || !READY.load(std::sync::atomic::Ordering::SeqCst) {
                 return glib::ControlFlow::Continue;
             }
             // The log viewer is its own window; its shot is that window's, not the main one's.
@@ -227,6 +231,12 @@ fn main() -> glib::ExitCode {
                 Some("Logs")
             } else if state == "parser-health" {
                 Some("Parser Health")
+            } else if state.starts_with("review-compare-d")
+                || state.starts_with("review-compare-l")
+                || state == "review-compare"
+                || state.starts_with("review-focus-compare")
+            {
+                Some("Compare - review-0.png")
             } else {
                 None
             };
@@ -258,7 +268,10 @@ fn main() -> glib::ExitCode {
             let mut rects = String::new();
             // Behind a dialog the page is under the scrim and is not what a person reads: only the
             // dialog's own labels are measured.
-            let dialog = if matches!(state.as_str(), "review-addtags" | "review-conditions") {
+            let dialog = if matches!(
+                state.as_str(),
+                "review-addtags" | "review-conditions" | "review-compare-nomatch"
+            ) {
                 find_type(win.upcast_ref(), "AdwAlertDialog")
             } else {
                 None
@@ -608,7 +621,8 @@ fn visible_popover_menu(w: &gtk4::Widget) -> Option<gtk4::Popover> {
 
 /// The Review states' rows: real pictures (a gradient and a nearby one, so the pane has something
 /// to decode and draw), a Good row with two matches and tags, a Not found row, a Good row with one.
-fn review_rows(pics: &std::path::Path) -> Vec<Entry> {
+fn review_rows(pics: &std::path::Path, state: &str) -> Vec<Entry> {
+    let full_match = is_compare_state(state);
     use hatate_core::model::{Tag, TagSource};
     let tag = |ns: Option<&str>, name: &str, source| Tag {
         name: name.to_owned(),
@@ -649,6 +663,14 @@ fn review_rows(pics: &std::path::Path) -> Vec<Entry> {
             c.source_name = Some(site.to_owned());
             c.width = Some(1280 + 40 * n as i64);
             c.height = Some(960 + 30 * n as i64);
+            if full_match {
+                // The full file as a `data:` URI, so the comparison needs no network at all.
+                let mut png = std::io::Cursor::new(Vec::new());
+                match_picture(800, 600, i as u8)
+                    .write_to(&mut png, image::ImageFormat::Png)
+                    .expect("png");
+                c.direct_file_url = Some(data_uri(png.get_ref()));
+            }
             e.candidates.push(c);
         }
         if tags > 0 {
@@ -660,8 +682,36 @@ fn review_rows(pics: &std::path::Path) -> Vec<Entry> {
         }
         rows.push(e);
     }
+    if state == "review-error" {
+        // The local file of the selected row is gone: the error state (design gate 2.8).
+        std::fs::remove_file(&rows[0].path).expect("remove the synthetic picture");
+    }
     rows
 }
+
+/// The match's file as a `data:` URI.
+fn data_uri(bytes: &[u8]) -> String {
+    let mut uri = String::from("data:image/png,");
+    for b in bytes {
+        uri.push_str(&format!("%{b:02X}"));
+    }
+    uri
+}
+
+/// The local picture at another size with a block painted over a corner, so Differences has a
+/// region to mark.
+fn match_picture(w: u32, h: u32, seed: u8) -> image::RgbaImage {
+    let mut img = review_picture(w, h, seed);
+    for y in h * 3 / 4..h * 7 / 8 {
+        for x in w / 8..w * 3 / 8 {
+            img.put_pixel(x, y, image::Rgba([250, 250, 250, 255]));
+        }
+    }
+    img
+}
+
+/// Whether the state's page has settled (the comparison loaded), polled by the tick callback.
+static READY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 /// A synthetic picture: a colour field with a diagonal bar, `seed` shifting the hue.
 fn review_picture(w: u32, h: u32, seed: u8) -> image::RgbaImage {
@@ -701,11 +751,21 @@ fn prepare_review(window: &MainWindow, state: &str) {
     }
     let r = window.s.review.clone();
     window.set_mode("review");
-    let row = if state == "review-nomatch" { 1 } else { 0 };
+    let row = if matches!(
+        state,
+        "review-nomatch" | "review-wipe-nomatch" | "review-compare-nomatch"
+    ) {
+        1
+    } else {
+        0
+    };
     if !matches!(state, "review-empty" | "review-bare") {
         window.s.queue_view.select_row(row);
     }
     let win = window.win.clone();
+    if is_compare_state(state) {
+        prepare_compare(window, state);
+    }
     match state {
         "review-picker" => {
             // After the pictures have loaded, so the popup opens over the settled page.
@@ -715,6 +775,10 @@ fn prepare_review(window: &MainWindow, state: &str) {
         }
         "review-addtags" => window.add_tags_to_current(),
         "review-conditions" => window.action_edit_conditions(),
+        st if st.starts_with("review-focus-") && is_compare_state(st) => {
+            // Focus is taken in `prepare_compare`, once the comparison has loaded.
+            win.set_focus_visible(true);
+        }
         st if st.starts_with("review-focus-") => {
             win.set_focus_visible(true);
             let target: gtk4::Widget = match &st["review-focus-".len()..] {
@@ -739,6 +803,112 @@ fn prepare_review(window: &MainWindow, state: &str) {
         }
         _ => {}
     }
+}
+
+/// Whether `state` is one of the 6.f-2 states, which need the match's full file.
+fn is_compare_state(state: &str) -> bool {
+    state.contains("wipe")
+        || state.contains("diff")
+        || state.contains("compare")
+        || state == "review-error"
+        || matches!(
+            state,
+            "review-focus-wslider"
+                | "review-focus-wview"
+                | "review-focus-zoom"
+                | "review-focus-popout"
+        )
+}
+
+/// The Wipe, Differences, error and compare-window states (6.f-2).
+fn prepare_compare(window: &MainWindow, state: &str) {
+    use std::sync::atomic::Ordering::SeqCst;
+    let r = window.s.review.clone();
+    let mode = if state.contains("diff") && !state.contains("compare") && !state.contains("focus") {
+        "diff"
+    } else {
+        "wipe"
+    };
+    if state.contains("compare") {
+        // The compare window, over the Review page on Side by side.
+        let id = window.current_id().expect("a selected row");
+        window.open_compare_dialog(id);
+        if state == "review-compare-nomatch" {
+            return;
+        }
+        let dialog = window
+            .s
+            .compare_open
+            .borrow()
+            .clone()
+            .expect("the dialog is open");
+        let want_diff = state.contains("differences") || state == "review-focus-compare-diff";
+        READY.store(false, SeqCst);
+        let d = dialog.clone();
+        let focus: Option<gtk4::Widget> = state.strip_prefix("review-focus-compare-").map(|w| {
+            if w == "slider" {
+                dialog.slider.clone().upcast()
+            } else {
+                dialog.diff_radio.clone().upcast()
+            }
+        });
+        glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+            if d.view.has_pictures() == (true, true) {
+                if want_diff && !d.diff_radio.is_active() {
+                    d.diff_radio.set_active(true);
+                }
+                if !want_diff || d.view.showing_differences() {
+                    if let Some(t) = &focus {
+                        d.window.set_focus_visible(true);
+                        t.grab_focus();
+                        println!(
+                            "FOCUS {} focus_visible={}",
+                            describe(t),
+                            t.has_visible_focus()
+                        );
+                    }
+                    glib::timeout_add_local_once(std::time::Duration::from_millis(250), || {
+                        READY.store(true, SeqCst)
+                    });
+                    return glib::ControlFlow::Break;
+                }
+            }
+            glib::ControlFlow::Continue
+        });
+        return;
+    }
+    r.view_buttons[if mode == "diff" { "diff" } else { "wipe" }].set_active(true);
+    READY.store(false, SeqCst);
+    let state = state.to_owned();
+    glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+        let done = match state.as_str() {
+            "review-error" => r.error_detail.is_visible(),
+            "review-wipe-nomatch" => r.wipe.has_pictures() == (true, false),
+            _ if mode == "diff" => r.wipe.showing_differences(),
+            _ => r.wipe.has_pictures() == (true, true) && !r.zoom_label.text().is_empty(),
+        };
+        if done {
+            if let Some(w) = state.strip_prefix("review-focus-") {
+                let t: gtk4::Widget = match w {
+                    "wslider" => r.wipe_slider.clone().upcast(),
+                    "wview" => r.wipe.area.clone().upcast(),
+                    "zoom" => r.zoom_tools.first_child().expect("zoom button"),
+                    _ => r.pop_out_btn.clone().upcast(),
+                };
+                t.grab_focus();
+                println!(
+                    "FOCUS {} focus_visible={}",
+                    describe(&t),
+                    t.has_visible_focus()
+                );
+            }
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), || {
+                READY.store(true, SeqCst)
+            });
+            return glib::ControlFlow::Break;
+        }
+        glib::ControlFlow::Continue
+    });
 }
 
 /// What a Queue state does once the window is up.

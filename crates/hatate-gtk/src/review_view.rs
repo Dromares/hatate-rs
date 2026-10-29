@@ -371,6 +371,9 @@ impl ReviewPage {
 
         let stack = gtk::Stack::new();
         stack.set_vexpand(true);
+        // The comparison page asks for its own height, not the pair's: the slider, the note and
+        // the error detail sit under it, and the sum has to fit the stated minimum (DAN-2340).
+        stack.set_vhomogeneous(false);
         stack.add_named(&pair, Some("pair"));
         let wipe = WipeView::new();
         let wipe_host = gtk::Overlay::new();
@@ -449,6 +452,10 @@ impl ReviewPage {
         slider_row.set_visible(false);
         let error_detail = widgets::hint("");
         error_detail.set_halign(gtk::Align::Center);
+        // One line, cut in the middle (the path's two ends are what tell it apart); the whole text
+        // is the tooltip and the selection (DAN-2340, design gate 2.5).
+        error_detail.set_wrap(false);
+        error_detail.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
         error_detail.set_selectable(true);
         error_detail.set_visible(false);
 

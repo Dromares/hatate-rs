@@ -84,6 +84,10 @@ const SCENARIOS: &[Scenario] = &[
         review_wipe_waits_on_a_stalled_site_without_blocking_the_window,
     ),
     (
+        "review_comparison_states_keep_the_stated_minimum",
+        review_comparison_states_keep_the_stated_minimum,
+    ),
+    (
         "compare_dialog_loads_the_pair_and_switches_modes",
         compare_dialog_loads_the_pair_and_switches_modes,
     ),
@@ -4912,6 +4916,58 @@ fn review_wipe_with_an_unreadable_local_file_shows_the_error_state(app: &adw::Ap
         && r.wipe.has_pictures() == (true, true)));
     assert!(r.wipe_slider.is_sensitive() && r.note.is_sensitive());
     f.close();
+}
+
+/// Design gate 2.5 at the Wipe, Differences, no-match and error states (DAN-2340, DAN-2356): the
+/// window opened at the stated minimum reads exactly 1000 x 780 inside its shadow (the shot's PNG
+/// header), not 788 and not 854. The fit is measured on the shot path: the state is prepared first,
+/// then the window is given the smallest size, with no later resize.
+fn review_comparison_states_keep_the_stated_minimum(app: &adw::Application) {
+    use hatate_gtk::window::{MIN_HEIGHT, MIN_WIDTH};
+    for state in ["wipe", "differences", "error", "no-match"] {
+        let dir = tempfile::tempdir().unwrap();
+        let seed = wipe_seed(dir.path());
+        let gone = seed[0].path.clone();
+        let f = wipe_fx(app, seed);
+        let r = f.w.s.review.clone();
+        f.w.set_mode("review");
+        // The window is given the smallest size first, as a shot opens at `min`; the state is
+        // prepared after, and a state that asks for more makes the window grow.
+        smallest_window(&f);
+        f.w.s
+            .queue_view
+            .select_row(if state == "no-match" { 1 } else { 0 });
+        if state == "error" {
+            std::fs::remove_file(&gone).unwrap();
+        }
+        assert!(pump_until(5_000, || r.local.shows_picture() || state == "error"));
+        r.view_buttons[if state == "differences" {
+            "diff"
+        } else {
+            "wipe"
+        }]
+        .set_active(true);
+        assert!(
+            pump_until(10_000, || match state {
+                "error" => r.error_detail.is_visible(),
+                "no-match" => r.wipe.has_pictures() == (true, false),
+                "differences" => r.wipe.showing_differences(),
+                _ => r.wipe.has_pictures() == (true, true),
+            }),
+            "{state}: the page settles"
+        );
+        pump_for(300);
+        let (w, h) = (f.w.win.width(), f.w.win.height());
+        println!("OUTER review-{state} window={w}x{h}");
+        assert!(
+            w == MIN_WIDTH - 10 && h == MIN_HEIGHT - 10,
+            "{state}: the window at the stated minimum is {w}x{h}, not {}x{}: {}",
+            MIN_WIDTH - 10,
+            MIN_HEIGHT - 10,
+            tallest_chain(f.w.win.upcast_ref(), w)
+        );
+        f.close();
+    }
 }
 
 /// A site that accepts the connection and never answers: the window keeps handling actions while

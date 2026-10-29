@@ -364,11 +364,11 @@ fn do_step(
                 b.set_active(true);
             }
         }
-        "slider" => w
-            .s
-            .review
-            .wipe_slider
-            .set_value(step["value"].as_f64().unwrap()),
+        "slider" => {
+            w.s.review
+                .wipe_slider
+                .set_value(step["value"].as_f64().unwrap())
+        }
         "zoom" => zoom(&w.s.review.wipe, step["what"].as_str().unwrap()),
         "open_compare" => {
             if let Some(id) = w.current_id() {
@@ -535,7 +535,10 @@ fn settle_compare(w: &MainWindow) {
                 .as_ref()
                 .is_none_or(|d| !d.summary_text().is_empty())
     };
-    if w.s.comparison.borrow().loaded_for.is_none() && w.s.compare_open.borrow().is_none() && !w.s.comparison.borrow().loading {
+    if w.s.comparison.borrow().loaded_for.is_none()
+        && w.s.compare_open.borrow().is_none()
+        && !w.s.comparison.borrow().loading
+    {
         return;
     }
     let mut last = sample();
@@ -590,7 +593,10 @@ fn compare_digest(w: &MainWindow) -> Value {
     }
     let r = &w.s.review;
     let row = w.current_id().and_then(|id| {
-        w.s.queue.borrow().entry(id).map(|e| e.filename().to_owned())
+        w.s.queue
+            .borrow()
+            .entry(id)
+            .map(|e| e.filename().to_owned())
     });
     let mut out = json!({
         "mode": w.s.shell.current_mode(),
