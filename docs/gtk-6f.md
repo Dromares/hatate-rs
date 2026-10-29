@@ -114,9 +114,18 @@ Two more things were wrong, found in the design read and fixed in the same PR:
    `review_with_a_not_found_row_selected_keeps_the_stated_minimum` and `review_with_add_tags_open_keeps_the_stated_minimum`
    assert the same outcome, but they resize a window that is already shown, so they pass before the fix as well: they are
    outcome guards, not the regression test. The Add tags dialog itself asks nothing extra (its own minimum is 0).
-4. **The readout line under the header was cut** to `SIMILARIT…` with about 600 px free, and the `▲ 2× larger` chip was
-   missing. The labels ellipsize only while the readout sits in the header now (`fit_readout`), never on the line under
-   it (`smoke::the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip`, red when the mode stays `End`).
+4. **The readout and the title were cut with room to spare**, under the header (`SIMILARIT…` with about 600 px free) and
+   beside the tools (`01 // COMPAR…`, `SIMILARIT…` in the 1440 x 900 shot, host and `ci` toolkits alike). Cause: GTK
+   allocates an ellipsizing label its natural width, and Pango ellipsizes a tracked label (CSS `letter-spacing`) at that
+   very width, so the label is drawn cut by its own spacing. Nothing in the header ellipsizes now: the title and the
+   readout's parts sit in a scrolled window with no scroll policy and `propagate_natural_width` (`review_view::give_way`),
+   which asks its natural width and no minimum, so a squeezed header clips them instead of cutting a word, and the
+   header's minimum still does not include them. Guards, each shown red with the scrolled window removed (`ellipsize End`
+   put back on the title: `'01 // Compare' is drawn cut beside the tools (107 px given)`; on the readout:
+   `'Similarity' is drawn cut beside the tools (76 px given)`): `smoke::the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there`,
+   which asserts `layout().is_ellipsized()` is false on the title and both readout words while the readout is beside the
+   tools. `smoke::the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip` reads the line under the header
+   (words not ellipsized, `▲ 2× larger` chip shown); it was not shown red against this change.
    The chip was empty by data: the shot fixture gave the local file no size, so the comparison saw 0 x 0; it does now
    (640 x 480 against 1280 x 960 reads `▲ 2× larger`).
 
@@ -132,7 +141,7 @@ Two more things were wrong, found in the design read and fixed in the same PR:
 | D6 | The picker marks an estimated score with `~` only where Python's `score_is_measured` says so: the flag **or** an engine that reports a real similarity. | Found by the differential's `detail` key (section 5); `review_ops::tests::picker_item_marks_only_estimated_scores`. |
 | D7 | Wipe, Differences, Pop out, the Hydrus buttons and the Shortcuts list are present and insensitive with a tooltip that says so. | Section 2. |
 | D8 | The Add tags dialog is an `AlertDialog` with a text view, and the Edit match conditions dialog an `AlertDialog` over four controls. | The dialog seam (`Prompter`), as 6.c's D1. |
-| D9 | The `01 // Compare` title ellipsizes. | Hosted `ci`'s fonts are wider than the author's and the header asked 1016 px of the stated 1010 (measured on `ci`: the header 596 px against the pictures' 580); with the title able to elide the column's width is the pictures', 580, on both hosts. The window's content minimum is 1000 on both. |
+| D9 | The `01 // Compare` title is clipped, not ellipsized, when the header is squeezed (`give_way`). | Hosted `ci`'s fonts are wider than the author's and the header asked 1016 px of the stated 1010 (measured on `ci`: the header 596 px against the pictures' 580); with the title giving way the column's width is the pictures', 580, on both hosts. The window's content minimum is 1000 on both. |
 | D10 | With no candidates the picker is a disabled drop-down that reads GTK's own `(None)`. Python clears its combo (an empty disabled box), and the mockup (`review-no-match.html`) draws a disabled picker reading `No candidates`. | Not changed here: the string would need a placeholder row the picker's model does not have. Judged in the design read; a follow-up if it counts. |
 | D11 | An image with no tags shows an empty bordered tag panel. Python's list is empty too; the mockup's no-match screen puts an empty note under the picker (`Nothing matched this image. No engine returned a match above the similarity floor. Add tags by hand, or search again from the Queue.`). | Not changed here: copy for a state Python does not have; the Not found frame and `Match — none` say it already. Judged in the design read. |
 
