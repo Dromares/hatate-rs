@@ -180,6 +180,11 @@ fn main() -> glib::ExitCode {
         }
     }
     env.clock = Rc::new(|| NOW);
+    if state == "review-error" {
+        // The picture is gone on purpose; the startup "Missing files" question is not what this
+        // state shows, so the check is told nothing is missing.
+        env.missing_files = std::sync::Arc::new(|_, _| Default::default());
+    }
     let out2 = out.clone();
     let code = app::run_with(env, move |window| {
         let (w, h) = match size.as_deref() {

@@ -94,7 +94,7 @@ here. Line numbers are in this PR's head.
 
 | Python | Rust |
 |---|---|
-| `gui/main_window.py:3224` `_open_compare_dialog` | `crates/hatate-gtk/src/compare_dialog.rs:412` `open_compare_dialog` |
+| `gui/main_window.py:3224` `_open_compare_dialog` | `crates/hatate-gtk/src/compare_dialog.rs:413` `open_compare_dialog` |
 | `gui/main_window.py:3651` `_sync_preview_to_selection` (the mode half; 6.f ported the preview half) | `crates/hatate-gtk/src/review_compare.rs:452` `sync_comparison_to_selection`, called from `review_ops.rs` `on_selection_changed` |
 
 ### `gui/review_view.py`
@@ -110,7 +110,7 @@ here. Line numbers are in this PR's head.
 | `gui/review_view.py:751` `full_resolution_match` | `crates/hatate-gtk/src/review_compare.rs:493` `full_resolution_match` |
 | `gui/review_view.py:761` `_apply_wipe_mode` | `crates/hatate-gtk/src/review_compare.rs:355` `apply_wipe_mode` |
 | `gui/review_view.py:771` `_show_differences` | `crates/hatate-gtk/src/review_compare.rs:372` `show_differences`, `on_differences_built`, `present_differences` |
-| `gui/review_view.py:816` `_pop_out_comparison` | `crates/hatate-gtk/src/review_ops.rs` `wire_review_page` (`pop_out_btn` runs the `compare` review key) -> `crates/hatate-gtk/src/compare_dialog.rs:412` `open_compare_dialog` |
+| `gui/review_view.py:816` `_pop_out_comparison` | `crates/hatate-gtk/src/review_ops.rs` `wire_review_page` (`pop_out_btn` runs the `compare` review key) -> `crates/hatate-gtk/src/compare_dialog.rs:413` `open_compare_dialog` |
 
 ### `gui/compare_dialog.py`
 
@@ -154,11 +154,11 @@ here. Line numbers are in this PR's head.
 | `gui/compare_dialog.py:537` `CompareDialog` | `crates/hatate-gtk/src/compare_dialog.rs:47` `CompareDialog` |
 | `gui/compare_dialog.py:546` `CompareDialog.__init__` | `crates/hatate-gtk/src/compare_dialog.rs:107` `new` |
 | `gui/compare_dialog.py:664` `_on_zoom_changed` | `crates/hatate-gtk/src/compare_dialog.rs` `new` (the `connect_zoom_changed` closure, D-C) |
-| `gui/compare_dialog.py:667` `_apply_mode` | `crates/hatate-gtk/src/compare_dialog.rs:285` `apply_mode` |
-| `gui/compare_dialog.py:690` `_show_differences` | `crates/hatate-gtk/src/compare_dialog.rs:311` `show_differences`, `crates/hatate-gtk/src/compare_dialog.rs:353` `present_differences` |
+| `gui/compare_dialog.py:667` `_apply_mode` | `crates/hatate-gtk/src/compare_dialog.rs:286` `apply_mode` |
+| `gui/compare_dialog.py:690` `_show_differences` | `crates/hatate-gtk/src/compare_dialog.rs:312` `show_differences`, `crates/hatate-gtk/src/compare_dialog.rs:354` `present_differences` |
 | `gui/compare_dialog.py:722` `_build_difference_overlay` | `crates/hatate-gtk/src/review_compare.rs:56` `build_panes` |
-| `gui/compare_dialog.py:725` `_load` | `crates/hatate-gtk/src/compare_dialog.rs:412` `open_compare_dialog` (the worker job), `crates/hatate-gtk/src/compare_dialog.rs:374` `loaded` |
-| `gui/compare_dialog.py:737` `_build_summary` | `crates/hatate-gtk/src/compare_dialog.rs:482` `summarize`, `crates/hatate-core/src/compare_view.rs:499` `build_summary` |
+| `gui/compare_dialog.py:725` `_load` | `crates/hatate-gtk/src/compare_dialog.rs:413` `open_compare_dialog` (the worker job), `crates/hatate-gtk/src/compare_dialog.rs:375` `loaded` |
+| `gui/compare_dialog.py:737` `_build_summary` | `crates/hatate-gtk/src/compare_dialog.rs:483` `summarize`, `crates/hatate-core/src/compare_view.rs:499` `build_summary` |
 | `gui/compare_dialog.py:802` `_pil_from_pixmap` | n/a: no `QPixmap`; the pictures are `Rgba` buffers (`rgb_of` drops the alpha) |
 | `gui/compare_dialog.py:826` `_pixmap_from_pil_rgba` | `crates/hatate-gtk/src/review_compare.rs:161` `texture_of` (`gdk::Texture` from the `Rgba`) |
 | `gui/compare_dialog.py:837` `_pixmap_from_pil` | `crates/hatate-gtk/src/review_compare.rs:161` `texture_of` |
@@ -195,7 +195,7 @@ size, M5 the zoom anchor).
 | 735 | `CompareViewZoom.test_wipe_line_colour_is_mode_invariant` | **not asserted:** the line is drawn white in both schemes (`wipe_view.rs:410`), as the token is; no Rust test reads the colour. The Wipe shots, dark and light, show it |
 | 755 | `CompareViewZoom.test_empty_view_is_safe` | `compare_view::tests::an_empty_view_is_safe_to_zoom` (`crates/hatate-core/src/compare_view.rs:681`), `compare_view::tests::nothing_loaded_has_no_figure` (`crates/hatate-core/src/compare_view.rs:674`) |
 | 766 | `CompareViewZoom.test_only_one_image_still_zooms` | `compare_view::tests::one_picture_still_zooms` (`crates/hatate-core/src/compare_view.rs:692`); on the page, `smoke::review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection` (`crates/hatate-gtk/tests/smoke.rs:4886`) (the no-match row draws the local picture alone) |
-| 1898 | `CompareUsesTheSelectedCandidate.test_an_unvisited_candidate_has_its_details_fetched` | Mapped by `docs/gtk-6f.md` to the picker. The compare half is `review_compare.rs:104` (fetch the details when the candidate has neither a direct nor a preview URL) and `compare_dialog.rs:461`. **not asserted:** the seeds name a `data:` URL, so the on-demand fetch is never reached in a window test |
+| 1898 | `CompareUsesTheSelectedCandidate.test_an_unvisited_candidate_has_its_details_fetched` | Mapped by `docs/gtk-6f.md` to the picker. The compare half is `review_compare.rs:104` (fetch the details when the candidate has neither a direct nor a preview URL) and `compare_dialog.rs:462`. **not asserted:** the seeds name a `data:` URL, so the on-demand fetch is never reached in a window test |
 | 1905 | `CompareUsesTheSelectedCandidate.test_a_candidate_that_already_has_a_url_is_not_refetched` | `smoke::compare_dialog_loads_the_pair_and_switches_modes` (`crates/hatate-gtk/tests/smoke.rs:5174`): a candidate with a direct URL loads its pair with no site asked (the engine has no network). **not asserted:** a count of fetches |
 | 1910 | `CompareUsesTheSelectedCandidate.test_each_candidate_gets_its_own_picture` | **not asserted:** the compare dialog is opened on the first candidate only; the picker's own switch is `docs/gtk-6f.md`'s row |
 | 1941 | `CompareUsesTheSelectedCandidate.test_a_match_that_will_not_load_says_so` | `compare_view::tests::a_match_that_did_not_come_down_says_so_and_a_fallback_is_italic` (`crates/hatate-core/src/compare_view.rs:886`) for the dialog's summary (the line `Couldn't compare the images` and the strong, uncertain line `The match's picture could not...`); on the page `smoke::review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection` (`crates/hatate-gtk/tests/smoke.rs:4888`) |
@@ -211,7 +211,7 @@ size, M5 the zoom anchor).
 | 4626 | `CompareDifferencesMode.test_the_wipe_sweeps_the_overlay_across_both_panes` | `smoke::the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours` (`crates/hatate-gtk/tests/smoke.rs:5322`): the patch is marked in the rendered pane. **not asserted:** the share per half at 0.25 and 0.5 (Python measures a grab); the sweep is judged in the Differences shots |
 | 4662 | `CompareDifferencesMode.test_the_slider_is_labelled_for_the_mode` | `smoke::compare_dialog_loads_the_pair_and_switches_modes` (`crates/hatate-gtk/tests/smoke.rs:5197`); the `Match` half is `smoke::compare_dialog_loads_the_pair_and_switches_modes` (`crates/hatate-gtk/tests/smoke.rs:5183`) |
 | 4671 | `CompareDifferencesMode.test_leaving_the_mode_goes_back_to_the_ordinary_wipe` | `smoke::compare_dialog_loads_the_pair_and_switches_modes` (`crates/hatate-gtk/tests/smoke.rs:5207`); on the page `smoke::review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection` (`crates/hatate-gtk/tests/smoke.rs:4833`) |
-| 4680 | `CompareDifferencesMode.test_the_overlay_is_built_once_and_reused` | **not asserted:** the dialog keeps `panes` after the first build (`State.panes`, `compare_dialog.rs:314`), and no test counts builds |
+| 4680 | `CompareDifferencesMode.test_the_overlay_is_built_once_and_reused` | **not asserted:** the dialog keeps `panes` after the first build (`State.panes`, `compare_dialog.rs:315`), and no test counts builds |
 | 4690 | `CompareDifferencesMode.test_the_mode_is_unavailable_without_both_images` | `smoke::review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection` (`crates/hatate-gtk/tests/smoke.rs:4887`) on the page; the dialog's own radio when the match did not come down is **not asserted** |
 | 4700 | `CompareDifferencesMode.test_the_mode_is_available_once_both_are_loaded` | `smoke::compare_dialog_loads_the_pair_and_switches_modes` (`crates/hatate-gtk/tests/smoke.rs:5182`) |
 
