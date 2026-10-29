@@ -220,7 +220,10 @@ fn give_way(child: &impl IsA<gtk::Widget>) -> gtk::ScrolledWindow {
     sw.set_propagate_natural_width(true);
     sw.set_propagate_natural_height(true);
     // GTK4 scrolled windows take the Tab focus by default; this one only clips a label (DAN-2366).
+    // `focusable` alone leaves one that answers `child_focus` with `true` and moves nothing, which
+    // ends the Tab walk at the widget before it (DAN-2384); `can-focus` takes it out of the chain.
     sw.set_focusable(false);
+    sw.set_can_focus(false);
     sw.set_child(Some(child));
     sw
 }

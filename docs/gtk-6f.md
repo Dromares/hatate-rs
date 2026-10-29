@@ -133,9 +133,15 @@ Two more things were wrong, found in the design read and fixed in the same PR:
    by default, so the first Tab on Review had landed on the static title, DAN-2366). Guard:
    `smoke::no_clipping_wrapper_on_the_review_page_is_a_tab_stop`, with a match selected so the readout's wrapper exists:
    it reads `is_focusable` on every scrolled window and viewport around the title and around the readout's label (the
-   Tab chain keys on it; `child_focus` in a headless window stalls after the first stop, so the test does not walk).
+   Tab chain keys on it).
    Red with `set_focusable(false)` removed from `give_way`: `GtkScrolledWindow around the title is a Tab stop`; red
    with it left only on the title's wrapper: `GtkScrolledWindow around the readout is a Tab stop`.
+   `set_focusable(false)` was not enough (DAN-2384): a scrolled window that is not focusable still answers `child_focus`
+   with `true` and moves nothing, so Tab stalled on Show in Queue and the rest of the page was unreachable by keyboard.
+   That stall was what the walk above had hit. `give_way` also calls `set_can_focus(false)`, which takes the wrapper out
+   of the chain. Guard: `smoke::tab_walks_the_review_page_from_the_header_to_the_footer`, which taps real Tab key events
+   (`common::xtest`) from Side by side and asserts the walk never stays on one widget and reaches Show in Queue and then
+   Next. Red with `set_can_focus(false)` removed: `Tab 2 stays on GtkButton Some("Show this image in the Queue list.")`.
    The chip was empty by data: the shot fixture gave the local file no size, so the comparison saw 0 x 0; it does now
    (640 x 480 against 1280 x 960 reads `▲ 2× larger`).
 
