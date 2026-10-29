@@ -354,6 +354,14 @@ const SCENARIOS: &[Scenario] = &[
         "hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched",
         hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched,
     ),
+    (
+        "pawchive_index_window_adds_by_link_searches_by_name_indexes_and_removes",
+        pawchive_index_window_adds_by_link_searches_by_name_indexes_and_removes,
+    ),
+    (
+        "pawchive_index_window_is_one_window_and_the_search_does_not_block_the_loop",
+        pawchive_index_window_is_one_window_and_the_search_does_not_block_the_loop,
+    ),
 ];
 
 fn main() {
@@ -5995,5 +6003,195 @@ fn hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched(app: &adw::Ap
     assert_eq!(f.script.last_shown().text, "No files matched those tags.");
     assert_eq!(server.calls(), ["GET /get_files/search_files"]);
     d.window.close();
+    f.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Pawchive Index (6.g, DAN-2220): a scripted Pawchive over https with a throw-away CA, handed to
+// the window through its constructor.
+// ---------------------------------------------------------------------------------------------
+
+fn pawchive_fx(
+    app: &adw::Application,
+    server: &common::hydrus::Hydrus,
+    seed: Vec<hatate_core::model::Entry>,
+) -> Fx {
+    let ca = server.ca_der.clone().expect("an https server");
+    let base = server.url.clone();
+    Fx::new_with(
+        app,
+        Opts {
+            seed,
+            tweak: Some(offline()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+        move |env| {
+            let net = hatate_core::net::NetClient::new(
+                hatate_core::net::NetConfig::default().with_root_certificate_der(ca),
+            )
+            .unwrap();
+            env.pawchive = Some(Arc::new(
+                hatate_core::pawchive_index::PawchiveCrawler::with_hosts(
+                    net,
+                    &format!("{base}/api/v1"),
+                    &format!("{base}/t"),
+                ),
+            ));
+        },
+    )
+}
+
+fn scripted_pawchive(
+    delay: std::time::Duration,
+) -> impl Fn(&common::hydrus::Recorded) -> common::hydrus::Reply + Send + Sync + 'static {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    move |q| {
+        let path = q.target.split('?').next().unwrap_or("");
+        if path.ends_with("/creators") {
+            return json_reply(json!([
+                {"id": "1", "name": "TEKU", "service": "patreon", "favorited": 50, "public_id": "t"},
+                {"id": "2", "name": "Tekuho", "service": "fanbox", "favorited": 1900, "public_id": "u"},
+                {"id": "3", "name": "Someone", "service": "fanbox", "favorited": 10, "public_id": "x"},
+            ]))
+            .delayed(delay);
+        }
+        if path.ends_with("/posts") {
+            return json_reply(json!([]));
+        }
+        json_reply(json!({}))
+    }
+}
+
+/// The window's whole path: a link adds an artist at once, a name is searched, the ticked ones are
+/// added, Index selected runs the crawl, Remove asks (Cancel by default) and then removes.
+fn pawchive_index_window_adds_by_link_searches_by_name_indexes_and_removes(app: &adw::Application) {
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let d =
+        f.w.s
+            .pawchive_dialog
+            .borrow()
+            .clone()
+            .expect("the window opened");
+    assert_eq!(
+        d.window.title().unwrap(),
+        "Pawchive Index - 0 artist(s), 0 image(s) searchable"
+    );
+    d.query
+        .set_text("https://pawchive.pw/fanbox/user/42/post/9");
+    d.find_or_add();
+    assert_eq!(
+        d.status_text(),
+        "Added 42 (fanbox) - click Index selected to index them."
+    );
+    assert_eq!(d.row_texts()[0], ["42", "fanbox", "0", "", "not yet"]);
+    assert_eq!(
+        d.selected_creators(),
+        [("fanbox".to_owned(), "42".to_owned())]
+    );
+    d.query.set_text("https://pawchive.pw/fanbox/user/42");
+    d.find_or_add();
+    assert_eq!(d.status_text(), "That artist is already in the list.");
+
+    d.query.set_text("tek");
+    d.find_or_add();
+    assert!(!d.find_button.is_sensitive(), "the search is under way");
+    assert!(pump_until(10_000, || d.find_button.is_sensitive()));
+    assert_eq!(
+        d.found_labels(),
+        [
+            "Tekuho  (fanbox)  -  1,900 favourites",
+            "TEKU  (patreon)  -  50 favourites"
+        ]
+    );
+    assert_eq!(d.status_text(), "2 artist(s) found - tick the ones to add.");
+    d.tick_found(&[0]);
+    d.add_checked();
+    assert_eq!(
+        d.status_text(),
+        "Added 1 artist(s) - click Index selected to index them."
+    );
+    assert_eq!(d.row_texts().len(), 2);
+    assert_eq!(
+        d.selected_creators(),
+        [("fanbox".to_owned(), "2".to_owned())]
+    );
+
+    d.start_indexing(true);
+    assert!(d.stop_button.is_sensitive() && !d.index_all_button.is_sensitive());
+    assert!(pump_until(20_000, || !d.stop_button.is_sensitive()));
+    assert!(d.index_all_button.is_sensitive());
+    assert!(
+        d.status_text().starts_with("2: 0 image(s), 0 new"),
+        "{}",
+        d.status_text()
+    );
+    assert!(
+        server
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("GET /api/v1/fanbox/user/2/posts")),
+        "{:?}",
+        server.calls()
+    );
+
+    // Remove: Cancel is the default, so an unscripted box removes nothing.
+    d.select_rows(&[0]);
+    d.remove_selected();
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Remove artists");
+    assert_eq!(shown.default, Response::Cancel);
+    assert_eq!(d.row_texts().len(), 2);
+    f.script.push(Answer::Msg(Response::Remove));
+    d.remove_selected();
+    assert_eq!(d.row_texts().len(), 1);
+    assert_eq!(d.status_text(), "Removed 1 artist(s).");
+    d.window.close();
+    assert!(f.w.s.pawchive_dialog.borrow().is_none());
+    f.close();
+}
+
+/// One window at a time, and the artist search (a slow download) leaves the loop turning.
+fn pawchive_index_window_is_one_window_and_the_search_does_not_block_the_loop(
+    app: &adw::Application,
+) {
+    let server =
+        common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::from_millis(900)));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let first = f.w.s.pawchive_dialog.borrow().clone().unwrap();
+    f.w.action_pawchive_index();
+    assert!(Rc::ptr_eq(
+        &first,
+        f.w.s.pawchive_dialog.borrow().as_ref().unwrap()
+    ));
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    first.query.set_text("tek");
+    first.find_or_add();
+    pump_for(250);
+    let before = ticks.get();
+    pump_for(200);
+    assert!(
+        ticks.get() >= before + 4,
+        "the main loop kept turning: {before} -> {}",
+        ticks.get()
+    );
+    assert!(
+        !first.find_button.is_sensitive(),
+        "still waiting on pawchive"
+    );
+    assert!(pump_until(10_000, || first.find_button.is_sensitive()));
+    tick.remove();
+    // The main window closing takes the Index window with it.
+    f.w.close_pawchive_dialog();
+    assert!(f.w.s.pawchive_dialog.borrow().is_none());
     f.close();
 }

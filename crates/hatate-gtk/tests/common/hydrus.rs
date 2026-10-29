@@ -16,6 +16,8 @@ pub const KEY: &str = "000000000000000000000000000000000000000000000000000000000
 pub struct Hydrus {
     /// `scheme://127.0.0.1:port`
     pub url: String,
+    /// The throw-away CA of an https server (DER), for a client that must trust it.
+    pub ca_der: Option<Vec<u8>>,
     requests: Arc<Mutex<Vec<Recorded>>>,
     stop: Option<tokio::sync::oneshot::Sender<()>>,
     thread: Option<std::thread::JoinHandle<()>>,
@@ -32,6 +34,8 @@ impl Hydrus {
 
     fn start(tls: bool, handler: impl Fn(&Recorded) -> Reply + Send + Sync + 'static) -> Hydrus {
         let (info_tx, info_rx) = std::sync::mpsc::channel();
+        let pki = tls.then(TestPki::generate);
+        let ca_der = pki.as_ref().map(|p| p.ca_der.clone());
         let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
         let thread = std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_multi_thread()
@@ -40,8 +44,8 @@ impl Hydrus {
                 .build()
                 .expect("runtime");
             rt.block_on(async move {
-                let server = if tls {
-                    TestServer::https(&TestPki::generate(), handler).await
+                let server = if let Some(pki) = &pki {
+                    TestServer::https(pki, handler).await
                 } else {
                     TestServer::http(handler).await
                 };
@@ -52,6 +56,7 @@ impl Hydrus {
         let (url, requests) = info_rx.recv().expect("the scripted Hydrus started");
         Hydrus {
             url,
+            ca_der,
             requests,
             stop: Some(stop),
             thread: Some(thread),

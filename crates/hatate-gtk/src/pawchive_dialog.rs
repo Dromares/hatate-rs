@@ -333,6 +333,23 @@ impl PawchiveIndexDialog {
         self.add_checked_button.set_visible(shown);
     }
 
+    /// The artist search results as they read now.
+    pub fn found_labels(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut child = self.results.first_child();
+        while let Some(row) = child {
+            if let Some(check) = row
+                .downcast_ref::<gtk::ListBoxRow>()
+                .and_then(|r| r.child())
+                .and_then(|c| c.downcast::<gtk::CheckButton>().ok())
+            {
+                out.push(check.label().map(|l| l.to_string()).unwrap_or_default());
+            }
+            child = row.next_sibling();
+        }
+        out
+    }
+
     pub fn status_text(&self) -> String {
         self.status.text().to_string()
     }
