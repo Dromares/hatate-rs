@@ -320,6 +320,19 @@ dialog.alert button.destructive label { color: @stamp_fg; }
 dialog.alert button:hover { background: @ink_10; }
 dialog.alert button.destructive:hover { background: @ink; }
 dialog.alert separator { background: @ink_18; min-width: 1px; min-height: 1px; }
+/* the fields a dialog holds: a sunken well, an ink tick on the stamp, a hairline on the border tier. Not
+   libadwaita's white view or its accent blue (the only chroma in a warm-monochrome app: the tick and the
+   spin button's edge were #3584e4, 4.89:1 dark and 3.23:1 light, and the Add tags view was #ffffff on
+   the light sheet, DAN-2219) */
+dialog.alert scrolledwindow.field { border: 1px solid @ink_46; }
+dialog.alert textview, dialog.alert textview text { background: @sunken; color: @ink; }
+dialog.alert check { background: transparent; color: @stamp_fg; border: 1px solid @ink_46; border-radius: 0;
+  box-shadow: none; }
+dialog.alert check:checked { background: @stamp_bg; border-color: @stamp_bg; color: @stamp_fg; }
+dialog.alert spinbutton { background: @sunken; color: @ink; border: 1px solid @ink_46; border-radius: 0;
+  box-shadow: none; }
+dialog.alert spinbutton:focus-within { border-color: @ink; box-shadow: none; outline: none; }
+dialog.alert spinbutton > text { background: transparent; color: @ink; box-shadow: none; }
 
 /* ---- the log viewer ---- */
 textview.log, textview.log text { background: @sunken; color: @ink; font-family: %mono%; font-size: 12px; }
@@ -479,6 +492,33 @@ mod tests {
                     "undefined colour @{name} in {scheme:?}"
                 );
             }
+        }
+    }
+
+    /// DAN-2219 (design read): the fields a dialog holds take the palette, not libadwaita's accent
+    /// blue (#3584e4: the tick and the spin button's edge) or its white view.
+    #[test]
+    fn dialog_fields_take_the_palette_not_the_accent() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let css = css(scheme);
+            let rule = |start: &str| {
+                css.lines()
+                    .find(|l| l.starts_with(start))
+                    .unwrap_or_else(|| panic!("{scheme:?}: no rule starting {start}"))
+                    .to_owned()
+            };
+            assert!(
+                rule("dialog.alert textview,").contains("background: @sunken"),
+                "{scheme:?}: the Add tags view is not the sunken well"
+            );
+            assert!(
+                rule("dialog.alert check:checked").contains("background: @stamp_bg"),
+                "{scheme:?}: the tick is not the stamp"
+            );
+            assert!(
+                rule("dialog.alert spinbutton:focus-within").contains("box-shadow: none"),
+                "{scheme:?}: the spin button keeps libadwaita's focus edge"
+            );
         }
     }
 
