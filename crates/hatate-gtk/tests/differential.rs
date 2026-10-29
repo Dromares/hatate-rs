@@ -11,6 +11,8 @@
 //! `HATATE_DIFF_ROOT` (the temp HOME). Without `HATATE_DIFF_SCENARIOS` it does nothing.
 
 mod common;
+#[path = "differential/hydrus_diff.rs"]
+mod hydrus_diff;
 
 use common::*;
 use gtk4::prelude::*;
@@ -28,6 +30,8 @@ use std::rc::Rc;
 struct Ctx {
     /// The running scenario's `kind`: `compare` adds the Review/compare digest (DAN-2340).
     kind: RefCell<String>,
+    /// The scripted Hydrus of a `hydrus` scenario (DAN-2220); it lives for one scenario.
+    hydrus: RefCell<Option<hydrus_diff::Server>>,
     files: PathBuf,
     root: PathBuf,
     now: f64,
@@ -45,6 +49,7 @@ fn main() {
     let out = std::env::var("HATATE_DIFF_OUT").expect("HATATE_DIFF_OUT");
     let ctx = Ctx {
         kind: RefCell::new(String::new()),
+        hydrus: RefCell::new(None),
         files: PathBuf::from(std::env::var("HATATE_DIFF_FILES").expect("HATATE_DIFF_FILES")),
         root: PathBuf::from(std::env::var("HATATE_DIFF_ROOT").expect("HATATE_DIFF_ROOT")),
         now: std::env::var("HATATE_DIFF_NOW")
@@ -156,6 +161,18 @@ fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
         paths.config_dir(),
     );
 
+    // A `hydrus` scenario points the profile at a scripted server on a free port (both sides do it
+    // the same way, and the comparer sets the url aside).
+    *ctx.hydrus.borrow_mut() = None;
+    if spec["hydrus"].is_object() {
+        let server = hydrus_diff::start(&spec["hydrus"]);
+        let cfg = paths.config_dir().join("config.json");
+        let mut doc: Value = serde_json::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        doc["hydrus"]["api_url"] = json!(server.url());
+        std::fs::write(&cfg, doc.to_string()).unwrap();
+        *ctx.hydrus.borrow_mut() = Some(server);
+    }
+
     let script = Rc::new(Script::default());
     let opened = Rc::new(RefCell::new(Vec::<PathBuf>::new()));
     let mut env = Env::new(paths.clone(), spec["unclean"].as_bool().unwrap_or(false));
@@ -180,7 +197,9 @@ fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
 
     for (i, step) in spec["steps"].as_array().unwrap().iter().enumerate() {
         let op = step["op"].as_str().unwrap();
-        for a in step["msg"].as_array().into_iter().flatten() {
+        // The Delete from Hydrus box is Delete/Cancel here and Yes/No in Python (design gate 2.6):
+        // `do_step` answers it.
+        for a in step["msg"].as_array().into_iter().flatten().filter(|_| op != "delete") {
             script.push(Answer::Msg(match a.as_str() {
                 Some("yes") => Response::Yes,
                 Some("keep") => Response::Keep,
@@ -251,6 +270,22 @@ fn do_step(
             w.activate_action("open-session");
         }
         "clear_session" => w.activate_action("clear-session"),
+        "routes" => ctx
+            .hydrus
+            .borrow()
+            .as_ref()
+            .expect("a hydrus scenario")
+            .set_routes(&step["routes"]),
+        "send" => w.action_send_to_hydrus(&w.s.queue_view.selected_ids()),
+        "import_url" => w.action_import_url_to_hydrus(&w.s.queue_view.selected_ids()),
+        "download_send" => w.action_download_and_send_to_hydrus(&w.s.queue_view.selected_ids()),
+        "reconcile" => w.action_reconcile_with_hydrus(),
+        "show" => w.show_rows_in_hydrus(&w.s.queue_view.selected_ids()),
+        "delete" => {
+            let yes = step["msg"].as_array().and_then(|a| a.first()).and_then(|a| a.as_str()) == Some("yes");
+            script.push(Answer::Msg(if yes { Response::Delete } else { Response::Cancel }));
+            w.delete_rows_from_hydrus(&w.s.queue_view.selected_ids());
+        }
         "set_theme" => w.set_theme(step["mode"].as_str().unwrap()),
         "autosave" => w.autosave_now(),
         "delete_files" => {
@@ -511,6 +546,10 @@ fn settle(w: &MainWindow) {
     pump_until(20_000, || {
         !w.s.file_hash_worker.is_running()
             && !w.s.missing_file_worker.is_running()
+            && !w.s.hydrus_lookup_worker.is_running()
+            && !w.s.hydrus_reconcile_worker.is_running()
+            && !w.s.hydrus_import_poll_worker.is_running()
+            && !w.s.hydrus_batch_worker.is_running()
             && !w
                 .s
                 .autosave_inflight
@@ -866,6 +905,10 @@ fn digest(
     });
     if ctx.kind.borrow().as_str() == "compare" {
         digest["compare"] = compare_digest(w);
+    }
+    if let Some(h) = ctx.hydrus.borrow().as_ref() {
+        digest["hydrus"] = h.log();
+        digest["errors"] = json!(entries.iter().map(|e| e.error_message.clone()).collect::<Vec<_>>());
     }
     digest
 }
