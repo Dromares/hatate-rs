@@ -56,6 +56,14 @@ const SCENARIOS: &[Scenario] = &[
         review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide,
     ),
     (
+        "review_with_a_not_found_row_selected_keeps_the_stated_minimum",
+        review_with_a_not_found_row_selected_keeps_the_stated_minimum,
+    ),
+    (
+        "review_with_add_tags_open_keeps_the_stated_minimum",
+        review_with_add_tags_open_keeps_the_stated_minimum,
+    ),
+    (
         "the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there",
         the_readout_shows_in_the_row_under_the_header_once_it_has_dropped_there,
     ),
@@ -4339,6 +4347,92 @@ fn review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide(app: 
     assert!(
         w <= MIN_WIDTH && h <= MIN_HEIGHT,
         "Review with a match selected asks for {w}x{h}; the stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}"
+    );
+    f.close();
+}
+
+/// The chain of widgets that sets a height at `width`: each step is the child asking the most.
+/// Printed when a minimum-size test fails, so a host whose toolkit differs from the author's can
+/// say what its number was made of.
+fn tallest_chain(root: &gtk4::Widget, width: i32) -> String {
+    let mut out = Vec::new();
+    let mut w = root.clone();
+    for _ in 0..40 {
+        let min = w.measure(gtk4::Orientation::Vertical, width).0;
+        let mut kids = Vec::new();
+        let mut best: Option<(i32, gtk4::Widget)> = None;
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            if child.is_visible() {
+                let m = child.measure(gtk4::Orientation::Vertical, width).0;
+                kids.push(m.to_string());
+                if best.as_ref().is_none_or(|(b, _)| m > *b) {
+                    best = Some((m, child.clone()));
+                }
+            }
+            c = child.next_sibling();
+        }
+        out.push(format!(
+            "{}[{}]={min} ({})",
+            w.type_().name(),
+            w.css_name(),
+            kids.join("+")
+        ));
+        match best {
+            Some((_, b)) => w = b,
+            None => break,
+        }
+    }
+    out.join(" > ")
+}
+
+/// The window's outer size once it is told to be as small as it can be.
+fn smallest_window(f: &Fx) -> (i32, i32) {
+    f.w.win.set_default_size(1, 1);
+    pump_for(300);
+    (f.w.win.width(), f.w.win.height())
+}
+
+/// DAN-2219 (design read): a Not found row's frames are 372 px tall against 305 for a match, and the
+/// window had to grow to 812 px at the stated minimum.
+fn review_with_a_not_found_row_selected_keeps_the_stated_minimum(app: &adw::Application) {
+    use hatate_gtk::window::{MIN_HEIGHT, MIN_WIDTH};
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(1);
+    pump_for(300);
+    let (w, h) = smallest_window(&f);
+    println!("OUTER review-not-found window={w}x{h}");
+    assert!(
+        w <= MIN_WIDTH && h <= MIN_HEIGHT,
+        "a Not found row makes the window {w}x{h}; the stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}: {}",
+        tallest_chain(f.w.win.upcast_ref(), w)
+    );
+    f.close();
+}
+
+/// DAN-2219 (design read): the Add tags dialog (a 140 px text field and its prompt) pushed the
+/// window to 812 px at the stated minimum.
+fn review_with_add_tags_open_keeps_the_stated_minimum(app: &adw::Application) {
+    use hatate_gtk::dialogs::{AdwPrompter, Prompter};
+    use hatate_gtk::window::{MIN_HEIGHT, MIN_WIDTH};
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    AdwPrompter::new(&f.w.win).add_tags(
+        "Add tags to the selected image. One tag per line, or separated by commas.",
+        Box::new(|_| {}),
+    );
+    pump_for(300);
+    let (w, h) = smallest_window(&f);
+    println!("OUTER review-add-tags window={w}x{h}");
+    assert!(
+        w <= MIN_WIDTH && h <= MIN_HEIGHT,
+        "Add tags makes the window {w}x{h}; the stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}: {}",
+        tallest_chain(f.w.win.upcast_ref(), w)
     );
     f.close();
 }
