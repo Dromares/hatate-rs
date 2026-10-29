@@ -139,7 +139,7 @@ fn make_files(ctx: &Ctx, spec: &Value) {
             std::fs::write(&p, bytes).unwrap();
             if locked {
                 use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0)).unwrap();
+                std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
             }
         }
     }
