@@ -184,6 +184,11 @@ impl WipeView {
         self.state.borrow().geom.zoom_percent()
     }
 
+    /// `_zoom`: 1.0 is scaled to fit (the differential reads it).
+    pub fn zoom_factor(&self) -> f64 {
+        self.state.borrow().geom.zoom()
+    }
+
     /// The widget as it paints now, at its allocated size: cairo's premultiplied ARGB32 bytes
     /// (B, G, R, A in memory) and the size. What a test samples, and what a shot would save.
     pub fn render(&self) -> Option<(Vec<u8>, i32, i32)> {

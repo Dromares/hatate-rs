@@ -524,7 +524,7 @@ pub fn build_summary(i: &SummaryInput) -> Vec<SummaryLine> {
     let sized = |label: &str, size: (i64, i64), bytes: Option<i64>| {
         let mut text = format!("{}\u{d7}{}", size.0, size.1);
         if bytes.is_some_and(|b| b != 0) {
-            text.push_str(&format!(" \u{b7} {}", human(bytes)));
+            text.push_str(&format!(" \u{a0}\u{b7}\u{a0} {}", human(bytes)));
         }
         SummaryLine {
             label: Some(label.to_owned()),
@@ -538,7 +538,7 @@ pub fn build_summary(i: &SummaryInput) -> Vec<SummaryLine> {
     if !size_cmp.verdict.is_empty() {
         let mut text = format!("The match is {}", size_cmp.verdict);
         if !file_cmp.is_empty() {
-            text.push_str(&format!(" \u{b7} {file_cmp}"));
+            text.push_str(&format!(" \u{a0}\u{b7}\u{a0} {file_cmp}"));
         }
         lines.push(SummaryLine {
             tone,
@@ -843,8 +843,8 @@ mod tests {
     fn a_bigger_match_is_toned_good_and_carries_the_file_comparison() {
         let lines = build_summary(&input());
         assert_eq!(lines[0].label.as_deref(), Some("Local:"));
-        assert_eq!(lines[0].text, "1000\u{d7}800 \u{b7} 293.0 KB");
-        assert_eq!(lines[1].text, "2000\u{d7}1600 \u{b7} 1.4 MB");
+        assert_eq!(lines[0].text, "1000\u{d7}800 \u{a0}\u{b7}\u{a0} 293.0 KB");
+        assert_eq!(lines[1].text, "2000\u{d7}1600 \u{a0}\u{b7}\u{a0} 1.4 MB");
         let verdict = &lines[2];
         assert_eq!(verdict.tone, Tone::Good);
         assert!(
