@@ -348,7 +348,6 @@ impl MainWindow {
             None => r.error_detail.set_visible(false),
         }
         r.wipe_slider.set_sensitive(error.is_none());
-        r.note.set_sensitive(error.is_none());
     }
 
     /// `_apply_wipe_mode`.
@@ -479,7 +478,6 @@ impl MainWindow {
         r.note.set_text("");
         r.error_detail.set_visible(false);
         r.wipe_slider.set_sensitive(true);
-        r.note.set_sensitive(true);
         if let Some(d) = r.view_buttons.get("diff") {
             d.set_sensitive(true);
         }

@@ -4899,7 +4899,8 @@ fn review_wipe_and_differences_load_off_the_main_loop_and_follow_the_selection(
 }
 
 /// Design gate 2.8: a local file that cannot be opened says what to do in plain words, keeps the OS
-/// text in the detail line, and the slider and the hint go insensitive.
+/// text in the detail line, and the slider goes insensitive while the note stays at its ordinary
+/// colour (DAN-2385: it is the one sentence that says what to do, not a control).
 fn review_wipe_with_an_unreadable_local_file_shows_the_error_state(app: &adw::Application) {
     let dir = tempfile::tempdir().unwrap();
     let seed = wipe_seed(dir.path());
@@ -4922,7 +4923,11 @@ fn review_wipe_with_an_unreadable_local_file_shows_the_error_state(app: &adw::Ap
         "the detail line has them: {}",
         r.error_detail.text()
     );
-    assert!(!r.wipe_slider.is_sensitive() && !r.note.is_sensitive());
+    assert!(!r.wipe_slider.is_sensitive());
+    assert!(
+        r.note.is_sensitive(),
+        "the error note is not painted at the disabled colour"
+    );
     assert!(!r.view_buttons["diff"].is_sensitive());
     assert_eq!(r.wipe.has_pictures(), (false, true));
 
@@ -4962,7 +4967,7 @@ fn review_wipe_error_state_returns_to_fit_on_re_entering_wipe(app: &adw::Applica
         "{}",
         r.note.text()
     );
-    assert!(!r.wipe_slider.is_sensitive() && !r.note.is_sensitive());
+    assert!(!r.wipe_slider.is_sensitive() && r.note.is_sensitive());
     f.close();
 }
 
