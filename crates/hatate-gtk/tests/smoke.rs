@@ -4957,7 +4957,11 @@ fn review_wipe_error_state_returns_to_fit_on_re_entering_wipe(app: &adw::Applica
     assert_eq!(r.wipe.zoom_factor(), 1.0, "back at fit on re-entering Wipe");
     // Still the error state: the note, the detail line and the insensitive slider stay.
     assert!(r.error_detail.is_visible());
-    assert!(r.note.text().contains("could not be opened"), "{}", r.note.text());
+    assert!(
+        r.note.text().contains("could not be opened"),
+        "{}",
+        r.note.text()
+    );
     assert!(!r.wipe_slider.is_sensitive() && !r.note.is_sensitive());
     f.close();
 }
