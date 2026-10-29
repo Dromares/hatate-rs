@@ -43,7 +43,23 @@ design gate 2.5). Every state below is opened **at the minimum** (`shot ... min 
 minimum as its default size, the state prepared on the shot path with no later resize) and its size is read from the
 **PNG header** of the shot. A header that differs from the stated minimum is a FAIL; there is no exceptions column.
 
-**(the hosted `ci` table goes here: state, shot filename, PNG width x height from the header)**
+**Hosted `ci` run 40944565964 at `03e459b`, `shots` artifact (GTK 4.14 / libadwaita 1.5), size read from each PNG header:**
+
+| state | dark shot | light shot | width x height (dark / light) | stated minimum | ok |
+|---|---|---|---|---|---|
+| Wipe (Review page) | `review-wipe-min-dark.png` | `review-wipe-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Wipe, no match | `review-wipe-nomatch-min-dark.png` | `review-wipe-nomatch-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Differences | `review-differences-min-dark.png` | `review-differences-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Error state | `review-error-min-dark.png` | `review-error-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Wipe slider focused | `review-focus-wslider-min-dark.png` | `review-focus-wslider-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Mark reviewed focused (6.f) | `review-focus-mark-min-dark.png` | `review-focus-mark-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Empty page (6.f) | `review-empty-min-dark.png` | `review-empty-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| No match (6.f) | `review-nomatch-min-dark.png` | `review-nomatch-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Picker (6.f) | `review-picker-min-dark.png` | `review-picker-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Add tags dialog (6.f) | `review-addtags-min-dark.png` | `review-addtags-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Conditions dialog (6.f) | `review-conditions-min-dark.png` | `review-conditions-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+
+**0 of 11 rows differ from 1000 x 780.** Two kinds of surface are not the main window at its minimum: the compare window (`review-compare-*`) is its own window, `compare_dialog.rs` `DEFAULT_SIZE` 900 x 780 (Python `self.resize(900, 780)`), and its four shots (`review-compare` and `review-compare-differences`, dark and light) read 900 x 780; its "no match" box (`review-compare-nomatch-*`) reads 1090 x 790 (a message box; the shot path gives it the main window default size). The default-size shots (`review-wipe`, `review-differences`, `review-error`, `review-wipe-nomatch`, dark and light) read 1090 x 790, the stated default 1100 x 800 inside the shadow.
 
 **The fit test was red on the shot path before the fix** (`worktrees/DAN-2376-revert.log`): Wipe 1000x854, Differences
 1000x873 and the error state 1000x909 on the host toolkit (GTK 4.24); the fix is three lines, each pinned by the
@@ -82,7 +98,39 @@ with the error text diffed per variant (`Is a directory (os error 21)`, `os erro
 
 ## 5. Shots and contrast
 
-**(the shot list and the contrast table go here)**
+**Shots** (hosted `ci` run 40944565964 at `03e459b`, artifact `shots`, 130 PNGs; dark and light for each):
+`review-wipe`, `review-wipe-min`, `review-wipe-nomatch`, `review-wipe-nomatch-min`, `review-differences`, `review-differences-min`,
+`review-error`, `review-error-min`, `review-compare`, `review-compare-differences`, `review-compare-nomatch`,
+`review-focus-wslider`, `review-focus-wslider-min`, `review-focus-wview`, `review-focus-zoom`, `review-focus-popout`,
+`review-focus-compare-slider`, `review-focus-compare-diff`. The minimum-size headers are in section 3. The `review-error*`
+shots are taken without the startup "Missing files" question (fixed at `03e459b`; at `424dbc1` they sat under that
+dialog's scrim and 96 contrast rows failed on the scrim, not on the page).
+
+**Contrast** (extreme-pixel method, `worktrees/DAN-2340-tools/contrast.py` over the 72 shots of the states above; the full
+1,934-row table is `worktrees/DAN-2377-contrast.md`, not committed): **0 FAIL rows**; 1,606 rows measured at the 4.5:1 text
+floor, 328 rows are disabled controls (exempt, listed as such in the table). Lowest measured row per state and scheme:
+
+| state | dark: element, fg on bg, ratio | light: element, fg on bg, ratio |
+|---|---|---|
+| Wipe, Wipe-focus shots, Error (default and min) | `]` key hint, `#827d77` on `#0d0d0d`, 4.77 | `]` key hint, `#656057` on `#e8e1d2`, 4.80 |
+| Differences (default) | `]`, `#827d77` on `#0d0d0d`, 4.77 | `]`, `#656057` on `#e8e1d2`, 4.80 |
+| Differences (min) | `80%` zoom readout, `#847f79` on `#141414`, 4.64 | `]`, `#656057` on `#e8e1d2`, 4.80 |
+| Wipe, no match (default / min) | `60%` / `58%`, `#85807a` / `#847e78` on `#141414`, 4.71 / 4.59 | `60%` / `58%` on `#f2ede1`, 5.02 / 4.91 |
+| Compare window (Wipe, Differences, focus shots) | `Local` label, `#89837d` on `#0d0d0d`, 5.19 | `Local`, `#5d584f` on `#e8e1d2`, 5.42 |
+| Compare "no match" box | `Compare` title, `#cdc4ba` on `#141414`, 10.70 | `Compare`, `#211d17` on `#f2ede1`, 14.35 |
+
+**Focus rings** (pixels that differ between the focused shot and its unfocused base; ring colour on the surface it replaces):
+dark `#cdc4ba` on `#0d0d0d` 11.29 (slider, compare slider, Differences radio) and on `#141414` 10.70 (zoom buttons); light
+`#211d17` on `#e8e1d2` 12.88 and on `#f2ede1` 14.35. The ring is the `focus` token, not the toolkit's blue.
+
+**The Differences pane's channel spread** (gate 2.2, the pane's picture area, max of R,G,B minus min of R,G,B over every
+pixel): Review page `review-differences-min` x 68..350, y 345..532, **0** dark and **0** light; compare window
+`review-compare-differences` y 174..492, **0** dark and **0** light. Control: the Wipe pane over the same rectangles
+(`review-wipe-min`, `review-compare`) reads **200** in both schemes. (The light letterbox beside the picture is the pane
+surface token `#efeadf`-family and reads 17; it is not picture area.)
+
+**Tab order** was not walked in a live Xvfb session by the author; the focus shots above show each control that takes
+focus, and the verifier is asked to state the order (verify check 5).
 
 ## 6. Method map
 
