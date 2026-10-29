@@ -4288,6 +4288,9 @@ fn review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_l
         f.w.s.queue.borrow().entries()[0].selected_candidate_index,
         2
     );
+    // On the last match Previous is live, Next and its bracket cap dim.
+    assert!(r.prev_match_btn.is_sensitive() && !r.next_match_btn.is_sensitive());
+    assert!(r.prev_match_key.is_sensitive() && !r.next_match_key.is_sensitive());
     assert_eq!(r.matched.shown_text(), "Loading picture\u{2026}");
     assert_eq!(
         f.say(),
