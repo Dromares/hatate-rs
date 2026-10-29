@@ -11,6 +11,7 @@
 //! overlay is the ramp's top grey. Alpha follows the mask exactly as Python's does (`int(v * 0.82)`).
 //! What the pane is, region by region, is unchanged; only the hue is.
 
+use crate::error::ErrorKind;
 use crate::image_diff::{Diff, difference_map_images};
 use crate::pyraster::{Filter, Image, Mode};
 
@@ -365,6 +366,62 @@ pub fn build_difference_overlay(local: &Rgba, matched: &Rgba) -> Option<Differen
     })
 }
 
+/// Why a picture could not be opened for the comparison. The window shows [`user_message`]
+/// (what failed and what to do; no path, no OS text, design gate 2.8); [`detail`] is for the log or a
+/// detail line.
+///
+/// [`user_message`]: PictureError::user_message
+/// [`detail`]: PictureError::detail
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PictureError {
+    kind: ErrorKind,
+    detail: String,
+}
+
+impl PictureError {
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+
+    pub fn user_message(&self) -> String {
+        match self.kind {
+            ErrorKind::ImageUnreadable => "The local picture could not be opened. Check that the \
+                 file is still there and that Hatate may read it, then select the row again."
+                .to_owned(),
+            _ => "The local picture could not be read as an image. Check that the file is a \
+                 picture and is not damaged, then select the row again."
+                .to_owned(),
+        }
+    }
+
+    /// The raw OS error and the path.
+    pub fn detail(&self) -> String {
+        self.detail.clone()
+    }
+}
+
+/// `QPixmap(entry.path)`, full size: the local picture, or why not.
+pub fn open_local(path: &str) -> Result<Rgba, PictureError> {
+    let bytes = std::fs::read(path).map_err(|e| PictureError {
+        kind: ErrorKind::ImageUnreadable,
+        detail: format!("{path}: {e}"),
+    })?;
+    decode_rgba(&bytes).ok_or_else(|| PictureError {
+        kind: ErrorKind::ImageUndecodable,
+        detail: format!("{path}: not a picture the decoder reads"),
+    })
+}
+
+/// `QImage.loadFromData` then `QPixmap.fromImage`, for the match's bytes.
+pub fn decode_rgba(bytes: &[u8]) -> Option<Rgba> {
+    let p = crate::thumb_decode::decode_bytes(bytes, u32::MAX)?;
+    Some(Rgba {
+        width: p.width,
+        height: p.height,
+        rgba: p.rgba,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,5 +558,36 @@ mod tests {
     fn nothing_to_compare_gives_no_overlay() {
         let empty = Rgba { width: 0, height: 0, rgba: vec![] };
         assert!(build_difference_overlay(&empty, &flat(4, 4, 9)).is_none());
+    }
+
+    #[test]
+    fn a_missing_file_says_what_to_do_and_leaks_neither_path_nor_os_text() {
+        let path = "/nonexistent/dir/secret-name.png";
+        let e = open_local(path).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::ImageUnreadable);
+        let m = e.user_message();
+        assert!(!m.contains(path) && !m.contains("secret-name") && !m.contains("os error"), "{m}");
+        assert!(m.contains("select the row again"), "says what to do: {m}");
+        assert!(e.detail().contains(path) && e.detail().contains("os error"), "{}", e.detail());
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_picture_is_undecodable_not_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("notes-for-me.png");
+        std::fs::write(&p, b"just some words").unwrap();
+        let e = open_local(p.to_str().unwrap()).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::ImageUndecodable);
+        assert!(!e.user_message().contains("notes-for-me"));
+        assert!(e.detail().contains("notes-for-me"));
+    }
+
+    #[test]
+    fn a_picture_opens_at_its_own_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("ok.png");
+        image::RgbaImage::from_pixel(7, 3, image::Rgba([1, 2, 3, 255])).save(&p).unwrap();
+        let r = open_local(p.to_str().unwrap()).unwrap();
+        assert_eq!((r.width, r.height, r.rgba.len()), (7, 3, 84));
     }
 }
