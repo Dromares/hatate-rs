@@ -84,6 +84,10 @@ const SCENARIOS: &[Scenario] = &[
         review_wipe_waits_on_a_stalled_site_without_blocking_the_window,
     ),
     (
+        "review_wipe_chrome_names_its_ends_and_zoom_buttons_and_a_fallback_warns",
+        review_wipe_chrome_names_its_ends_and_zoom_buttons_and_a_fallback_warns,
+    ),
+    (
         "review_zoom_readout_is_blank_while_nothing_is_loaded",
         review_zoom_readout_is_blank_while_nothing_is_loaded,
     ),
@@ -4923,6 +4927,52 @@ fn review_wipe_with_an_unreadable_local_file_shows_the_error_state(app: &adw::Ap
     assert!(pump_until(10_000, || !r.error_detail.is_visible()
         && r.wipe.has_pictures() == (true, true)));
     assert!(r.wipe_slider.is_sensitive() && r.note.is_sensitive());
+    f.close();
+}
+
+/// `TestWipeChrome` (DAN-1393) at the parts the Python tests name: the slider's ends, the zoom row's
+/// four buttons, the one-line hint and the warning that replaces it when only a preview came down,
+/// and the chrome staying out of Side by side.
+fn review_wipe_chrome_names_its_ends_and_zoom_buttons_and_a_fallback_warns(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut seed = wipe_seed(dir.path());
+    // Row 0's match has no full file, only a preview: the comparison falls back and says so.
+    let preview = seed[0].candidates[0].direct_file_url.take();
+    seed[0].candidates[0].preview_url = preview;
+    let f = wipe_fx(app, seed);
+    let r = f.w.s.review.clone();
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    r.view_buttons["wipe"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.has_pictures() == (true, true)));
+
+    let mut ends = Vec::new();
+    let mut c = r.slider_row.first_child();
+    while let Some(w) = c {
+        if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+            ends.push(l.text().to_string());
+        }
+        c = w.next_sibling();
+    }
+    assert_eq!(ends, ["Local", "Match"]);
+    let mut buttons = Vec::new();
+    let mut c = r.zoom_tools.first_child();
+    while let Some(w) = c {
+        if let Some(b) = w.downcast_ref::<gtk4::Button>() {
+            buttons.push(b.label().unwrap_or_default().to_string());
+        }
+        c = w.next_sibling();
+    }
+    assert_eq!(buttons, ["\u{2212}", "+", "Fit", "100%"]);
+    assert!(
+        r.note.text().starts_with("Showing the downscaled preview"),
+        "{}",
+        r.note.text()
+    );
+
+    // Side by side again: the slider row, the note and the zoom row go.
+    r.view_buttons["pair"].set_active(true);
+    assert!(!r.slider_row.is_visible() && !r.note.is_visible() && !r.zoom_tools.is_visible());
     f.close();
 }
 
