@@ -50,29 +50,38 @@ belongs to it says so.
 The stated minimum is 1010 x 790 (outer; the window is 1000 x 780 inside its shadow). Design gate 2.5 asks that
 every state fits it and that the window really is that size when given it.
 
-Measured at the head of this PR, the Review page in both schemes (`examples/shot.rs`, window given `min`, outer rect
-as GTK reports it, host toolkit):
+Measured at the head of this PR, the Review page in both schemes. `examples/shot.rs` gives the window `min` (the
+default size elsewhere) and prints the outer rect as GTK reports it (`SHOT` lines). Two toolkits, same states:
 
-| State | dark | light |
+- **Hosted `ci`** (GTK 4.14 / libadwaita 1.5, the toolkit the design gate is judged on): run 40850518131 at `545c27f`,
+  `worktrees/DAN-2219-ci-545c27f.log`.
+- **The author's host** (GTK 4.24 / libadwaita 1.10): every state below reads 1000 x 780 at `min`, in both schemes
+  (`worktrees/DAN-2219-host-sizes.log`).
+
+At `min` (1000 x 780 inside the shadow; the stated minimum is 1010 x 790 outer):
+
+| State | dark (`ci`) | light (`ci`) |
 |---|---|---|
-| `review-min` | - | - |
-| `review-empty-min` | - | - |
-| `review-nomatch-min` | - | - |
-| `review-picker-min` | - | - |
-| `review-addtags-min` | - | - |
-| `review-conditions-min` | - | - |
-| `review-focus-mark-min` | - | - |
+| `review-min` | 1000 x 780 | 1000 x 780 |
+| `review-empty-min` | 1000 x 780 | 1000 x 780 |
+| `review-nomatch-min` | 1000 x 780 | 1000 x 780 |
+| `review-picker-min` | 1000 x 780 | 1000 x 780 |
+| `review-addtags-min` | 1000 x 780 | 1000 x 780 |
+| `review-conditions-min` | 1000 x 780 | 1000 x 780 |
+| `review-focus-mark-min` | 1000 x 780 | 1000 x 780 |
 
-At 1100 x 800 requested (outer 1090 x 790):
+At the default size (outer 1090 x 790):
 
-| State | dark | light |
+| State | dark (`ci`) | light (`ci`) |
 |---|---|---|
-| `review` | - | - |
-| `review-empty` | - | - |
-| `review-nomatch` | - | - |
-| `review-picker` | - | - |
-| `review-addtags` | - | - |
-| `review-conditions` | - | - |
+| `review` | 1090 x 790 | 1090 x 790 |
+| `review-empty` | 1090 x 790 | 1090 x 790 |
+| `review-nomatch` | 1090 x 790 | 1090 x 790 |
+| `review-picker` | 1090 x 790 | 1090 x 790 |
+| `review-addtags` | 1090 x 790 | 1090 x 790 |
+| `review-conditions` | 1090 x 790 | 1090 x 790 |
+
+The popover of `review-picker` is its own surface: 385 x 84 at the default size and 340 x 84 at `min`, in both schemes.
 
 Two things were wrong with the first measurement of a *selected* row, and the smoke scenario that guards the minimum
 never saw them because it opens Review with an empty queue (it does not any more, see below):
@@ -90,13 +99,26 @@ never saw them because it opens Review with an empty queue (it does not any more
    `smoke::a_fresh_hint_bar_asks_for_its_first_group_only` (red at the parent: a four-group bar asks 1016 px, its first
    group alone 239).
 
-After the fix every state above is 1001 x 780 at `min`, except one:
+Two more things were wrong, found in the design read and fixed in the same PR:
 
-- **Open finding: the Add tags dialog at the minimum.** With the Add tags dialog open the window is 1001 x 809
-  (1001 x 809 at 1100 x 800 too), 29 px taller than the stated minimum height. The page behind it asks for 755 and the
-  dialog itself 327; I could not find what grows the window (the text view's minimum height and its focus were each
-  ruled out by removing them), and the Edit match conditions dialog, built the same way, stays at 780. It is for the
-  design read to weigh, and a follow-up if it counts.
+3. **The Not found row and the Add tags dialog read 812 px tall at `min` on `ci`** (`review-nomatch-min`,
+   `review-addtags-min`), 32 px over the stated height, while every other state read 780 and the scenarios that resize
+   the window afterwards read 780 too. The `TALLEST` and `FRAME` lines `shot` prints (`worktrees/DAN-2219-ci-31345bd.log`)
+   show the settled content minimum was 758 on `ci` in every state: 812 was a **first-layout peak the window keeps**.
+   It reproduces on the author's host on the shot path (frame 2: content minimum 809, the window 1000 x 809 for one
+   frame, then back to 780). Cause: `Keyed::wrap_when_narrow`'s tick read a row with no width yet (`0`) as too narrow
+   and wrapped every key under its label, so the rail's button grid asked 4 x 50 where it asks 32 + 32 + 50 + 32 once
+   laid out. `key_wraps(beside, width)` is now false at width 0. Guard:
+   `review_view::tests::a_row_with_no_width_yet_does_not_wrap_its_key` (red without the `width > 0`), and the hosted
+   `shot` step reading 1000 x 780 for both states. The two smoke scenarios
+   `review_with_a_not_found_row_selected_keeps_the_stated_minimum` and `review_with_add_tags_open_keeps_the_stated_minimum`
+   assert the same outcome, but they resize a window that is already shown, so they pass before the fix as well: they are
+   outcome guards, not the regression test. The Add tags dialog itself asks nothing extra (its own minimum is 0).
+4. **The readout line under the header was cut** to `SIMILARIT…` with about 600 px free, and the `▲ 2× larger` chip was
+   missing. The labels ellipsize only while the readout sits in the header now (`fit_readout`), never on the line under
+   it (`smoke::the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip`, red when the mode stays `End`).
+   The chip was empty by data: the shot fixture gave the local file no size, so the comparison saw 0 x 0; it does now
+   (640 x 480 against 1280 x 960 reads `▲ 2× larger`).
 
 ## 4. Differences from Python, on purpose
 
@@ -111,6 +133,8 @@ After the fix every state above is 1001 x 780 at `min`, except one:
 | D7 | Wipe, Differences, Pop out, the Hydrus buttons and the Shortcuts list are present and insensitive with a tooltip that says so. | Section 2. |
 | D8 | The Add tags dialog is an `AlertDialog` with a text view, and the Edit match conditions dialog an `AlertDialog` over four controls. | The dialog seam (`Prompter`), as 6.c's D1. |
 | D9 | The `01 // Compare` title ellipsizes. | Hosted `ci`'s fonts are wider than the author's and the header asked 1016 px of the stated 1010 (measured on `ci`: the header 596 px against the pictures' 580); with the title able to elide the column's width is the pictures', 580, on both hosts. The window's content minimum is 1000 on both. |
+| D10 | With no candidates the picker is a disabled drop-down that reads GTK's own `(None)`. Python clears its combo (an empty disabled box), and the mockup (`review-no-match.html`) draws a disabled picker reading `No candidates`. | Not changed here: the string would need a placeholder row the picker's model does not have. Judged in the design read; a follow-up if it counts. |
+| D11 | An image with no tags shows an empty bordered tag panel. Python's list is empty too; the mockup's no-match screen puts an empty note under the picker (`Nothing matched this image. No engine returned a match above the similarity floor. Add tags by hand, or search again from the Queue.`). | Not changed here: copy for a state Python does not have; the Not found frame and `Match — none` say it already. Judged in the design read. |
 
 `docs/gtk-6e.md` D5 (the status line after a run reads `Search finished` where Python's ends at `Ready`) is
 changed there to the ruled race class; section 5 has the counts.
@@ -484,7 +508,7 @@ makes; `geometry` rows are judged in the shot set and the measured tables, as in
 | 252 | `WipeChrome.test_the_zoom_row_is_boxed_mono_buttons` | **6.f-2** ([DAN-2340](/DAN/issues/DAN-2340)): Wipe, Differences and the compare dialog are not in this PR |
 | 265 | `WipeChrome.test_wipe_carries_the_one_line_hint_and_a_warning_replaces_it` | **6.f-2** ([DAN-2340](/DAN/issues/DAN-2340)): Wipe, Differences and the compare dialog are not in this PR |
 | 278 | `WipeChrome.test_the_wipe_chrome_stays_out_of_side_by_side` | **6.f-2** ([DAN-2340](/DAN/issues/DAN-2340)): Wipe, Differences and the compare dialog are not in this PR |
-| 289 | `ViewportBudget.test_the_picture_gets_at_least_55_percent_of_the_window_height` | the per-state outer rects at the minimum (section 3): the pictures keep their share at 1001 x 780; not a test |
+| 289 | `ViewportBudget.test_the_picture_gets_at_least_55_percent_of_the_window_height` | the per-state outer rects at the minimum (section 3): the pictures keep their share at 1000 x 780; not a test |
 | 301 | `ViewportBudget.test_the_footer_still_fits_and_sits_where_the_page_ends` | `smoke::review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide` (the footer fits and sits at the end of the page); section 3 |
 
 #### `tests/test_review_keycaps.py` (18)
