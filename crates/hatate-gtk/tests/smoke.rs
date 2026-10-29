@@ -346,6 +346,14 @@ const SCENARIOS: &[Scenario] = &[
         "hydrus_requests_leave_the_main_loop_running_while_the_server_stalls",
         hydrus_requests_leave_the_main_loop_running_while_the_server_stalls,
     ),
+    (
+        "hydrus_query_searches_lists_and_imports_what_the_list_does_not_hold",
+        hydrus_query_searches_lists_and_imports_what_the_list_does_not_hold,
+    ),
+    (
+        "hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched",
+        hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched,
+    ),
 ];
 
 fn main() {
@@ -5867,5 +5875,125 @@ fn hydrus_requests_leave_the_main_loop_running_while_the_server_stalls(app: &adw
     );
     assert!(pump_until(10_000, || f.say().starts_with("Sent ")));
     tick.remove();
+    f.close();
+}
+
+/// `HydrusQueryDialog`: the search lists the files with their facts, marks the ones already in
+/// the list, and Import selected downloads only the rest, with Hydrus's tags on them.
+fn hydrus_query_searches_lists_and_imports_what_the_list_does_not_hold(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+        "/get_files/search_files" => json_reply(json!({"file_ids": [1, 2]})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": NEW_HASH, "file_id": 1, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {"svc": {"display_tags": {"0": ["series:foo", "solo"]}}}},
+            {"hash": HELD_HASH, "file_id": 2, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {}},
+        ]})),
+        "/get_files/file" => Reply::ok(common::search::PNG.to_vec()),
+        _ => json_reply(json!({})),
+    });
+    let mut seed = review_seed(dir.path());
+    seed[1].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    f.w.action_query_hydrus();
+    let d =
+        f.w.s
+            .hydrus_query_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog opened");
+    d.set_tags_text("  solo \n\n series:foo\n");
+    d.search();
+    assert!(pump_until(10_000, || d.labels().len() == 2));
+    let labels = d.labels();
+    assert_eq!(
+        labels[0],
+        "aaaaaaaaaaaa\u{2026}  (image/png, 4x3, 2 tag(s))"
+    );
+    assert_eq!(
+        labels[1],
+        "bbbbbbbbbbbb\u{2026}  (image/png, 4x3, 0 tag(s)) [already in list]"
+    );
+    // Nothing selected: a box, not an import.
+    d.import_selected();
+    assert_eq!(
+        f.script.last_shown().text,
+        "Select at least one file to import."
+    );
+    d.select_results(&[0, 1]);
+    d.import_selected();
+    assert!(pump_until(10_000, || f.len() == 4));
+    assert_eq!(
+        f.say(),
+        "Imported 1 file(s) from Hydrus (1 duplicate(s) already in the list, skipped)"
+    );
+    let calls = server.calls();
+    assert_eq!(
+        calls.iter().filter(|c| *c == "GET /get_files/file").count(),
+        1
+    );
+    let q = f.w.s.queue.borrow();
+    let imported = q.entries().last().unwrap();
+    assert_eq!(imported.hydrus_hash.as_deref(), Some(NEW_HASH));
+    assert!(imported.path.ends_with(&format!("{NEW_HASH}.png")));
+    assert!(std::path::Path::new(&imported.path).exists());
+    let mut tags: Vec<(Option<String>, String, hatate_core::model::TagSource)> = imported
+        .tags
+        .iter()
+        .map(|t| (t.namespace.clone(), t.name.clone(), t.source))
+        .collect();
+    tags.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+    assert_eq!(
+        tags,
+        vec![
+            (
+                None,
+                "solo".to_owned(),
+                hatate_core::model::TagSource::Hydrus
+            ),
+            (
+                Some("series".to_owned()),
+                "foo".to_owned(),
+                hatate_core::model::TagSource::Hydrus
+            ),
+        ]
+    );
+    drop(q);
+    f.close();
+}
+
+/// The dialog's own checks: a tag, a key, and the empty answer.
+fn hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched(app: &adw::Application) {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    let server = common::hydrus::Hydrus::http(|_| json_reply(json!({"file_ids": []})));
+    let f = hydrus_fx(app, &server.url, false, Vec::new());
+    f.w.action_query_hydrus();
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Warning,
+            "Query Hydrus",
+            "Set your Hydrus access key in Settings first."
+        )
+    );
+    assert!(f.w.s.hydrus_query_dialog.borrow().is_none());
+    f.close();
+
+    let f = hydrus_fx(app, &server.url, true, Vec::new());
+    f.w.action_query_hydrus();
+    let d = f.w.s.hydrus_query_dialog.borrow().clone().unwrap();
+    d.search();
+    assert_eq!(f.script.last_shown().text, "Enter at least one tag.");
+    d.set_tags_text("nothing");
+    d.search();
+    assert!(pump_until(10_000, || f.script.count_shown() == 2));
+    assert_eq!(f.script.last_shown().text, "No files matched those tags.");
+    assert_eq!(server.calls(), ["GET /get_files/search_files"]);
+    d.window.close();
     f.close();
 }
