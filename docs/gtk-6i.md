@@ -238,3 +238,38 @@ windows of their own, which the Settings window's snapshot does not hold (as for
 `smoke.rs:7603` (`settings_mcp_enable_summary_fires_on_a_real_change_only`: the summary fires on a real change only and lists the tiers ticked in the dialog)
 and `smoke.rs:7855` (title "Shortcut conflict", kind Warning, both action names in the text, the dialog stays open). A shot of those
 toplevels is not part of this PR; the design read is asked to judge the box's words from those pins and `dialogs.rs:292`.
+
+### 6.1 Round 1 fixup (design read of `866766f`, DAN-2433 comment `dae79788`)
+
+Shots from hosted ci run 41045477236 at `dfaec09` (green, one gate `ci`, ~23 min). Measuring script `worktrees/DAN-2222-tools/measure2.py`
+(`measure.py` with the three new state names added to its pattern; extreme-pixel method), output `worktrees/DAN-2222-measure-fix.md`.
+
+| Finding | What changed | Evidence |
+|---|---|---|
+| **F1** middle of the MCP page in no shot | States `settings-mcp-tiers` (scrolled to the Dry run box), `settings-mcp-tiers-dry` (the same with Dry run ticked, the sentence flips), `settings-mcp-tiers-low` (scrolled to the Hydrus box, through the destructive box), `settings-focus-mcp-tier` (the research tier's check box focused, inside its group box). Each in dark and light, default and minimum size; wired into both `ci.yml` shot loops. | PNG headers of all 10 minimum-size shots read 560 x 440 (0 differ). 1018 labels measured over the new and the old 6.i states, 0 below 4.5:1, lowest 5.09 (the Find placeholder, light). |
+| **F2** Outcome clipped at 560 | The page itself was 575 px wide at the minimum: the token box (20 characters) pushed the whole page past the window, and the audit table with it. `mcp_token` is 8 characters wide, the path caption ellipsizes in the middle, and the table's Tool, Tier and Target columns ellipsize (full text in the tooltip) with Outcome kept at 11 characters. The inner scroller no longer scrolls sideways. | `settings-mcp-audit-min-{dark,light}.png`: the right edge of the card is in view, Outcome reads "Recorded, not ...", "Allowed - pick...", "Allowed". Tool and Tier are shortened at 560 ("tog...", "Rev..."), which is the price of the column that matters. Pin: `smoke.rs` `settings_mcp_audit_table_follows_the_log_newest_first` asserts the page needs <= 520 px; it went red at 575 px with the token box back at 20 characters (`worktrees/DAN-2222-fixup-red-R1.log`). |
+| **F3** "Keep up to ... MB" off-token | Both labels (and the table's Time, Tool, Tier and Target cells) take the page's `ink-100` label class. | `settings-mcp-audit-{dark,light}`: `Keep up to`, `MB before trimming the oldest entries.` #cdc4ba on #0d0d0d 11.29 (dark), #211d17 on #e8e1d2 12.88 (light); before the fixup #ffffff and #2e2d2a. |
+
+**Contrast of the new states** (rows from `worktrees/DAN-2222-measure-fix.md`; floor 4.5:1 for text, 3:1 for a non-text mark):
+
+| Element | State | fg on bg (dark) | ratio | fg on bg (light) | ratio |
+|---|---|---|---|---|---|
+| Dry run sentence, Dry run off ("Dry run is off. Allowed actions happen for real ...") | `mcp-tiers` | #cdc4ba on #0d0d0d | 11.29 | #211d17 on #e8e1d2 | 12.88 |
+| Dry run sentence, Dry run on ("Dry run is on. The AI can look at everything ...") | `mcp-tiers-dry` | #8a847e on #0d0d0d | 5.26 | #5c574f on #e8e1d2 | 5.50 |
+| Group titles ("Always available ...", "On by default ...", "Off by default ...") | `mcp-tiers`, `mcp-tiers-low` | #cdc4ba on #0d0d0d | 11.29 | #211d17 on #e8e1d2 | 12.88 |
+| Hydrus-writes live marker "●" (text floor applied, stricter than 3:1) | `mcp-tiers-low` | #8a847e on #0d0d0d | 5.26 | #5c574f on #e8e1d2 | 5.50 |
+| Tier hints ("Throws away work ...") | `mcp-tiers-low` | #cdc4ba on #0d0d0d | 11.29 | #211d17 on #e8e1d2 | 12.88 |
+| Tier check-box labels ("Let it re-search a stuck entry", the Hydrus and destructive ones) and the "Always" prose | `mcp-tiers`, `mcp-tiers-low` | #ffffff on #0d0d0d | 19.44 | #2e2d2a on #e8e1d2 | 10.58 |
+| Focus ring on the research tier's check box (left and right edges of its box, `focus-mcp-tier-min`) | `focus-mcp-tier` | #cdc4ba on #0d0d0d | 11.29 | #211d17 on #e8e1d2 | 12.88 |
+
+The tier check-box labels and the "Always" prose are drawn in the stock label colour (#ffffff dark, #2e2d2a light), as every Settings check box
+label is since 6.h; they pass the floor but are not ink tokens. That is the F3 class on a page this ticket did not write, so it is left for
+DAN-2319 and named there, not changed here (it would move every Settings page).
+
+**`None` in the audit row:** `mcp_audit_view.rs` prints `None` for `select_candidate` only when the audit entry has no `selected_candidate_index`
+key (Python's `outcome.get(...)` prints `None` the same way). The real handler always writes that key (`mcp/tool_handlers.rs:532`), so a real row
+cannot print `None`; the synthetic seed in `examples/shot.rs` omitted it and now carries `"selected_candidate_index": 1`.
+
+**Not judgeable from a shot:** unchanged from section 6 (the Got it and Shortcut conflict boxes). The Tab order of the new states is the same
+tab walk as section 6 (`settings-tab-8`); the tier boxes add three stops, each shown with a ring in `settings-focus-mcp-tier-{dark,light}.png`
+(the research one) and by the same ring class on the other two.
