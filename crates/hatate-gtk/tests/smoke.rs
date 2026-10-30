@@ -9643,10 +9643,16 @@ const SCENARIOS_6H2_FIXUP: &[Scenario] = &[
 ];
 
 /// The 6.j follow-ups' scenarios (DAN-2472). A fourth list, at the end.
-const SCENARIOS_6J_FOLLOWUP: &[Scenario] = &[(
-    "parser_health_keeps_its_floor_scrolls_with_a_persistent_bar_and_is_one_tab_stop",
-    parser_health_keeps_its_floor_scrolls_with_a_persistent_bar_and_is_one_tab_stop,
-)];
+const SCENARIOS_6J_FOLLOWUP: &[Scenario] = &[
+    (
+        "parser_health_keeps_its_floor_scrolls_with_a_persistent_bar_and_is_one_tab_stop",
+        parser_health_keeps_its_floor_scrolls_with_a_persistent_bar_and_is_one_tab_stop,
+    ),
+    (
+        "parser_health_reopens_at_the_top_after_being_scrolled_to_the_end",
+        parser_health_reopens_at_the_top_after_being_scrolled_to_the_end,
+    ),
+];
 
 /// Every list, in order.
 fn all_scenarios() -> impl Iterator<Item = &'static (&'static str, fn(&adw::Application))> {
@@ -9841,5 +9847,34 @@ fn parser_health_keeps_its_floor_scrolls_with_a_persistent_bar_and_is_one_tab_st
     pump_for(250);
     assert!(adj.value() > 0.0, "Page Down scrolls");
     dialog.window.close();
+    f.close();
+}
+
+/// DAN-2472 item 5, the state transition after the changed state: Parser Health scrolled to its end and
+/// closed opens again at the top with the end of the list out of view, and its list keys work in the new
+/// window (the controller belongs to each dialog, not to the first one built).
+fn parser_health_reopens_at_the_top_after_being_scrolled_to_the_end(app: &adw::Application) {
+    let f = fx(app);
+    f.activate("parser-health");
+    let first = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    pump_for(300);
+    let adj = first.scroll.vadjustment();
+    adj.set_value(adj.upper() - adj.page_size());
+    pump_for(100);
+    assert!(adj.value() > 0.0, "scrolled to the end");
+    first.window.close();
+    pump_for(200);
+    f.activate("parser-health");
+    let again = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    pump_for(300);
+    let adj = again.scroll.vadjustment();
+    assert_eq!(adj.value(), 0.0, "a reopened dialog starts at the top");
+    assert!(
+        adj.upper() > adj.page_size() + 1.0,
+        "and still overflows, so the bar is still there"
+    );
+    assert!(again.scroll.vscrollbar().is_mapped(), "the bar is drawn");
+    assert_eq!(again.window.size_request(), (760, 460));
+    again.window.close();
     f.close();
 }
