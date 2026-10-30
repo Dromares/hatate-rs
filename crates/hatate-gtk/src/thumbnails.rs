@@ -60,6 +60,21 @@ fn known_to_hydrus(
     items: &[ThumbItem],
     stop: &std::sync::atomic::AtomicBool,
 ) -> HashSet<String> {
+    known_in_batches(items, stop, |batch| {
+        handle
+            .block_on(client.filter_known_hashes(batch))
+            .map_err(|e| e.detail())
+    })
+}
+
+/// The batching of `_known_to_hydrus` over any way of asking: rows with no hash are not asked
+/// about, no hashes means no call, [`HASH_CHECK_BATCH`] at a time, a stop request abandons the
+/// batches left, and a failed batch ends the asking but keeps what was answered before it.
+fn known_in_batches(
+    items: &[ThumbItem],
+    stop: &std::sync::atomic::AtomicBool,
+    mut ask: impl FnMut(&[String]) -> Result<std::collections::BTreeSet<String>, String>,
+) -> HashSet<String> {
     let hashes: Vec<String> = items
         .iter()
         .filter_map(|(_, _, h)| h.clone().filter(|h| !h.is_empty()))
@@ -69,10 +84,10 @@ fn known_to_hydrus(
         if stop.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
-        match handle.block_on(client.filter_known_hashes(batch)) {
+        match ask(batch) {
             Ok(found) => known.extend(found),
-            Err(e) => {
-                tracing::warn!("Could not check hashes against Hydrus: {}", e.detail());
+            Err(detail) => {
+                tracing::warn!("Could not check hashes against Hydrus: {detail}");
                 break;
             }
         }
@@ -323,5 +338,98 @@ impl MainWindow {
             .filter(|id| !self.s.queue_view.thumb_known(*id))
             .collect();
         self.start_thumbnail_generation(&wanted, false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// `n` rows, each with its own 64-character hash.
+    fn hashed(n: usize) -> Vec<ThumbItem> {
+        (0..n)
+            .map(|i| (EntryId(i as u64), format!("/{i}.png"), Some(format!("{i:064x}"))))
+            .collect()
+    }
+
+    fn everything(batch: &[String]) -> Result<BTreeSet<String>, String> {
+        Ok(batch.iter().cloned().collect())
+    }
+
+    /// `test_no_hashes_means_no_call_is_made_at_all`
+    #[test]
+    fn no_hashes_means_no_call_is_made_at_all() {
+        let mut calls = 0;
+        let rows = vec![
+            (EntryId(1), "/x.png".to_owned(), None),
+            (EntryId(2), "/y.png".to_owned(), Some(String::new())),
+        ];
+        let known = known_in_batches(&rows, &AtomicBool::new(false), |_| {
+            calls += 1;
+            Ok(BTreeSet::new())
+        });
+        assert!(known.is_empty());
+        assert_eq!(calls, 0);
+    }
+
+    /// `test_hashes_are_asked_for_in_batches`
+    #[test]
+    fn hashes_are_asked_for_in_batches() {
+        let rows = hashed(HASH_CHECK_BATCH + 5);
+        let mut sizes = Vec::new();
+        let known = known_in_batches(&rows, &AtomicBool::new(false), |b| {
+            sizes.push(b.len());
+            everything(b)
+        });
+        assert_eq!(known.len(), HASH_CHECK_BATCH + 5);
+        assert_eq!(sizes, [HASH_CHECK_BATCH, 5]);
+    }
+
+    /// `test_files_with_no_hash_are_not_asked_about`
+    #[test]
+    fn files_with_no_hash_are_not_asked_about() {
+        let rows = vec![
+            (EntryId(1), "/a.png".to_owned(), Some("a".repeat(64))),
+            (EntryId(2), "/b.png".to_owned(), None),
+        ];
+        let mut asked = Vec::new();
+        known_in_batches(&rows, &AtomicBool::new(false), |b| {
+            asked.push(b.to_vec());
+            everything(b)
+        });
+        assert_eq!(asked, [vec!["a".repeat(64)]]);
+    }
+
+    /// `test_a_hydrus_error_stops_asking_and_keeps_what_was_answered`
+    #[test]
+    fn a_hydrus_error_stops_asking_and_keeps_what_was_answered() {
+        let rows = hashed(HASH_CHECK_BATCH * 2 + 5);
+        let mut calls = 0;
+        let known = known_in_batches(&rows, &AtomicBool::new(false), |b| {
+            calls += 1;
+            if calls == 1 {
+                everything(b)
+            } else {
+                Err("connection refused".to_owned())
+            }
+        });
+        assert_eq!(known.len(), HASH_CHECK_BATCH);
+        assert_eq!(calls, 2);
+    }
+
+    /// `test_a_stop_request_abandons_the_remaining_batches`
+    #[test]
+    fn a_stop_request_abandons_the_remaining_batches() {
+        let rows = hashed(HASH_CHECK_BATCH * 2);
+        let stop = AtomicBool::new(false);
+        let mut calls = 0;
+        known_in_batches(&rows, &stop, |b| {
+            calls += 1;
+            stop.store(true, Ordering::Relaxed);
+            everything(b)
+        });
+        assert_eq!(calls, 1);
     }
 }
