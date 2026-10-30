@@ -511,8 +511,6 @@ const TAB_STATES: &[&str] = &[
     "settings-8",
     "settings-mcp-running",
     "settings-shortcuts-conflict",
-    "settings-hydrus-fetched",
-    "shortcuts-dialog",
 ];
 
 /// `shot --tabs OUTDIR [--only a,b]`: the Tab walk of every surface in `TAB_STATES`, dark and light, a child

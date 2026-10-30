@@ -9131,6 +9131,14 @@ const SCENARIOS_6H2: &[Scenario] = &[
         review_shortcuts_dialog_lists_every_action_with_its_key,
     ),
     (
+        "settings_e621_test_after_an_error_reruns_clean_and_keeps_its_place",
+        settings_e621_test_after_an_error_reruns_clean_and_keeps_its_place,
+    ),
+    (
+        "settings_hydrus_test_and_fetch_after_an_error_rerun_clean",
+        settings_hydrus_test_and_fetch_after_an_error_rerun_clean,
+    ),
+    (
         "settings_transport_differential_driver",
         settings_transport_differential_driver,
     ),
@@ -9432,4 +9440,142 @@ fn shortcuts_dialog_differential_driver(app: &adw::Application) {
         f.close();
     }
     std::fs::write(out, lines).expect("out file");
+}
+
+// -- Phase 6.h-2 state after an error (DAN-2461) ------------------------------------------------------
+
+/// The Test answers an error, then runs again: the label says what the second run says (not both),
+/// the button is back each time, and the label stays through a change of page (Python's labels
+/// are the dialog's own widgets, `setText` only on a Test) and is empty again on a fresh dialog.
+fn settings_e621_test_after_an_error_reruns_clean_and_keeps_its_place(app: &adw::Application) {
+    use common::hydrus::Reply;
+    let status = Arc::new(std::sync::atomic::AtomicU16::new(401));
+    let s = status.clone();
+    let (f, _server) = site_fx(app, &["e621.net"], move |_| {
+        let code = s.load(std::sync::atomic::Ordering::SeqCst);
+        if code == 0 {
+            Reply::aborted()
+        } else {
+            Reply::new(code, "{}")
+        }
+    });
+    let set = |code: u16| status.store(code, std::sync::atomic::Ordering::SeqCst);
+    let (button, label) = ("button.test_e621_login", "e621_test_result");
+    let d = open_settings(&f);
+    assert_eq!(d.live_text(label), "", "nothing has run yet");
+    d.type_into("e621_username", "synthetic-user");
+    d.type_into("e621_api_key", "synthetic-key");
+    let rejected = press_and_wait(&d, button, label);
+    assert!(
+        rejected.starts_with("e621 rejected the username or API key (401)"),
+        "{rejected}"
+    );
+    // the same pair again, now accepted: the label is the new answer alone
+    set(200);
+    let text = press_and_wait(&d, button, label);
+    assert!(
+        text.starts_with("e621 accepted the credentials for synthetic-user."),
+        "{text}"
+    );
+    assert!(!text.contains("rejected"), "{text}");
+    // a refusal after that, then a dropped connection: each replaces the one before
+    set(503);
+    let busy = press_and_wait(&d, button, label);
+    assert!(busy.starts_with("e621 answered 503"), "{busy}");
+    set(0);
+    let down = press_and_wait(&d, button, label);
+    assert!(down.starts_with("Couldn't reach e621."), "{down}");
+    assert!(
+        d.button_sensitive(button),
+        "the button is back after an error"
+    );
+    // another page and back: the label is where it was left, and the button still takes a click
+    d.tabs.set_current_page(Some(0));
+    d.tabs.set_current_page(Some(6));
+    assert_eq!(d.live_text(label), down);
+    assert!(d.button_sensitive(button));
+    set(200);
+    let text = press_and_wait(&d, button, label);
+    assert!(text.starts_with("e621 accepted the credentials"), "{text}");
+    // Settings closed and opened again: a new dialog, an empty label, a live button
+    set(401);
+    d.click_cancel();
+    let again = open_settings(&f);
+    assert_eq!(again.live_text(label), "", "a fresh dialog has run nothing");
+    assert!(again.button_sensitive(button));
+    again.type_into("e621_username", "synthetic-user");
+    again.type_into("e621_api_key", "synthetic-key");
+    let rejected = press_and_wait(&again, button, label);
+    assert!(rejected.starts_with("e621 rejected"), "{rejected}");
+    again.click_cancel();
+    f.close();
+}
+
+/// The Hydrus Test and Fetch after an error: the Test's label is replaced by the next answer; a Fetch
+/// that fails keeps the list a Fetch before it filled in (Python returns before it clears the combo);
+/// a Fetch that works fills it; a fresh dialog has neither.
+fn settings_hydrus_test_and_fetch_after_an_error_rerun_clean(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    let status = Arc::new(std::sync::atomic::AtomicU16::new(500));
+    let s = status.clone();
+    let server = common::hydrus::Hydrus::https(move |q| {
+        let code = s.load(std::sync::atomic::Ordering::SeqCst);
+        let path = q.target.split('?').next().unwrap_or("");
+        match (code, path) {
+            (200, "/verify_access_key") => {
+                json_reply(serde_json::json!({"basic_permissions": [0]}))
+            }
+            (200, "/get_services") => json_reply(serde_json::json!({"services": {
+                "aaaaaaaaaaaaaaaaaaaaaaaa": {"name": "my tags", "type_pretty": "local tag service"},
+            }})),
+            _ => Reply::new(code, "oops"),
+        }
+    });
+    let set = |code: u16| status.store(code, std::sync::atomic::Ordering::SeqCst);
+    let f = Fx::new_with(app, Opts::default(), |_| {});
+    let d = open_settings(&f);
+    d.type_into("hydrus_url", &server.url);
+    d.type_into("hydrus_key", common::hydrus::KEY);
+    d.set_value(
+        "hydrus_verify_ssl",
+        &hatate_gtk::settings_values::Value::Bool(false),
+    );
+    let (test, label) = ("button.test_connection", "hydrus_test_result");
+    let failed = press_and_wait(&d, test, label);
+    assert!(failed.starts_with("Failed: "), "{failed}");
+    set(200);
+    assert_eq!(press_and_wait(&d, test, label), "Connected \u{2713}");
+    // Fetch: works, then fails: the list stays, the Fetch button is back
+    d.press("button.fetch_from_hydrus");
+    assert!(pump_until(8_000, || !d.service_list().0.is_empty()));
+    let listed = d.service_list();
+    set(500);
+    d.press("button.fetch_from_hydrus");
+    assert!(pump_until(8_000, || d.button_sensitive("button.fetch_from_hydrus")));
+    pump_for(200);
+    assert_eq!(
+        d.service_list(),
+        listed,
+        "a failed Fetch leaves the list as it was"
+    );
+    // the Test after the Fetch's error says its own answer and the button is live
+    let failed = press_and_wait(&d, test, label);
+    assert!(failed.starts_with("Failed: "), "{failed}");
+    set(200);
+    d.tabs.set_current_page(Some(0));
+    d.tabs.set_current_page(Some(4));
+    assert_eq!(
+        d.service_list(),
+        listed,
+        "the list survives a change of page"
+    );
+    assert_eq!(press_and_wait(&d, test, label), "Connected \u{2713}");
+    d.click_cancel();
+    // a new dialog: no label, no list, both buttons live
+    let again = open_settings(&f);
+    assert_eq!(again.live_text(label), "");
+    assert!(again.service_list().0.is_empty());
+    assert!(again.button_sensitive(test) && again.button_sensitive("button.fetch_from_hydrus"));
+    again.click_cancel();
+    f.close();
 }
