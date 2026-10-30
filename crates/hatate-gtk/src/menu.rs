@@ -423,6 +423,23 @@ mod tests {
         );
     }
 
+    /// `test_both_menus_share_one_recheck_action`: the Files and Hydrus entries name the one
+    /// action, so one handler and one enabled state serve both.
+    #[test]
+    fn the_files_and_hydrus_menus_hold_the_one_recheck_action() {
+        let action_of = |menu: &Menu| {
+            menu.entries.iter().find_map(|e| match e {
+                Entry::Item { label, action, .. } if *label == "Re-check Queued Imports" => {
+                    Some(*action)
+                }
+                _ => None,
+            })
+        };
+        let all = menus();
+        assert_eq!(action_of(&all[0]), Some("reconcile"));
+        assert_eq!(action_of(&all[1]), Some("reconcile"));
+    }
+
     #[test]
     fn the_same_action_in_two_menus_is_registered_once() {
         let names: Vec<_> = actions().iter().map(|(n, _)| *n).collect();

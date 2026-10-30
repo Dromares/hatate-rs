@@ -350,7 +350,13 @@ mod tests {
     /// `n` rows, each with its own 64-character hash.
     fn hashed(n: usize) -> Vec<ThumbItem> {
         (0..n)
-            .map(|i| (EntryId(i as u64), format!("/{i}.png"), Some(format!("{i:064x}"))))
+            .map(|i| {
+                (
+                    EntryId(i as u64),
+                    format!("/{i}.png"),
+                    Some(format!("{i:064x}")),
+                )
+            })
             .collect()
     }
 
