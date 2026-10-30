@@ -351,6 +351,10 @@ const SCENARIOS: &[Scenario] = &[
         query_and_pawchive_windows_follow_the_design_read,
     ),
     (
+        "tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers",
+        tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers,
+    ),
+    (
         "hydrus_requests_leave_the_main_loop_running_while_the_server_stalls",
         hydrus_requests_leave_the_main_loop_running_while_the_server_stalls,
     ),
@@ -6666,5 +6670,204 @@ fn sending_the_row_you_are_on_away_keeps_your_place(app: &adw::Application) {
     f.w.action_send_to_hydrus(&ids[2..3]);
     assert!(pump_until(10_000, || f.len() == ids.len() - 2));
     assert_eq!(view.selected_ids(), vec![ids[0]], "the new last row");
+    f.close();
+}
+
+/// Real Tab presses from the window's first stop until the button labelled `last` has focus.
+/// Every press has to move focus: a container that is not itself a stop but swallows the key
+/// leaves it on the widget before (the Search Hydrus and Remove selected traps of 8872a2f), which
+/// `is_focusable()` pins cannot see. Returns the stops in order, `None` off an X server that can
+/// not inject keys (a failure under `CI`).
+fn tab_to_button(
+    keys: &mut common::xtest::Xtest,
+    win: &gtk4::Window,
+    last: &str,
+) -> Vec<gtk4::Widget> {
+    use common::xtest::Key;
+    let focus = || gtk4::prelude::GtkWindowExt::focus(win);
+    let named = |w: &Option<gtk4::Widget>| match w {
+        Some(w) => format!("{} {:?}", w.type_().name(), w.tooltip_text()),
+        None => "nothing".to_owned(),
+    };
+    let mut stops: Vec<gtk4::Widget> = focus().into_iter().collect();
+    for press in 1..=30 {
+        keys.tap(Key::Tab, &[]).expect("inject");
+        pump_for(250);
+        let now = focus();
+        assert!(
+            now.is_some() && now.as_ref() != stops.last(),
+            "Tab {press} stays on {}; the walk so far: {:?}",
+            named(&now),
+            stops
+                .iter()
+                .map(|w| named(&Some(w.clone())))
+                .collect::<Vec<_>>()
+        );
+        let now = now.unwrap();
+        stops.push(now.clone());
+        if now
+            .downcast_ref::<gtk4::Button>()
+            .and_then(|b| b.label())
+            .is_some_and(|l| l == last)
+        {
+            return stops;
+        }
+    }
+    panic!(
+        "Tab never reached {last}: {:?}",
+        stops
+            .iter()
+            .map(|w| named(&Some(w.clone())))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Close every other window and put the pointer and keyboard focus on `win`.
+fn only(keys: &mut common::xtest::Xtest, win: &gtk4::Window) {
+    for w in gtk4::Window::list_toplevels() {
+        if w != *win.upcast_ref::<gtk4::Widget>() {
+            if let Ok(w) = w.downcast::<gtk4::Window>() {
+                w.destroy();
+            }
+        }
+    }
+    pump_for(400);
+    keys.focus_window_at(4, 4).expect("focus the dialog");
+    pump_for(300);
+}
+
+/// The labels of the buttons among `stops`, in the order Tab met them.
+fn button_stops(stops: &[gtk4::Widget]) -> Vec<String> {
+    stops
+        .iter()
+        .filter_map(|w| w.downcast_ref::<gtk4::Button>()?.label())
+        .map(|l| l.to_string())
+        .collect()
+}
+
+/// Query Hydrus and the Pawchive index window, walked with real Tab presses (XTEST) in the states
+/// that regressed in 8872a2f: an empty results list or index (a non-focusable container with a
+/// non-focusable child used to swallow Tab, so Cancel / Close were out of reach), and the same
+/// windows holding rows.
+fn tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use common::xtest::Xtest;
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("tab_walk: skipped ({why})");
+            return;
+        }
+    };
+    let server = common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+        "/get_files/search_files" => json_reply(json!({"file_ids": [1, 2]})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": NEW_HASH, "file_id": 1, "mime": "image/png", "width": 4, "height": 3, "tags": {}},
+            {"hash": "bb".repeat(32), "file_id": 2, "mime": "image/png", "width": 4, "height": 3, "tags": {}},
+        ]})),
+        "/get_files/file" => Reply::ok(common::search::PNG.to_vec()),
+        _ => json_reply(json!({})),
+    });
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    f.w.action_query_hydrus();
+    let d = f.w.s.hydrus_query_dialog.borrow().clone().unwrap();
+    d.window.present();
+    pump_for(300);
+    only(&mut keys, &d.window);
+    // the tag box has focus when the window opens
+    let first = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        first
+            .as_ref()
+            .is_some_and(|w| w.is_ancestor(&d.tags) || *w == d.tags),
+        "the tag box is the first stop: {first:?}"
+    );
+    // no search run: Search Hydrus, then Cancel, with nothing in between to hold the key
+    let stops = tab_to_button(&mut keys, &d.window, "Cancel");
+    assert_eq!(
+        button_stops(&stops),
+        ["Search Hydrus", "Cancel"],
+        "{stops:?}"
+    );
+    d.set_tags_text("solo");
+    d.search();
+    assert!(pump_until(10_000, || d.labels().len() == 2));
+    d.select_results(&[0]);
+    pump_for(200);
+    only(&mut keys, &d.window);
+    gtk4::prelude::GtkWindowExt::set_focus(&d.window, Some(&d.tags));
+    pump_for(200);
+    // results: the rows are stops, then Cancel, then Import selected
+    let stops = tab_to_button(&mut keys, &d.window, "Import selected");
+    assert_eq!(
+        button_stops(&stops),
+        ["Search Hydrus", "Cancel", "Import selected"],
+        "{stops:?}"
+    );
+    assert!(
+        stops.iter().any(|w| w.css_name() == "row"),
+        "Tab reaches a result row: {stops:?}"
+    );
+    f.close();
+
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let d = f.w.s.pawchive_dialog.borrow().clone().unwrap();
+    d.window.present();
+    pump_for(300);
+    only(&mut keys, &d.window);
+    // an empty index opens on the name/link entry, and Tab goes on to Close
+    let first = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        first
+            .as_ref()
+            .is_some_and(|w| w.is_ancestor(&d.query) || *w == d.query),
+        "the name/link entry is the first stop: {first:?}"
+    );
+    let stops = tab_to_button(&mut keys, &d.window, "Close");
+    let buttons = button_stops(&stops);
+    assert_eq!(
+        buttons.last().map(String::as_str),
+        Some("Close"),
+        "{buttons:?}"
+    );
+    assert!(
+        buttons.contains(&"Remove selected".to_owned()),
+        "Tab reaches Remove selected on the way: {buttons:?}"
+    );
+    // and Close wraps to the entry rather than to nothing
+    use common::xtest::Key;
+    keys.tap(Key::Tab, &[]).expect("inject");
+    pump_for(250);
+    let wrapped = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        wrapped
+            .as_ref()
+            .is_some_and(|w| w.is_ancestor(&d.query) || *w == d.query),
+        "Tab from Close wraps to the entry: {wrapped:?}"
+    );
+    d.query
+        .set_text("https://pawchive.pw/fanbox/user/42/post/9");
+    d.find_or_add();
+    pump_for(500);
+    only(&mut keys, &d.window);
+    gtk4::prelude::GtkWindowExt::set_focus(&d.window, Some(&d.query));
+    pump_for(200);
+    // one artist indexed: the table row joins the walk and Close is still reachable
+    let stops = tab_to_button(&mut keys, &d.window, "Close");
+    keys.tap(Key::Tab, &[]).expect("inject");
+    pump_for(250);
+    let wrapped = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        wrapped.as_ref().is_some_and(|w| w.css_name() == "row"),
+        "Tab from Close wraps to the artist row: {wrapped:?}"
+    );
     f.close();
 }

@@ -90,6 +90,7 @@ pub struct HydrusQueryDialog {
     pub tags: gtk::TextView,
     pub search_button: gtk::Button,
     pub results: gtk::ListBox,
+    results_scroll: gtk::ScrolledWindow,
     pub import_button: gtk::Button,
     pub cancel_button: gtk::Button,
     metadata: RefCell<Vec<HydrusFile>>,
@@ -142,6 +143,7 @@ impl HydrusQueryDialog {
         results_scroll.add_css_class("field");
         // the list takes focus itself; an empty one is not a stop (see `refresh_import`)
         results_scroll.set_focusable(false);
+        results_scroll.set_can_focus(false);
         results.set_focusable(false);
         column.append(&results_scroll);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, widgets::BUTTON_ROW_SPACING);
@@ -162,6 +164,7 @@ impl HydrusQueryDialog {
             tags,
             search_button: search_button.clone(),
             results,
+            results_scroll,
             import_button: import_button.clone(),
             cancel_button: cancel_button.clone(),
             metadata: RefCell::new(Vec::new()),
@@ -245,8 +248,10 @@ impl HydrusQueryDialog {
     fn refresh_import(&self) {
         let any = !self.results.selected_rows().is_empty();
         self.import_button.set_sensitive(any && !self.busy.get());
-        self.results
-            .set_focusable(self.results.first_child().is_some());
+        let rows = self.results.first_child().is_some();
+        self.results.set_focusable(rows);
+        // `set_focusable(false)` alone leaves Tab stuck on the button above an empty list
+        self.results_scroll.set_can_focus(rows);
     }
 
     /// `_do_search`.

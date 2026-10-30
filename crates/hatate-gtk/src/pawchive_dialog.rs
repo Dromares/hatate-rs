@@ -125,6 +125,7 @@ pub fn found_label(c: &serde_json::Value) -> String {
 pub struct PawchiveIndexDialog {
     pub window: gtk::Window,
     pub table: gtk::ListBox,
+    table_scroll: gtk::ScrolledWindow,
     pub none_yet: gtk::Label,
     pub query: gtk::Entry,
     pub find_button: gtk::Button,
@@ -196,6 +197,7 @@ impl PawchiveIndexDialog {
         table_scroll.add_css_class("field");
         // the list takes focus itself; an empty one holds nothing to focus (see `populate`)
         table_scroll.set_focusable(false);
+        table_scroll.set_can_focus(false);
         let none_yet = widgets::hint("No artists indexed yet. Add one below.");
         none_yet.set_margin_top(12);
         none_yet.set_margin_bottom(12);
@@ -275,6 +277,7 @@ impl PawchiveIndexDialog {
         status.set_selectable(true);
         // selectable by mouse, but a label tells nothing by being focused: not a Tab stop
         status.set_focusable(false);
+        status.set_can_focus(false);
         column.append(&status);
         let close_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -291,6 +294,7 @@ impl PawchiveIndexDialog {
         let dialog = Rc::new(PawchiveIndexDialog {
             window: window.clone(),
             table,
+            table_scroll,
             none_yet,
             query: query.clone(),
             find_button: find_button.clone(),
@@ -408,6 +412,8 @@ impl PawchiveIndexDialog {
         }
         self.window.set_title(Some(&window_title(&creators)));
         self.table.set_focusable(!creators.is_empty());
+        // `set_focusable(false)` alone parks Tab on the widget before the empty table, or on nothing
+        self.table_scroll.set_can_focus(!creators.is_empty());
         *self.creators.borrow_mut() = creators;
     }
 
