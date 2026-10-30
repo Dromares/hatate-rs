@@ -35,6 +35,9 @@ pub enum Kind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Buttons {
     Ok,
+    /// One button reading "Got it", answered as [`Response::Ok`]: `message.information` with its
+    /// OK relabelled, for a box that states a fact (Settings > MCP, `_show_mcp_enable_summary`).
+    GotIt,
     YesNo,
     /// Write Tag Files' three-way box: "Keep existing files" (the default), "Replace them" (the
     /// destructive one) and Cancel, which Escape means.
@@ -183,7 +186,7 @@ pub fn default_response(kind: Kind, buttons: Buttons) -> Response {
         (_, Buttons::YesNo) => Response::No,
         (_, Buttons::KeepReplaceCancel) => Response::Keep,
         (_, Buttons::RemoveCancel | Buttons::DeleteCancel) => Response::Cancel,
-        (_, Buttons::Ok) => Response::Ok,
+        (_, Buttons::Ok | Buttons::GotIt) => Response::Ok,
     }
 }
 
@@ -282,6 +285,11 @@ impl Prompter for AdwPrompter {
         match buttons {
             Buttons::Ok => {
                 dialog.add_responses(&[("ok", "OK")]);
+                dialog.set_default_response(Some("ok"));
+                dialog.set_close_response("ok");
+            }
+            Buttons::GotIt => {
+                dialog.add_responses(&[("ok", "Got it")]);
                 dialog.set_default_response(Some("ok"));
                 dialog.set_close_response("ok");
             }

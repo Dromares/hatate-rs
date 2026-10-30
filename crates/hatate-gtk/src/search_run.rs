@@ -584,7 +584,9 @@ impl MainWindow {
 
     /// `_launch_search_worker(entries, status_prefix, override_engines, bypass_cache,
     /// force_continue_without_saucenao)`.
-    pub fn launch_search_worker(&self, ids: Vec<EntryId>, opts: LaunchOptions) {
+    ///
+    /// Returns whether a run began; the MCP re-search is released at once when it did not.
+    pub fn launch_search_worker(&self, ids: Vec<EntryId>, opts: LaunchOptions) -> bool {
         let backend = match self.s.search.backend(&self.s.paths) {
             Ok(b) => b,
             Err(e) => {
@@ -594,7 +596,7 @@ impl MainWindow {
                     "Search",
                     "The search could not start. See Help > View Logs.",
                 );
-                return;
+                return false;
             }
         };
         // Starting a search is the user saying "try again", so forget any remembered quota
@@ -631,7 +633,7 @@ impl MainWindow {
             (entries, pending, run_ids)
         };
         if pending.is_empty() {
-            return;
+            return false;
         }
         let total = pending.len();
         let by_path: HashMap<String, EntryId> = batch
@@ -681,7 +683,7 @@ impl MainWindow {
         let paths = self.s.paths.clone();
         let bus = self.s.search.bus.clone();
         let Some(handle) = self.s.workers.handle() else {
-            return;
+            return false;
         };
         let pending_opts = PendingOptions {
             override_engines: overrides,
@@ -706,6 +708,7 @@ impl MainWindow {
             |_| {},
         );
         self.s.search.job.replace(job);
+        true
     }
 
     /// The gauge, in Qt's terms: `progress_bar.setMaximum(total); setValue(done)`.
@@ -877,6 +880,8 @@ impl MainWindow {
             let mut q = self.s.queue.borrow_mut();
             q.set_search_running(false);
         }
+        // a tool that asked for this search (`research`) goes on
+        self.release_mcp_research();
         self.refresh_run_progress_label();
         self.say("Search finished");
         self.s

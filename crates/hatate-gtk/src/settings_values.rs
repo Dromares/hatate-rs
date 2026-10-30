@@ -15,6 +15,7 @@ use crate::settings_node::{Node, find};
 use crate::settings_spec::{ENGINES, PAGES};
 use hatate_core::config::{OrderedMap, Secret, Settings};
 use hatate_core::pycompat::strip;
+use hatate_core::shortcuts;
 use hatate_core::sidecar;
 use std::collections::BTreeMap;
 
@@ -39,19 +40,19 @@ impl Values {
     pub fn set(&mut self, id: &str, v: Value) {
         self.0.insert(id.to_owned(), v);
     }
-    fn b(&self, id: &str) -> bool {
+    pub fn b(&self, id: &str) -> bool {
         matches!(self.0.get(id), Some(Value::Bool(true)))
     }
-    fn n(&self, id: &str) -> f64 {
+    pub fn n(&self, id: &str) -> f64 {
         match self.0.get(id) {
             Some(Value::Num(n)) => *n,
             _ => 0.0,
         }
     }
-    fn i(&self, id: &str) -> i64 {
+    pub fn i(&self, id: &str) -> i64 {
         self.n(id) as i64
     }
-    fn t(&self, id: &str) -> &str {
+    pub fn t(&self, id: &str) -> &str {
         match self.0.get(id) {
             Some(Value::Text(s) | Value::Choice(s)) => s,
             _ => "",
@@ -271,6 +272,45 @@ pub fn initial(s: &Settings) -> Values {
         Value::Text(s.hydrus.tag_service_key.clone()),
     );
     v.set("hydrus_verify_ssl", Value::Bool(s.hydrus.verify_ssl));
+    // the Shortcuts page (6.i): one text per action, the key as `QKeySequence.toString()` writes it
+    let bound = shortcuts::resolve(Some(&s.review_shortcuts));
+    for a in shortcuts::REVIEW_ACTIONS {
+        let key = bound
+            .0
+            .iter()
+            .find(|(id, _)| id == a.id)
+            .map_or("", |(_, k)| k.as_str());
+        v.set(
+            &format!("shortcut.{}", a.id),
+            Value::Text(crate::shortcuts_page::canonical(key)),
+        );
+    }
+    // the MCP page (6.i): `mcp_port` and the audit-log size are spin boxes, which hold what Qt's
+    // `setValue` would (a stored port under 1024 shows as 1024 and saves as 1024)
+    v.set("mcp_enabled", Value::Bool(s.mcp.enabled));
+    v.set(
+        "mcp_port",
+        Value::Num(qt_int(s.mcp.port, 1024, 65535) as f64),
+    );
+    v.set("mcp_token", Value::Text(s.mcp.token.expose().to_owned()));
+    v.set("mcp_dry_run", Value::Bool(s.mcp.dry_run));
+    v.set("mcp_allow_research", Value::Bool(s.mcp.allow_research));
+    v.set(
+        "mcp_allow_hydrus_writes",
+        Value::Bool(s.mcp.allow_hydrus_writes),
+    );
+    v.set(
+        "mcp_allow_destructive",
+        Value::Bool(s.mcp.allow_destructive),
+    );
+    v.set(
+        "mcp_audit_max_mb",
+        Value::Num(qt_int(
+            s.mcp.audit_log_max_bytes.div_euclid(1_000_000).max(1),
+            1,
+            500,
+        ) as f64),
+    );
     v.set(
         "set_hydrus_duplicate_relationships",
         Value::Bool(s.set_hydrus_duplicate_relationships),
@@ -391,7 +431,7 @@ fn pairs_text(map: &OrderedMap<String>) -> String {
         .join("\n")
 }
 
-/// `apply_to_settings`, minus the Shortcuts and MCP lines. `da_snapshot` is
+/// `apply_to_settings`, minus the Shortcuts lines. `da_snapshot` is
 /// `_deviantart_cookies_snapshot`: what the box held when the dialog opened.
 pub fn apply(v: &Values, da_snapshot: &str, s: &mut Settings) {
     let engines = ENGINES;
@@ -527,6 +567,32 @@ pub fn apply(v: &Values, da_snapshot: &str, s: &mut Settings) {
     s.set_hydrus_duplicate_relationships = v.b("set_hydrus_duplicate_relationships");
     s.write_hydrus_provenance_note = v.b("write_hydrus_provenance_note");
     s.hydrus_provenance_note_name = strip(v.t("hydrus_provenance_note_name")).to_owned();
+
+    // `prune(self._current_shortcut_bindings())`; a caller with no Shortcuts page leaves them be
+    if shortcuts::REVIEW_ACTIONS
+        .iter()
+        .any(|a| v.0.contains_key(&format!("shortcut.{}", a.id)))
+    {
+        s.review_shortcuts = shortcuts::prune(&OrderedMap(
+            shortcuts::REVIEW_ACTIONS
+                .iter()
+                .map(|a| {
+                    (
+                        a.id.to_owned(),
+                        v.t(&format!("shortcut.{}", a.id)).to_owned(),
+                    )
+                })
+                .collect(),
+        ));
+    }
+    s.mcp.enabled = v.b("mcp_enabled");
+    s.mcp.port = v.i("mcp_port");
+    s.mcp.token = Secret::new(v.t("mcp_token"));
+    s.mcp.dry_run = v.b("mcp_dry_run");
+    s.mcp.allow_research = v.b("mcp_allow_research");
+    s.mcp.allow_hydrus_writes = v.b("mcp_allow_hydrus_writes");
+    s.mcp.allow_destructive = v.b("mcp_allow_destructive");
+    s.mcp.audit_log_max_bytes = v.i("mcp_audit_max_mb") * 1_000_000;
 }
 
 /// The controls whose change restates the Engine page's "Current pipeline" line

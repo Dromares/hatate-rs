@@ -7,6 +7,7 @@
 #![allow(dead_code)]
 
 pub mod hydrus;
+pub mod mcp;
 pub mod search;
 pub mod xtest;
 
@@ -131,7 +132,7 @@ impl Prompter for Script {
                 (Buttons::RemoveCancel, _) => Response::Cancel,
                 (Buttons::DeleteCancel, Response::Delete) => r,
                 (Buttons::DeleteCancel, _) => Response::Cancel,
-                (Buttons::Ok, _) => Response::Ok,
+                (Buttons::Ok | Buttons::GotIt, _) => Response::Ok,
             },
             // An unscripted box is answered by its default button, as pressing Enter would.
             _ => default,

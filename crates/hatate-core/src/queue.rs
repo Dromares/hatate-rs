@@ -53,6 +53,8 @@ pub enum QueueEvent {
     TableRefreshed,
     /// Rows left the list (`_remove_rows` / `_remove_entries`).
     Removed(Vec<EntryId>),
+    /// `_set_rows_reviewed` changed one row: the verb and the count it puts on the status line.
+    ReviewedChanged { reviewed: bool, remaining: usize },
     /// `_on_selection_changed()`: the preview follows whichever row is current.
     SelectionChanged,
     /// A search started or ended.
@@ -237,6 +239,10 @@ impl QueueModel {
             "{} 1 image(s) as reviewed ({remaining} still to review)",
             if reviewed { "Marked" } else { "Unmarked" }
         );
+        self.events.push(QueueEvent::ReviewedChanged {
+            reviewed,
+            remaining,
+        });
     }
 
     /// `_remove_rows` / `_remove_entries`: drops the entries by identity. When the current row is
@@ -433,6 +439,9 @@ impl std::error::Error for InvokeError {}
 pub struct QueueChannel {
     tx: Sender<Job>,
     shut_down: Arc<AtomicBool>,
+    /// Told after every job is queued, so an owner that sleeps in an event loop wakes to pump
+    /// (the window, DAN-2222). `None` for an owner that waits on the channel itself.
+    wake: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl QueueChannel {
@@ -466,6 +475,7 @@ impl QueueChannel {
         if self.tx.send(job).is_err() {
             return Err(timed_out());
         }
+        self.wake();
         match reply_rx.recv_timeout(crate::remote::secs(timeout)) {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(message)) => Err(InvokeError::Failed(message)),
@@ -479,6 +489,13 @@ impl QueueChannel {
         F: FnOnce(&mut QueueModel) + Send + 'static,
     {
         let _ = self.tx.send(Box::new(f));
+        self.wake();
+    }
+
+    fn wake(&self) {
+        if let Some(wake) = &self.wake {
+            wake();
+        }
     }
 
     /// `invoker.shutdown()`: no new calls after this.
@@ -492,6 +509,43 @@ fn panic_text(p: &(dyn Any + Send)) -> String {
         .map(|s| (*s).to_owned())
         .or_else(|| p.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "panic".to_owned())
+}
+
+/// The receiving end of a [`QueueChannel`] whose model is kept by someone else: the window owns
+/// its [`QueueModel`] on the GTK thread behind a shared cell, so it cannot hand it to a
+/// [`QueueOwner`]. It pumps the inbox against that model from its own loop (DAN-2222).
+pub struct QueueInbox {
+    rx: Receiver<Job>,
+}
+
+impl QueueInbox {
+    /// A channel and the inbox behind it.
+    ///
+    /// `wake` is called, from the calling thread, each time a job is queued: it must not block
+    /// and must not touch the model. The window uses it to ask its main loop to pump.
+    pub fn channel(wake: impl Fn() + Send + Sync + 'static) -> (QueueInbox, QueueChannel) {
+        let (tx, rx) = mpsc::channel();
+        (
+            QueueInbox { rx },
+            QueueChannel {
+                tx,
+                shut_down: Arc::new(AtomicBool::new(false)),
+                wake: Some(Arc::new(wake)),
+            },
+        )
+    }
+
+    /// Runs every job already queued against `model`, in order; returns how many ran. A marshaled
+    /// call that panics is answered with its text (`call`'s `catch_unwind`), so the pump does not
+    /// unwind for it.
+    pub fn pump(&self, model: &mut QueueModel) -> usize {
+        let mut ran = 0;
+        while let Ok(job) = self.rx.try_recv() {
+            job(model);
+            ran += 1;
+        }
+        ran
+    }
 }
 
 /// The owning end: holds the model and runs what the channel sends.
@@ -509,6 +563,7 @@ impl QueueOwner {
             QueueChannel {
                 tx,
                 shut_down: Arc::new(AtomicBool::new(false)),
+                wake: None,
             },
         )
     }
@@ -735,6 +790,29 @@ mod tests {
         }
         assert_eq!(m.entry_at(0).unwrap().path, "/q/2.png");
         assert!(m.take_events().is_empty());
+    }
+
+    #[test]
+    fn an_inbox_runs_marshaled_calls_against_a_model_kept_elsewhere_and_wakes_its_owner() {
+        use std::sync::atomic::AtomicUsize;
+        let wakes = Arc::new(AtomicUsize::new(0));
+        let seen = wakes.clone();
+        let (inbox, channel) = QueueInbox::channel(move || {
+            seen.fetch_add(1, Ordering::SeqCst);
+        });
+        let asker = std::thread::spawn(move || {
+            channel.call(|m| Ok(m.entry_at(1).map(|e| e.path.clone())), 5.0)
+        });
+        let mut m = model(3);
+        // the call is queued before the owner pumps, and the owner was told
+        let mut ran = 0;
+        while ran == 0 {
+            ran = inbox.pump(&mut m);
+            std::thread::yield_now();
+        }
+        assert_eq!(ran, 1);
+        assert_eq!(asker.join().unwrap().unwrap().as_deref(), Some("/q/1.png"));
+        assert_eq!(wakes.load(Ordering::SeqCst), 1);
     }
 
     #[test]

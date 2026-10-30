@@ -250,6 +250,22 @@ impl Form {
                 self.controls.insert(id, Control::Button(b.clone()));
                 b.upcast()
             }
+            Node::Pill { id, text, tip } => {
+                let b = widgets::pill_button(text, false, false);
+                tooltip(&b, tip);
+                self.controls.insert(id, Control::Button(b.clone()));
+                b.upcast()
+            }
+            Node::Icon { id, glyph, tip } => {
+                let b = widgets::icon_button(glyph, tip, true);
+                self.controls.insert(id, Control::Button(b.clone()));
+                b.upcast()
+            }
+            Node::Stretch => {
+                let s = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+                s.set_hexpand(true);
+                s.upcast()
+            }
             Node::Live { id, wrap, hint } => {
                 let l = gtk::Label::new(None);
                 l.set_xalign(0.0);
@@ -377,7 +393,7 @@ fn tooltip(w: &impl IsA<gtk::Widget>, tip: &str) {
 }
 
 /// A `QDoubleSpinBox` / `QSpinBox`: the suffix after the number, the special text at the minimum.
-fn spin_button(
+pub(crate) fn spin_button(
     min: f64,
     max: f64,
     step: f64,

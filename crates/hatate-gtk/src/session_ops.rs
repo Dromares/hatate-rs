@@ -841,7 +841,9 @@ impl MainWindow {
         if self.s.closing.replace(true) {
             return;
         }
-        // DEFERRED(6.i): stop the MCP server first.
+        // No new MCP tool call is taken once the rest starts coming down: a call still waiting
+        // for this thread when a worker it needs goes away would meet whatever is left.
+        self.stop_mcp();
         self.close_pawchive_dialog();
         // `engine_alerts.unsubscribe`, the stop request and the engines' shutdown.
         self.close_search_run();

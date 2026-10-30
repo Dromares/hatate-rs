@@ -255,6 +255,8 @@ pub struct State {
     pub poll_pending: RefCell<crate::hydrus_ops::PollPending>,
     /// The review keys' controllers, to take down when the bindings change.
     pub review_controllers: RefCell<Vec<(gtk::Widget, gtk::ShortcutController)>>,
+    /// `self._mcp_server` and the channel its tools reach the queue through (6.i).
+    pub mcp: crate::mcp_bridge::McpBridge,
 }
 
 /// The window and its state.
@@ -435,6 +437,7 @@ impl MainWindow {
         win.set_content(Some(&content));
         crate::menubar_keys::install(&win, &menubar);
 
+        let (mcp, mcp_wake) = crate::mcp_bridge::McpBridge::new();
         let state = Rc::new(State {
             paths: env.paths.clone(),
             settings: settings.clone(),
@@ -505,6 +508,7 @@ impl MainWindow {
             reconcile_was_quiet: Cell::new(false),
             poll_pending: RefCell::new(Default::default()),
             review_controllers: RefCell::new(Vec::new()),
+            mcp,
         });
         let window = MainWindow {
             win: win.clone(),
@@ -526,6 +530,9 @@ impl MainWindow {
         window.refresh_queue_empty_state();
         window.connect_close();
         window.startup();
+        // `MainWindow.__init__` ends by starting the MCP server when Settings > MCP has it on
+        window.attach_mcp(mcp_wake);
+        window.start_mcp_at_launch();
         window
     }
 

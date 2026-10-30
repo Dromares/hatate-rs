@@ -3,18 +3,20 @@
 //! (`gui/settings_search.py`).
 //!
 //! The pages are data (`settings_spec.rs`), built by `settings_form.rs`; what each control holds
-//! and what OK writes is `settings_values.rs`. The Shortcuts and MCP tabs are 6.i's: they are
-//! here as tabs (so the tab numbers, and the Find box's "Shortcuts" and "MCP" entries, are
-//! Python's) with nothing on them yet, and OK leaves their keys as they are.
+//! and what OK writes is `settings_values.rs`. The Shortcuts tab is `shortcuts_page.rs` and the MCP
+//! tab `settings_mcp.rs` (6.i).
 //!
 //! The six Test buttons and Fetch from Hydrus are network code and 6.h-2's; the buttons are built
 //! and insensitive until then.
 
 use crate::dialogs::{Buttons, Kind, Prompter};
+use crate::mcp_audit_view::{self, Connection};
 use crate::settings_form::{Control, Form};
+use crate::settings_mcp::{self, AuditCard};
 use crate::settings_node::Node;
 use crate::settings_spec::PAGES;
 use crate::settings_values::{self, Value, Values};
+use crate::shortcuts_page::{self, ShortcutsPage};
 use crate::widgets;
 use crate::window::MainWindow;
 use gtk4 as gtk;
@@ -29,8 +31,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub const TITLE: &str = "Settings";
-/// The tabs after the spec's pages, in Python's order (6.i's).
-pub const LATER_TABS: &[&str] = &["Shortcuts", "MCP"];
 pub const MIN_WIDTH: i32 = 560;
 pub const MIN_HEIGHT: i32 = 440;
 /// `self.resize(940, 660)`.
@@ -49,7 +49,14 @@ pub struct SettingsDialog {
     pub tabs: gtk::Notebook,
     pub ok_button: gtk::Button,
     pub cancel_button: gtk::Button,
+    /// The pages' forms: `PAGES` in order, then the MCP page's (the Shortcuts tab has none yet).
     forms: Vec<Form>,
+    /// The Shortcuts tab.
+    pub shortcuts: Rc<ShortcutsPage>,
+    /// The MCP tab's Recent tool calls card.
+    pub audit: Rc<AuditCard>,
+    /// What Copy and Generate last put on the clipboard (the clipboard itself is asynchronous).
+    pub copied: RefCell<Option<String>>,
     scrolls: Vec<gtk::ScrolledWindow>,
     index: Vec<SettingEntry<gtk::Widget>>,
     /// What each results row jumps to: `(tab index, widget)`. Empty for the "Nothing matches" row.
@@ -104,6 +111,58 @@ impl SettingsDialog {
             }
             live.set_text(&settings_values::pipeline_text(&settings, &all));
         }
+        // the Shortcuts tab (`_build_shortcuts_tab`)
+        let shortcuts = ShortcutsPage::build(&settings.review_shortcuts);
+        let shortcuts_scroll = scrollable(&shortcuts.root);
+        tabs.append_page(
+            &shortcuts_scroll,
+            Some(&gtk::Label::new(Some(shortcuts_page::TAB))),
+        );
+        scrolls.push(shortcuts_scroll.clone());
+        // the MCP tab (`_build_mcp_tab`)
+        let mut mcp_form = Form::build(&settings_mcp::PAGE);
+        let main_for_open = main.clone();
+        let audit_dir = main.s.paths.mcp_audit_log();
+        let audit_now = main.s.clock.clone();
+        let audit = AuditCard::build(
+            audit_dir.clone(),
+            initial.i("mcp_audit_max_mb"),
+            Rc::new(move || audit_now() as i64),
+            Rc::new(move || {
+                if let Some(dir) = audit_dir.parent() {
+                    (main_for_open.s.open_path)(dir);
+                }
+            }),
+        );
+        mcp_form.root.append(&audit.root);
+        mcp_form.controls.insert(
+            "mcp_audit_max_mb",
+            Control::Num {
+                spin: audit.max_mb.clone(),
+                min: 1.0,
+                max: 500.0,
+                dec: 0,
+            },
+        );
+        mcp_form.write(&initial);
+        if let Some(marker) = mcp_form.live("mcp_live_marker") {
+            marker.set_text(mcp_audit_view::SENT_GLYPH);
+            marker.set_tooltip_text(Some(settings_mcp::MARKER_TIP));
+            marker.add_css_class("hint");
+        }
+        if let Some(hint) = mcp_form.live("mcp_destructive_hint") {
+            hint.set_text(settings_mcp::DESTRUCTIVE_HINT);
+            settings_mcp::set_weight(hint, mcp_audit_view::Weight::Ink100);
+        }
+        for label in &audit.labels {
+            mcp_form
+                .named
+                .push((Some(label.text().to_string()), label.clone().upcast()));
+        }
+        mcp_form.named.push((None, audit.caption.clone().upcast()));
+        let mcp_scroll = scrollable(&mcp_form.root);
+        tabs.append_page(&mcp_scroll, Some(&gtk::Label::new(Some(settings_mcp::TAB))));
+        scrolls.push(mcp_scroll.clone());
         let mut index_pages = Vec::new();
         for (i, form) in forms.iter().enumerate() {
             index_pages.push((
@@ -112,20 +171,28 @@ impl SettingsDialog {
                 form.names(),
             ));
         }
-        for name in LATER_TABS {
-            let note = widgets::hint(&format!(
-                "The {name} page comes in a later step of the port."
-            ));
-            let (l, t, r, b) = widgets::PAGE_MARGINS;
-            note.set_margin_start(l);
-            note.set_margin_top(t);
-            note.set_margin_end(r);
-            note.set_margin_bottom(b);
-            let scroll = scrollable(&note);
-            tabs.append_page(&scroll, Some(&gtk::Label::new(Some(name))));
-            index_pages.push((*name, scroll.clone().upcast::<gtk::Widget>(), Vec::new()));
-            scrolls.push(scroll);
-        }
+        index_pages.push((
+            shortcuts_page::TAB,
+            shortcuts_scroll.upcast::<gtk::Widget>(),
+            shortcuts
+                .names()
+                .into_iter()
+                .map(|(fixed, w)| {
+                    let text = fixed.unwrap_or_else(|| {
+                        w.downcast_ref::<gtk::Label>()
+                            .map(|l| l.text().to_string())
+                            .unwrap_or_default()
+                    });
+                    (text, w)
+                })
+                .collect(),
+        ));
+        index_pages.push((
+            settings_mcp::TAB,
+            mcp_scroll.upcast::<gtk::Widget>(),
+            mcp_form.names(),
+        ));
+        forms.push(mcp_form);
         let index = settings_search::index_tabs(&index_pages);
 
         let column = gtk::Box::new(gtk::Orientation::Vertical, widgets::PAGE_SPACING);
@@ -180,6 +247,9 @@ impl SettingsDialog {
             ok_button: ok_button.clone(),
             cancel_button: cancel_button.clone(),
             forms,
+            shortcuts,
+            audit,
+            copied: RefCell::new(None),
             scrolls,
             index,
             listed: RefCell::new(Vec::new()),
@@ -196,6 +266,7 @@ impl SettingsDialog {
         });
         dialog.insensitive_network_buttons();
         dialog.wire_controls();
+        dialog.wire_mcp();
         {
             let w = window.clone();
             cancel_button.connect_clicked(move |_| w.close());
@@ -341,11 +412,219 @@ impl SettingsDialog {
         for form in &self.forms {
             for control in form.controls.values() {
                 if let Control::Button(b) = control {
-                    if b.label().as_deref() != Some("Browse\u{2026}") {
+                    // Browse works, and so do the MCP page's buttons (6.i)
+                    if b.label().as_deref() != Some("Browse\u{2026}")
+                        && !form_is_mcp(&form.controls)
+                    {
                         b.set_sensitive(false);
                     }
                 }
             }
+        }
+    }
+
+    // -- the MCP tab ---------------------------------------------------------------------------
+
+    /// The MCP tab's index (`self._mcp_tab_index`).
+    pub fn mcp_tab_index() -> usize {
+        PAGES.len() + 1
+    }
+
+    fn live_of(&self, id: &str) -> Option<&gtk::Label> {
+        self.forms.iter().find_map(|f| f.live(id))
+    }
+
+    fn button_of(&self, id: &str) -> Option<&gtk::Button> {
+        self.forms.iter().find_map(|f| f.button(id))
+    }
+
+    /// The handlers `_build_mcp_tab` and `__init__` connect, and the first draw of the page.
+    fn wire_mcp(self: &Rc<Self>) {
+        // connected after the page is filled in, so opening on a saved enabled state shows no
+        // summary: only a change made here does (spec section 10, risk 5)
+        for form in &self.forms {
+            // The token box is the widest row of the page at 20 characters, wide enough to push the
+            // whole page past the minimum window (and the Recent tool calls table with it).
+            if let Some(token) = form.entry_of("mcp_token") {
+                token.set_width_chars(8);
+            }
+            if let Some(enabled) = form.check("mcp_enabled") {
+                let d = Rc::downgrade(self);
+                enabled.connect_toggled(move |c| {
+                    let Some(d) = d.upgrade() else { return };
+                    d.refresh_mcp_connection();
+                    if c.is_active() {
+                        d.show_mcp_enable_summary();
+                    }
+                });
+            }
+            if let Some(dry) = form.check("mcp_dry_run") {
+                let d = Rc::downgrade(self);
+                dry.connect_toggled(move |_| {
+                    if let Some(d) = d.upgrade() {
+                        d.refresh_mcp_dry_run_hint();
+                    }
+                });
+            }
+            form.on_change("mcp_port", {
+                let d = Rc::downgrade(self);
+                move || {
+                    if let Some(d) = d.upgrade() {
+                        d.refresh_mcp_connection();
+                    }
+                }
+            });
+            if let Some(token) = form.entry_of("mcp_token") {
+                // `textEdited`: a hand edit clears the note; Generate sets the text and then the note
+                let d = Rc::downgrade(self);
+                token.connect_changed(move |_| {
+                    if let Some(hint) = d
+                        .upgrade()
+                        .as_ref()
+                        .and_then(|d| d.live_of("mcp_token_hint"))
+                    {
+                        hint.set_text("");
+                    }
+                });
+            }
+        }
+        if let Some(b) = self.button_of("mcp_copy_token") {
+            let d = Rc::downgrade(self);
+            b.connect_clicked(move |_| {
+                if let Some(d) = d.upgrade() {
+                    d.copy_mcp_token();
+                }
+            });
+        }
+        if let Some(b) = self.button_of("mcp_generate_token") {
+            let d = Rc::downgrade(self);
+            b.connect_clicked(move |_| {
+                if let Some(d) = d.upgrade() {
+                    d.generate_mcp_token();
+                }
+            });
+        }
+        if let Some(b) = self.button_of("mcp_restart") {
+            let d = Rc::downgrade(self);
+            b.connect_clicked(move |_| {
+                if let Some(d) = d.upgrade() {
+                    d.restart_mcp_server();
+                }
+            });
+        }
+        if let Some(b) = self.button_of("mcp_open_log") {
+            let d = Rc::downgrade(self);
+            b.connect_clicked(move |_| {
+                if let Some(d) = d.upgrade() {
+                    d.main.action_view_logs();
+                }
+            });
+        }
+        {
+            let d = Rc::downgrade(self);
+            self.tabs.connect_switch_page(move |_, _, index| {
+                let Some(d) = d.upgrade() else { return };
+                let on_mcp = index as usize == Self::mcp_tab_index();
+                if on_mcp {
+                    d.refresh_mcp_connection();
+                }
+                d.audit.set_on_show(on_mcp);
+            });
+        }
+        {
+            let d = Rc::downgrade(self);
+            self.window.connect_close_request(move |_| {
+                if let Some(d) = d.upgrade() {
+                    d.audit.stop_timer();
+                }
+                glib::Propagation::Proceed
+            });
+        }
+        self.refresh_mcp_dry_run_hint();
+        self.refresh_mcp_connection();
+    }
+
+    /// `_copy_mcp_token`.
+    pub fn copy_mcp_token(&self) {
+        let token = self.text_of("mcp_token");
+        self.window.clipboard().set_text(&token);
+        *self.copied.borrow_mut() = Some(token);
+    }
+
+    /// `_generate_mcp_token`: a fresh `secrets.token_urlsafe(32)` in the masked field, on the
+    /// clipboard in the same action, with a note that says so.
+    pub fn generate_mcp_token(&self) {
+        let Some(value) = hatate_core::mcp::token_urlsafe(32) else {
+            tracing::warn!("could not generate an MCP token: no system randomness");
+            return;
+        };
+        if let Some(entry) = self.forms.iter().find_map(|f| f.entry_of("mcp_token")) {
+            entry.set_text(&value);
+        }
+        self.window.clipboard().set_text(&value);
+        *self.copied.borrow_mut() = Some(value);
+        if let Some(hint) = self.live_of("mcp_token_hint") {
+            hint.set_text(settings_mcp::TOKEN_GENERATED);
+        }
+    }
+
+    /// `_refresh_mcp_dry_run_hint`.
+    fn refresh_mcp_dry_run_hint(&self) {
+        let on = self.values().b("mcp_dry_run");
+        let (text, weight) = settings_mcp::dry_run_text(on);
+        if let Some(hint) = self.live_of("mcp_dry_run_hint") {
+            hint.set_text(text);
+            settings_mcp::set_weight(hint, weight);
+        }
+    }
+
+    /// `_show_mcp_enable_summary`: once for each unticked-to-ticked change of the server box,
+    /// listing the tiers ticked in this dialog now (not the saved ones).
+    fn show_mcp_enable_summary(&self) {
+        let v = self.values();
+        let text = settings_mcp::enable_summary(
+            v.b("mcp_allow_hydrus_writes"),
+            v.b("mcp_allow_research"),
+            v.b("mcp_allow_destructive"),
+        );
+        self.prompter.message(
+            Kind::Information,
+            settings_mcp::SUMMARY_TITLE,
+            &text,
+            Buttons::GotIt,
+            Box::new(|_| {}),
+        );
+    }
+
+    /// `_mcp_restart_server`: re-binds with what is typed, not what is saved.
+    pub fn restart_mcp_server(&self) {
+        let v = self.values();
+        let mut typed = self.main.s.settings.lock().unwrap().mcp.clone();
+        typed.enabled = true;
+        typed.port = v.i("mcp_port");
+        typed.token = hatate_core::config::Secret::new(v.t("mcp_token"));
+        self.main.restart_mcp(&typed);
+        self.refresh_mcp_connection();
+    }
+
+    /// `_refresh_mcp_connection`: the Connection card from the server as it is now.
+    pub fn refresh_mcp_connection(&self) {
+        let v = self.values();
+        let report = self.main.mcp_report();
+        let card = mcp_audit_view::connection(v.b("mcp_enabled"), v.i("mcp_port"), Some(&report));
+        if let Some(l) = self.live_of("mcp_connection_primary") {
+            l.set_text(&card.primary);
+            settings_mcp::set_weight(l, card.weight);
+        }
+        if let Some(l) = self.live_of("mcp_connection_remedy") {
+            l.set_text(&card.remedy);
+            l.set_visible(!card.remedy.is_empty());
+        }
+        if let Some(b) = self.button_of("mcp_restart") {
+            b.set_visible(card.show_restart);
+        }
+        if let Some(b) = self.button_of("mcp_open_log") {
+            b.set_visible(card.state == Connection::Failed);
         }
     }
 
@@ -357,11 +636,20 @@ impl SettingsDialog {
         for form in &self.forms {
             all.0.extend(form.read().0);
         }
+        for (id, edit) in &self.shortcuts.edits {
+            all.set(&format!("shortcut.{id}"), Value::Text(edit.value()));
+        }
         all
     }
 
     /// Sets a control as a click or a keystroke would. Test driver and tests only.
     pub fn set_value(&self, id: &str, value: &Value) {
+        if let (Some(action), Value::Text(key)) = (id.strip_prefix("shortcut."), value) {
+            if let Some(edit) = self.shortcuts.edit(action) {
+                edit.set(key);
+            }
+            return;
+        }
         let mut one = Values::default();
         one.set(id, value.clone());
         for form in &self.forms {
@@ -394,6 +682,39 @@ impl SettingsDialog {
             .unwrap_or_default()
     }
 
+    /// Whether the control `id` is shown. Tests only.
+    pub fn control_visible(&self, id: &str) -> bool {
+        self.forms
+            .iter()
+            .find_map(|f| f.button(id).map(|b| b.is_visible()))
+            .unwrap_or(false)
+    }
+
+    /// Whether the line edit `id` shows what is typed (a masked field does not). Tests only.
+    pub fn entry_visible(&self, id: &str) -> bool {
+        self.forms
+            .iter()
+            .find_map(|f| f.entry_of(id).map(gtk4::prelude::EntryExt::is_visible))
+            .unwrap_or(true)
+    }
+
+    /// Whether a live label carries a CSS class. Tests only.
+    pub fn live_has_class(&self, id: &str, class: &str) -> bool {
+        self.live_of(id).is_some_and(|l| l.has_css_class(class))
+    }
+
+    /// Types into a line edit as a keystroke would (a hand edit, not `write`). Tests only.
+    pub fn type_into(&self, id: &str, text: &str) {
+        if let Some(e) = self.forms.iter().find_map(|f| f.entry_of(id)) {
+            e.set_text(text);
+        }
+    }
+
+    /// Brings a tab to the front. Tests only.
+    pub fn show_tab(&self, index: usize) {
+        self.tabs.set_current_page(Some(index as u32));
+    }
+
     /// Clicks the button `id`. Test driver and tests only.
     pub fn press(&self, id: &str) {
         if let Some(b) = self.forms.iter().find_map(|f| f.button(id)) {
@@ -406,7 +727,8 @@ impl SettingsDialog {
         PAGES
             .iter()
             .map(|(n, _)| (*n).to_owned())
-            .chain(LATER_TABS.iter().map(|n| (*n).to_owned()))
+            .chain(std::iter::once(shortcuts_page::TAB.to_owned()))
+            .chain(std::iter::once(settings_mcp::TAB.to_owned()))
             .collect()
     }
 
@@ -511,6 +833,22 @@ impl SettingsDialog {
     /// `accept()` then `MainWindow.action_open_settings`'s `apply_to_settings()` and the refreshes
     /// after it.
     pub fn accept(&self) {
+        // A warning that can be clicked past would leave two dead keys behind, and nothing later
+        // would explain why they stopped working: the dialog stays open.
+        if self.shortcuts.refresh_conflicts() {
+            self.prompter.message(
+                Kind::Warning,
+                shortcuts_page::CONFLICT_TITLE,
+                &format!(
+                    "{}{}",
+                    self.shortcuts.conflict.text(),
+                    shortcuts_page::CONFLICT_TAIL
+                ),
+                Buttons::Ok,
+                Box::new(|_| {}),
+            );
+            return;
+        }
         let values = self.values();
         self.window.close();
         self.main.apply_settings_dialog(&values, &self.da_snapshot);
@@ -523,6 +861,11 @@ impl SettingsDialog {
     pub fn click_cancel(&self) {
         self.cancel_button.emit_clicked();
     }
+}
+
+/// Whether `controls` are the MCP page's.
+fn form_is_mcp(controls: &std::collections::BTreeMap<&'static str, Control>) -> bool {
+    controls.contains_key("mcp_enabled")
 }
 
 /// `"{tab_name}  ›  {name}"`.
@@ -590,6 +933,13 @@ impl MainWindow {
     }
 
     pub fn apply_settings_dialog(&self, values: &Values, da_snapshot: &str) {
+        // Only enabled, port and token need the server itself to re-bind; the tier switches and
+        // dry run are read live on the next call. Restarting on every save would drop a connected
+        // client's session over an unrelated change.
+        let old_mcp = {
+            let s = self.s.settings.lock().unwrap();
+            (s.mcp.enabled, s.mcp.port, s.mcp.token.expose().to_owned())
+        };
         {
             let mut s = self.s.settings.lock().unwrap();
             settings_values::apply(values, da_snapshot, &mut s);
@@ -604,6 +954,15 @@ impl MainWindow {
         self.refresh_review_strip();
         // the Activity page states the engine line-up, which this dialog is what changes
         self.refresh_engines();
+        let new_mcp = self.s.settings.lock().unwrap().mcp.clone();
+        if (
+            new_mcp.enabled,
+            new_mcp.port,
+            new_mcp.token.expose().to_owned(),
+        ) != old_mcp
+        {
+            self.restart_mcp(&new_mcp);
+        }
     }
 }
 

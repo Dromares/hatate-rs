@@ -457,7 +457,7 @@ fn string_field(row: &Map<String, Value>, key: &str) -> Result<Option<String>, H
 
 /// `json.dumps(value)` as `requests` writes a `json=` body: `", "` and `": "` separators,
 /// `ensure_ascii`.
-pub(crate) fn py_dumps(value: &Value) -> String {
+pub fn py_dumps(value: &Value) -> String {
     let mut out = String::new();
     dump(value, &mut out);
     out

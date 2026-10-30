@@ -426,6 +426,50 @@ const SCENARIOS: &[Scenario] = &[
         "sending_the_row_you_are_on_away_keeps_your_place",
         sending_the_row_you_are_on_away_keeps_your_place,
     ),
+    (
+        "mcp_server_starts_with_the_window_answers_over_http_and_stops_on_close",
+        mcp_server_starts_with_the_window_answers_over_http_and_stops_on_close,
+    ),
+    (
+        "mcp_server_stays_off_when_disabled_and_reports_a_held_port_and_a_blank_token",
+        mcp_server_stays_off_when_disabled_and_reports_a_held_port_and_a_blank_token,
+    ),
+    (
+        "mcp_tool_calls_change_the_list_and_the_table_follows",
+        mcp_tool_calls_change_the_list_and_the_table_follows,
+    ),
+    (
+        "mcp_research_runs_the_windows_own_search_and_the_tool_goes_on_when_it_ends",
+        mcp_research_runs_the_windows_own_search_and_the_tool_goes_on_when_it_ends,
+    ),
+    (
+        "mcp_send_leaves_the_main_loop_running_while_hydrus_stalls",
+        mcp_send_leaves_the_main_loop_running_while_hydrus_stalls,
+    ),
+    (
+        "settings_find_box_reaches_every_string_the_mcp_spec_lists",
+        settings_find_box_reaches_every_string_the_mcp_spec_lists,
+    ),
+    (
+        "settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict",
+        settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict,
+    ),
+    (
+        "settings_mcp_page_states_the_server_and_follows_the_boxes",
+        settings_mcp_page_states_the_server_and_follows_the_boxes,
+    ),
+    (
+        "settings_mcp_enable_summary_fires_on_a_real_change_only",
+        settings_mcp_enable_summary_fires_on_a_real_change_only,
+    ),
+    (
+        "settings_mcp_token_buttons_restart_and_ok_rebind_the_server",
+        settings_mcp_token_buttons_restart_and_ok_rebind_the_server,
+    ),
+    (
+        "settings_mcp_audit_table_follows_the_log_newest_first",
+        settings_mcp_audit_table_follows_the_log_newest_first,
+    ),
 ];
 
 fn main() {
@@ -7328,6 +7372,703 @@ fn settings_engine_line_lens_warning_and_browse_follow_python(app: &adw::Applica
         chosen.to_string_lossy(),
         "Cancel leaves it"
     );
+    d.click_cancel();
+    f.close();
+}
+
+// ---- Phase 6.i: the MCP server in the window --------------------------------------------------
+
+/// A window with the server enabled on `port` and the synthetic token.
+fn mcp_fx(
+    app: &adw::Application,
+    port: u16,
+    token: &'static str,
+    seed: Vec<hatate_core::model::Entry>,
+) -> Fx {
+    Fx::new(
+        app,
+        Opts {
+            seed,
+            tweak: Some(Box::new(move |s| {
+                s.mcp.enabled = true;
+                s.mcp.port = i64::from(port);
+                s.mcp.token = token.into();
+            })),
+            ..Opts::default()
+        },
+    )
+}
+
+/// `MainWindow.__init__` starts the server when Settings > MCP has it on, the tools answer over
+/// plain http through the controller's own constructor, and `closeEvent` stops it first.
+fn mcp_server_starts_with_the_window_answers_over_http_and_stops_on_close(app: &adw::Application) {
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, seeded(3, MatchStatus::Good));
+    assert!(
+        f.w.mcp_report().running,
+        "the server did not start with the window"
+    );
+    let mut client = mcp::Client::new(port);
+    // a wrong token is refused before any tool runs
+    let refused = client.post_with(
+        "nope",
+        &serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
+    );
+    assert_eq!(refused.status, 401);
+
+    let listed = client.payload("list_queue", serde_json::json!({}));
+    assert_eq!(listed["total_in_queue"], 3, "{listed}");
+    let audit = std::fs::read_to_string(f.paths.mcp_audit_log()).expect("the call is audited");
+    assert!(audit.contains("\"tool\": \"list_queue\""), "{audit}");
+    assert!(
+        !audit.contains(mcp::TOKEN),
+        "the token reached the audit log"
+    );
+
+    f.close();
+    assert!(
+        pump_until(5_000, || !client.listening()),
+        "the server kept listening after the window closed"
+    );
+}
+
+/// Off stays off; a held port and a blank token leave the window up and the card saying why,
+/// with words that carry no token character.
+fn mcp_server_stays_off_when_disabled_and_reports_a_held_port_and_a_blank_token(
+    app: &adw::Application,
+) {
+    use hatate_gtk::mcp_audit_view::{Connection, connection};
+
+    // disabled: nothing is built, nothing listens
+    let port = mcp::free_port();
+    let f = Fx::new(app, Opts::default());
+    assert!(!f.w.mcp_report().running);
+    assert!(!f.w.s.mcp.running());
+    assert!(!mcp::Client::new(port).listening());
+    f.close();
+
+    // a port already held
+    let held = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let busy_port = held.local_addr().unwrap().port();
+    let f = mcp_fx(app, busy_port, mcp::TOKEN, Vec::new());
+    let report = f.w.mcp_report();
+    assert!(!report.running);
+    let card = connection(true, i64::from(busy_port), Some(&report));
+    assert_eq!(card.state, Connection::PortBusy);
+    assert_eq!(
+        card.primary,
+        format!("Can't start \u{2014} port {busy_port} is already in use.")
+    );
+    let user = report.user_message.expect("a message for the user");
+    assert!(
+        !user.contains(mcp::TOKEN) && !user.contains("127.0.0.1"),
+        "{user}"
+    );
+    // freeing the port and restarting with the typed settings brings it up (the Restart button)
+    drop(held);
+    let mut typed = f.w.s.settings.lock().unwrap().mcp.clone();
+    typed.enabled = true;
+    assert!(f.w.restart_mcp(&typed));
+    assert!(f.w.mcp_report().running);
+    assert!(mcp::Client::new(busy_port).listening());
+    f.close();
+
+    // enabled with no token
+    let f = mcp_fx(app, mcp::free_port(), "", Vec::new());
+    let report = f.w.mcp_report();
+    assert!(!report.running);
+    let card = connection(true, 8787, Some(&report));
+    assert_eq!(card.state, Connection::NoToken);
+    f.close();
+}
+
+/// The tools reach the list through the window's own queue: a change a tool makes is on the row
+/// the table shows, and the audit log says what was done.
+fn mcp_tool_calls_change_the_list_and_the_table_follows(app: &adw::Application) {
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, seeded(2, MatchStatus::Good));
+    let mut client = mcp::Client::new(port);
+    assert!(!f.w.s.queue.borrow().entry_at(1).unwrap().reviewed);
+    let answered = client.payload(
+        "toggle_reviewed",
+        serde_json::json!({"row": 1, "reviewed": true}),
+    );
+    assert_eq!(answered["reviewed"], true, "{answered}");
+    assert!(f.w.s.queue.borrow().entry_at(1).unwrap().reviewed);
+    // `_set_rows_reviewed` ends on the status line, as it does for a click
+    assert_eq!(
+        f.say(),
+        "Marked 1 image(s) as reviewed \u{2014} 1 still to review"
+    );
+    let id = f.w.s.queue.borrow().id_at(1).unwrap();
+    let row = f.w.s.queue_view.row_of(id).expect("the row is shown");
+    let reviewed_cell = hatate_gtk::queue_view::cell_view(
+        f.w.s.queue.borrow().entry_at(1).unwrap(),
+        hatate_core::table_cells::Column::Reviewed,
+    );
+    assert_eq!(
+        f.w.s
+            .queue_view
+            .cell(row, hatate_core::table_cells::Column::Reviewed)
+            .map(|c| c.text),
+        Some(reviewed_cell.text),
+        "the table still shows the old value"
+    );
+
+    // a destructive tool is refused while its switch is off, and the refusal is audited
+    let refused = client.payload("remove_row", serde_json::json!({"row": 0}));
+    assert_eq!(refused["allowed"], false, "{refused}");
+    assert_eq!(f.len(), 2);
+    let audit = std::fs::read_to_string(f.paths.mcp_audit_log()).unwrap();
+    assert!(audit.contains("\"tool\": \"remove_row\"") && audit.contains("\"allowed\": false"));
+
+    // with it on, the row leaves the list and the table
+    f.w.s.settings.lock().unwrap().mcp.allow_destructive = true;
+    let removed = client.payload("remove_row", serde_json::json!({"row": 0}));
+    assert_eq!(removed["row"], 0, "{removed}");
+    assert_eq!(f.len(), 1);
+    // `_remove_rows` ends on the status line
+    assert_eq!(f.say(), "Removed 1 file(s) from the list");
+    assert_eq!(f.w.s.queue_view.total_count(), 1);
+    f.close();
+}
+
+fn open_settings(f: &Fx) -> Rc<hatate_gtk::settings_dialog::SettingsDialog> {
+    f.w.activate_action("preferences");
+    f.w.s
+        .settings_dialog
+        .borrow()
+        .clone()
+        .expect("the dialog is open")
+}
+
+/// The Connection card says what the server is doing, the Dry run sentence flips with its box, the
+/// Hydrus marker is the sent glyph, and the destructive hint is drawn at the top of the ink ramp.
+fn settings_mcp_page_states_the_server_and_follows_the_boxes(app: &adw::Application) {
+    use hatate_gtk::settings_values::Value;
+    // off: Stopped, no Restart button
+    let f = fx(app);
+    let d = open_settings(&f);
+    assert_eq!(d.live_text("mcp_connection_primary"), "Stopped.");
+    assert!(!d.control_visible("mcp_restart"));
+    assert_eq!(d.live_text("mcp_live_marker"), "\u{25cf}");
+    assert_eq!(d.live_text("mcp_token_hint"), "");
+    assert!(d.live_has_class("mcp_destructive_hint", "ink-100"));
+    assert!(
+        d.live_text("mcp_destructive_hint")
+            .starts_with("Throws away work")
+    );
+    // Dry run: the sentence and its weight flip with the box
+    assert!(
+        d.live_text("mcp_dry_run_hint")
+            .starts_with("Dry run is off.")
+    );
+    assert!(d.live_has_class("mcp_dry_run_hint", "ink-100"));
+    d.set_value("mcp_dry_run", &Value::Bool(true));
+    assert!(
+        d.live_text("mcp_dry_run_hint")
+            .starts_with("Dry run is on.")
+    );
+    assert!(d.live_has_class("mcp_dry_run_hint", "ink-65"));
+    assert!(!d.live_has_class("mcp_dry_run_hint", "ink-100"));
+    // ticking the server box states the server as it is: enabled, but nothing has started it
+    d.set_value("mcp_enabled", &Value::Bool(true));
+    assert!(d.control_visible("mcp_restart"));
+    f.w.s.settings_dialog.borrow_mut().take();
+    d.click_cancel();
+    f.close();
+
+    // running: Listening on the port
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, Vec::new());
+    let d = open_settings(&f);
+    assert_eq!(
+        d.live_text("mcp_connection_primary"),
+        format!("Listening on 127.0.0.1:{port}.")
+    );
+    assert_eq!(
+        d.live_text("mcp_connection_remedy"),
+        "A client with the token below can connect now."
+    );
+    assert!(d.live_has_class("mcp_connection_primary", "ink-65"));
+    // the token field is always masked
+    assert!(!d.entry_visible("mcp_token"));
+    assert_eq!(d.text_of("mcp_token"), mcp::TOKEN);
+    d.click_cancel();
+    f.close();
+}
+
+/// The enable summary: not on opening a saved enabled state, once for each real change to on, and
+/// it lists exactly the tiers ticked in the dialog.
+fn settings_mcp_enable_summary_fires_on_a_real_change_only(app: &adw::Application) {
+    use hatate_gtk::settings_values::Value;
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, Vec::new());
+    f.script.reset();
+    let d = open_settings(&f);
+    assert_eq!(
+        f.script.count_shown(),
+        0,
+        "opening on a saved enabled state shows nothing"
+    );
+    // off then on: once
+    d.set_value("mcp_enabled", &Value::Bool(false));
+    assert_eq!(f.script.count_shown(), 0);
+    d.set_value("mcp_enabled", &Value::Bool(true));
+    assert_eq!(f.script.count_shown(), 1);
+    let shown = f.script.last_shown();
+    assert_eq!(shown.kind, Kind::Information);
+    assert_eq!(shown.title, "Enabling the MCP server");
+    assert_eq!(shown.buttons, Buttons::GotIt);
+    assert_eq!(shown.default, Response::Ok);
+    // Hydrus writes are on by default: that bullet is listed, the other two are not
+    assert!(
+        shown
+            .text
+            .contains("Send files and tags to your live Hydrus library")
+    );
+    assert!(!shown.text.contains("Re-search a stuck entry"));
+    assert!(!shown.text.contains("Remove rows and reset results"));
+    assert!(
+        shown
+            .text
+            .starts_with("Starting now, a connected AI with the token below can:\n\n")
+    );
+    assert!(
+        shown
+            .text
+            .ends_with("this off in the groups above, any time.")
+    );
+    // every combination of the three boxes lists exactly the ticked ones
+    for (h, r, x) in [
+        (false, false, false),
+        (true, true, true),
+        (false, true, false),
+        (false, false, true),
+    ] {
+        d.set_value("mcp_enabled", &Value::Bool(false));
+        d.set_value("mcp_allow_hydrus_writes", &Value::Bool(h));
+        d.set_value("mcp_allow_research", &Value::Bool(r));
+        d.set_value("mcp_allow_destructive", &Value::Bool(x));
+        f.script.reset();
+        d.set_value("mcp_enabled", &Value::Bool(true));
+        let text = f.script.last_shown().text;
+        assert_eq!(text.contains("live Hydrus library"), h, "{text}");
+        assert_eq!(text.contains("Re-search a stuck entry"), r, "{text}");
+        assert_eq!(text.contains("Remove rows and reset results"), x, "{text}");
+    }
+    d.click_cancel();
+    f.close();
+}
+
+/// Generate puts a fresh 43-character token in the masked field and on the clipboard, with a note
+/// that a hand edit clears; Restart re-binds with what is typed and does not save it; OK saves the
+/// page byte-for-byte as Python would and re-binds the server only when enabled, port or token
+/// changed.
+fn settings_mcp_token_buttons_restart_and_ok_rebind_the_server(app: &adw::Application) {
+    use hatate_gtk::settings_values::Value;
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, Vec::new());
+    let d = open_settings(&f);
+
+    d.press("mcp_generate_token");
+    let token = d.text_of("mcp_token");
+    assert_eq!(token.len(), 43);
+    assert_ne!(token, mcp::TOKEN);
+    assert_eq!(d.copied.borrow().as_deref(), Some(token.as_str()));
+    assert_eq!(
+        d.live_text("mcp_token_hint"),
+        "New token generated and copied to clipboard."
+    );
+    d.press("mcp_copy_token");
+    assert_eq!(d.copied.borrow().as_deref(), Some(token.as_str()));
+    assert!(!d.entry_visible("mcp_token"), "still masked after generate");
+    // a hand edit clears the note
+    d.type_into("mcp_token", &format!("{token}x"));
+    assert_eq!(d.live_text("mcp_token_hint"), "");
+
+    // Restart binds the typed port, and leaves the saved settings alone
+    let other = mcp::free_port();
+    d.set_value("mcp_port", &Value::Num(f64::from(other)));
+    d.type_into("mcp_token", "another-synthetic-token");
+    d.press("mcp_restart");
+    assert!(f.w.mcp_report().running);
+    assert_eq!(
+        d.live_text("mcp_connection_primary"),
+        format!("Listening on 127.0.0.1:{other}.")
+    );
+    assert!(
+        !mcp::Client::new(port).listening(),
+        "the old port was released"
+    );
+    assert!(mcp::Client::new(other).listening());
+    assert_eq!(f.w.s.settings.lock().unwrap().mcp.port, i64::from(port));
+    assert_eq!(
+        f.w.s.settings.lock().unwrap().mcp.token.expose(),
+        mcp::TOKEN
+    );
+
+    // OK: saves the page and, the port and token having changed, re-binds on the saved values
+    d.set_value("mcp_dry_run", &Value::Bool(true));
+    d.set_value("mcp_allow_research", &Value::Bool(true));
+    d.click_ok();
+    let saved = f.w.s.settings.lock().unwrap().mcp.clone();
+    assert_eq!(saved.port, i64::from(other));
+    assert_eq!(saved.token.expose(), "another-synthetic-token");
+    assert!(saved.dry_run && saved.allow_research && saved.enabled);
+    assert!(saved.allow_hydrus_writes && !saved.allow_destructive);
+    assert_eq!(saved.audit_log_max_bytes, 5_000_000);
+    let on_disk = std::fs::read_to_string(f.paths.config_file()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&on_disk).unwrap();
+    assert_eq!(json["mcp"]["port"], i64::from(other));
+    assert_eq!(json["mcp"]["dry_run"], true);
+    let client = mcp::Client::new(other);
+    assert!(client.listening());
+    // the new token is the one the server wants
+    let ok = client.post_with(
+        "another-synthetic-token",
+        &serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}),
+    );
+    assert_eq!(ok.status, 200);
+
+    // a save that changes none of enabled, port, token does not drop a connected client
+    let sessions_before = client
+        .post_with(
+            "another-synthetic-token",
+            &serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
+        )
+        .status;
+    let d = open_settings(&f);
+    d.set_value("mcp_allow_destructive", &Value::Bool(true));
+    d.click_ok();
+    assert!(f.w.s.settings.lock().unwrap().mcp.allow_destructive);
+    assert_eq!(
+        sessions_before, 400,
+        "no session id yet, so the server refuses (and is up)"
+    );
+    assert!(client.listening());
+
+    // switching it off stops the server
+    let d = open_settings(&f);
+    d.set_value("mcp_enabled", &Value::Bool(false));
+    d.click_ok();
+    assert!(pump_until(5_000, || !mcp::Client::new(other).listening()));
+    f.close();
+}
+
+/// The Recent tool calls table: newest first, Actions hides reads, the audit log of a real call
+/// shows up, and a log mid-write is not an error.
+fn settings_mcp_audit_table_follows_the_log_newest_first(app: &adw::Application) {
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, seeded(3, MatchStatus::Good));
+    let mut client = mcp::Client::new(port);
+    client.payload("list_queue", serde_json::json!({}));
+    client.payload(
+        "toggle_reviewed",
+        serde_json::json!({"row": 2, "reviewed": true}),
+    );
+    client.payload(
+        "select_candidate",
+        serde_json::json!({"row": 1, "candidate_index": 0}),
+    );
+    let d = open_settings(&f);
+    d.audit.refresh();
+    let rows = d.audit.rows();
+    // Actions (the default) hides the read
+    let tools: Vec<&str> = rows.iter().map(|r| r.tool.as_str()).collect();
+    assert_eq!(tools, ["select_candidate", "toggle_reviewed"], "{rows:?}");
+    assert_eq!(rows[1].outcome, "Allowed \u{2014} marked reviewed");
+    assert_eq!(rows[1].target, "#2");
+    assert_eq!(rows[1].tier, "Reversible");
+    d.audit.all.set_active(true);
+    let tools: Vec<String> = d.audit.rows().iter().map(|r| r.tool.clone()).collect();
+    assert_eq!(tools, ["select_candidate", "toggle_reviewed", "list_queue"]);
+    // the log being written while the table reads it
+    let log = f.paths.mcp_audit_log();
+    let mut text = std::fs::read_to_string(&log).unwrap();
+    text.push_str("{\"timestamp\": \"2020-01-02T03:04:05Z\", \"tool\": \"send_up");
+    std::fs::write(&log, text).unwrap();
+    d.audit.refresh();
+    assert_eq!(d.audit.rows().len(), 3);
+    // the timer only runs while the MCP tab is on show and the follow button is down
+    assert!(!d.audit.following());
+    d.show_tab(hatate_gtk::settings_dialog::SettingsDialog::mcp_tab_index());
+    assert!(d.audit.following());
+    d.audit.follow.set_active(false);
+    assert!(!d.audit.following());
+    d.audit.follow.set_active(true);
+    assert!(d.audit.following());
+    d.show_tab(0);
+    assert!(!d.audit.following());
+    // the whole page fits the stated minimum window, so the Outcome column is never cut off the
+    // side: the token box, the path caption and the table's columns give way before the page does
+    let page = d
+        .tabs
+        .nth_page(Some(
+            hatate_gtk::settings_dialog::SettingsDialog::mcp_tab_index() as u32,
+        ))
+        .expect("the MCP page");
+    let content = page
+        .downcast_ref::<gtk4::ScrolledWindow>()
+        .and_then(|sw| sw.child())
+        .and_then(|v| v.first_child())
+        .expect("the page's content");
+    let (min_width, _, _, _) = content.measure(gtk4::Orientation::Horizontal, -1);
+    let room = hatate_gtk::settings_dialog::MIN_WIDTH - 40;
+    assert!(
+        min_width <= room,
+        "the MCP page needs {min_width}px, the minimum window gives {room}"
+    );
+    d.click_cancel();
+    f.close();
+}
+
+/// The Shortcuts tab: the registry's keys in Qt's spelling, a click records the next key, Clear
+/// leaves an action unbound, a duplicate is named and OK refuses it, and what OK saves is only the
+/// keys that differ from their defaults.
+fn settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict(app: &adw::Application) {
+    use gtk4::gdk;
+    use hatate_core::shortcuts::REVIEW_ACTIONS;
+    use hatate_gtk::settings_values::Value;
+    let f = fx(app);
+    f.w.s.settings.lock().unwrap().review_shortcuts =
+        hatate_core::config::OrderedMap(vec![("next_row".to_owned(), "x".to_owned())]);
+    let d = open_settings(&f);
+    // a stored lower-case x shows as the sequence Qt writes
+    let page = &d.shortcuts;
+    assert_eq!(page.edit("next_row").unwrap().value(), "X");
+    assert_eq!(page.edit("prev_row").unwrap().value(), "K");
+    assert_eq!(page.edit("prev_unreviewed").unwrap().value(), "Shift+N");
+    assert_eq!(page.edits.len(), REVIEW_ACTIONS.len());
+    assert_eq!(page.conflict.text(), "");
+
+    // a click records the next key; a modifier on its own does not end it
+    let edit = page.edit("prev_row").unwrap().clone();
+    edit.start_recording();
+    assert!(edit.is_recording());
+    assert_eq!(edit.button.label().as_deref(), Some("Press a key\u{2026}"));
+    edit.press(gdk::Key::Shift_L, gdk::ModifierType::empty());
+    assert!(edit.is_recording());
+    edit.press(gdk::Key::q, gdk::ModifierType::SHIFT_MASK);
+    assert!(!edit.is_recording());
+    assert_eq!(edit.value(), "Shift+Q");
+    edit.start_recording();
+    edit.press(gdk::Key::Delete, gdk::ModifierType::empty());
+    assert_eq!(edit.value(), "Del");
+
+    // a duplicate is named, and OK keeps the dialog open with the warning
+    page.edit("prev_row").unwrap().set("x");
+    assert_eq!(
+        page.conflict.text(),
+        "Same key on more than one action - Qt fires neither, so these would both stop working:\nX is bound to Next image and Previous image"
+    );
+    f.script.reset();
+    d.click_ok();
+    assert!(
+        f.w.s.settings_dialog.borrow().is_some(),
+        "the dialog stays open on a conflict"
+    );
+    let shown = f.script.last_shown();
+    assert_eq!(shown.kind, Kind::Warning);
+    assert_eq!(shown.title, "Shortcut conflict");
+    assert!(
+        shown
+            .text
+            .ends_with("\n\nGive one of them a different key, or clear it."),
+        "{}",
+        shown.text
+    );
+    assert_eq!(
+        f.w.s.settings.lock().unwrap().review_shortcuts.0,
+        vec![("next_row".to_owned(), "x".to_owned())],
+        "nothing was saved"
+    );
+
+    // Clear leaves the action with no key at all, and that is not a conflict
+    page.clears[1].emit_clicked();
+    assert_eq!(page.edit("prev_row").unwrap().value(), "");
+    assert_eq!(page.conflict.text(), "");
+    // Reset puts every default back
+    d.set_value("shortcut.next_row", &Value::Text("shift+ctrl+a".into()));
+    assert_eq!(page.edit("next_row").unwrap().value(), "Ctrl+Shift+A");
+    page.reset.emit_clicked();
+    for a in REVIEW_ACTIONS {
+        assert_eq!(page.edit(a.id).unwrap().value(), a.default, "{}", a.id);
+    }
+
+    // OK saves only what differs from the default
+    d.set_value("shortcut.next_row", &Value::Text("F9".into()));
+    d.set_value("shortcut.prev_row", &Value::Text("".into()));
+    d.click_ok();
+    assert!(f.w.s.settings_dialog.borrow().is_none());
+    let saved = f.w.s.settings.lock().unwrap().review_shortcuts.0.clone();
+    assert_eq!(
+        saved,
+        vec![
+            ("next_row".to_owned(), "F9".to_owned()),
+            ("prev_row".to_owned(), "".to_owned())
+        ]
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(f.paths.config_file()).unwrap()).unwrap();
+    assert_eq!(json["review_shortcuts"]["next_row"], "F9");
+    assert_eq!(json["review_shortcuts"]["prev_row"], "");
+    f.close();
+}
+
+/// The `research` tool starts a search of the window's own (the strip, the button and the rows
+/// follow it), refuses while one is running, and answers when it ends. The server's thread waits
+/// for it; the main loop does not.
+fn mcp_research_runs_the_windows_own_search_and_the_tool_goes_on_when_it_ends(
+    app: &adw::Application,
+) {
+    let pics = tempfile::tempdir().unwrap();
+    let port = mcp::free_port();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: unsearched(pics.path(), 2),
+            tweak: Some(Box::new(move |s| {
+                (search_tweak())(s);
+                s.mcp.enabled = true;
+                s.mcp.port = i64::from(port);
+                s.mcp.token = mcp::TOKEN.into();
+                s.mcp.allow_research = true;
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    for _ in 0..2 {
+        f.search
+            .engines
+            .iqdb
+            .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    }
+    let mut client = mcp::Client::new(port);
+    let answer = client.payload("research", serde_json::json!({"rows": [0, 1]}));
+    assert_eq!(answer["research_started"], true, "{answer}");
+    assert_eq!(answer["completed"], true, "{answer}");
+    // the window's own run did it: both rows were searched, the strip is idle again
+    assert_eq!(statuses(&f), vec![MatchStatus::NotFound; 2]);
+    assert!(!f.w.s.run_active.get());
+    assert!(!f.w.s.queue.borrow().search_running());
+    assert_eq!(f.search.engines.calls(), vec!["iqdb"; 2]);
+    assert_eq!(f.say(), "Search finished");
+    assert_eq!(start_button(&f), "\u{25B6} Start Search");
+    // and the audit says what happened
+    let audit = std::fs::read_to_string(f.paths.mcp_audit_log()).unwrap();
+    assert!(audit.contains("\"tool\": \"research\"") && audit.contains("\"allowed\": true"));
+    f.close();
+}
+
+/// A `send_upload` tool call against a Hydrus that stalls: the server's thread waits, the main
+/// loop keeps turning, and the row is marked sent when the answer comes.
+fn mcp_send_leaves_the_main_loop_running_while_hydrus_stalls(app: &adw::Application) {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| {
+        let r = json_reply(json!({"status": 1, "hash": NEW_HASH, "note": ""}));
+        if q.target.starts_with("/add_files/add_file") {
+            r.delayed(std::time::Duration::from_millis(900))
+        } else {
+            r
+        }
+    });
+    let port = mcp::free_port();
+    let url = server.url.clone();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: review_seed(dir.path()),
+            tweak: Some(Box::new(move |s| {
+                (hydrus_tweak(&url, true))(s);
+                s.mcp.enabled = true;
+                s.mcp.port = i64::from(port);
+                s.mcp.token = mcp::TOKEN.into();
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    let mut client = mcp::Client::new(port);
+    let answer = client.payload("send_upload", json!({"row": 0}));
+    assert_eq!(answer["success"], true, "{answer}");
+    assert!(
+        ticks.get() >= 10,
+        "the main loop kept turning while the call waited: {} ticks",
+        ticks.get()
+    );
+    assert!(f.w.s.queue.borrow().entry_at(0).unwrap().sent_to_hydrus);
+    tick.remove();
+    f.close();
+}
+
+/// `mcp-settings-spec.md` section 9: the tab name, the checkbox labels, the four group titles and
+/// the two informational lines are all findable through the Find box.
+fn settings_find_box_reaches_every_string_the_mcp_spec_lists(app: &adw::Application) {
+    use hatate_gtk::settings_mcp as m;
+    let f = fx(app);
+    let d = open_settings(&f);
+    let wanted = [
+        ("mcp", "MCP  \u{203a}  MCP".to_owned()),
+        (
+            "Enable the MCP server",
+            format!("MCP  \u{203a}  {}", m::ENABLE),
+        ),
+        ("practice mode", format!("MCP  \u{203a}  {}", m::DRY_RUN)),
+        (
+            "re-search a stuck",
+            format!("MCP  \u{203a}  {}", m::RESEARCH_LABEL),
+        ),
+        (
+            "send files and tags",
+            format!("MCP  \u{203a}  {}", m::HYDRUS_LABEL),
+        ),
+        (
+            "remove rows and reset",
+            format!("MCP  \u{203a}  {}", m::DESTRUCTIVE_LABEL),
+        ),
+        (
+            "Always available",
+            format!("MCP  \u{203a}  {}", m::ALWAYS_TITLE),
+        ),
+        (
+            "sends to your live",
+            format!("MCP  \u{203a}  {}", m::HYDRUS_TITLE),
+        ),
+        (
+            "spends a limited",
+            format!("MCP  \u{203a}  {}", m::RESEARCH_TITLE),
+        ),
+        (
+            "hard to undo",
+            format!("MCP  \u{203a}  {}", m::DESTRUCTIVE_TITLE),
+        ),
+        (
+            "Recent tool calls",
+            "MCP  \u{203a}  Recent tool calls".to_owned(),
+        ),
+        ("Token", "MCP  \u{203a}  Token".to_owned()),
+        ("Port", "MCP  \u{203a}  Port".to_owned()),
+    ];
+    for (query, row) in wanted {
+        d.find.set_text(query);
+        let found = d.result_texts();
+        assert!(
+            found.contains(&row),
+            "{query:?} did not reach {row:?}: {found:?}"
+        );
+    }
+    d.find.set_text("");
     d.click_cancel();
     f.close();
 }
