@@ -122,7 +122,9 @@ impl Form {
                 if hint {
                     l.add_css_class("hint");
                 }
-                if wrap {
+                // A sentence-length caption wraps to the page even when the spec hard-wrapped it:
+                // it clipped mid-sentence at the 560 px minimum (DAN-2319, 6.h F3).
+                if wrap || is_prose(text) {
                     l.set_wrap(true);
                     l.set_max_width_chars(72);
                 }
@@ -491,3 +493,12 @@ impl Form {
         }
     }
 }
+
+/// A label that is a paragraph, not the caption of a control: it has a line break of its own or
+/// runs past what a caption beside a control does.
+fn is_prose(text: &str) -> bool {
+    text.contains('\n') || text.chars().count() > PROSE_CHARS
+}
+
+/// Longest caption (characters) that stays on one line beside its control.
+const PROSE_CHARS: usize = 48;

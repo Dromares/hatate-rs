@@ -323,6 +323,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_status_and_file_cells_fit_and_sent_is_in_view_at_both_window_sizes,
     ),
     (
+        "queue_scrollbar_is_10_px_wide_and_sent_still_fits_beside_it",
+        queue_scrollbar_is_10_px_wide_and_sent_still_fits_beside_it,
+    ),
+    (
         "clear_search_cache_label_carries_the_cache_size",
         clear_search_cache_label_carries_the_cache_size,
     ),
@@ -4131,6 +4135,68 @@ fn queue_status_and_file_cells_fit_and_sent_is_in_view_at_both_window_sizes(
             );
             f.close();
         }
+    }
+}
+
+/// The first widget under `w` whose CSS node is `name` and that is mapped.
+fn find_css_node(w: &gtk4::Widget, name: &str, out: &mut Vec<gtk4::Widget>) {
+    if w.css_name() == name && w.is_mapped() {
+        out.push(w.clone());
+    }
+    let mut child = w.first_child();
+    while let Some(c) = child {
+        find_css_node(&c, name, out);
+        child = c.next_sibling();
+    }
+}
+
+/// DAN-2319 F2: the Queue's persistent scrollbar is 10 px wide (design gate 2.4, `tokens.css`),
+/// not the toolkit's 22, and with 5,000 rows the `SENT` column still ends inside what is left of
+/// the 1000 px window's viewport.
+fn queue_scrollbar_is_10_px_wide_and_sent_still_fits_beside_it(app: &adw::Application) {
+    use hatate_core::table_cells::Column;
+    for scheme in ["dark", "light"] {
+        let mut seed = seeded(5000, MatchStatus::NotSearched);
+        for (i, e) in seed.iter_mut().enumerate() {
+            e.status = MatchStatus::ALL[i % MatchStatus::ALL.len()];
+        }
+        let s = scheme.to_owned();
+        let f = Fx::new(
+            app,
+            Opts {
+                seed,
+                missing: Some(Arc::new(|_, _| HashSet::new())),
+                tweak: Some(Box::new(move |c| c.theme = s.clone())),
+                ..Opts::default()
+            },
+        );
+        f.w.win.set_default_size(1000, 780);
+        f.w.win.set_size_request(1010, 790);
+        pump_for(400);
+        let scroller = f.w.s.queue_view.scroller.clone();
+        let mut bars = Vec::new();
+        find_css_node(scroller.upcast_ref(), "scrollbar", &mut bars);
+        let vertical: Vec<_> = bars
+            .iter()
+            .filter(|b| b.has_css_class("vertical"))
+            .collect();
+        assert_eq!(vertical.len(), 1, "{scheme}: one vertical scrollbar");
+        let bar_width = vertical[0].width();
+        println!(
+            "SCROLLBAR {scheme} width={bar_width} viewport={}",
+            scroller.width()
+        );
+        assert_eq!(bar_width, 10, "{scheme}: the scrollbar is 10 px wide");
+        let through_sent: i32 = f.w.s.queue_view.header_sections()[..=Column::Sent.index()]
+            .iter()
+            .map(|s| s.width)
+            .sum();
+        assert!(
+            through_sent <= scroller.width() - bar_width,
+            "{scheme}: SENT ends at {through_sent}, under the scrollbar ({} left)",
+            scroller.width() - bar_width
+        );
+        f.close();
     }
 }
 

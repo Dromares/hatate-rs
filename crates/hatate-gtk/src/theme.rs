@@ -386,7 +386,8 @@ window.settings-window notebook > header { background: @page; border: none; box-
 window.settings-window notebook > header > tabs > tab { background: transparent; color: @ink_65; border: none;
   border-radius: 0; box-shadow: none; padding: 9px 20px; margin: 0 6px 0 0; min-height: 0; min-width: 0; }
 window.settings-window notebook > header > tabs > tab:hover { color: @ink; }
-window.settings-window notebook > header > tabs > tab:checked { background: @raised; color: @ink; }
+window.settings-window notebook > header > tabs > tab:checked { background: @raised; color: @ink;
+  box-shadow: inset 0 -2px @ink; }
 window.settings-window notebook > header > tabs > tab label { color: inherit; }
 window.settings-window notebook:focus:focus-visible > header > tabs > tab:checked { outline: 2px solid @ink;
   outline-offset: -4px; }
@@ -451,8 +452,14 @@ textview.log, textview.log text { background: @sunken; color: @ink; font-family:
 /* scrolled windows draw soft edge gradients where content continues; flat has none */
 undershoot, overshoot, undershoot.top, undershoot.bottom, undershoot.left, undershoot.right {
   background: none; background-image: none; box-shadow: none; }
-scrollbar slider { background: @ink_58; border-radius: 0; min-width: 6px; min-height: 6px; }
-scrollbar, scrollbar trough { background: transparent; }
+/* a 10 px bar (design gate 2.4, tokens.css), not the toolkit's 22: the thumb fills the trough, and
+   neither the bar, its range nor the trough keeps padding, a margin or a minimum of its own
+   (DAN-2319 F2) */
+scrollbar, scrollbar > range, scrollbar > range > trough {
+  background: transparent; padding: 0; margin: 0; min-width: 0; min-height: 0; border: none; }
+scrollbar slider { background: @ink_58; border-radius: 0; margin: 0; border: none; }
+scrollbar.vertical > range > trough > slider { min-width: 10px; min-height: 24px; }
+scrollbar.horizontal > range > trough > slider { min-height: 10px; min-width: 24px; }
 "#;
 
 /// The rules with `%name%` replaced by the token values.
@@ -668,6 +675,10 @@ mod tests {
                 rule("window.settings-window notebook > header > tabs > tab:checked")
                     .contains("background: @raised"),
                 "{scheme:?}: the selected tab is not the raised sheet"
+            );
+            assert!(
+                css.contains("tab:checked { background: @raised; color: @ink;\n  box-shadow: inset 0 -2px @ink; }"),
+                "{scheme:?}: the selected tab lost its ink underline (DAN-2319, 6.h F2: the fill alone is 1.05:1)"
             );
             assert!(
                 rule("window.settings-window notebook:focus:focus-visible > header > tabs > tab:checked")

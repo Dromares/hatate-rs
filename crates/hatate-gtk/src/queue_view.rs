@@ -427,11 +427,12 @@ const HEADER_TITLE_FLOORS: [(Column, i32); 7] = [
 /// First-run widths that replace the proportional ones (DAN-2319 F1 and F5; the floors above
 /// still apply on top). Status is the width its widest chip needs: a GTK cell is 13 px narrower
 /// than its column, so the 120 px minimum cut `Unsearched`, `Not found` and `Searching` to
-/// `Unsearc...`. File gives up 48 px (it is cut in the middle, so the extension stays), which
-/// pays for the Status column so that `SENT` lies inside the 934 px viewport of a 1000 px window.
+/// `Unsearc...`; 136 clears the widest chip (`Unsearched`, 118 px natural). File gives up 34 px (it is
+/// cut in the middle, so the extension stays), which pays for it so that `SENT` lies inside what is
+/// left of the 934 px viewport of a 1000 px window beside the 10 px scrollbar (924 px).
 const FIRST_RUN_WIDTHS: [(Column, i32); 4] = [
-    (Column::File, 116),
-    (Column::Status, 150),
+    (Column::File, 130),
+    (Column::Status, 136),
     (Column::Booru, 72),
     (Column::Sent, 80),
 ];
