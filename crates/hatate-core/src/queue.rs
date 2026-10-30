@@ -239,8 +239,10 @@ impl QueueModel {
             "{} 1 image(s) as reviewed ({remaining} still to review)",
             if reviewed { "Marked" } else { "Unmarked" }
         );
-        self.events
-            .push(QueueEvent::ReviewedChanged { reviewed, remaining });
+        self.events.push(QueueEvent::ReviewedChanged {
+            reviewed,
+            remaining,
+        });
     }
 
     /// `_remove_rows` / `_remove_entries`: drops the entries by identity. When the current row is

@@ -1401,7 +1401,14 @@ fn wire_http(
     let text = String::from_utf8_lossy(&raw).into_owned();
     let (head, rest) = text.split_once("\r\n\r\n").expect("a reply");
     let mut lines = head.lines();
-    let status = lines.next().unwrap().split(' ').nth(1).unwrap().parse().unwrap();
+    let status = lines
+        .next()
+        .unwrap()
+        .split(' ')
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap();
     let headers: Vec<(String, String)> = lines
         .filter_map(|l| l.split_once(": "))
         .map(|(n, v)| (n.to_lowercase(), v.to_owned()))

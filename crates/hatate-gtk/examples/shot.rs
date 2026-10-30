@@ -143,14 +143,7 @@ fn main() -> glib::ExitCode {
                     "\"off\"",
                     "null",
                 ),
-                (
-                    "remove_row",
-                    "destructive",
-                    false,
-                    false,
-                    "\"off\"",
-                    "null",
-                ),
+                ("remove_row", "destructive", false, false, "\"off\"", "null"),
             ];
             let mut text = String::new();
             for (i, (tool, tier, allowed, dry, reason, outcome)) in lines.iter().enumerate() {
