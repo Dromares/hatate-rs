@@ -494,26 +494,6 @@ const SCENARIOS: &[Scenario] = &[
         "settings_mcp_audit_table_follows_the_log_newest_first",
         settings_mcp_audit_table_follows_the_log_newest_first,
     ),
-    (
-        "settings_e621_test_sends_python_request_and_says_what_python_says",
-        settings_e621_test_sends_python_request_and_says_what_python_says,
-    ),
-    (
-        "settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages",
-        settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages,
-    ),
-    (
-        "settings_tests_wait_on_a_stalled_server_without_blocking_the_window",
-        settings_tests_wait_on_a_stalled_server_without_blocking_the_window,
-    ),
-    (
-        "settings_hydrus_test_and_fetch_follow_python",
-        settings_hydrus_test_and_fetch_follow_python,
-    ),
-    (
-        "review_shortcuts_dialog_lists_every_action_with_its_key",
-        review_shortcuts_dialog_lists_every_action_with_its_key,
-    ),
 ];
 
 fn main() {
@@ -542,7 +522,7 @@ fn main() {
     let code = hatate_gtk::app::with_application(move |app| {
         // `HATATE_SMOKE_ONLY=<substring>` runs just the scenarios whose name contains it.
         let only = std::env::var("HATATE_SMOKE_ONLY").ok();
-        for (name, scenario) in SCENARIOS {
+        for (name, scenario) in SCENARIOS.iter().chain(SCENARIOS_6H2) {
             if only.as_deref().is_some_and(|o| !name.contains(o)) {
                 continue;
             }
@@ -567,7 +547,7 @@ fn main() {
         eprintln!("hatate-gtk smoke: {} scenario(s) failed", failed.get());
         std::process::exit(1);
     }
-    println!("hatate-gtk smoke: {} scenarios ok", SCENARIOS.len());
+    println!("hatate-gtk smoke: {} scenarios ok", scenario_count());
 }
 
 fn fx(app: &adw::Application) -> Fx {
@@ -9126,4 +9106,32 @@ fn review_shortcuts_dialog_lists_every_action_with_its_key(app: &adw::Applicatio
     assert_eq!(find(&format!("{compare}:")), sd::UNBOUND);
     dialog.click_close();
     f.close();
+}
+
+/// Phase 6.h-2's scenarios. A second list, at the end, so that adding them moved no line the docs cite.
+const SCENARIOS_6H2: &[Scenario] = &[
+    (
+        "settings_e621_test_sends_python_request_and_says_what_python_says",
+        settings_e621_test_sends_python_request_and_says_what_python_says,
+    ),
+    (
+        "settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages",
+        settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages,
+    ),
+    (
+        "settings_tests_wait_on_a_stalled_server_without_blocking_the_window",
+        settings_tests_wait_on_a_stalled_server_without_blocking_the_window,
+    ),
+    (
+        "settings_hydrus_test_and_fetch_follow_python",
+        settings_hydrus_test_and_fetch_follow_python,
+    ),
+    (
+        "review_shortcuts_dialog_lists_every_action_with_its_key",
+        review_shortcuts_dialog_lists_every_action_with_its_key,
+    ),
+];
+
+fn scenario_count() -> usize {
+    SCENARIOS.len() + SCENARIOS_6H2.len()
 }

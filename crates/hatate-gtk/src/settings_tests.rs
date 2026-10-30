@@ -544,3 +544,108 @@ pub fn service_label(key: &str, name: &str) -> String {
     let head: String = key.chars().take(12).collect();
     format!("{name}  ({head}\u{2026})")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn typed(url: &str, cookies: &str) -> Typed {
+        Typed {
+            url: url.into(),
+            cookies: cookies.into(),
+            search_timeout: 30.0,
+            fixed_timeout: FIXED_TIMEOUT,
+            ..Typed::default()
+        }
+    }
+
+    fn done(plan: Plan) -> String {
+        match plan {
+            Plan::Done(t) => t,
+            Plan::Run { .. } => panic!("the Test would have sent a request"),
+        }
+    }
+
+    fn first(plan: Plan) -> String {
+        match plan {
+            Plan::Run { first, .. } => first.expect("a first line"),
+            Plan::Done(t) => panic!("the Test stopped before its request: {t}"),
+        }
+    }
+
+    #[test]
+    fn a_url_on_the_wrong_site_stops_before_any_request() {
+        assert_eq!(
+            done(plan(Test::DeviantArt, &typed("https://example.org/", ""))),
+            "That does not look like a DeviantArt URL."
+        );
+        assert_eq!(
+            done(plan(
+                Test::AnimePictures,
+                &typed("https://example.org/", "")
+            )),
+            "That does not look like an Anime-Pictures URL."
+        );
+        assert_eq!(
+            done(plan(Test::Pixiv, &typed("https://example.org/", ""))),
+            "That does not look like a Pixiv URL."
+        );
+        // Sankaku has no URL check: Python hands whatever was pasted to the availability check
+        assert!(matches!(
+            plan(Test::Sankaku, &typed("https://example.org/", "")),
+            Plan::Run { .. }
+        ));
+    }
+
+    #[test]
+    fn typed_cookies_are_named_and_checked_before_the_request() {
+        let da = typed("https://www.deviantart.com/a/art/b-1", "");
+        assert_eq!(
+            first(plan(Test::DeviantArt, &da)),
+            "No cookies entered - testing anonymously, which is what the app would do."
+        );
+        let da = typed("https://fav.me/x", "auth_secure=bbbb; auth=a");
+        let text = first(plan(Test::DeviantArt, &da));
+        assert!(text.starts_with("Testing with 2 cookie(s): auth, auth_secure\u{2026}"));
+        assert!(
+            text.contains("\n\n\u{26a0} auth is only 1 characters"),
+            "{text}"
+        );
+        let junk = typed("https://fav.me/x", "no equals sign");
+        assert!(done(plan(Test::DeviantArt, &junk)).starts_with("That doesn't look like cookies."));
+        let ap = typed("https://anime-pictures.net/posts/1", "two words");
+        assert!(done(plan(Test::AnimePictures, &ap)).starts_with(
+            "That doesn't look like a cookie. Paste it as anime_pictures_jwt=<value>"
+        ));
+        // a bare token is the session cookie
+        let bare = typed("https://anime-pictures.net/posts/1", "abcdef");
+        assert!(
+            first(plan(Test::AnimePictures, &bare))
+                .starts_with("Testing with 1 cookie(s): anime_pictures_jwt\u{2026}")
+        );
+    }
+
+    #[test]
+    fn e621_needs_both_halves_and_trims_them() {
+        let mut t = typed("", "");
+        t.e621_username = "  ".into();
+        t.e621_api_key = "k".into();
+        assert!(
+            done(plan(Test::E621, &t)).starts_with("No username entered. Both halves are needed")
+        );
+        t.e621_username = " u ".into();
+        t.e621_api_key = "".into();
+        assert!(done(plan(Test::E621, &t)).starts_with("No API key entered."));
+        t.e621_api_key = " k ".into();
+        assert_eq!(first(plan(Test::E621, &t)), "Testing as u\u{2026}");
+    }
+
+    #[test]
+    fn a_service_is_listed_by_name_and_the_first_twelve_characters_of_its_key() {
+        assert_eq!(
+            service_label("6c6f63616c2074616773", "my tags"),
+            "my tags  (6c6f63616c20\u{2026})"
+        );
+        assert_eq!(service_label("short", "n"), "n  (short\u{2026})");
+    }
+}

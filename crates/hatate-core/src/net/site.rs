@@ -574,4 +574,38 @@ mod tests {
             .is_some()
         );
     }
+
+    /// `cookie_paste_warnings`, with the texts the Python function gave at `76c85c4` (run on the
+    /// same seven inputs).
+    #[test]
+    fn cookie_paste_warnings_say_what_python_says() {
+        const SANKAKU: &str = "_sankakuchannel_session";
+        const NO_SESSION: &str = "No session cookie found. The one carrying your login is normally named {}; without it these are only display preferences and you'll still be treated as logged out.";
+        const TRUNCATED: &str = "{} looks truncated - its value contains an ellipsis, which is what the browser's cookie panel shows when a value is too long to display. Right-click the row and use Copy Value instead of selecting the text.";
+        const SHORT: &str = "{} is only {} characters, which is short for a session cookie - check the whole value was copied.";
+        let no_session = |name: &str| NO_SESSION.replace("{}", name);
+        let truncated = |name: &str| TRUNCATED.replace("{}", name);
+        let short = |name: &str, n: &str| SHORT.replacen("{}", name, 1).replacen("{}", n, 1);
+        assert!(cookie_paste_warnings("", SANKAKU).is_empty());
+        assert_eq!(cookie_paste_warnings("a=b", SANKAKU), [no_session(SANKAKU)]);
+        assert_eq!(
+            cookie_paste_warnings("auth=abc; auth_secure=xyz", "auth"),
+            [short("auth", "3")]
+        );
+        assert_eq!(
+            cookie_paste_warnings("foo=bar\u{2026}baz; sid_session=short", SANKAKU),
+            [truncated("foo"), short("sid_session", "5")]
+        );
+        let long = format!("{SANKAKU}={}; z=1", "x".repeat(120));
+        assert!(cookie_paste_warnings(&long, SANKAKU).is_empty());
+        let not_a_session = format!("sess={}", "y".repeat(99));
+        assert_eq!(
+            cookie_paste_warnings(&not_a_session, SANKAKU),
+            [no_session(SANKAKU)]
+        );
+        assert_eq!(
+            cookie_paste_warnings("a=1...", "auth"),
+            [truncated("a"), no_session("auth")]
+        );
+    }
 }
