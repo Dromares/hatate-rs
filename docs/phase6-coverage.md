@@ -1900,154 +1900,177 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 541 | `settings-3` | 15 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-3-dark-tab15.png`, `settings-3-light-tab15.png` |
 | 542 | `settings-4` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-4-dark-tab0.png`, `settings-4-light-tab0.png` |
 | 543 | `settings-4` | 1 | GtkNotebook [frame] General | 6180 / 6180 | `settings-4-dark-tab1.png`, `settings-4-light-tab1.png` |
-| 544 | `settings-4` | 2 | GtkText [] | 5773 / 5764 | `settings-4-dark-tab2.png`, `settings-4-light-tab2.png` |
-| 545 | `settings-4` | 3 | GtkText [] | 2796 / 2796 | `settings-4-dark-tab3.png`, `settings-4-light-tab3.png` |
-| 546 | `settings-4` | 4 | GtkText [] empty = "my tags" local service | 1108 / 1108 | `settings-4-dark-tab4.png`, `settings-4-light-tab4.png` |
-| 547 | `settings-4` | 5 | GtkCheckButton [text-button] Verify SSL certificate | 3814 / 3816 | `settings-4-dark-tab5.png`, `settings-4-light-tab5.png` |
-| 548 | `settings-4` | 6 | GtkCheckButton [text-button] When "Download match + send to Hydrus"... | 3814 / 3816 | `settings-4-dark-tab6.png`, `settings-4-light-tab6.png` |
-| 549 | `settings-4` | 7 | GtkCheckButton [text-button] Everything this app knows about a matc... | 3814 / 3816 | `settings-4-dark-tab7.png`, `settings-4-light-tab7.png` |
-| 550 | `settings-4` | 8 | GtkText [] empty = "hatate: match source" | 2796 / 2796 | `settings-4-dark-tab8.png`, `settings-4-light-tab8.png` |
-| 551 | `settings-4` | 9 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-4-dark-tab9.png`, `settings-4-light-tab9.png` |
-| 552 | `settings-4` | 10 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-4-dark-tab10.png`, `settings-4-light-tab10.png` |
-| 553 | `settings-5` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-5-dark-tab0.png`, `settings-5-light-tab0.png` |
-| 554 | `settings-5` | 1 | GtkNotebook [frame] General | 6464 / 6464 | `settings-5-dark-tab1.png`, `settings-5-light-tab1.png` |
-| 555 | `settings-5` | 2 | GtkCheckButton [text-button] E.g. rewrite booru sites' "artist:" to... | 3774 / 3776 | `settings-5-dark-tab2.png`, `settings-5-light-tab2.png` |
-| 556 | `settings-5` | 3 | GtkTextView [view.monospace] | 5628 / 5628 | `settings-5-dark-tab3.png`, `settings-5-light-tab3.png` |
-| 557 | `settings-5` | 4 | GtkCheckButton [text-button] Drops booru housekeeping tags (highres... | 3774 / 3776 | `settings-5-dark-tab4.png`, `settings-5-light-tab4.png` |
-| 558 | `settings-5` | 5 | GtkTextView [view.monospace] | 6634 / 9148 | `settings-5-dark-tab5.png`, `settings-5-light-tab5.png` |
-| 559 | `settings-5` | 6 | GtkCheckButton [text-button] Turns the booru's own age rating for t... | 4418 / 28651 | `settings-5-dark-tab6.png`, `settings-5-light-tab6.png` |
-| 560 | `settings-5` | 7 | GtkText [] rating | 2528 / 8035 | `settings-5-dark-tab7.png`, `settings-5-light-tab7.png` |
-| 561 | `settings-5` | 8 | GtkCheckButton [text-button] Hydrus has no API to report your actua... | 5351 / 11564 | `settings-5-dark-tab8.png`, `settings-5-light-tab8.png` |
-| 562 | `settings-5` | 9 | GtkTextView [view.monospace] | 7124 / 63688 | `settings-5-dark-tab9.png`, `settings-5-light-tab9.png` |
-| 563 | `settings-5` | 10 | GtkTextView [view.monospace] Added to every image a match was found... | 3178 / 5692 | `settings-5-dark-tab10.png`, `settings-5-light-tab10.png` |
-| 564 | `settings-5` | 11 | GtkTextView [view.monospace] Added to every image no match was foun... | 3894 / 5566 | `settings-5-dark-tab11.png`, `settings-5-light-tab11.png` |
-| 565 | `settings-5` | 12 | GtkTextView [view.monospace] Added on top of the found tags when th... | 3894 / 5566 | `settings-5-dark-tab12.png`, `settings-5-light-tab12.png` |
-| 566 | `settings-5` | 13 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-5-dark-tab13.png`, `settings-5-light-tab13.png` |
-| 567 | `settings-5` | 14 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-5-dark-tab14.png`, `settings-5-light-tab14.png` |
-| 568 | `settings-6` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-6-dark-tab0.png`, `settings-6-light-tab0.png` |
-| 569 | `settings-6` | 1 | GtkNotebook [frame] General | 6300 / 6300 | `settings-6-dark-tab1.png`, `settings-6-light-tab1.png` |
-| 570 | `settings-6` | 2 | GtkText [] PHPSESSID value from a logged-in browser session | 2604 / 2604 | `settings-6-dark-tab2.png`, `settings-6-light-tab2.png` |
-| 571 | `settings-6` | 3 | GtkText [] your e621 username | 2604 / 2604 | `settings-6-dark-tab3.png`, `settings-6-light-tab3.png` |
-| 572 | `settings-6` | 4 | GtkText [] from Account > Manage API Access on e621 | 2604 / 2604 | `settings-6-dark-tab4.png`, `settings-6-light-tab4.png` |
-| 573 | `settings-6` | 5 | GtkText [] _sankakuchannel_session=...; locale=en | 2604 / 2604 | `settings-6-dark-tab5.png`, `settings-6-light-tab5.png` |
-| 574 | `settings-6` | 6 | GtkText [] anime_pictures_jwt=eyJ0eXAiOiJKV1Qi… | 2604 / 2604 | `settings-6-dark-tab6.png`, `settings-6-light-tab6.png` |
-| 575 | `settings-6` | 7 | GtkText [] auth=...; auth_secure=...; userinfo=... | 4852 / 10471 | `settings-6-dark-tab7.png`, `settings-6-light-tab7.png` |
-| 576 | `settings-6` | 8 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-6-dark-tab8.png`, `settings-6-light-tab8.png` |
-| 577 | `settings-6` | 9 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-6-dark-tab9.png`, `settings-6-light-tab9.png` |
-| 578 | `settings-7` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-7-dark-tab0.png`, `settings-7-light-tab0.png` |
-| 579 | `settings-7` | 1 | GtkNotebook [frame] General | 6256 / 6256 | `settings-7-dark-tab1.png`, `settings-7-light-tab1.png` |
-| 580 | `settings-7` | 2 | GtkButton [text-button.key-edit] J | 784 / 784 | `settings-7-dark-tab2.png`, `settings-7-light-tab2.png` |
-| 581 | `settings-7` | 3 | GtkButton [text-button.pill.plain] Leave "Next image" with no key a... | 542 / 542 | `settings-7-dark-tab3.png`, `settings-7-light-tab3.png` |
-| 582 | `settings-7` | 4 | GtkButton [text-button.key-edit] K | 784 / 784 | `settings-7-dark-tab4.png`, `settings-7-light-tab4.png` |
-| 583 | `settings-7` | 5 | GtkButton [text-button.pill.plain] Leave "Previous image" with no k... | 542 / 542 | `settings-7-dark-tab5.png`, `settings-7-light-tab5.png` |
-| 584 | `settings-7` | 6 | GtkButton [text-button.key-edit] N | 784 / 784 | `settings-7-dark-tab6.png`, `settings-7-light-tab6.png` |
-| 585 | `settings-7` | 7 | GtkButton [text-button.pill.plain] Leave "Next image needing review... | 542 / 542 | `settings-7-dark-tab7.png`, `settings-7-light-tab7.png` |
-| 586 | `settings-7` | 8 | GtkButton [text-button.key-edit] Shift+N | 784 / 784 | `settings-7-dark-tab8.png`, `settings-7-light-tab8.png` |
-| 587 | `settings-7` | 9 | GtkButton [text-button.pill.plain] Leave "Previous image needing re... | 542 / 542 | `settings-7-dark-tab9.png`, `settings-7-light-tab9.png` |
-| 588 | `settings-7` | 10 | GtkButton [text-button.key-edit] ] | 784 / 784 | `settings-7-dark-tab10.png`, `settings-7-light-tab10.png` |
-| 589 | `settings-7` | 11 | GtkButton [text-button.pill.plain] Leave "Next match candidate" wit... | 542 / 542 | `settings-7-dark-tab11.png`, `settings-7-light-tab11.png` |
-| 590 | `settings-7` | 12 | GtkButton [text-button.key-edit] [ | 1110 / 1110 | `settings-7-dark-tab12.png`, `settings-7-light-tab12.png` |
-| 591 | `settings-7` | 13 | GtkButton [text-button.pill.plain] Leave "Previous match candidate"... | 630 / 630 | `settings-7-dark-tab13.png`, `settings-7-light-tab13.png` |
-| 592 | `settings-7` | 14 | GtkButton [text-button.key-edit] C | 1185 / 1186 | `settings-7-dark-tab14.png`, `settings-7-light-tab14.png` |
-| 593 | `settings-7` | 15 | GtkButton [text-button.pill.plain] Leave "Compare with match" with ... | 630 / 630 | `settings-7-dark-tab15.png`, `settings-7-light-tab15.png` |
-| 594 | `settings-7` | 16 | GtkButton [text-button.key-edit] O | 1148 / 1151 | `settings-7-dark-tab16.png`, `settings-7-light-tab16.png` |
-| 595 | `settings-7` | 17 | GtkButton [text-button.pill.plain] Leave "Open match in browser" wi... | 630 / 630 | `settings-7-dark-tab17.png`, `settings-7-light-tab17.png` |
-| 596 | `settings-7` | 18 | GtkButton [text-button.key-edit] H | 1151 / 1152 | `settings-7-dark-tab18.png`, `settings-7-light-tab18.png` |
-| 597 | `settings-7` | 19 | GtkButton [text-button.pill.plain] Leave "Show in Hydrus" with no k... | 630 / 630 | `settings-7-dark-tab19.png`, `settings-7-light-tab19.png` |
-| 598 | `settings-7` | 20 | GtkButton [text-button.key-edit] Return | 1395 / 1395 | `settings-7-dark-tab20.png`, `settings-7-light-tab20.png` |
-| 599 | `settings-7` | 21 | GtkButton [text-button.pill.plain] Leave "Send file + URL + tags to... | 630 / 630 | `settings-7-dark-tab21.png`, `settings-7-light-tab21.png` |
-| 600 | `settings-7` | 22 | GtkButton [text-button.key-edit] U | 1382 / 1382 | `settings-7-dark-tab22.png`, `settings-7-light-tab22.png` |
-| 601 | `settings-7` | 23 | GtkButton [text-button.pill.plain] Leave "Send URL to Hydrus's URL ... | 630 / 630 | `settings-7-dark-tab23.png`, `settings-7-light-tab23.png` |
-| 602 | `settings-7` | 24 | GtkButton [text-button.key-edit] D | 1131 / 1131 | `settings-7-dark-tab24.png`, `settings-7-light-tab24.png` |
-| 603 | `settings-7` | 25 | GtkButton [text-button.pill.plain] Leave "Download match + send to ... | 630 / 630 | `settings-7-dark-tab25.png`, `settings-7-light-tab25.png` |
-| 604 | `settings-7` | 26 | GtkButton [text-button.key-edit] F5 | 1205 / 1207 | `settings-7-dark-tab26.png`, `settings-7-light-tab26.png` |
-| 605 | `settings-7` | 27 | GtkButton [text-button.pill.plain] Leave "Re-search" with no key at... | 630 / 630 | `settings-7-dark-tab27.png`, `settings-7-light-tab27.png` |
-| 606 | `settings-7` | 28 | GtkButton [text-button.key-edit] R | 1210 / 1211 | `settings-7-dark-tab28.png`, `settings-7-light-tab28.png` |
-| 607 | `settings-7` | 29 | GtkButton [text-button.pill.plain] Leave "Reset result" with no key... | 630 / 630 | `settings-7-dark-tab29.png`, `settings-7-light-tab29.png` |
-| 608 | `settings-7` | 30 | GtkButton [text-button.key-edit] Space | 1395 / 1396 | `settings-7-dark-tab30.png`, `settings-7-light-tab30.png` |
-| 609 | `settings-7` | 31 | GtkButton [text-button.pill.plain] Leave "Mark / unmark as reviewed... | 630 / 630 | `settings-7-dark-tab31.png`, `settings-7-light-tab31.png` |
-| 610 | `settings-7` | 32 | GtkButton [text-button.key-edit] Del | 1432 / 1432 | `settings-7-dark-tab32.png`, `settings-7-light-tab32.png` |
-| 611 | `settings-7` | 33 | GtkButton [text-button.pill.plain] Leave "Remove from list" with no... | 630 / 630 | `settings-7-dark-tab33.png`, `settings-7-light-tab33.png` |
-| 612 | `settings-7` | 34 | GtkButton [text-button.pill.plain] Reset all to defaults | 2315 / 2318 | `settings-7-dark-tab34.png`, `settings-7-light-tab34.png` |
-| 613 | `settings-7` | 35 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-7-dark-tab35.png`, `settings-7-light-tab35.png` |
-| 614 | `settings-7` | 36 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-7-dark-tab36.png`, `settings-7-light-tab36.png` |
-| 615 | `settings-8` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-8-dark-tab0.png`, `settings-8-light-tab0.png` |
-| 616 | `settings-8` | 1 | GtkNotebook [frame] General | 6104 / 6104 | `settings-8-dark-tab1.png`, `settings-8-light-tab1.png` |
-| 617 | `settings-8` | 2 | GtkCheckButton [text-button] Enable the MCP server | 3774 / 3776 | `settings-8-dark-tab2.png`, `settings-8-light-tab2.png` |
-| 618 | `settings-8` | 3 | GtkText [] | 6679 / 6673 | `settings-8-dark-tab3.png`, `settings-8-light-tab3.png` |
-| 619 | `settings-8` | 4 | GtkText [] | 788 / 788 | `settings-8-dark-tab4.png`, `settings-8-light-tab4.png` |
-| 620 | `settings-8` | 5 | GtkButton [text-button.icon-boxed] Copy token to clipboard | 376 / 376 | `settings-8-dark-tab5.png`, `settings-8-light-tab5.png` |
-| 621 | `settings-8` | 6 | GtkButton [text-button.pill.plain] Generate new token | 920 / 920 | `settings-8-dark-tab6.png`, `settings-8-light-tab6.png` |
-| 622 | `settings-8` | 7 | GtkCheckButton [text-button] Dry run — practice mode | 3774 / 3776 | `settings-8-dark-tab7.png`, `settings-8-light-tab7.png` |
-| 623 | `settings-8` | 8 | GtkCheckButton [text-button] Let it send files and tags to Hydrus | 2448 / 2576 | `settings-8-dark-tab8.png`, `settings-8-light-tab8.png` |
-| 624 | `settings-8` | 9 | GtkCheckButton [text-button] Let it re-search a stuck entry | 4402 / 4389 | `settings-8-dark-tab9.png`, `settings-8-light-tab9.png` |
-| 625 | `settings-8` | 10 | GtkCheckButton [text-button] Let it remove rows and reset results | 4056 / 4024 | `settings-8-dark-tab10.png`, `settings-8-light-tab10.png` |
-| 626 | `settings-8` | 11 | GtkToggleButton [text-button.toggle.caps] Actions | 4576 / 5081 | `settings-8-dark-tab11.png`, `settings-8-light-tab11.png` |
-| 627 | `settings-8` | 12 | GtkToggleButton [text-button.toggle.caps] All calls | 672 / 672 | `settings-8-dark-tab12.png`, `settings-8-light-tab12.png` |
-| 628 | `settings-8` | 13 | GtkToggleButton [text-button.toggle.icon-boxed] Keep this up to dat... | 721 / 721 | `settings-8-dark-tab13.png`, `settings-8-light-tab13.png` |
-| 629 | `settings-8` | 14 | GtkButton [text-button.icon-boxed] Open the folder the audit log is... | 248 / 248 | `settings-8-dark-tab14.png`, `settings-8-light-tab14.png` |
-| 630 | `settings-8` | 15 | GtkText [] | 1000 / 1000 | `settings-8-dark-tab15.png`, `settings-8-light-tab15.png` |
-| 631 | `settings-8` | 16 | GtkScrolledWindow [field] Time | 22967 / 29365 | `settings-8-dark-tab16.png`, `settings-8-light-tab16.png` |
-| 632 | `settings-8` | 17 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-8-dark-tab17.png`, `settings-8-light-tab17.png` |
-| 633 | `settings-8` | 18 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-8-dark-tab18.png`, `settings-8-light-tab18.png` |
-| 634 | `settings-mcp-running` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-mcp-running-dark-tab0.png`, `settings-mcp-running-light-tab0.png` |
-| 635 | `settings-mcp-running` | 1 | GtkNotebook [frame] General | 6104 / 6104 | `settings-mcp-running-dark-tab1.png`, `settings-mcp-running-light-tab1.png` |
-| 636 | `settings-mcp-running` | 2 | GtkCheckButton [text-button] Enable the MCP server | 3774 / 3776 | `settings-mcp-running-dark-tab2.png`, `settings-mcp-running-light-tab2.png` |
-| 637 | `settings-mcp-running` | 3 | GtkButton [text-button.pill.plain] Restart server | 748 / 748 | `settings-mcp-running-dark-tab3.png`, `settings-mcp-running-light-tab3.png` |
-| 638 | `settings-mcp-running` | 4 | GtkText [] | 6849 / 6837 | `settings-mcp-running-dark-tab4.png`, `settings-mcp-running-light-tab4.png` |
-| 639 | `settings-mcp-running` | 5 | GtkText [] | 3550 / 3557 | `settings-mcp-running-dark-tab5.png`, `settings-mcp-running-light-tab5.png` |
-| 640 | `settings-mcp-running` | 6 | GtkButton [text-button.icon-boxed] Copy token to clipboard | 376 / 376 | `settings-mcp-running-dark-tab6.png`, `settings-mcp-running-light-tab6.png` |
-| 641 | `settings-mcp-running` | 7 | GtkButton [text-button.pill.plain] Generate new token | 920 / 920 | `settings-mcp-running-dark-tab7.png`, `settings-mcp-running-light-tab7.png` |
-| 642 | `settings-mcp-running` | 8 | GtkCheckButton [text-button] Dry run — practice mode | 3774 / 3776 | `settings-mcp-running-dark-tab8.png`, `settings-mcp-running-light-tab8.png` |
-| 643 | `settings-mcp-running` | 9 | GtkCheckButton [text-button] Let it send files and tags to Hydrus | 2490 / 2499 | `settings-mcp-running-dark-tab9.png`, `settings-mcp-running-light-tab9.png` |
-| 644 | `settings-mcp-running` | 10 | GtkCheckButton [text-button] Let it re-search a stuck entry | 4402 / 4389 | `settings-mcp-running-dark-tab10.png`, `settings-mcp-running-light-tab10.png` |
-| 645 | `settings-mcp-running` | 11 | GtkCheckButton [text-button] Let it remove rows and reset results | 4056 / 4024 | `settings-mcp-running-dark-tab11.png`, `settings-mcp-running-light-tab11.png` |
-| 646 | `settings-mcp-running` | 12 | GtkToggleButton [text-button.toggle.caps] Actions | 4576 / 5081 | `settings-mcp-running-dark-tab12.png`, `settings-mcp-running-light-tab12.png` |
-| 647 | `settings-mcp-running` | 13 | GtkToggleButton [text-button.toggle.caps] All calls | 672 / 672 | `settings-mcp-running-dark-tab13.png`, `settings-mcp-running-light-tab13.png` |
-| 648 | `settings-mcp-running` | 14 | GtkToggleButton [text-button.toggle.icon-boxed] Keep this up to dat... | 721 / 721 | `settings-mcp-running-dark-tab14.png`, `settings-mcp-running-light-tab14.png` |
-| 649 | `settings-mcp-running` | 15 | GtkButton [text-button.icon-boxed] Open the folder the audit log is... | 248 / 248 | `settings-mcp-running-dark-tab15.png`, `settings-mcp-running-light-tab15.png` |
-| 650 | `settings-mcp-running` | 16 | GtkText [] | 1000 / 1000 | `settings-mcp-running-dark-tab16.png`, `settings-mcp-running-light-tab16.png` |
-| 651 | `settings-mcp-running` | 17 | GtkScrolledWindow [field] Time | 22967 / 29365 | `settings-mcp-running-dark-tab17.png`, `settings-mcp-running-light-tab17.png` |
-| 652 | `settings-mcp-running` | 18 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-mcp-running-dark-tab18.png`, `settings-mcp-running-light-tab18.png` |
-| 653 | `settings-mcp-running` | 19 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-mcp-running-dark-tab19.png`, `settings-mcp-running-light-tab19.png` |
-| 654 | `settings-shortcuts-conflict` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-shortcuts-conflict-dark-tab0.png`, `settings-shortcuts-conflict-light-tab0.png` |
-| 655 | `settings-shortcuts-conflict` | 1 | GtkNotebook [frame] General | 6256 / 6256 | `settings-shortcuts-conflict-dark-tab1.png`, `settings-shortcuts-conflict-light-tab1.png` |
-| 656 | `settings-shortcuts-conflict` | 2 | GtkButton [text-button.key-edit] J | 784 / 784 | `settings-shortcuts-conflict-dark-tab2.png`, `settings-shortcuts-conflict-light-tab2.png` |
-| 657 | `settings-shortcuts-conflict` | 3 | GtkButton [text-button.pill.plain] Leave "Next image" with no key a... | 542 / 542 | `settings-shortcuts-conflict-dark-tab3.png`, `settings-shortcuts-conflict-light-tab3.png` |
-| 658 | `settings-shortcuts-conflict` | 4 | GtkButton [text-button.key-edit] J | 784 / 784 | `settings-shortcuts-conflict-dark-tab4.png`, `settings-shortcuts-conflict-light-tab4.png` |
-| 659 | `settings-shortcuts-conflict` | 5 | GtkButton [text-button.pill.plain] Leave "Previous image" with no k... | 542 / 542 | `settings-shortcuts-conflict-dark-tab5.png`, `settings-shortcuts-conflict-light-tab5.png` |
-| 660 | `settings-shortcuts-conflict` | 6 | GtkButton [text-button.key-edit] N | 784 / 784 | `settings-shortcuts-conflict-dark-tab6.png`, `settings-shortcuts-conflict-light-tab6.png` |
-| 661 | `settings-shortcuts-conflict` | 7 | GtkButton [text-button.pill.plain] Leave "Next image needing review... | 542 / 542 | `settings-shortcuts-conflict-dark-tab7.png`, `settings-shortcuts-conflict-light-tab7.png` |
-| 662 | `settings-shortcuts-conflict` | 8 | GtkButton [text-button.key-edit] Shift+N | 784 / 784 | `settings-shortcuts-conflict-dark-tab8.png`, `settings-shortcuts-conflict-light-tab8.png` |
-| 663 | `settings-shortcuts-conflict` | 9 | GtkButton [text-button.pill.plain] Leave "Previous image needing re... | 542 / 542 | `settings-shortcuts-conflict-dark-tab9.png`, `settings-shortcuts-conflict-light-tab9.png` |
-| 664 | `settings-shortcuts-conflict` | 10 | GtkButton [text-button.key-edit] ] | 784 / 784 | `settings-shortcuts-conflict-dark-tab10.png`, `settings-shortcuts-conflict-light-tab10.png` |
-| 665 | `settings-shortcuts-conflict` | 11 | GtkButton [text-button.pill.plain] Leave "Next match candidate" wit... | 542 / 542 | `settings-shortcuts-conflict-dark-tab11.png`, `settings-shortcuts-conflict-light-tab11.png` |
-| 666 | `settings-shortcuts-conflict` | 12 | GtkButton [text-button.key-edit] [ | 1110 / 1110 | `settings-shortcuts-conflict-dark-tab12.png`, `settings-shortcuts-conflict-light-tab12.png` |
-| 667 | `settings-shortcuts-conflict` | 13 | GtkButton [text-button.pill.plain] Leave "Previous match candidate"... | 630 / 630 | `settings-shortcuts-conflict-dark-tab13.png`, `settings-shortcuts-conflict-light-tab13.png` |
-| 668 | `settings-shortcuts-conflict` | 14 | GtkButton [text-button.key-edit] C | 1140 / 1141 | `settings-shortcuts-conflict-dark-tab14.png`, `settings-shortcuts-conflict-light-tab14.png` |
-| 669 | `settings-shortcuts-conflict` | 15 | GtkButton [text-button.pill.plain] Leave "Compare with match" with ... | 630 / 630 | `settings-shortcuts-conflict-dark-tab15.png`, `settings-shortcuts-conflict-light-tab15.png` |
-| 670 | `settings-shortcuts-conflict` | 16 | GtkButton [text-button.key-edit] O | 1148 / 1151 | `settings-shortcuts-conflict-dark-tab16.png`, `settings-shortcuts-conflict-light-tab16.png` |
-| 671 | `settings-shortcuts-conflict` | 17 | GtkButton [text-button.pill.plain] Leave "Open match in browser" wi... | 630 / 630 | `settings-shortcuts-conflict-dark-tab17.png`, `settings-shortcuts-conflict-light-tab17.png` |
-| 672 | `settings-shortcuts-conflict` | 18 | GtkButton [text-button.key-edit] H | 1151 / 1152 | `settings-shortcuts-conflict-dark-tab18.png`, `settings-shortcuts-conflict-light-tab18.png` |
-| 673 | `settings-shortcuts-conflict` | 19 | GtkButton [text-button.pill.plain] Leave "Show in Hydrus" with no k... | 630 / 630 | `settings-shortcuts-conflict-dark-tab19.png`, `settings-shortcuts-conflict-light-tab19.png` |
-| 674 | `settings-shortcuts-conflict` | 20 | GtkButton [text-button.key-edit] Return | 1395 / 1395 | `settings-shortcuts-conflict-dark-tab20.png`, `settings-shortcuts-conflict-light-tab20.png` |
-| 675 | `settings-shortcuts-conflict` | 21 | GtkButton [text-button.pill.plain] Leave "Send file + URL + tags to... | 630 / 630 | `settings-shortcuts-conflict-dark-tab21.png`, `settings-shortcuts-conflict-light-tab21.png` |
-| 676 | `settings-shortcuts-conflict` | 22 | GtkButton [text-button.key-edit] U | 1382 / 1382 | `settings-shortcuts-conflict-dark-tab22.png`, `settings-shortcuts-conflict-light-tab22.png` |
-| 677 | `settings-shortcuts-conflict` | 23 | GtkButton [text-button.pill.plain] Leave "Send URL to Hydrus's URL ... | 630 / 630 | `settings-shortcuts-conflict-dark-tab23.png`, `settings-shortcuts-conflict-light-tab23.png` |
-| 678 | `settings-shortcuts-conflict` | 24 | GtkButton [text-button.key-edit] D | 1131 / 1131 | `settings-shortcuts-conflict-dark-tab24.png`, `settings-shortcuts-conflict-light-tab24.png` |
-| 679 | `settings-shortcuts-conflict` | 25 | GtkButton [text-button.pill.plain] Leave "Download match + send to ... | 630 / 630 | `settings-shortcuts-conflict-dark-tab25.png`, `settings-shortcuts-conflict-light-tab25.png` |
-| 680 | `settings-shortcuts-conflict` | 26 | GtkButton [text-button.key-edit] F5 | 1205 / 1207 | `settings-shortcuts-conflict-dark-tab26.png`, `settings-shortcuts-conflict-light-tab26.png` |
-| 681 | `settings-shortcuts-conflict` | 27 | GtkButton [text-button.pill.plain] Leave "Re-search" with no key at... | 630 / 630 | `settings-shortcuts-conflict-dark-tab27.png`, `settings-shortcuts-conflict-light-tab27.png` |
-| 682 | `settings-shortcuts-conflict` | 28 | GtkButton [text-button.key-edit] R | 1210 / 1211 | `settings-shortcuts-conflict-dark-tab28.png`, `settings-shortcuts-conflict-light-tab28.png` |
-| 683 | `settings-shortcuts-conflict` | 29 | GtkButton [text-button.pill.plain] Leave "Reset result" with no key... | 630 / 630 | `settings-shortcuts-conflict-dark-tab29.png`, `settings-shortcuts-conflict-light-tab29.png` |
-| 684 | `settings-shortcuts-conflict` | 30 | GtkButton [text-button.key-edit] Space | 1395 / 1396 | `settings-shortcuts-conflict-dark-tab30.png`, `settings-shortcuts-conflict-light-tab30.png` |
-| 685 | `settings-shortcuts-conflict` | 31 | GtkButton [text-button.pill.plain] Leave "Mark / unmark as reviewed... | 630 / 630 | `settings-shortcuts-conflict-dark-tab31.png`, `settings-shortcuts-conflict-light-tab31.png` |
-| 686 | `settings-shortcuts-conflict` | 32 | GtkButton [text-button.key-edit] Del | 1432 / 1432 | `settings-shortcuts-conflict-dark-tab32.png`, `settings-shortcuts-conflict-light-tab32.png` |
-| 687 | `settings-shortcuts-conflict` | 33 | GtkButton [text-button.pill.plain] Leave "Remove from list" with no... | 630 / 630 | `settings-shortcuts-conflict-dark-tab33.png`, `settings-shortcuts-conflict-light-tab33.png` |
-| 688 | `settings-shortcuts-conflict` | 34 | GtkButton [text-button.pill.plain] Reset all to defaults | 920 / 920 | `settings-shortcuts-conflict-dark-tab34.png`, `settings-shortcuts-conflict-light-tab34.png` |
-| 689 | `settings-shortcuts-conflict` | 35 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-shortcuts-conflict-dark-tab35.png`, `settings-shortcuts-conflict-light-tab35.png` |
-| 690 | `settings-shortcuts-conflict` | 36 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-shortcuts-conflict-dark-tab36.png`, `settings-shortcuts-conflict-light-tab36.png` |
+| 544 | `settings-4` | 2 | GtkText []  | 5737 / 5728 | `settings-4-dark-tab2.png`, `settings-4-light-tab2.png` |
+| 545 | `settings-4` | 3 | GtkText []  | 2796 / 2796 | `settings-4-dark-tab3.png`, `settings-4-light-tab3.png` |
+| 546 | `settings-4` | 4 | GtkText [] empty = "my tags" local service | 2048 / 2048 | `settings-4-dark-tab4.png`, `settings-4-light-tab4.png` |
+| 547 | `settings-4` | 5 | GtkButton [text-button] Fetch from Hydrus… | 928 / 928 | `settings-4-dark-tab5.png`, `settings-4-light-tab5.png` |
+| 548 | `settings-4` | 6 | GtkCheckButton [text-button] Verify SSL certificate | 3800 / 3800 | `settings-4-dark-tab6.png`, `settings-4-light-tab6.png` |
+| 549 | `settings-4` | 7 | GtkCheckButton [text-button] When "Download match ... | 3800 / 3800 | `settings-4-dark-tab7.png`, `settings-4-light-tab7.png` |
+| 550 | `settings-4` | 8 | GtkCheckButton [text-button] Everything this app k... | 3800 / 3800 | `settings-4-dark-tab8.png`, `settings-4-light-tab8.png` |
+| 551 | `settings-4` | 9 | GtkText [] empty = "hatate: match source" | 2796 / 2796 | `settings-4-dark-tab9.png`, `settings-4-light-tab9.png` |
+| 552 | `settings-4` | 10 | GtkButton [text-button] Test connection | 812 / 812 | `settings-4-dark-tab10.png`, `settings-4-light-tab10.png` |
+| 553 | `settings-4` | 11 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-4-dark-tab11.png`, `settings-4-light-tab11.png` |
+| 554 | `settings-4` | 12 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-4-dark-tab12.png`, `settings-4-light-tab12.png` |
+| 555 | `settings-5` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-5-dark-tab0.png`, `settings-5-light-tab0.png` |
+| 556 | `settings-5` | 1 | GtkNotebook [frame] General | 6464 / 6464 | `settings-5-dark-tab1.png`, `settings-5-light-tab1.png` |
+| 557 | `settings-5` | 2 | GtkCheckButton [text-button] E.g. rewrite booru sites' "artist:" to... | 3774 / 3776 | `settings-5-dark-tab2.png`, `settings-5-light-tab2.png` |
+| 558 | `settings-5` | 3 | GtkTextView [view.monospace] | 5628 / 5628 | `settings-5-dark-tab3.png`, `settings-5-light-tab3.png` |
+| 559 | `settings-5` | 4 | GtkCheckButton [text-button] Drops booru housekeeping tags (highres... | 3774 / 3776 | `settings-5-dark-tab4.png`, `settings-5-light-tab4.png` |
+| 560 | `settings-5` | 5 | GtkTextView [view.monospace] | 6634 / 9148 | `settings-5-dark-tab5.png`, `settings-5-light-tab5.png` |
+| 561 | `settings-5` | 6 | GtkCheckButton [text-button] Turns the booru's own age rating for t... | 4418 / 28651 | `settings-5-dark-tab6.png`, `settings-5-light-tab6.png` |
+| 562 | `settings-5` | 7 | GtkText [] rating | 2528 / 8035 | `settings-5-dark-tab7.png`, `settings-5-light-tab7.png` |
+| 563 | `settings-5` | 8 | GtkCheckButton [text-button] Hydrus has no API to report your actua... | 5351 / 11564 | `settings-5-dark-tab8.png`, `settings-5-light-tab8.png` |
+| 564 | `settings-5` | 9 | GtkTextView [view.monospace] | 7124 / 63688 | `settings-5-dark-tab9.png`, `settings-5-light-tab9.png` |
+| 565 | `settings-5` | 10 | GtkTextView [view.monospace] Added to every image a match was found... | 3178 / 5692 | `settings-5-dark-tab10.png`, `settings-5-light-tab10.png` |
+| 566 | `settings-5` | 11 | GtkTextView [view.monospace] Added to every image no match was foun... | 3894 / 5566 | `settings-5-dark-tab11.png`, `settings-5-light-tab11.png` |
+| 567 | `settings-5` | 12 | GtkTextView [view.monospace] Added on top of the found tags when th... | 3894 / 5566 | `settings-5-dark-tab12.png`, `settings-5-light-tab12.png` |
+| 568 | `settings-5` | 13 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-5-dark-tab13.png`, `settings-5-light-tab13.png` |
+| 569 | `settings-5` | 14 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-5-dark-tab14.png`, `settings-5-light-tab14.png` |
+| 570 | `settings-6` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-6-dark-tab0.png`, `settings-6-light-tab0.png` |
+| 571 | `settings-6` | 1 | GtkNotebook [frame] General | 6300 / 6300 | `settings-6-dark-tab1.png`, `settings-6-light-tab1.png` |
+| 572 | `settings-6` | 2 | GtkText [] PHPSESSID value from a logged-in browser session | 2604 / 2604 | `settings-6-dark-tab2.png`, `settings-6-light-tab2.png` |
+| 573 | `settings-6` | 3 | GtkButton [text-button] Runs the real parser again... | 652 / 652 | `settings-6-dark-tab3.png`, `settings-6-light-tab3.png` |
+| 574 | `settings-6` | 4 | GtkText [] your e621 username | 2604 / 2604 | `settings-6-dark-tab4.png`, `settings-6-light-tab4.png` |
+| 575 | `settings-6` | 5 | GtkText [] from Account > Manage API Access on e621 | 2604 / 2604 | `settings-6-dark-tab5.png`, `settings-6-light-tab5.png` |
+| 576 | `settings-6` | 6 | GtkButton [text-button] Sends one authenticated re... | 812 / 812 | `settings-6-dark-tab6.png`, `settings-6-light-tab6.png` |
+| 577 | `settings-6` | 7 | GtkText [] _sankakuchannel_session=...; locale=en | 2604 / 2604 | `settings-6-dark-tab7.png`, `settings-6-light-tab7.png` |
+| 578 | `settings-6` | 8 | GtkButton [text-button] Fetches a Sankaku post URL... | 764 / 764 | `settings-6-dark-tab8.png`, `settings-6-light-tab8.png` |
+| 579 | `settings-6` | 9 | GtkText [] anime_pictures_jwt=eyJ0eXAiOiJKV1Qi… | 2604 / 2604 | `settings-6-dark-tab9.png`, `settings-6-light-tab9.png` |
+| 580 | `settings-6` | 10 | GtkButton [text-button] Fetches a post through the... | 964 / 964 | `settings-6-dark-tab10.png`, `settings-6-light-tab10.png` |
+| 581 | `settings-6` | 11 | GtkText [] auth=...; auth_secure=...; userinfo=... | 4721 / 10340 | `settings-6-dark-tab11.png`, `settings-6-light-tab11.png` |
+| 582 | `settings-6` | 12 | GtkButton [text-button] Fetches a deviation throug... | 5351 / 5359 | `settings-6-dark-tab12.png`, `settings-6-light-tab12.png` |
+| 583 | `settings-6` | 13 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-6-dark-tab13.png`, `settings-6-light-tab13.png` |
+| 584 | `settings-6` | 14 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-6-dark-tab14.png`, `settings-6-light-tab14.png` |
+| 585 | `settings-7` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-7-dark-tab0.png`, `settings-7-light-tab0.png` |
+| 586 | `settings-7` | 1 | GtkNotebook [frame] General | 6256 / 6256 | `settings-7-dark-tab1.png`, `settings-7-light-tab1.png` |
+| 587 | `settings-7` | 2 | GtkButton [text-button.key-edit] J | 784 / 784 | `settings-7-dark-tab2.png`, `settings-7-light-tab2.png` |
+| 588 | `settings-7` | 3 | GtkButton [text-button.pill.plain] Leave "Next image" with no key a... | 542 / 542 | `settings-7-dark-tab3.png`, `settings-7-light-tab3.png` |
+| 589 | `settings-7` | 4 | GtkButton [text-button.key-edit] K | 784 / 784 | `settings-7-dark-tab4.png`, `settings-7-light-tab4.png` |
+| 590 | `settings-7` | 5 | GtkButton [text-button.pill.plain] Leave "Previous image" with no k... | 542 / 542 | `settings-7-dark-tab5.png`, `settings-7-light-tab5.png` |
+| 591 | `settings-7` | 6 | GtkButton [text-button.key-edit] N | 784 / 784 | `settings-7-dark-tab6.png`, `settings-7-light-tab6.png` |
+| 592 | `settings-7` | 7 | GtkButton [text-button.pill.plain] Leave "Next image needing review... | 542 / 542 | `settings-7-dark-tab7.png`, `settings-7-light-tab7.png` |
+| 593 | `settings-7` | 8 | GtkButton [text-button.key-edit] Shift+N | 784 / 784 | `settings-7-dark-tab8.png`, `settings-7-light-tab8.png` |
+| 594 | `settings-7` | 9 | GtkButton [text-button.pill.plain] Leave "Previous image needing re... | 542 / 542 | `settings-7-dark-tab9.png`, `settings-7-light-tab9.png` |
+| 595 | `settings-7` | 10 | GtkButton [text-button.key-edit] ] | 784 / 784 | `settings-7-dark-tab10.png`, `settings-7-light-tab10.png` |
+| 596 | `settings-7` | 11 | GtkButton [text-button.pill.plain] Leave "Next match candidate" wit... | 542 / 542 | `settings-7-dark-tab11.png`, `settings-7-light-tab11.png` |
+| 597 | `settings-7` | 12 | GtkButton [text-button.key-edit] [ | 1110 / 1110 | `settings-7-dark-tab12.png`, `settings-7-light-tab12.png` |
+| 598 | `settings-7` | 13 | GtkButton [text-button.pill.plain] Leave "Previous match candidate"... | 630 / 630 | `settings-7-dark-tab13.png`, `settings-7-light-tab13.png` |
+| 599 | `settings-7` | 14 | GtkButton [text-button.key-edit] C | 1185 / 1186 | `settings-7-dark-tab14.png`, `settings-7-light-tab14.png` |
+| 600 | `settings-7` | 15 | GtkButton [text-button.pill.plain] Leave "Compare with match" with ... | 630 / 630 | `settings-7-dark-tab15.png`, `settings-7-light-tab15.png` |
+| 601 | `settings-7` | 16 | GtkButton [text-button.key-edit] O | 1148 / 1151 | `settings-7-dark-tab16.png`, `settings-7-light-tab16.png` |
+| 602 | `settings-7` | 17 | GtkButton [text-button.pill.plain] Leave "Open match in browser" wi... | 630 / 630 | `settings-7-dark-tab17.png`, `settings-7-light-tab17.png` |
+| 603 | `settings-7` | 18 | GtkButton [text-button.key-edit] H | 1151 / 1152 | `settings-7-dark-tab18.png`, `settings-7-light-tab18.png` |
+| 604 | `settings-7` | 19 | GtkButton [text-button.pill.plain] Leave "Show in Hydrus" with no k... | 630 / 630 | `settings-7-dark-tab19.png`, `settings-7-light-tab19.png` |
+| 605 | `settings-7` | 20 | GtkButton [text-button.key-edit] Return | 1395 / 1395 | `settings-7-dark-tab20.png`, `settings-7-light-tab20.png` |
+| 606 | `settings-7` | 21 | GtkButton [text-button.pill.plain] Leave "Send file + URL + tags to... | 630 / 630 | `settings-7-dark-tab21.png`, `settings-7-light-tab21.png` |
+| 607 | `settings-7` | 22 | GtkButton [text-button.key-edit] U | 1382 / 1382 | `settings-7-dark-tab22.png`, `settings-7-light-tab22.png` |
+| 608 | `settings-7` | 23 | GtkButton [text-button.pill.plain] Leave "Send URL to Hydrus's URL ... | 630 / 630 | `settings-7-dark-tab23.png`, `settings-7-light-tab23.png` |
+| 609 | `settings-7` | 24 | GtkButton [text-button.key-edit] D | 1131 / 1131 | `settings-7-dark-tab24.png`, `settings-7-light-tab24.png` |
+| 610 | `settings-7` | 25 | GtkButton [text-button.pill.plain] Leave "Download match + send to ... | 630 / 630 | `settings-7-dark-tab25.png`, `settings-7-light-tab25.png` |
+| 611 | `settings-7` | 26 | GtkButton [text-button.key-edit] F5 | 1205 / 1207 | `settings-7-dark-tab26.png`, `settings-7-light-tab26.png` |
+| 612 | `settings-7` | 27 | GtkButton [text-button.pill.plain] Leave "Re-search" with no key at... | 630 / 630 | `settings-7-dark-tab27.png`, `settings-7-light-tab27.png` |
+| 613 | `settings-7` | 28 | GtkButton [text-button.key-edit] R | 1210 / 1211 | `settings-7-dark-tab28.png`, `settings-7-light-tab28.png` |
+| 614 | `settings-7` | 29 | GtkButton [text-button.pill.plain] Leave "Reset result" with no key... | 630 / 630 | `settings-7-dark-tab29.png`, `settings-7-light-tab29.png` |
+| 615 | `settings-7` | 30 | GtkButton [text-button.key-edit] Space | 1395 / 1396 | `settings-7-dark-tab30.png`, `settings-7-light-tab30.png` |
+| 616 | `settings-7` | 31 | GtkButton [text-button.pill.plain] Leave "Mark / unmark as reviewed... | 630 / 630 | `settings-7-dark-tab31.png`, `settings-7-light-tab31.png` |
+| 617 | `settings-7` | 32 | GtkButton [text-button.key-edit] Del | 1432 / 1432 | `settings-7-dark-tab32.png`, `settings-7-light-tab32.png` |
+| 618 | `settings-7` | 33 | GtkButton [text-button.pill.plain] Leave "Remove from list" with no... | 630 / 630 | `settings-7-dark-tab33.png`, `settings-7-light-tab33.png` |
+| 619 | `settings-7` | 34 | GtkButton [text-button.pill.plain] Reset all to defaults | 2315 / 2318 | `settings-7-dark-tab34.png`, `settings-7-light-tab34.png` |
+| 620 | `settings-7` | 35 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-7-dark-tab35.png`, `settings-7-light-tab35.png` |
+| 621 | `settings-7` | 36 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-7-dark-tab36.png`, `settings-7-light-tab36.png` |
+| 622 | `settings-8` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-8-dark-tab0.png`, `settings-8-light-tab0.png` |
+| 623 | `settings-8` | 1 | GtkNotebook [frame] General | 6104 / 6104 | `settings-8-dark-tab1.png`, `settings-8-light-tab1.png` |
+| 624 | `settings-8` | 2 | GtkCheckButton [text-button] Enable the MCP server | 3774 / 3776 | `settings-8-dark-tab2.png`, `settings-8-light-tab2.png` |
+| 625 | `settings-8` | 3 | GtkText [] | 6679 / 6673 | `settings-8-dark-tab3.png`, `settings-8-light-tab3.png` |
+| 626 | `settings-8` | 4 | GtkText [] | 788 / 788 | `settings-8-dark-tab4.png`, `settings-8-light-tab4.png` |
+| 627 | `settings-8` | 5 | GtkButton [text-button.icon-boxed] Copy token to clipboard | 376 / 376 | `settings-8-dark-tab5.png`, `settings-8-light-tab5.png` |
+| 628 | `settings-8` | 6 | GtkButton [text-button.pill.plain] Generate new token | 920 / 920 | `settings-8-dark-tab6.png`, `settings-8-light-tab6.png` |
+| 629 | `settings-8` | 7 | GtkCheckButton [text-button] Dry run — practice mode | 3774 / 3776 | `settings-8-dark-tab7.png`, `settings-8-light-tab7.png` |
+| 630 | `settings-8` | 8 | GtkCheckButton [text-button] Let it send files and tags to Hydrus | 2448 / 2576 | `settings-8-dark-tab8.png`, `settings-8-light-tab8.png` |
+| 631 | `settings-8` | 9 | GtkCheckButton [text-button] Let it re-search a stuck entry | 4402 / 4389 | `settings-8-dark-tab9.png`, `settings-8-light-tab9.png` |
+| 632 | `settings-8` | 10 | GtkCheckButton [text-button] Let it remove rows and reset results | 4056 / 4024 | `settings-8-dark-tab10.png`, `settings-8-light-tab10.png` |
+| 633 | `settings-8` | 11 | GtkToggleButton [text-button.toggle.caps] Actions | 4576 / 5081 | `settings-8-dark-tab11.png`, `settings-8-light-tab11.png` |
+| 634 | `settings-8` | 12 | GtkToggleButton [text-button.toggle.caps] All calls | 672 / 672 | `settings-8-dark-tab12.png`, `settings-8-light-tab12.png` |
+| 635 | `settings-8` | 13 | GtkToggleButton [text-button.toggle.icon-boxed] Keep this up to dat... | 721 / 721 | `settings-8-dark-tab13.png`, `settings-8-light-tab13.png` |
+| 636 | `settings-8` | 14 | GtkButton [text-button.icon-boxed] Open the folder the audit log is... | 248 / 248 | `settings-8-dark-tab14.png`, `settings-8-light-tab14.png` |
+| 637 | `settings-8` | 15 | GtkText [] | 1000 / 1000 | `settings-8-dark-tab15.png`, `settings-8-light-tab15.png` |
+| 638 | `settings-8` | 16 | GtkScrolledWindow [field] Time | 22967 / 29365 | `settings-8-dark-tab16.png`, `settings-8-light-tab16.png` |
+| 639 | `settings-8` | 17 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-8-dark-tab17.png`, `settings-8-light-tab17.png` |
+| 640 | `settings-8` | 18 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-8-dark-tab18.png`, `settings-8-light-tab18.png` |
+| 641 | `settings-mcp-running` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-mcp-running-dark-tab0.png`, `settings-mcp-running-light-tab0.png` |
+| 642 | `settings-mcp-running` | 1 | GtkNotebook [frame] General | 6104 / 6104 | `settings-mcp-running-dark-tab1.png`, `settings-mcp-running-light-tab1.png` |
+| 643 | `settings-mcp-running` | 2 | GtkCheckButton [text-button] Enable the MCP server | 3774 / 3776 | `settings-mcp-running-dark-tab2.png`, `settings-mcp-running-light-tab2.png` |
+| 644 | `settings-mcp-running` | 3 | GtkButton [text-button.pill.plain] Restart server | 748 / 748 | `settings-mcp-running-dark-tab3.png`, `settings-mcp-running-light-tab3.png` |
+| 645 | `settings-mcp-running` | 4 | GtkText [] | 6849 / 6837 | `settings-mcp-running-dark-tab4.png`, `settings-mcp-running-light-tab4.png` |
+| 646 | `settings-mcp-running` | 5 | GtkText [] | 3550 / 3557 | `settings-mcp-running-dark-tab5.png`, `settings-mcp-running-light-tab5.png` |
+| 647 | `settings-mcp-running` | 6 | GtkButton [text-button.icon-boxed] Copy token to clipboard | 376 / 376 | `settings-mcp-running-dark-tab6.png`, `settings-mcp-running-light-tab6.png` |
+| 648 | `settings-mcp-running` | 7 | GtkButton [text-button.pill.plain] Generate new token | 920 / 920 | `settings-mcp-running-dark-tab7.png`, `settings-mcp-running-light-tab7.png` |
+| 649 | `settings-mcp-running` | 8 | GtkCheckButton [text-button] Dry run — practice mode | 3774 / 3776 | `settings-mcp-running-dark-tab8.png`, `settings-mcp-running-light-tab8.png` |
+| 650 | `settings-mcp-running` | 9 | GtkCheckButton [text-button] Let it send files and tags to Hydrus | 2490 / 2499 | `settings-mcp-running-dark-tab9.png`, `settings-mcp-running-light-tab9.png` |
+| 651 | `settings-mcp-running` | 10 | GtkCheckButton [text-button] Let it re-search a stuck entry | 4402 / 4389 | `settings-mcp-running-dark-tab10.png`, `settings-mcp-running-light-tab10.png` |
+| 652 | `settings-mcp-running` | 11 | GtkCheckButton [text-button] Let it remove rows and reset results | 4056 / 4024 | `settings-mcp-running-dark-tab11.png`, `settings-mcp-running-light-tab11.png` |
+| 653 | `settings-mcp-running` | 12 | GtkToggleButton [text-button.toggle.caps] Actions | 4576 / 5081 | `settings-mcp-running-dark-tab12.png`, `settings-mcp-running-light-tab12.png` |
+| 654 | `settings-mcp-running` | 13 | GtkToggleButton [text-button.toggle.caps] All calls | 672 / 672 | `settings-mcp-running-dark-tab13.png`, `settings-mcp-running-light-tab13.png` |
+| 655 | `settings-mcp-running` | 14 | GtkToggleButton [text-button.toggle.icon-boxed] Keep this up to dat... | 721 / 721 | `settings-mcp-running-dark-tab14.png`, `settings-mcp-running-light-tab14.png` |
+| 656 | `settings-mcp-running` | 15 | GtkButton [text-button.icon-boxed] Open the folder the audit log is... | 248 / 248 | `settings-mcp-running-dark-tab15.png`, `settings-mcp-running-light-tab15.png` |
+| 657 | `settings-mcp-running` | 16 | GtkText [] | 1000 / 1000 | `settings-mcp-running-dark-tab16.png`, `settings-mcp-running-light-tab16.png` |
+| 658 | `settings-mcp-running` | 17 | GtkScrolledWindow [field] Time | 22967 / 29365 | `settings-mcp-running-dark-tab17.png`, `settings-mcp-running-light-tab17.png` |
+| 659 | `settings-mcp-running` | 18 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-mcp-running-dark-tab18.png`, `settings-mcp-running-light-tab18.png` |
+| 660 | `settings-mcp-running` | 19 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-mcp-running-dark-tab19.png`, `settings-mcp-running-light-tab19.png` |
+| 661 | `settings-shortcuts-conflict` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-shortcuts-conflict-dark-tab0.png`, `settings-shortcuts-conflict-light-tab0.png` |
+| 662 | `settings-shortcuts-conflict` | 1 | GtkNotebook [frame] General | 6256 / 6256 | `settings-shortcuts-conflict-dark-tab1.png`, `settings-shortcuts-conflict-light-tab1.png` |
+| 663 | `settings-shortcuts-conflict` | 2 | GtkButton [text-button.key-edit] J | 784 / 784 | `settings-shortcuts-conflict-dark-tab2.png`, `settings-shortcuts-conflict-light-tab2.png` |
+| 664 | `settings-shortcuts-conflict` | 3 | GtkButton [text-button.pill.plain] Leave "Next image" with no key a... | 542 / 542 | `settings-shortcuts-conflict-dark-tab3.png`, `settings-shortcuts-conflict-light-tab3.png` |
+| 665 | `settings-shortcuts-conflict` | 4 | GtkButton [text-button.key-edit] J | 784 / 784 | `settings-shortcuts-conflict-dark-tab4.png`, `settings-shortcuts-conflict-light-tab4.png` |
+| 666 | `settings-shortcuts-conflict` | 5 | GtkButton [text-button.pill.plain] Leave "Previous image" with no k... | 542 / 542 | `settings-shortcuts-conflict-dark-tab5.png`, `settings-shortcuts-conflict-light-tab5.png` |
+| 667 | `settings-shortcuts-conflict` | 6 | GtkButton [text-button.key-edit] N | 784 / 784 | `settings-shortcuts-conflict-dark-tab6.png`, `settings-shortcuts-conflict-light-tab6.png` |
+| 668 | `settings-shortcuts-conflict` | 7 | GtkButton [text-button.pill.plain] Leave "Next image needing review... | 542 / 542 | `settings-shortcuts-conflict-dark-tab7.png`, `settings-shortcuts-conflict-light-tab7.png` |
+| 669 | `settings-shortcuts-conflict` | 8 | GtkButton [text-button.key-edit] Shift+N | 784 / 784 | `settings-shortcuts-conflict-dark-tab8.png`, `settings-shortcuts-conflict-light-tab8.png` |
+| 670 | `settings-shortcuts-conflict` | 9 | GtkButton [text-button.pill.plain] Leave "Previous image needing re... | 542 / 542 | `settings-shortcuts-conflict-dark-tab9.png`, `settings-shortcuts-conflict-light-tab9.png` |
+| 671 | `settings-shortcuts-conflict` | 10 | GtkButton [text-button.key-edit] ] | 784 / 784 | `settings-shortcuts-conflict-dark-tab10.png`, `settings-shortcuts-conflict-light-tab10.png` |
+| 672 | `settings-shortcuts-conflict` | 11 | GtkButton [text-button.pill.plain] Leave "Next match candidate" wit... | 542 / 542 | `settings-shortcuts-conflict-dark-tab11.png`, `settings-shortcuts-conflict-light-tab11.png` |
+| 673 | `settings-shortcuts-conflict` | 12 | GtkButton [text-button.key-edit] [ | 1110 / 1110 | `settings-shortcuts-conflict-dark-tab12.png`, `settings-shortcuts-conflict-light-tab12.png` |
+| 674 | `settings-shortcuts-conflict` | 13 | GtkButton [text-button.pill.plain] Leave "Previous match candidate"... | 630 / 630 | `settings-shortcuts-conflict-dark-tab13.png`, `settings-shortcuts-conflict-light-tab13.png` |
+| 675 | `settings-shortcuts-conflict` | 14 | GtkButton [text-button.key-edit] C | 1140 / 1141 | `settings-shortcuts-conflict-dark-tab14.png`, `settings-shortcuts-conflict-light-tab14.png` |
+| 676 | `settings-shortcuts-conflict` | 15 | GtkButton [text-button.pill.plain] Leave "Compare with match" with ... | 630 / 630 | `settings-shortcuts-conflict-dark-tab15.png`, `settings-shortcuts-conflict-light-tab15.png` |
+| 677 | `settings-shortcuts-conflict` | 16 | GtkButton [text-button.key-edit] O | 1148 / 1151 | `settings-shortcuts-conflict-dark-tab16.png`, `settings-shortcuts-conflict-light-tab16.png` |
+| 678 | `settings-shortcuts-conflict` | 17 | GtkButton [text-button.pill.plain] Leave "Open match in browser" wi... | 630 / 630 | `settings-shortcuts-conflict-dark-tab17.png`, `settings-shortcuts-conflict-light-tab17.png` |
+| 679 | `settings-shortcuts-conflict` | 18 | GtkButton [text-button.key-edit] H | 1151 / 1152 | `settings-shortcuts-conflict-dark-tab18.png`, `settings-shortcuts-conflict-light-tab18.png` |
+| 680 | `settings-shortcuts-conflict` | 19 | GtkButton [text-button.pill.plain] Leave "Show in Hydrus" with no k... | 630 / 630 | `settings-shortcuts-conflict-dark-tab19.png`, `settings-shortcuts-conflict-light-tab19.png` |
+| 681 | `settings-shortcuts-conflict` | 20 | GtkButton [text-button.key-edit] Return | 1395 / 1395 | `settings-shortcuts-conflict-dark-tab20.png`, `settings-shortcuts-conflict-light-tab20.png` |
+| 682 | `settings-shortcuts-conflict` | 21 | GtkButton [text-button.pill.plain] Leave "Send file + URL + tags to... | 630 / 630 | `settings-shortcuts-conflict-dark-tab21.png`, `settings-shortcuts-conflict-light-tab21.png` |
+| 683 | `settings-shortcuts-conflict` | 22 | GtkButton [text-button.key-edit] U | 1382 / 1382 | `settings-shortcuts-conflict-dark-tab22.png`, `settings-shortcuts-conflict-light-tab22.png` |
+| 684 | `settings-shortcuts-conflict` | 23 | GtkButton [text-button.pill.plain] Leave "Send URL to Hydrus's URL ... | 630 / 630 | `settings-shortcuts-conflict-dark-tab23.png`, `settings-shortcuts-conflict-light-tab23.png` |
+| 685 | `settings-shortcuts-conflict` | 24 | GtkButton [text-button.key-edit] D | 1131 / 1131 | `settings-shortcuts-conflict-dark-tab24.png`, `settings-shortcuts-conflict-light-tab24.png` |
+| 686 | `settings-shortcuts-conflict` | 25 | GtkButton [text-button.pill.plain] Leave "Download match + send to ... | 630 / 630 | `settings-shortcuts-conflict-dark-tab25.png`, `settings-shortcuts-conflict-light-tab25.png` |
+| 687 | `settings-shortcuts-conflict` | 26 | GtkButton [text-button.key-edit] F5 | 1205 / 1207 | `settings-shortcuts-conflict-dark-tab26.png`, `settings-shortcuts-conflict-light-tab26.png` |
+| 688 | `settings-shortcuts-conflict` | 27 | GtkButton [text-button.pill.plain] Leave "Re-search" with no key at... | 630 / 630 | `settings-shortcuts-conflict-dark-tab27.png`, `settings-shortcuts-conflict-light-tab27.png` |
+| 689 | `settings-shortcuts-conflict` | 28 | GtkButton [text-button.key-edit] R | 1210 / 1211 | `settings-shortcuts-conflict-dark-tab28.png`, `settings-shortcuts-conflict-light-tab28.png` |
+| 690 | `settings-shortcuts-conflict` | 29 | GtkButton [text-button.pill.plain] Leave "Reset result" with no key... | 630 / 630 | `settings-shortcuts-conflict-dark-tab29.png`, `settings-shortcuts-conflict-light-tab29.png` |
+| 691 | `settings-shortcuts-conflict` | 30 | GtkButton [text-button.key-edit] Space | 1395 / 1396 | `settings-shortcuts-conflict-dark-tab30.png`, `settings-shortcuts-conflict-light-tab30.png` |
+| 692 | `settings-shortcuts-conflict` | 31 | GtkButton [text-button.pill.plain] Leave "Mark / unmark as reviewed... | 630 / 630 | `settings-shortcuts-conflict-dark-tab31.png`, `settings-shortcuts-conflict-light-tab31.png` |
+| 693 | `settings-shortcuts-conflict` | 32 | GtkButton [text-button.key-edit] Del | 1432 / 1432 | `settings-shortcuts-conflict-dark-tab32.png`, `settings-shortcuts-conflict-light-tab32.png` |
+| 694 | `settings-shortcuts-conflict` | 33 | GtkButton [text-button.pill.plain] Leave "Remove from list" with no... | 630 / 630 | `settings-shortcuts-conflict-dark-tab33.png`, `settings-shortcuts-conflict-light-tab33.png` |
+| 695 | `settings-shortcuts-conflict` | 34 | GtkButton [text-button.pill.plain] Reset all to defaults | 920 / 920 | `settings-shortcuts-conflict-dark-tab34.png`, `settings-shortcuts-conflict-light-tab34.png` |
+| 696 | `settings-shortcuts-conflict` | 35 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-shortcuts-conflict-dark-tab35.png`, `settings-shortcuts-conflict-light-tab35.png` |
+| 697 | `settings-shortcuts-conflict` | 36 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-shortcuts-conflict-dark-tab36.png`, `settings-shortcuts-conflict-light-tab36.png` |
+| 698 | `settings-hydrus-fetched` | 0 | GtkText [] a setting's name - "quota", "cookies", "thumbnail"… | 3384 / 3384 | `settings-hydrus-fetched-dark-tab0.png`, `settings-hydrus-fetched-light-tab0.png` |
+| 699 | `settings-hydrus-fetched` | 1 | GtkNotebook [frame] General | 6180 / 6180 | `settings-hydrus-fetched-dark-tab1.png`, `settings-hydrus-fetched-light-tab1.png` |
+| 700 | `settings-hydrus-fetched` | 2 | GtkText []  | 5737 / 5728 | `settings-hydrus-fetched-dark-tab2.png`, `settings-hydrus-fetched-light-tab2.png` |
+| 701 | `settings-hydrus-fetched` | 3 | GtkText []  | 2796 / 2796 | `settings-hydrus-fetched-dark-tab3.png`, `settings-hydrus-fetched-light-tab3.png` |
+| 702 | `settings-hydrus-fetched` | 4 | GtkText [] empty = "my tags" local service | 1864 / 1864 | `settings-hydrus-fetched-dark-tab4.png`, `settings-hydrus-fetched-light-tab4.png` |
+| 703 | `settings-hydrus-fetched` | 5 | GtkToggleButton [image-button.toggle]  | 376 / 376 | `settings-hydrus-fetched-dark-tab5.png`, `settings-hydrus-fetched-light-tab5.png` |
+| 704 | `settings-hydrus-fetched` | 6 | GtkButton [text-button] Fetch from Hydrus… | 928 / 928 | `settings-hydrus-fetched-dark-tab6.png`, `settings-hydrus-fetched-light-tab6.png` |
+| 705 | `settings-hydrus-fetched` | 7 | GtkCheckButton [text-button] Verify SSL certificate | 3800 / 3800 | `settings-hydrus-fetched-dark-tab7.png`, `settings-hydrus-fetched-light-tab7.png` |
+| 706 | `settings-hydrus-fetched` | 8 | GtkCheckButton [text-button] When "Download match ... | 3800 / 3800 | `settings-hydrus-fetched-dark-tab8.png`, `settings-hydrus-fetched-light-tab8.png` |
+| 707 | `settings-hydrus-fetched` | 9 | GtkCheckButton [text-button] Everything this app k... | 3800 / 3800 | `settings-hydrus-fetched-dark-tab9.png`, `settings-hydrus-fetched-light-tab9.png` |
+| 708 | `settings-hydrus-fetched` | 10 | GtkText [] empty = "hatate: match source" | 2796 / 2796 | `settings-hydrus-fetched-dark-tab10.png`, `settings-hydrus-fetched-light-tab10.png` |
+| 709 | `settings-hydrus-fetched` | 11 | GtkButton [text-button] Test connection | 812 / 812 | `settings-hydrus-fetched-dark-tab11.png`, `settings-hydrus-fetched-light-tab11.png` |
+| 710 | `settings-hydrus-fetched` | 12 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-hydrus-fetched-dark-tab12.png`, `settings-hydrus-fetched-light-tab12.png` |
+| 711 | `settings-hydrus-fetched` | 13 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-hydrus-fetched-dark-tab13.png`, `settings-hydrus-fetched-light-tab13.png` |
+| 712 | `shortcuts-dialog` | 0 | GtkScrolledWindow [] Next image: | 2848 / 2848 | `shortcuts-dialog-dark-tab0.png`, `shortcuts-dialog-light-tab0.png` |
+| 713 | `shortcuts-dialog` | 1 | GtkButton [text-button.pill.primary.plain.default] Close | 496 / 496 | `shortcuts-dialog-dark-tab1.png`, `shortcuts-dialog-light-tab1.png` |
 
-**690 stops (1380 walks, one per scheme) over 32 surfaces; 0 without a visible indicator.** `failed` is one of them: 13 stops (0 to 12), each with an indicator in both schemes.
+**713 stops (1426 walks, one per scheme) over 34 surfaces; 0 without a visible indicator.** `failed` is one of them: 13 stops (0 to 12), each with an indicator in both schemes.
 
 **Not judged: `review-picker`.** The candidate picker is a popover, its own surface, and the walk's snapshot is the window's: its 80 stops (the walk's cap; the popover's list cycles) show no change, which measures the tool and not the popover. The picker's ring is on the `review-picker-*` shots; the walk of a popover surface is the fix (run C, or the verifier's walk). Owner: Oderisi's design read for the ring, the author for the walker.
