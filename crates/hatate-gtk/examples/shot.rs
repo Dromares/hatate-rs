@@ -21,7 +21,7 @@
 //! `review-wipe`, `review-differences`, `review-wipe-nomatch` (only the local picture), `review-error` (the local file is gone; design
 //! gate 2.8), `review-focus-<wslider|wview|zoom|popout>` (a Wipe control focused with the ring showing), `review-compare` and
 //! `review-compare-differences` (the compare window, which is its own surface), `review-compare-nomatch` (its "no match" box) and
-//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The Settings states (6.h) are `settings-<0..8>` (that tab of the Settings window, in Python's order: General to MCP), `settings-find` (a query with results), `settings-find-none` ("Nothing matches that."), `settings-lens` (the Engine page with Google Lens ticked and its dependencies missing; libadwaita presents the warning box as a window of its own, which this snapshot does not hold), `settings-found` (a jumped-to setting wearing the stamp) and `settings-focus-<find|tab|ok|cancel|check|spin|combo|entry>` (that control focused with the ring showing; `check` and `entry` are on the Hydrus page, `combo` on the Import page, the rest on General). The size `min` is the window's stated minimum.
+//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The Settings states (6.h) are `settings-<0..8>` (that tab of the Settings window, in Python's order: General to MCP), `settings-find` (a query with results), `settings-find-none` ("Nothing matches that."), `settings-lens` (the Engine page with Google Lens ticked and its dependencies missing; libadwaita presents the warning box as a window of its own, which this snapshot does not hold), `settings-found` (a jumped-to setting wearing the stamp) and `settings-focus-<find|tab|ok|cancel|check|spin|combo|entry>` (that control focused with the ring showing; `check` and `entry` are on the Hydrus page, `combo` on the Import page, the rest on General). The 6.i states are `settings-mcp-running` and `settings-mcp-held` (the MCP tab with the server started at launch on a free port, and with the port held by another listener), `settings-mcp-audit` (synthetic Recent tool calls, All), `settings-shortcuts-conflict`, `settings-shortcuts-record` (the Shortcuts tab with two actions on one key, and with a recorder waiting for its key) and `settings-focus-<mcp|shortcut>` (the server box, the first key button). The Got it box libadwaita presents as a window of its own, which this snapshot does not hold. The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -99,6 +99,71 @@ fn main() -> glib::ExitCode {
         // Everything the page shows is already in the rows: nothing to fetch.
         settings.retrieve_tags_from_booru = false;
         settings.drop_dead_matches = false;
+    }
+    // The 6.i MCP states: the server is on with a synthetic token. `settings-mcp-held` keeps a
+    // listener on the port, so the window's server cannot bind it; the others take a free one.
+    // `_held` lives to the end of `main`.
+    let mut _held = None;
+    if state.starts_with("settings-mcp") || state.starts_with("settings-focus-mcp") {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let port = listener.local_addr().expect("its address").port();
+        settings.mcp.enabled = true;
+        settings.mcp.port = i64::from(port);
+        settings.mcp.token = "synthetic-token-for-shots-only".into();
+        if state == "settings-mcp-held" {
+            _held = Some(listener);
+        } else {
+            drop(listener);
+        }
+        if state == "settings-mcp-audit" {
+            // Synthetic lines in the audit log's own format (`mcp/audit.rs::entry_line`).
+            let lines = [
+                ("list_queue", "read", true, false, "null", "{\"count\": 12}"),
+                (
+                    "select_candidate",
+                    "local_write",
+                    true,
+                    false,
+                    "null",
+                    "{\"row\": 3}",
+                ),
+                (
+                    "toggle_reviewed",
+                    "local_write",
+                    true,
+                    true,
+                    "null",
+                    "{\"row\": 4}",
+                ),
+                (
+                    "send_to_hydrus",
+                    "hydrus_write",
+                    false,
+                    false,
+                    "\"off\"",
+                    "null",
+                ),
+                (
+                    "remove_row",
+                    "destructive",
+                    false,
+                    false,
+                    "\"off\"",
+                    "null",
+                ),
+            ];
+            let mut text = String::new();
+            for (i, (tool, tier, allowed, dry, reason, outcome)) in lines.iter().enumerate() {
+                text.push_str(&format!(
+                    "{{\"timestamp\": \"2026-10-30T08:00:{:02}Z\", \"tool\": \"{tool}\", \"tier\": \"{tier}\", \"allowed\": {allowed}, \"reason\": {reason}, \"dry_run\": {dry}, \"row\": 3, \"candidate_index\": null, \"arguments\": {{}}, \"outcome\": {outcome}}}\n",
+                    i * 7 + 1
+                ));
+            }
+            if let Some(dir) = paths.mcp_audit_log().parent() {
+                std::fs::create_dir_all(dir).expect("audit dir");
+            }
+            std::fs::write(paths.mcp_audit_log(), text).expect("audit log");
+        }
     }
     settings.save(&paths).expect("save settings");
     if let Err(e) = fonts::load(&home.path().join("fonts")) {
@@ -624,6 +689,39 @@ fn prepare_settings(window: &MainWindow, state: &str) {
                 });
             d.set_value("enable_google_lens", &Value::Bool(true));
         }
+        // The MCP tab with the server started at launch (a free port, or a held one) and the
+        // Shortcuts tab with a conflict or a recorder waiting for its key (6.i).
+        "mcp-running" | "mcp-held" => d.tabs.set_current_page(Some(8)),
+        "mcp-audit" => {
+            d.tabs.set_current_page(Some(8));
+            d.audit.all.set_active(true);
+            d.audit.refresh();
+            // The card is under the fold: the page scrolls to its end once it is laid out.
+            let mut up = d.audit.all.parent();
+            while let Some(p) = up {
+                if let Some(sw) = p.downcast_ref::<gtk4::ScrolledWindow>() {
+                    let sw = sw.clone();
+                    gtk4::glib::idle_add_local_once(move || {
+                        let adj = sw.vadjustment();
+                        adj.set_value(adj.upper());
+                    });
+                    break;
+                }
+                up = p.parent();
+            }
+        }
+        "shortcuts-conflict" => {
+            d.tabs.set_current_page(Some(7));
+            d.shortcuts.edit("prev_row").expect("prev_row").set("J");
+            d.shortcuts.refresh_conflicts();
+        }
+        "shortcuts-record" => {
+            d.tabs.set_current_page(Some(7));
+            d.shortcuts
+                .edit("prev_row")
+                .expect("prev_row")
+                .start_recording();
+        }
         f if f.starts_with("focus-") => {
             d.window.set_focus_visible(true);
             let target: Option<gtk4::Widget> = match &f["focus-".len()..] {
@@ -631,6 +729,19 @@ fn prepare_settings(window: &MainWindow, state: &str) {
                 "ok" => Some(d.ok_button.clone().upcast()),
                 "cancel" => Some(d.cancel_button.clone().upcast()),
                 "tab" => Some(d.tabs.clone().upcast()),
+                // 6.i: the MCP tab's server box and the Shortcuts tab's first key button.
+                "mcp" => {
+                    d.tabs.set_current_page(Some(8));
+                    d.tabs
+                        .nth_page(Some(8))
+                        .and_then(|p| find_type(&p, "GtkCheckButton"))
+                }
+                "shortcut" => {
+                    d.tabs.set_current_page(Some(7));
+                    d.tabs
+                        .nth_page(Some(7))
+                        .and_then(|p| find_type(&p, "GtkButton"))
+                }
                 kind => {
                     let want = match kind {
                         "check" => "GtkCheckButton",
