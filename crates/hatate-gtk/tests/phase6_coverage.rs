@@ -286,7 +286,7 @@ fn section6() -> Vec<TestRow> {
         .split("\n## 6. ")
         .nth(1)
         .expect("section 6")
-        .split("\n## 7. ")
+        .split("\n### 6.1 ")
         .next()
         .unwrap();
     let mut rows = Vec::new();
@@ -383,5 +383,213 @@ fn every_row_of_section_6_says_what_it_is_and_a_pinned_row_cites_a_real_assertio
                 "{who}: {c} is not in an assertion: {window:?}"
             );
         }
+    }
+}
+
+/// The text of `doc` from the heading `from` up to the heading `to` (or the end).
+fn between(doc: &str, from: &str, to: &str) -> String {
+    let rest = doc
+        .split(from)
+        .nth(1)
+        .unwrap_or_else(|| panic!("no heading {from:?}"));
+    rest.split(to).next().unwrap().to_string()
+}
+
+/// The rows of a table whose first cell is a number: the cells, split on `" | "`.
+fn numbered_rows(section: &str, cells: usize) -> Vec<Vec<String>> {
+    section
+        .lines()
+        .filter(|l| l.starts_with("| ") && l[2..].starts_with(|c: char| c.is_ascii_digit()))
+        .map(|l| {
+            let c: Vec<String> = l
+                .trim_matches('|')
+                .split(" | ")
+                .map(|x| x.trim().to_string())
+                .collect();
+            assert_eq!(c.len(), cells, "row {l:?} does not have {cells} cells");
+            c
+        })
+        .collect()
+}
+
+/// `file.py:line Class.test` of a row whose test cell is `` `file.py` `Class.test` ``.
+fn test_id(line: &str, cell: &str) -> String {
+    let (file, name) = cell
+        .trim_start_matches('`')
+        .split_once("` `")
+        .unwrap_or_else(|| panic!("bad test cell {cell:?}"));
+    format!("{file}:{line} {}", name.trim_end_matches('`'))
+}
+
+/// The backticked `path:line` citations in a cell.
+fn cites(cell: &str) -> Vec<(String, usize)> {
+    cell.split(", ")
+        .filter(|c| c.starts_with('`') && c.contains(':'))
+        .map(|c| {
+            let (path, n) = c.trim_matches('`').rsplit_once(':').unwrap();
+            (path.to_string(), n.parse().unwrap_or(0))
+        })
+        .collect()
+}
+
+#[test]
+fn every_handed_off_test_has_exactly_one_row_in_section_6_1() {
+    let doc = read("docs/phase6-coverage.md");
+    let section = between(&doc, "\n### 6.1 ", "\n### 6.2 ");
+    let want: BTreeSet<String> = read("docs/phase6-handoffs-76c85c4.txt")
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        want.len(),
+        119,
+        "the listing holds the 119 hand-offs of run B2"
+    );
+    let rows = numbered_rows(&section, 5);
+    let got: Vec<String> = rows.iter().map(|r| test_id(&r[0], &r[1])).collect();
+    let got_set: BTreeSet<String> = got.iter().cloned().collect();
+    assert_eq!(got.len(), got_set.len(), "a test is listed twice");
+    let missing: Vec<_> = want.difference(&got_set).collect();
+    let extra: Vec<_> = got_set.difference(&want).collect();
+    assert!(missing.is_empty(), "hand-offs with no row: {missing:?}");
+    assert!(
+        extra.is_empty(),
+        "rows for tests not in the listing: {extra:?}"
+    );
+}
+
+#[test]
+fn every_row_of_section_6_1_says_what_it_is_and_cites_something_that_exists() {
+    let doc = read("docs/phase6-coverage.md");
+    let section = between(&doc, "\n### 6.1 ", "\n### 6.2 ");
+    let kinds = [
+        "pinned",
+        "differential",
+        "mapped elsewhere",
+        "not asserted",
+        "judged in the shot set",
+        "n/a",
+        "scan false positive",
+    ];
+    let ops = read("crates/hatate-gtk/tests/differential.rs");
+    let shots = read("crates/hatate-gtk/examples/shot.rs");
+    for r in numbered_rows(&section, 5) {
+        let who = test_id(&r[0], &r[1]);
+        let (kind, text) = r[2]
+            .strip_prefix("**")
+            .and_then(|x| x.split_once("**: "))
+            .unwrap_or_else(|| panic!("{who}: the disposition is not `**kind**: reason`"));
+        assert!(kinds.contains(&kind), "{who}: disposition {kind:?}");
+        assert!(text.chars().count() >= 40, "{who}: the reason is a stub");
+        assert!(text.contains("[handed to "), "{who}: names no owner");
+        // a `shot-family-*` the row names is a state of the renderer's table
+        for cell in [text, r[3].as_str()] {
+            for fam in cell
+                .split("`")
+                .skip(1)
+                .step_by(2)
+                .filter(|t| t.ends_with("-*"))
+            {
+                let state = fam.trim_end_matches("-*");
+                assert!(
+                    shots.contains(&format!("(\"{state}\", "))
+                        || shots.contains(&format!("(\"{state}-")),
+                    "{who}: no shot state {state:?}"
+                );
+            }
+        }
+        // an `` `op` op`` the row names is a step of the action differential
+        for w in text.split("` op").collect::<Vec<_>>().windows(2) {
+            let op = w[0].rsplit('`').next().unwrap();
+            assert!(
+                ops.contains(&format!("\"{op}\" =>")),
+                "{who}: the differential has no op {op:?}"
+            );
+        }
+        if kind == "pinned" {
+            assert!(
+                r[4] != "-" && r[4].contains('`'),
+                "{who}: a pinned row names the mutation that turned it red, and the test"
+            );
+            assert!(
+                !cites(&r[3]).is_empty(),
+                "{who}: a pinned row cites an assertion"
+            );
+        }
+        if matches!(kind, "pinned" | "differential" | "mapped elsewhere") {
+            assert!(!cites(&r[3]).is_empty(), "{who}: {kind} row cites nothing");
+        }
+        for (path, n) in cites(&r[3]) {
+            let src = read(&path);
+            let all: Vec<&str> = src.lines().collect();
+            assert!(
+                n >= 1 && n <= all.len(),
+                "{who}: {path}:{n} is past the end"
+            );
+            let window = &all[n.saturating_sub(4)..n];
+            let ok = path.ends_with(".md")
+                || window.iter().any(|l| {
+                    l.contains("assert") || l.contains(" fn ") || l.trim_start().starts_with("fn ")
+                });
+            assert!(
+                ok,
+                "{who}: {path}:{n} is neither an assertion nor a fn: {window:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn section_6_2_lists_the_gui_tests_outside_the_phase_6_list_exactly() {
+    let doc = read("docs/phase6-coverage.md");
+    let section = between(&doc, "\n### 6.2 ", "\n## 7. ");
+    let want: BTreeSet<String> = read("docs/phase6-gui-tests-outside-list-76c85c4.txt")
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(want.len(), 86, "the listing holds the 86 tests of DAN-2452");
+    let mut got = BTreeSet::new();
+    let mut n = 0;
+    for l in section.lines().filter(|l| l.starts_with("| `test_")) {
+        let c: Vec<&str> = l.trim_matches('|').split(" | ").map(str::trim).collect();
+        assert_eq!(c.len(), 5, "row {l:?} does not have five cells");
+        let file = c[0].trim_matches('`');
+        let class = c[2].trim_matches('*');
+        assert!(
+            ["design: shot set", "behaviour: unmapped, Phase 7"].contains(&class),
+            "{file}: class {class:?}"
+        );
+        let ids: Vec<&str> = c[4].split(", ").map(|x| x.trim_matches('`')).collect();
+        assert_eq!(
+            c[1].parse::<usize>().unwrap(),
+            ids.len(),
+            "{file}: the count"
+        );
+        for id in ids {
+            n += 1;
+            let key = want
+                .iter()
+                .find(|w| w.starts_with(&format!("{file}:")) && w.ends_with(&format!(" {id}")))
+                .unwrap_or_else(|| panic!("{file}: {id} is not in the listing"));
+            assert!(got.insert(key.clone()), "{key} is listed twice");
+        }
+    }
+    assert_eq!(n, want.len());
+    let missing: Vec<_> = want.difference(&got).collect();
+    assert!(missing.is_empty(), "tests with no row: {missing:?}");
+    // a file that makes a behaviour claim is never classed as a design-gate file (Cloud, DAN-2452)
+    for f in [
+        "test_mcp_bridge",
+        "test_tristate_restore",
+        "test_unclean_shutdown_wiring",
+    ] {
+        let row = section
+            .lines()
+            .find(|l| l.starts_with(&format!("| `{f}.py`")))
+            .unwrap_or_else(|| panic!("no row for {f}"));
+        assert!(
+            row.contains("**behaviour: unmapped, Phase 7**"),
+            "{f}: {row}"
+        );
     }
 }

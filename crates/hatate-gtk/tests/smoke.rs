@@ -630,6 +630,8 @@ fn empty_state_and_idle_strip(app: &adw::Application) {
     assert_eq!(f.say(), "Ready");
     assert_eq!(f.w.s.shell.run_progress_label.text(), IDLE_PROGRESS);
     assert_eq!(f.w.s.shell.run_eta_label.text(), IDLE_ETA);
+    // An ordinary start has no note on the strip (`test_nothing_survived.py::TestRunStrip`).
+    assert_eq!(f.w.s.shell.run_note_label.text(), "");
     assert!(!f.w.s.run_banner.root.is_visible());
     assert!(!f.w.s.quota_banner.root.is_visible());
     f.close();
