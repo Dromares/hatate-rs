@@ -85,7 +85,7 @@ Hydrus built from the same table. After every step the harness compares the rows
 status tier), the status text, every dialog (text, buttons, default button, result, detail line), the `session.db` rows,
 `config.json` and the server's request log (method, path, decoded query, key header, body). The harness lives outside the
 repo (`worktrees/DAN-2220-tools`: `gen_h.py` the generator, `py_driver.py`, `cmp.py`); the log is
-`worktrees/DAN-2220-differential.log`.
+`worktrees/DAN-2220-differential-c2.log`.
 
 | Seed | Cases | Steps | Differing steps |
 |---|---|---|---|
@@ -94,10 +94,23 @@ repo (`worktrees/DAN-2220-tools`: `gen_h.py` the generator, `py_driver.py`, `cmp
 | 3 | 40 | 531 | 0 |
 | 4 | 40 | 514 | 0 |
 
-Documented classes inside those zero-difference runs (counts per seed are in the log): **D-A** (Delete box; 11 dialogs in
-seed 1, 7 in seed 3, 12 in seed 4), **D-B** (failure headline; 8, 2 and 6) and one comparer rule: the
-`get_url_files` requests of one confirmation poll round are compared as a multiset, because Python's own
-`HydrusImportPollWorker` checks the pending entries concurrently in a thread pool (3 steps in seed 2). Negative controls:
+Documented classes inside those zero-difference runs, counted per seed by the harness (dialogs):
+
+| Seed | D-A (Delete box) | D-B (failure headline) | Poll-round order (comparer rule) |
+|---|---|---|---|
+| 1 | 4 | 0 | 0 |
+| 2 | 8 | 5 | 3 steps |
+| 3 | 9 | 1 | 0 |
+| 4 | 14 | 8 | 0 |
+
+The comparer rule: the `get_url_files` requests of one confirmation poll round are compared as a multiset, because
+Python's own `HydrusImportPollWorker` checks the pending entries concurrently in a thread pool. The table is from the
+re-run at the head with the fixed generator. Earlier runs of the same seeds (same case, step and zero-difference totals)
+used a generator that iterated a `set` of Hydrus hashes, so one seed gave a different scenario file on every run and the
+per-seed class counts quoted before this commit could not be reproduced; the generator now iterates `sorted(...)`, and
+three generations of one seed give the same file.
+
+Negative controls:
 altering one URL in the Rust request log gives 13 differences, dropping one request gives 35; perturbing the failure
 prefix or leaking the server's words into the tail each gives 1.
 
