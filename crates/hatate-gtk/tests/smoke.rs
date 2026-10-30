@@ -447,6 +447,10 @@ const SCENARIOS: &[Scenario] = &[
         mcp_send_leaves_the_main_loop_running_while_hydrus_stalls,
     ),
     (
+        "settings_find_box_reaches_every_string_the_mcp_spec_lists",
+        settings_find_box_reaches_every_string_the_mcp_spec_lists,
+    ),
+    (
         "settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict",
         settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict,
     ),
@@ -7979,5 +7983,66 @@ fn mcp_send_leaves_the_main_loop_running_while_hydrus_stalls(app: &adw::Applicat
     );
     assert!(f.w.s.queue.borrow().entry_at(0).unwrap().sent_to_hydrus);
     tick.remove();
+    f.close();
+}
+
+/// `mcp-settings-spec.md` section 9: the tab name, the checkbox labels, the four group titles and
+/// the two informational lines are all findable through the Find box.
+fn settings_find_box_reaches_every_string_the_mcp_spec_lists(app: &adw::Application) {
+    use hatate_gtk::settings_mcp as m;
+    let f = fx(app);
+    let d = open_settings(&f);
+    let wanted = [
+        ("mcp", "MCP  \u{203a}  MCP".to_owned()),
+        (
+            "Enable the MCP server",
+            format!("MCP  \u{203a}  {}", m::ENABLE),
+        ),
+        ("practice mode", format!("MCP  \u{203a}  {}", m::DRY_RUN)),
+        (
+            "re-search a stuck",
+            format!("MCP  \u{203a}  {}", m::RESEARCH_LABEL),
+        ),
+        (
+            "send files and tags",
+            format!("MCP  \u{203a}  {}", m::HYDRUS_LABEL),
+        ),
+        (
+            "remove rows and reset",
+            format!("MCP  \u{203a}  {}", m::DESTRUCTIVE_LABEL),
+        ),
+        (
+            "Always available",
+            format!("MCP  \u{203a}  {}", m::ALWAYS_TITLE),
+        ),
+        (
+            "sends to your live",
+            format!("MCP  \u{203a}  {}", m::HYDRUS_TITLE),
+        ),
+        (
+            "spends a limited",
+            format!("MCP  \u{203a}  {}", m::RESEARCH_TITLE),
+        ),
+        (
+            "hard to undo",
+            format!("MCP  \u{203a}  {}", m::DESTRUCTIVE_TITLE),
+        ),
+        (
+            "Recent tool calls",
+            "MCP  \u{203a}  Recent tool calls".to_owned(),
+        ),
+        ("Token", "MCP  \u{203a}  Token".to_owned()),
+        ("Port", "MCP  \u{203a}  Port".to_owned()),
+    ];
+    for (query, row) in wanted {
+        d.find.set_text(query);
+        let found = d.result_texts();
+        assert!(
+            found.contains(&row),
+            "{query:?} did not reach {row:?}: {found:?}"
+        );
+    }
+    d.find.set_text("");
+    d.click_cancel();
     f.close();
 }
