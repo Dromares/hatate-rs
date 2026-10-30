@@ -197,7 +197,6 @@ impl PawchiveIndexDialog {
         table_scroll.add_css_class("field");
         // the list takes focus itself; an empty one holds nothing to focus (see `populate`)
         table_scroll.set_focusable(false);
-        table_scroll.set_can_focus(false);
         let none_yet = widgets::hint("No artists indexed yet. Add one below.");
         none_yet.set_margin_top(12);
         none_yet.set_margin_bottom(12);

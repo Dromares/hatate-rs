@@ -6869,5 +6869,21 @@ fn tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers(app: &adw::A
         wrapped.as_ref().is_some_and(|w| w.css_name() == "row"),
         "Tab from Close wraps to the artist row: {wrapped:?}"
     );
+    // reopened with an artist in the index, the window still opens on the entry, not the table
+    d.window.close();
+    pump_for(300);
+    f.w.action_pawchive_index();
+    let d = f.w.s.pawchive_dialog.borrow().clone().unwrap();
+    d.window.present();
+    pump_for(300);
+    only(&mut keys, &d.window);
+    assert!(d.table.row_at_index(0).is_some(), "the artist is listed");
+    let first = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        first
+            .as_ref()
+            .is_some_and(|w| w.is_ancestor(&d.query) || *w == d.query),
+        "the name/link entry is the first stop with an artist indexed: {first:?}"
+    );
     f.close();
 }
