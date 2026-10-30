@@ -8670,12 +8670,25 @@ fn site_fx(
     names: &'static [&'static str],
     handler: impl Fn(&common::hydrus::Recorded) -> common::hydrus::Reply + Send + Sync + 'static,
 ) -> (Fx, common::hydrus::Hydrus) {
+    site_fx_saved(app, names, |_| {}, handler)
+}
+
+/// `site_fx` over a profile whose saved settings `saved` has changed.
+fn site_fx_saved(
+    app: &adw::Application,
+    names: &'static [&'static str],
+    saved: impl Fn(&mut hatate_core::config::Settings) + 'static,
+    handler: impl Fn(&common::hydrus::Recorded) -> common::hydrus::Reply + Send + Sync + 'static,
+) -> (Fx, common::hydrus::Hydrus) {
     let server = common::hydrus::Hydrus::https_for(names, handler);
     let (ca, addr) = (server.ca_der.clone().unwrap(), server.addr());
     let f = Fx::new_with(
         app,
         Opts {
-            tweak: Some(offline()),
+            tweak: Some(Box::new(move |s: &mut hatate_core::config::Settings| {
+                offline()(s);
+                saved(s);
+            })),
             ..Opts::default()
         },
         move |env| {
@@ -8822,6 +8835,39 @@ fn settings_e621_test_sends_python_request_and_says_what_python_says(app: &adw::
         "the result does not outlive the window"
     );
     assert!(d.button_sensitive("button.test_e621_login"));
+    d.click_cancel();
+    f.close();
+}
+
+/// `TestE621LoginTest.test_it_sends_the_typed_credentials_not_the_saved_ones`: the Test checks what is
+/// typed in the boxes, so a new key can be tried before it is saved.
+fn settings_e621_test_sends_the_typed_credentials_not_the_saved_ones(app: &adw::Application) {
+    use common::hydrus::Reply;
+    let (f, server) = site_fx_saved(
+        app,
+        &["e621.net"],
+        |s| {
+            s.e621_username = hatate_core::config::Secret::new("saved-user".to_owned());
+            s.e621_api_key = hatate_core::config::Secret::new("saved-key".to_owned());
+        },
+        |_| Reply::new(200, "{}"),
+    );
+    let d = open_settings(&f);
+    assert_eq!(d.text_of("e621_username"), "saved-user");
+    d.type_into("e621_username", "typed-user");
+    d.type_into("e621_api_key", "typed-key");
+    let text = press_and_wait(&d, "button.test_e621_login", "e621_test_result");
+    assert!(
+        text.starts_with("e621 accepted the credentials for typed-user."),
+        "{text}"
+    );
+    let sent = server.recorded();
+    assert_eq!(sent.len(), 1);
+    // base64 of `typed-user:typed-key`
+    assert_eq!(
+        sent[0].header("authorization"),
+        Some("Basic dHlwZWQtdXNlcjp0eXBlZC1rZXk=")
+    );
     d.click_cancel();
     f.close();
 }
@@ -9145,6 +9191,10 @@ const SCENARIOS_6H2: &[Scenario] = &[
     (
         "shortcuts_dialog_differential_driver",
         shortcuts_dialog_differential_driver,
+    ),
+    (
+        "settings_e621_test_sends_the_typed_credentials_not_the_saved_ones",
+        settings_e621_test_sends_the_typed_credentials_not_the_saved_ones,
     ),
 ];
 

@@ -625,6 +625,42 @@ mod tests {
         );
     }
 
+    /// The branches the transport differential's pages (`corpus/<site>/001`) never reach: a restricted
+    /// page, and a Pixiv page that yields nothing. The texts are `_test_deviantart`,
+    /// `_test_animepictures` and `_test_pixiv`'s at `76c85c4`, with and without cookies.
+    #[test]
+    fn a_restricted_page_and_an_empty_pixiv_page_say_what_python_says() {
+        let restricted = BooruPageInfo {
+            restricted: Some("blurred".into()),
+            ..BooruPageInfo::default()
+        };
+        assert_eq!(
+            read_page(Test::DeviantArt, &restricted, false),
+            "Read the deviation, but the picture is still the BLURRED logged-out copy. Add cookies from a logged-in account above and retry."
+        );
+        assert_eq!(
+            read_page(Test::DeviantArt, &restricted, true),
+            "Read the deviation, but the picture is still the BLURRED logged-out copy. Re-copy the cookies from a logged-in browser - they may have expired or been cut off."
+        );
+        assert_eq!(
+            read_page(Test::AnimePictures, &restricted, false),
+            "Still account-only with these cookies. Add cookies from a logged-in account above and retry."
+        );
+        assert_eq!(
+            read_page(Test::AnimePictures, &restricted, true),
+            "Still account-only with these cookies. Re-copy them from a logged-in browser - they may have expired."
+        );
+        let empty = BooruPageInfo::default();
+        assert_eq!(
+            read_page(Test::Pixiv, &empty, false),
+            "Page fetched, but no data could be read from it. If this artwork requires login or is R-18, set a session cookie above and retry. See Help > View Logs for the specific reason."
+        );
+        assert_eq!(
+            read_page(Test::Pixiv, &empty, true),
+            "Page fetched, but no data could be read from it. The cookie may have expired (they do, periodically) - try copying a fresh PHPSESSID from your browser. See Help > View Logs for the specific reason."
+        );
+    }
+
     #[test]
     fn e621_needs_both_halves_and_trims_them() {
         let mut t = typed("", "");
