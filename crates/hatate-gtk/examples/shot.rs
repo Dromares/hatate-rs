@@ -201,10 +201,11 @@ fn stated_minimum(state: &str) -> Option<(i32, i32)> {
             hatate_gtk::pawchive_dialog::MIN_WIDTH,
             hatate_gtk::pawchive_dialog::MIN_HEIGHT,
         ))
-    } else if state.starts_with("logs")
-        || state.starts_with("parser-health")
-        || state.contains("compare")
-    {
+    } else if state.starts_with("parser-health") {
+        // Python only calls `resize(760, 460)` (`gtk-6e.md` section 3 calls it the minimum): the dialog's
+        // own size, which the shot must be, so the fit column checks it. GTK is not asked to enforce it.
+        Some((760, 460))
+    } else if state.starts_with("logs") || state.contains("compare") {
         None
     } else {
         // `window.width()` is the window without its 5 px client-side shadow: 1100x800 renders as a

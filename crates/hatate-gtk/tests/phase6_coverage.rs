@@ -759,22 +759,32 @@ fn section_8_lists_every_tab_stop_with_the_shot_that_shows_its_indicator() {
         );
     }
     assert_eq!(got, want, "section 8 and the listing differ");
-    // every surface the walk covers is in the walk's own table
-    for st in [
-        "empty",
-        "rows",
-        "review",
-        "hydrus-query",
-        "pawchive-artists",
-        "settings-0",
-        "settings-8",
-        "logs",
-        "activity",
-    ] {
-        assert!(surfaces.contains(st), "no Tab stops for {st}");
+    // every surface the walk covers has rows: the walk's own `TAB_STATES` is read, so a surface cannot be
+    // left out of the table (the verifier found `failed` missing at 72742d0). `review-picker` has rows too (its 80
+    // stops, not judged: a popover the walker cannot reach; section 8 says so).
+    let tab_states = shots
+        .split("const TAB_STATES: &[&str] = &[")
+        .nth(1)
+        .and_then(|rest| rest.split("];").next())
+        .expect("TAB_STATES in shot.rs");
+    let walked: Vec<&str> = tab_states.split('"').skip(1).step_by(2).collect();
+    assert!(walked.len() >= 32, "TAB_STATES parsed to {walked:?}");
+    for st in &walked {
+        assert!(surfaces.contains(*st), "no Tab stops for {st}");
+    }
+    for st in &surfaces {
         assert!(
-            shots.contains(&format!("\"{st}\"")),
-            "{st} is not in TAB_STATES"
+            walked.contains(&st.as_str()),
+            "{st} has rows but is not in TAB_STATES"
         );
     }
+    assert!(
+        section.contains(&format!(
+            "**{} stops ({} walks, one per scheme) over {} surfaces;",
+            got.len(),
+            2 * got.len(),
+            surfaces.len()
+        )),
+        "section 8 states a stop and surface count that is not the table's"
+    );
 }
