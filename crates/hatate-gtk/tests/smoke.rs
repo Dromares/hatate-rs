@@ -522,7 +522,7 @@ fn main() {
     let code = hatate_gtk::app::with_application(move |app| {
         // `HATATE_SMOKE_ONLY=<substring>` runs just the scenarios whose name contains it.
         let only = std::env::var("HATATE_SMOKE_ONLY").ok();
-        for (name, scenario) in SCENARIOS.iter().chain(SCENARIOS_6H2) {
+        for (name, scenario) in all_scenarios() {
             if only.as_deref().is_some_and(|o| !name.contains(o)) {
                 continue;
             }
@@ -9196,18 +9196,10 @@ const SCENARIOS_6H2: &[Scenario] = &[
         "settings_e621_test_sends_the_typed_credentials_not_the_saved_ones",
         settings_e621_test_sends_the_typed_credentials_not_the_saved_ones,
     ),
-    (
-        "settings_hydrus_failed_status_wraps_to_the_page_at_both_window_sizes",
-        settings_hydrus_failed_status_wraps_to_the_page_at_both_window_sizes,
-    ),
-    (
-        "shortcuts_dialog_key_column_keeps_a_gutter_against_the_scroll_bar",
-        shortcuts_dialog_key_column_keeps_a_gutter_against_the_scroll_bar,
-    ),
 ];
 
 fn scenario_count() -> usize {
-    SCENARIOS.len() + SCENARIOS_6H2.len()
+    all_scenarios().count()
 }
 
 // -- Phase 6.h-2 transport differential, Rust half (DAN-2460) ---------------------------------------
@@ -9636,6 +9628,26 @@ fn settings_hydrus_test_and_fetch_after_an_error_rerun_clean(app: &adw::Applicat
     assert!(again.button_sensitive(test) && again.button_sensitive("button.fetch_from_hydrus"));
     again.click_cancel();
     f.close();
+}
+
+/// The 6.h-2 fixup's scenarios (DAN-2467). A third list, at the end, so that adding them moved no line the docs cite.
+const SCENARIOS_6H2_FIXUP: &[Scenario] = &[
+    (
+        "settings_hydrus_failed_status_wraps_to_the_page_at_both_window_sizes",
+        settings_hydrus_failed_status_wraps_to_the_page_at_both_window_sizes,
+    ),
+    (
+        "shortcuts_dialog_key_column_keeps_a_gutter_against_the_scroll_bar",
+        shortcuts_dialog_key_column_keeps_a_gutter_against_the_scroll_bar,
+    ),
+];
+
+/// Every list, in order.
+fn all_scenarios() -> impl Iterator<Item = &'static (&'static str, fn(&adw::Application))> {
+    SCENARIOS
+        .iter()
+        .chain(SCENARIOS_6H2)
+        .chain(SCENARIOS_6H2_FIXUP)
 }
 
 /// DAN-2467 (6.h-2 R-1): the Hydrus Test's failed line is a sentence, and it wraps to the page. Unwrapped
