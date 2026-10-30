@@ -16,6 +16,7 @@ pub mod hydrus_query;
 pub mod logsink;
 pub mod logview;
 pub mod mcp_audit_view;
+pub mod mcp_bridge;
 pub mod menu;
 pub mod menubar_keys;
 pub mod parser_health;

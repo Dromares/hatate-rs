@@ -169,8 +169,8 @@ fn parse_timestamp(text: &str) -> Option<WallClock> {
     if day < 1 || day > days {
         return None;
     }
-    let secs = ((days_from_civil(year, month as u32, day as u32) * 24 + hour) * 60 + minute) * 60
-        + second;
+    let secs =
+        ((days_from_civil(year, month as u32, day as u32) * 24 + hour) * 60 + minute) * 60 + second;
     Some(WallClock::from_naive_secs(secs))
 }
 
@@ -254,7 +254,10 @@ pub fn outcome_cell(entry: &Value) -> (String, Weight) {
             Some(other) => py_str(other),
             None => String::new(),
         };
-        return (format!("Refused \u{2014} {} is off", tier_label(&tier)), weight);
+        return (
+            format!("Refused \u{2014} {} is off", tier_label(&tier)),
+            weight,
+        );
     }
     if flag(entry, "dry_run") {
         return (
@@ -306,10 +309,9 @@ pub fn outcome_cell(entry: &Value) -> (String, Weight) {
             } else {
                 format!(
                     "Error \u{2014} {}",
-                    outcome.get("reason").map_or_else(
-                        || "research did not complete".to_owned(),
-                        py_str
-                    )
+                    outcome
+                        .get("reason")
+                        .map_or_else(|| "research did not complete".to_owned(), py_str)
                 )
             }
         }
@@ -502,7 +504,11 @@ pub fn connection(enabled: bool, port: i64, server: Option<&ServerReport>) -> Co
         state,
         primary,
         remedy,
-        weight: if healthy { Weight::Ink65 } else { Weight::Ink100 },
+        weight: if healthy {
+            Weight::Ink65
+        } else {
+            Weight::Ink100
+        },
         show_restart: enabled,
         show_open_log: state == Connection::Failed,
     }
@@ -520,10 +526,14 @@ mod tests {
     // tests/test_mcp_settings_tab.py TestAuditOutcomeFormatting
     #[test]
     fn a_refused_call_names_its_tier_and_is_drawn_at_ink_100() {
-        let e = json!({"allowed": false, "tier": "research", "reason": "irrelevant to the cell text"});
+        let e =
+            json!({"allowed": false, "tier": "research", "reason": "irrelevant to the cell text"});
         assert_eq!(
             cell(e),
-            ("Refused \u{2014} Re-search is off".to_owned(), Weight::Ink100)
+            (
+                "Refused \u{2014} Re-search is off".to_owned(),
+                Weight::Ink100
+            )
         );
     }
 
@@ -581,14 +591,18 @@ mod tests {
             "outcome": {"row": 1, "reviewed": false}});
         assert_eq!(cell(unreviewed).0, "Allowed \u{2014} marked unreviewed");
         assert_eq!(
-            cell(json!({"allowed": true, "dry_run": false, "tool": "remove_row",
-                "outcome": {"row": 1, "removed": "x.png"}}))
+            cell(
+                json!({"allowed": true, "dry_run": false, "tool": "remove_row",
+                "outcome": {"row": 1, "removed": "x.png"}})
+            )
             .0,
             "Allowed \u{2014} row removed"
         );
         assert_eq!(
-            cell(json!({"allowed": true, "dry_run": false, "tool": "reset_result",
-                "outcome": {"row": 1, "reset": true}}))
+            cell(
+                json!({"allowed": true, "dry_run": false, "tool": "reset_result",
+                "outcome": {"row": 1, "reset": true}})
+            )
             .0,
             "Allowed \u{2014} result reset"
         );
@@ -630,7 +644,8 @@ mod tests {
         let ok = json!({"allowed": true, "dry_run": false, "tool": "list_queue", "outcome": {"rows": []}});
         assert_eq!(cell(ok), ("Allowed".to_owned(), Weight::Ink65));
         // `outcome` of null, as a line with no outcome has it
-        let none = json!({"allowed": true, "dry_run": false, "tool": "list_queue", "outcome": null});
+        let none =
+            json!({"allowed": true, "dry_run": false, "tool": "list_queue", "outcome": null});
         assert_eq!(cell(none), ("Allowed".to_owned(), Weight::Ink65));
     }
 
@@ -656,10 +671,7 @@ mod tests {
     #[test]
     fn a_past_date_shows_the_month_and_day_and_today_only_the_time() {
         let now = 1_700_000_000; // 2023-11-14T22:13:20Z
-        assert_eq!(
-            time_cell("2020-01-02T03:04:05Z", now),
-            "Jan 2, 03:04:05"
-        );
+        assert_eq!(time_cell("2020-01-02T03:04:05Z", now), "Jan 2, 03:04:05");
         assert_eq!(time_cell("2023-11-14T01:02:03Z", now), "01:02:03");
         assert_eq!(time_cell("2023-11-13T23:59:59Z", now), "Nov 13, 23:59:59");
     }
@@ -700,17 +712,24 @@ mod tests {
 
     #[test]
     fn the_table_is_newest_first_filtered_to_actions_and_capped_with_a_caption() {
-        let mut entries = vec![json!({"timestamp": "2020-01-01T00:00:00Z", "tool": "list_queue",
+        let mut entries = vec![
+            json!({"timestamp": "2020-01-01T00:00:00Z", "tool": "list_queue",
             "tier": "read", "allowed": true, "dry_run": false, "row": null,
-            "candidate_index": null, "outcome": {"rows": []}})];
+            "candidate_index": null, "outcome": {"rows": []}}),
+        ];
         for i in 0..(DISPLAY_LIMIT + 5) {
-            entries.push(json!({"timestamp": "2020-01-02T03:04:05Z", "tool": "select_candidate",
+            entries.push(
+                json!({"timestamp": "2020-01-02T03:04:05Z", "tool": "select_candidate",
                 "tier": "local_write", "allowed": true, "dry_run": false, "row": i,
-                "candidate_index": 1, "outcome": {"selected_candidate_index": 1}}));
+                "candidate_index": 1, "outcome": {"selected_candidate_index": 1}}),
+            );
         }
         let actions = view(&entries, true, 0);
         assert_eq!(actions.rows.len(), DISPLAY_LIMIT);
-        assert_eq!(actions.rows[0].target, format!("#{} \u{2192} candidate 1", DISPLAY_LIMIT + 4));
+        assert_eq!(
+            actions.rows[0].target,
+            format!("#{} \u{2192} candidate 1", DISPLAY_LIMIT + 4)
+        );
         assert_eq!(actions.rows[0].tier, "Reversible");
         assert_eq!(
             actions.caption,
@@ -720,7 +739,10 @@ mod tests {
             )
         );
         let all = view(&entries, false, 0);
-        assert!(all.caption.contains(&format!("of {} calls", DISPLAY_LIMIT + 6)));
+        assert!(
+            all.caption
+                .contains(&format!("of {} calls", DISPLAY_LIMIT + 6))
+        );
         let few = view(&entries[..2], false, 0);
         assert_eq!(few.rows.len(), 2);
         assert_eq!(few.rows[1].tool, "list_queue");
@@ -729,8 +751,12 @@ mod tests {
 
     #[test]
     fn the_tooltip_is_the_refusal_the_dry_run_note_or_the_outcome_as_python_dumps_it() {
-        let refused = json!({"allowed": false, "reason": "\"research\" refused: Re-search is off."});
-        assert_eq!(outcome_tooltip(&refused), "\"research\" refused: Re-search is off.");
+        let refused =
+            json!({"allowed": false, "reason": "\"research\" refused: Re-search is off."});
+        assert_eq!(
+            outcome_tooltip(&refused),
+            "\"research\" refused: Re-search is off."
+        );
         let dry = json!({"allowed": true, "dry_run": true,
             "outcome": {"note": "dry_run is on: nothing was changed."}});
         assert_eq!(outcome_tooltip(&dry), "dry_run is on: nothing was changed.");
@@ -765,13 +791,20 @@ mod tests {
         assert_eq!(live.weight, Weight::Ink65);
         assert!(live.show_restart && !live.show_open_log);
 
-        let missing = connection(true, 8787, Some(&report(false, Some("The mcp package is not installed"))));
+        let missing = connection(
+            true,
+            8787,
+            Some(&report(false, Some("The mcp package is not installed"))),
+        );
         assert_eq!(missing.state, Connection::NotInstalled);
 
         let blank = connection(
             true,
             8787,
-            Some(&report(false, Some("Blank bearer token: refusing to start the MCP server"))),
+            Some(&report(
+                false,
+                Some("Blank bearer token: refusing to start the MCP server"),
+            )),
         );
         assert_eq!(blank.state, Connection::NoToken);
         assert_eq!(blank.primary, "Can't start \u{2014} no token is set.");
@@ -780,12 +813,22 @@ mod tests {
         let busy = connection(
             true,
             18787,
-            Some(&report(false, Some("MCP server did not start listening on port 18787 (port already in use?)"))),
+            Some(&report(
+                false,
+                Some("MCP server did not start listening on port 18787 (port already in use?)"),
+            )),
         );
         assert_eq!(busy.state, Connection::PortBusy);
-        assert_eq!(busy.primary, "Can't start \u{2014} port 18787 is already in use.");
+        assert_eq!(
+            busy.primary,
+            "Can't start \u{2014} port 18787 is already in use."
+        );
 
-        let other = connection(true, 8787, Some(&report(false, Some("something else broke"))));
+        let other = connection(
+            true,
+            8787,
+            Some(&report(false, Some("something else broke"))),
+        );
         assert_eq!(other.state, Connection::Failed);
         assert_eq!(other.primary, "A message for the user.");
         assert!(other.remedy.is_empty() && other.show_open_log);
@@ -804,7 +847,9 @@ mod tests {
         let r = ServerReport {
             running: false,
             last_error: Some(raw.to_owned()),
-            user_message: Some("The MCP bearer token has a character that cannot be sent.".to_owned()),
+            user_message: Some(
+                "The MCP bearer token has a character that cannot be sent.".to_owned(),
+            ),
         };
         let card = connection(true, 8787, Some(&r));
         assert!(!card.primary.contains("latin-1") && !card.primary.contains("position"));

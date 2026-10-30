@@ -426,6 +426,18 @@ const SCENARIOS: &[Scenario] = &[
         "sending_the_row_you_are_on_away_keeps_your_place",
         sending_the_row_you_are_on_away_keeps_your_place,
     ),
+    (
+        "mcp_server_starts_with_the_window_answers_over_http_and_stops_on_close",
+        mcp_server_starts_with_the_window_answers_over_http_and_stops_on_close,
+    ),
+    (
+        "mcp_server_stays_off_when_disabled_and_reports_a_held_port_and_a_blank_token",
+        mcp_server_stays_off_when_disabled_and_reports_a_held_port_and_a_blank_token,
+    ),
+    (
+        "mcp_tool_calls_change_the_list_and_the_table_follows",
+        mcp_tool_calls_change_the_list_and_the_table_follows,
+    ),
 ];
 
 fn main() {
@@ -7329,5 +7341,155 @@ fn settings_engine_line_lens_warning_and_browse_follow_python(app: &adw::Applica
         "Cancel leaves it"
     );
     d.click_cancel();
+    f.close();
+}
+
+// ---- Phase 6.i: the MCP server in the window --------------------------------------------------
+
+/// A window with the server enabled on `port` and the synthetic token.
+fn mcp_fx(
+    app: &adw::Application,
+    port: u16,
+    token: &'static str,
+    seed: Vec<hatate_core::model::Entry>,
+) -> Fx {
+    Fx::new(
+        app,
+        Opts {
+            seed,
+            tweak: Some(Box::new(move |s| {
+                s.mcp.enabled = true;
+                s.mcp.port = i64::from(port);
+                s.mcp.token = token.into();
+            })),
+            ..Opts::default()
+        },
+    )
+}
+
+/// `MainWindow.__init__` starts the server when Settings > MCP has it on, the tools answer over
+/// plain http through the controller's own constructor, and `closeEvent` stops it first.
+fn mcp_server_starts_with_the_window_answers_over_http_and_stops_on_close(app: &adw::Application) {
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, seeded(3, MatchStatus::Good));
+    assert!(
+        f.w.mcp_report().running,
+        "the server did not start with the window"
+    );
+    let mut client = mcp::Client::new(port);
+    // a wrong token is refused before any tool runs
+    let refused = client.post_with(
+        "nope",
+        &serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
+    );
+    assert_eq!(refused.status, 401);
+
+    let listed = client.payload("list_queue", serde_json::json!({}));
+    assert_eq!(listed["total_in_queue"], 3, "{listed}");
+    let audit = std::fs::read_to_string(f.paths.mcp_audit_log()).expect("the call is audited");
+    assert!(audit.contains("\"tool\": \"list_queue\""), "{audit}");
+    assert!(
+        !audit.contains(mcp::TOKEN),
+        "the token reached the audit log"
+    );
+
+    f.close();
+    assert!(
+        pump_until(5_000, || !client.listening()),
+        "the server kept listening after the window closed"
+    );
+}
+
+/// Off stays off; a held port and a blank token leave the window up and the card saying why,
+/// with words that carry no token character.
+fn mcp_server_stays_off_when_disabled_and_reports_a_held_port_and_a_blank_token(
+    app: &adw::Application,
+) {
+    use hatate_gtk::mcp_audit_view::{Connection, connection};
+
+    // disabled: nothing is built, nothing listens
+    let port = mcp::free_port();
+    let f = Fx::new(app, Opts::default());
+    assert!(!f.w.mcp_report().running);
+    assert!(!f.w.s.mcp.running());
+    assert!(!mcp::Client::new(port).listening());
+    f.close();
+
+    // a port already held
+    let held = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let busy_port = held.local_addr().unwrap().port();
+    let f = mcp_fx(app, busy_port, mcp::TOKEN, Vec::new());
+    let report = f.w.mcp_report();
+    assert!(!report.running);
+    let card = connection(true, i64::from(busy_port), Some(&report));
+    assert_eq!(card.state, Connection::PortBusy);
+    assert_eq!(
+        card.primary,
+        format!("Can't start \u{2014} port {busy_port} is already in use.")
+    );
+    let user = report.user_message.expect("a message for the user");
+    assert!(
+        !user.contains(mcp::TOKEN) && !user.contains("127.0.0.1"),
+        "{user}"
+    );
+    // freeing the port and restarting with the typed settings brings it up (the Restart button)
+    drop(held);
+    let mut typed = f.w.s.settings.lock().unwrap().mcp.clone();
+    typed.enabled = true;
+    assert!(f.w.restart_mcp(&typed));
+    assert!(f.w.mcp_report().running);
+    assert!(mcp::Client::new(busy_port).listening());
+    f.close();
+
+    // enabled with no token
+    let f = mcp_fx(app, mcp::free_port(), "", Vec::new());
+    let report = f.w.mcp_report();
+    assert!(!report.running);
+    let card = connection(true, 8787, Some(&report));
+    assert_eq!(card.state, Connection::NoToken);
+    f.close();
+}
+
+/// The tools reach the list through the window's own queue: a change a tool makes is on the row
+/// the table shows, and the audit log says what was done.
+fn mcp_tool_calls_change_the_list_and_the_table_follows(app: &adw::Application) {
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, seeded(2, MatchStatus::Good));
+    let mut client = mcp::Client::new(port);
+    assert!(!f.w.s.queue.borrow().entry_at(1).unwrap().reviewed);
+    let answered = client.payload(
+        "toggle_reviewed",
+        serde_json::json!({"row": 1, "reviewed": true}),
+    );
+    assert_eq!(answered["reviewed"], true, "{answered}");
+    assert!(f.w.s.queue.borrow().entry_at(1).unwrap().reviewed);
+    let id = f.w.s.queue.borrow().id_at(1).unwrap();
+    let row = f.w.s.queue_view.row_of(id).expect("the row is shown");
+    let reviewed_cell = hatate_gtk::queue_view::cell_view(
+        f.w.s.queue.borrow().entry_at(1).unwrap(),
+        hatate_core::table_cells::Column::Reviewed,
+    );
+    assert_eq!(
+        f.w.s
+            .queue_view
+            .cell(row, hatate_core::table_cells::Column::Reviewed)
+            .map(|c| c.text),
+        Some(reviewed_cell.text),
+        "the table still shows the old value"
+    );
+
+    // a destructive tool is refused while its switch is off, and the refusal is audited
+    let refused = client.payload("remove_row", serde_json::json!({"row": 0}));
+    assert_eq!(refused["allowed"], false, "{refused}");
+    assert_eq!(f.len(), 2);
+    let audit = std::fs::read_to_string(f.paths.mcp_audit_log()).unwrap();
+    assert!(audit.contains("\"tool\": \"remove_row\"") && audit.contains("\"allowed\": false"));
+
+    // with it on, the row leaves the list and the table
+    f.w.s.settings.lock().unwrap().mcp.allow_destructive = true;
+    let removed = client.payload("remove_row", serde_json::json!({"row": 0}));
+    assert_eq!(removed["row"], 0, "{removed}");
+    assert_eq!(f.len(), 1);
+    assert_eq!(f.w.s.queue_view.total_count(), 1);
     f.close();
 }
