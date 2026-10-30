@@ -9642,12 +9642,25 @@ const SCENARIOS_6H2_FIXUP: &[Scenario] = &[
     ),
 ];
 
+/// The 6.j follow-ups' scenarios (DAN-2472). A fourth list, at the end.
+const SCENARIOS_6J_FOLLOWUP: &[Scenario] = &[
+    (
+        "parser_health_keeps_its_floor_scrolls_with_a_persistent_bar_and_is_one_tab_stop",
+        parser_health_keeps_its_floor_scrolls_with_a_persistent_bar_and_is_one_tab_stop,
+    ),
+    (
+        "parser_health_reopens_at_the_top_after_being_scrolled_to_the_end",
+        parser_health_reopens_at_the_top_after_being_scrolled_to_the_end,
+    ),
+];
+
 /// Every list, in order.
 fn all_scenarios() -> impl Iterator<Item = &'static (&'static str, fn(&adw::Application))> {
     SCENARIOS
         .iter()
         .chain(SCENARIOS_6H2)
         .chain(SCENARIOS_6H2_FIXUP)
+        .chain(SCENARIOS_6J_FOLLOWUP)
 }
 
 /// DAN-2467 (6.h-2 R-1): the Hydrus Test's failed line is a sentence, and it wraps to the page. Unwrapped
@@ -9721,5 +9734,147 @@ fn shortcuts_dialog_key_column_keeps_a_gutter_against_the_scroll_bar(app: &adw::
         );
     }
     dialog.click_close();
+    f.close();
+}
+
+/// DAN-2472 items 1 and 7 (Oderisi's 6.j read): Parser Health drew 6 of its 13 sites with nothing at rest to
+/// say the list went on, and its 39 cells were 39 Tab stops. The dialog states 760x460 as its floor and the
+/// content fits it; the list overflows that, so it scrolls with a persistent bar (design gate 2.4: the thumb
+/// is 10 px, not an overlay line); and Tab visits the list once and then Close, never a site name.
+fn parser_health_keeps_its_floor_scrolls_with_a_persistent_bar_and_is_one_tab_stop(
+    app: &adw::Application,
+) {
+    use hatate_gtk::parser_health::{MIN_HEIGHT, MIN_WIDTH};
+    let f = fx(app);
+    f.activate("parser-health");
+    let dialog = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    pump_for(300);
+    assert_eq!((MIN_WIDTH, MIN_HEIGHT), (760, 460));
+    assert_eq!(
+        dialog.window.size_request(),
+        (MIN_WIDTH, MIN_HEIGHT),
+        "the dialog states its floor to the toolkit"
+    );
+    let content = dialog.window.child().unwrap();
+    assert!(
+        content.measure(gtk4::Orientation::Horizontal, -1).0 <= MIN_WIDTH
+            && content.measure(gtk4::Orientation::Vertical, MIN_WIDTH).0 <= MIN_HEIGHT,
+        "the content needs more than the floor"
+    );
+
+    let scroll = &dialog.scroll;
+    assert!(
+        !scroll.is_overlay_scrolling(),
+        "an overlay bar is a 2 px line"
+    );
+    assert_eq!(
+        scroll.policy().1,
+        gtk4::PolicyType::Automatic,
+        "vertical scrolling is on"
+    );
+    let adj = scroll.vadjustment();
+    assert!(
+        adj.upper() > adj.page_size() + 1.0,
+        "13 sites must overflow the list ({} in {}) or the bar proves nothing",
+        adj.upper(),
+        adj.page_size()
+    );
+    let bar = scroll.vscrollbar();
+    assert!(bar.is_mapped(), "the bar is drawn at rest");
+    assert!(bar.width() >= 10, "the bar is {} px wide", bar.width());
+
+    // Tab, with real key presses: the list is one stop and Close the other; no site name is a stop.
+    // Past the last stop the toolkit puts the focus on the window itself, which is not a stop.
+    use common::xtest::{Key, Xtest};
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("parser_health tab walk: skipped ({why})");
+            dialog.window.close();
+            f.close();
+            return;
+        }
+    };
+    dialog.window.present();
+    only(&mut keys, &dialog.window);
+    let mut cells = Vec::new();
+    all_labels(dialog.grid.upcast_ref(), &mut cells);
+    assert!(cells.len() >= 13 * 3, "{} cells", cells.len());
+    assert!(
+        cells.iter().all(|l| !l.is_focusable()),
+        "a site name or a column title can take focus"
+    );
+    let first = gtk4::prelude::GtkWindowExt::focus(&dialog.window).expect("a first focus");
+    let mut stops = vec![first.type_().name().to_owned()];
+    // Every press lands on Close again: the list holds no stop, and swallows none (a focusable
+    // scroller around cells that are not stops leaves the focus on nothing, DAN-2399).
+    for press in 1..=3 {
+        keys.tap(Key::Tab, &[]).expect("inject");
+        pump_for(250);
+        let at = gtk4::prelude::GtkWindowExt::focus(&dialog.window)
+            .unwrap_or_else(|| panic!("Tab {press} left the focus on nothing: {stops:?}"));
+        stops.push(at.type_().name().to_owned());
+    }
+    assert_eq!(stops, ["GtkButton"; 4], "Close is the only stop");
+
+    // The rows below the fold are reached with the keys the dialog gives the list: the last site is
+    // outside the view at rest, inside it after End, and out again after Home.
+    let in_view = |site: &str| {
+        let mut labels = Vec::new();
+        all_labels(dialog.grid.upcast_ref(), &mut labels);
+        let l = labels.iter().find(|l| l.text() == site).expect("the site");
+        let b = l.compute_bounds(&dialog.scroll).expect("bounds");
+        b.y() >= 0.0 && b.y() + b.height() <= dialog.scroll.height() as f32
+    };
+    assert!(in_view("animepictures") && !in_view("zerochan"), "at rest");
+    keys.tap(Key::End, &[]).expect("inject");
+    pump_for(250);
+    assert!(
+        in_view("zerochan") && !in_view("animepictures"),
+        "after End"
+    );
+    keys.tap(Key::Home, &[]).expect("inject");
+    pump_for(250);
+    assert!(
+        in_view("animepictures") && !in_view("zerochan"),
+        "after Home"
+    );
+    keys.tap(Key::PageDown, &[]).expect("inject");
+    pump_for(250);
+    assert!(adj.value() > 0.0, "Page Down scrolls");
+    dialog.window.close();
+    f.close();
+}
+
+/// DAN-2472 item 5, the state transition after the changed state: Parser Health scrolled to its end and
+/// closed opens again at the top with the end of the list out of view, and its list keys work in the new
+/// window (the controller belongs to each dialog, not to the first one built).
+fn parser_health_reopens_at_the_top_after_being_scrolled_to_the_end(app: &adw::Application) {
+    let f = fx(app);
+    f.activate("parser-health");
+    let first = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    pump_for(300);
+    let adj = first.scroll.vadjustment();
+    adj.set_value(adj.upper() - adj.page_size());
+    pump_for(100);
+    assert!(adj.value() > 0.0, "scrolled to the end");
+    first.window.close();
+    pump_for(200);
+    f.activate("parser-health");
+    let again = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    pump_for(300);
+    let adj = again.scroll.vadjustment();
+    assert_eq!(adj.value(), 0.0, "a reopened dialog starts at the top");
+    assert!(
+        adj.upper() > adj.page_size() + 1.0,
+        "and still overflows, so the bar is still there"
+    );
+    assert!(again.scroll.vscrollbar().is_mapped(), "the bar is drawn");
+    assert_eq!(again.window.size_request(), (760, 460));
+    again.window.close();
     f.close();
 }

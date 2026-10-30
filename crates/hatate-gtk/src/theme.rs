@@ -307,7 +307,7 @@ separator.footer-rule { background: @ink_18; min-height: 1px; }
 .meta-figure.quiet { color: @ink_65; font-weight: 400; }
 .drop-zone { background: @raised; border: 1px solid @ink_18; }
 .drop-copy { color: @ink_65; font-size: %body%px; }
-.survived-glyph { border: 1px solid @ink_28; min-width: 42px; min-height: 42px; font-size: 32px; color: @ink; }
+.survived-glyph { border: 1px solid @ink_46; min-width: 42px; min-height: 42px; font-size: 32px; color: @ink; }
 
 /* ---- menubar and status bar ---- */
 menubar { background: @page; color: @ink; border-bottom: 1px solid @ink_18; padding: 0 %space_3%px; min-height: 27px; }
@@ -317,17 +317,31 @@ menubar > item:hover, menubar > item:checked, menubar > item:selected { backgrou
 .statusbar { background: @page; border-top: 1px solid @ink_18; min-height: 23px; padding: 0 %space_6%px; }
 .statusbar label { font-size: %label%px; letter-spacing: 0.06em; color: @ink_65; }
 
-/* ---- popovers: square, shadowless, hairline edge ---- */
+/* ---- popovers: square, shadowless, hairline edge on the border tier (`ink_46`, 3:1 on the raised fill
+   in both schemes; Python draws QMenu and the combo popup at `ink_46`, gui/theme.py:765-767, 978-982) ---- */
 popover, popover.background, popover.menu { background: transparent; box-shadow: none; border-radius: 0;
   margin: 0; padding: 0; border: none; }
 popover > contents, popover.background > contents, popover.menu > contents {
-  background: @raised; color: @ink; border: 1px solid @ink_28; border-radius: 0; box-shadow: none; padding: 0; }
+  background: @raised; color: @ink; border: 1px solid @ink_46; border-radius: 0; box-shadow: none; padding: 0; }
 popover > arrow { background: transparent; border: none; box-shadow: none; min-width: 0; min-height: 0; }
 popover modelbutton, popover.menu modelbutton { border-radius: 0; min-height: 0; padding: %space_2%px %space_3%px; color: @ink; }
 popover modelbutton:hover, popover modelbutton:focus { background: @ink_10; }
 popover modelbutton:disabled { color: @ink_45; }
 popover modelbutton check, popover modelbutton radio { border-radius: 0; box-shadow: none; }
 popover separator { background: @ink_18; min-height: 1px; margin: 0; }
+/* the candidate picker's list (a GtkDropDown popup, rows of a list view). The row under the pointer or
+   the keyboard is the stamp, as Python's combo popup draws its selection (`selection-background-color:
+   stamp_bg`, gui/theme.py:765-770); the current candidate keeps a 4 px bar in ink and is bold, so it is
+   found in a shot and by a person who has moved off it (DAN-2472 item 2) */
+dropdown.candidate-picker popover listview > row { border-radius: 0; background: transparent; color: @ink; }
+dropdown.candidate-picker popover listview > row:selected { box-shadow: inset 4px 0 0 @ink; font-weight: 700; }
+dropdown.candidate-picker popover listview > row:hover, dropdown.candidate-picker popover listview > row:focus {
+  background: @stamp_bg; color: @stamp_fg; }
+dropdown.candidate-picker popover listview > row:hover label, dropdown.candidate-picker popover listview > row:focus label {
+  color: @stamp_fg; }
+dropdown.candidate-picker popover listview > row:selected:hover, dropdown.candidate-picker popover listview > row:selected:focus {
+  box-shadow: inset 4px 0 0 @stamp_fg; }
+dropdown.candidate-picker popover listview > row:focus:focus-visible { outline-offset: -2px; outline-color: @stamp_fg; }
 popover label, popover modelbutton label { font-family: %mono%; font-size: 12px; }
 popover modelbutton accelerator, popover modelbutton label.accelerator { color: @ink_65; }
 /* ink_65 on the hover wash is 4.25:1 in dark; a hovered or focused row reads its hint in ink */
@@ -978,6 +992,81 @@ mod tests {
                     assert_ne!(a, b, "{scheme:?}: two ink tiers paint the same colour");
                 }
             }
+        }
+    }
+
+    /// The declarations of the first rule whose selector list starts with `selector`.
+    fn rule_body(selector: &str) -> &'static str {
+        let at = RULES
+            .find(selector)
+            .unwrap_or_else(|| panic!("no rule starts with {selector:?}"));
+        let open = at + RULES[at..].find('{').expect("a rule body");
+        let close = open + RULES[open..].find('}').expect("a closed rule");
+        &RULES[open + 1..close]
+    }
+
+    /// The token a rule's `property: ... @token` names (the last one on the declaration).
+    fn token_of(body: &str, property: &str) -> String {
+        let decl = body
+            .split(';')
+            .find(|d| d.trim_start().starts_with(property))
+            .unwrap_or_else(|| panic!("no {property} in {body:?}"));
+        let name = decl.rsplit('@').next().unwrap().trim();
+        name.chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect()
+    }
+
+    /// DAN-2472 item 3 (F-B3 and its class): the survived glyph's box and the edge of every popover and
+    /// menu sit on the border tier, `ink_46`, as Python draws them (`gui/theme.py:448`, `:765-767`,
+    /// `:978-982`); `ink_28` gave 1.93:1 (dark) and 2.76:1 (light) on the panel. The tier is read from
+    /// the rules, so a weaker token goes red here, and the contrast is computed from the token.
+    #[test]
+    fn the_glyph_box_and_every_popover_edge_are_on_the_border_tier() {
+        assert_eq!(
+            token_of(rule_body(".survived-glyph"), "border:"),
+            "ink_46",
+            "the survived glyph's box"
+        );
+        let edge = rule_body("popover > contents, popover.background > contents");
+        assert_eq!(token_of(edge, "border:"), "ink_46", "popover and menu edge");
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            for (what, ground) in [
+                ("popover edge on raised", p.raised),
+                ("glyph box on page", p.page),
+            ] {
+                let r = contrast(p.ink_46.over(ground), ground);
+                assert!(r >= 3.0, "{scheme:?} {what}: {r:.2}:1");
+            }
+        }
+    }
+
+    /// DAN-2472 item 2: the picker's popup marks the current candidate (a 4 px ink bar, bold) and the
+    /// row under the pointer or the keyboard (the stamp), each at 3:1 against the popover's fill and the
+    /// stamp's text at 4.5:1 on its fill. A rule that loses its mark, or names a weaker tier, goes red.
+    #[test]
+    fn the_picker_popup_marks_the_current_row_and_the_keyboard_row() {
+        let current = rule_body("dropdown.candidate-picker popover listview > row:selected {");
+        assert_eq!(
+            token_of(current, "box-shadow:"),
+            "ink",
+            "the current row's bar"
+        );
+        assert!(current.contains("inset 4px 0 0") && current.contains("font-weight: 700"));
+        let keyed = rule_body(
+            "dropdown.candidate-picker popover listview > row:hover, dropdown.candidate-picker popover listview > row:focus {",
+        );
+        assert_eq!(token_of(keyed, "background:"), "stamp_bg");
+        assert_eq!(token_of(keyed, "color:"), "stamp_fg");
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            let bar = contrast(p.ink, p.raised);
+            assert!(bar >= 3.0, "{scheme:?} current bar on raised: {bar:.2}:1");
+            let stamp = contrast(p.stamp_bg, p.raised);
+            assert!(stamp >= 3.0, "{scheme:?} stamp row on raised: {stamp:.2}:1");
+            let text = contrast(p.stamp_fg, p.stamp_bg);
+            assert!(text >= 4.5, "{scheme:?} stamp text: {text:.2}:1");
         }
     }
 }

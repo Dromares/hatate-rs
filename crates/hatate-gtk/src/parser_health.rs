@@ -12,6 +12,7 @@
 use crate::widgets;
 use crate::window::MainWindow;
 use gtk4 as gtk;
+use gtk4::glib;
 use gtk4::prelude::*;
 use hatate_core::parser_health::SiteHealth;
 use std::cell::{Cell, RefCell};
@@ -38,6 +39,12 @@ pub const PROBE_SITES: [&str; 13] = [
 
 /// What the disabled button says, as DAN-2290 words it.
 pub const NO_LIVE_CHECK: &str = "The live check is not part of this build yet.";
+
+/// The dialog's floor (DAN-2472 item 7): Python calls `resize(760, 460)` and the dialog states it as
+/// its minimum, so the fit test applies to every state of the page. 13 site rows and four columns
+/// do not fit it at rest: the list scrolls (see `build`).
+pub const MIN_WIDTH: i32 = 760;
+pub const MIN_HEIGHT: i32 = 460;
 
 /// The dialog's columns.
 pub const COLUMNS: [&str; 4] = ["Site", "This session", "Live check", "Last problem"];
@@ -201,10 +208,50 @@ fn tone_class(t: Tone) -> Option<&'static str> {
     }
 }
 
+/// Up, Down, Page Up, Page Down, Home and End scroll the site list wherever the focus is in the
+/// dialog (which is Close: nothing else in it takes the keys), so the rows below the fold are
+/// reachable without the pointer. Capture phase, so the button does not turn an arrow into focus
+/// navigation first.
+fn scroll_keys(scroll: &gtk::ScrolledWindow) -> gtk::EventControllerKey {
+    use gtk4::gdk::Key;
+    let adj = scroll.vadjustment();
+    let keys = gtk::EventControllerKey::new();
+    keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+    keys.connect_key_pressed(move |_, key, _, state| {
+        if state.intersects(
+            gtk4::gdk::ModifierType::CONTROL_MASK
+                | gtk4::gdk::ModifierType::ALT_MASK
+                | gtk4::gdk::ModifierType::SHIFT_MASK,
+        ) {
+            return glib::Propagation::Proceed;
+        }
+        let (row, page) = (ROW_STEP, (adj.page_size() - ROW_STEP).max(ROW_STEP));
+        let to = match key {
+            Key::Up => adj.value() - row,
+            Key::Down => adj.value() + row,
+            Key::Page_Up => adj.value() - page,
+            Key::Page_Down => adj.value() + page,
+            Key::Home => adj.lower(),
+            Key::End => adj.upper(),
+            _ => return glib::Propagation::Proceed,
+        };
+        adj.set_value(to.clamp(
+            adj.lower(),
+            (adj.upper() - adj.page_size()).max(adj.lower()),
+        ));
+        glib::Propagation::Stop
+    });
+    keys
+}
+
+/// What one Up or Down press scrolls: about a row.
+const ROW_STEP: f64 = 32.0;
+
 /// The dialog.
 pub struct ParserHealthDialog {
     pub window: gtk::Window,
     pub grid: gtk::Grid,
+    pub scroll: gtk::ScrolledWindow,
     pub progress: gtk::ProgressBar,
     pub status: gtk::Label,
     pub check_button: gtk::Button,
@@ -220,8 +267,10 @@ impl ParserHealthDialog {
             .title("Parser Health")
             .transient_for(&main.win)
             .modal(true)
-            .default_width(760)
-            .default_height(460)
+            .default_width(MIN_WIDTH)
+            .default_height(MIN_HEIGHT)
+            .width_request(MIN_WIDTH)
+            .height_request(MIN_HEIGHT)
             .build();
         let column = gtk::Box::new(gtk::Orientation::Vertical, widgets::PAGE_SPACING);
         let (l, t, r, b) = widgets::PAGE_MARGINS;
@@ -245,6 +294,15 @@ impl ParserHealthDialog {
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_vexpand(true);
         scroll.set_child(Some(&grid));
+        // 13 sites do not fit a 460 px dialog, and a list that clips them with nothing at rest to
+        // say so hides the very row a person came to check (DAN-2472 item 1). The scrollbar is
+        // persistent, as the Queue's is (design gate 2.4): an overlay one is a 2 px line that a
+        // pointer has to find. The list is not a Tab stop: a focusable scroller around cells that are
+        // not stops swallows Tab (focus goes to nothing and stays there, DAN-2399), so the keys that
+        // scroll it are on the dialog instead, see `scroll_keys`.
+        scroll.set_can_focus(false);
+        scroll.set_overlay_scrolling(false);
+        scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
         column.append(&scroll);
 
         let progress = gtk::ProgressBar::new();
@@ -280,6 +338,7 @@ impl ParserHealthDialog {
         row.append(&close);
         column.append(&row);
         window.set_child(Some(&column));
+        window.add_controller(scroll_keys(&scroll));
         // The site names are selectable (so they can be copied), and a selectable label that takes
         // the dialog's first focus selects its whole text: the first site then looks chosen
         // (DAN-2297 item A). Close takes the first focus instead.
@@ -288,6 +347,7 @@ impl ParserHealthDialog {
         let dialog = Rc::new(ParserHealthDialog {
             window: window.clone(),
             grid,
+            scroll,
             progress,
             status,
             check_button: check_button.clone(),
@@ -340,6 +400,9 @@ impl ParserHealthDialog {
                 let l = gtk::Label::new(Some(text));
                 l.set_xalign(0.0);
                 l.set_selectable(true);
+                // Selectable so a site name can be copied, and not a Tab stop: three stops a row
+                // put 39 labels between the heading and Close (DAN-2472 item 1).
+                l.set_focusable(false);
                 if let Some(class) = tone_class(tone) {
                     l.add_css_class(class);
                 }

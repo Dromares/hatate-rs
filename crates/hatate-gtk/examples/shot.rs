@@ -26,7 +26,7 @@
 //! `review-wipe`, `review-differences`, `review-wipe-nomatch` (only the local picture), `review-error` (the local file is gone; design
 //! gate 2.8), `review-focus-<wslider|wview|zoom|popout>` (a Wipe control focused with the ring showing), `review-compare` and
 //! `review-compare-differences` (the compare window, which is its own surface), `review-compare-nomatch` (its "no match" box) and
-//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The Settings states (6.h) are `settings-<0..8>` (that tab of the Settings window, in Python's order: General to MCP), `settings-find` (a query with results), `settings-find-none` ("Nothing matches that."), `settings-lens` (the Engine page with Google Lens ticked and its dependencies missing; libadwaita presents the warning box as a window of its own, which this snapshot does not hold), `settings-found` (a jumped-to setting wearing the stamp) and `settings-focus-<find|tab|ok|cancel|check|spin|combo|entry>` (that control focused with the ring showing; `check` and `entry` are on the Hydrus page, `combo` on the Import page, the rest on General). The 6.i states are `settings-mcp-running` and `settings-mcp-held` (the MCP tab with the server started at launch on a free port, and with the port held by another listener), `settings-mcp-audit` (synthetic Recent tool calls, All), `settings-shortcuts-conflict`, `settings-shortcuts-record` (the Shortcuts tab with two actions on one key, and with a recorder waiting for its key) and `settings-focus-<mcp|mcp-tier|shortcut>` (the server box, the research tier's check box, the first key button), and `settings-mcp-tiers`, `settings-mcp-tiers-dry`, `settings-mcp-tiers-low` (the middle of the MCP page: scrolled to the Dry run box, the same with Dry run ticked, scrolled to the Hydrus box). The Got it box libadwaita presents as a window of its own, which this snapshot does not hold. The size `min` is the window's stated minimum.
+//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The Settings states (6.h) are `settings-<0..8>` (that tab of the Settings window, in Python's order: General to MCP), `settings-find` (a query with results), `settings-find-none` ("Nothing matches that."), `settings-lens` (the Engine page with Google Lens ticked and its dependencies missing; libadwaita presents the warning box as a window of its own, which this snapshot does not hold), `settings-found` (a jumped-to setting wearing the stamp) and `settings-focus-<find|tab|ok|cancel|check|spin|combo|entry>` (that control focused with the ring showing; `check` and `entry` are on the Hydrus page, `combo` on the Import page, the rest on General). The 6.i states are `settings-mcp-running` and `settings-mcp-held` (the MCP tab with the server started at launch on a free port, and with the port held by another listener), `settings-mcp-audit` (synthetic Recent tool calls, All), `settings-shortcuts-conflict`, `settings-shortcuts-record` (the Shortcuts tab with two actions on one key, and with a recorder waiting for its key) and `settings-focus-<mcp|mcp-tier|shortcut>` (the server box, the research tier's check box, the first key button), and `settings-mcp-tiers`, `settings-mcp-tiers-dry`, `settings-mcp-tiers-low` (the middle of the MCP page: scrolled to the Dry run box, the same with Dry run ticked, scrolled to the Hydrus box). The Got it box libadwaita presents as a window of its own, which this snapshot does not hold. The 6.j follow-up states (DAN-2472) are `parser-health-bottom` (the site list scrolled to its end, `zerochan` drawn) and `review-picker-kb` (the candidate popup with the keyboard's row, the second, stamped and the current candidate marked); `settings-found` has its first result as the keyboard's row, and `settings-lens-box` is the Lens alert's own toplevel. The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -105,10 +105,12 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("failed", true),
     ("activity", true),
     ("parser-health", true),
+    ("parser-health-bottom", true),
     ("review", true),
     ("review-empty", true),
     ("review-nomatch", true),
     ("review-picker", true),
+    ("review-picker-kb", true),
     ("review-addtags", true),
     ("review-conditions", true),
     ("review-focus-combo", false),
@@ -211,7 +213,10 @@ fn stated_minimum(state: &str) -> Option<(i32, i32)> {
         ))
     } else if state.starts_with("shortcuts") {
         Some((hatate_gtk::shortcuts_dialog::MIN_WIDTH, 360))
-    } else if state.starts_with("settings") && state != "settings-lens-box" {
+    } else if state == "settings-lens-box" {
+        // An alert dialog's own toplevel, sized by its content.
+        None
+    } else if state.starts_with("settings") {
         Some((
             hatate_gtk::settings_dialog::MIN_WIDTH,
             hatate_gtk::settings_dialog::MIN_HEIGHT,
@@ -223,7 +228,8 @@ fn stated_minimum(state: &str) -> Option<(i32, i32)> {
         ))
     } else if state.starts_with("parser-health") {
         // Python only calls `resize(760, 460)` (`gtk-6e.md` section 3 calls it the minimum): the dialog's
-        // own size, which the shot must be, so the fit column checks it. GTK is not asked to enforce it.
+        // own size, which the shot must be, so the fit column checks it. The dialog also states it as
+        // its floor (`parser_health::MIN_WIDTH`/`MIN_HEIGHT`, DAN-2472 item 7).
         Some((760, 460))
     } else if state.starts_with("logs") || state.contains("compare") {
         None
@@ -870,7 +876,11 @@ fn main() -> glib::ExitCode {
                 Some("Pawchive Index")
             } else if state.starts_with("shortcuts") {
                 Some(hatate_gtk::shortcuts_dialog::TITLE)
-            } else if state.starts_with("settings") && state != "settings-lens-box" {
+            } else if state == "settings-lens-box" {
+                // The box is an alert dialog libadwaita presents as a toplevel of its own: the shot is
+                // that toplevel, found by what it holds (its title is the heading, or none).
+                Some(ALERT_TOPLEVEL)
+            } else if state.starts_with("settings") {
                 Some("Settings")
             } else if state.starts_with("review-compare-d")
                 || state.starts_with("review-compare-l")
@@ -886,12 +896,28 @@ fn main() -> glib::ExitCode {
                     .into_iter()
                     .filter_map(|w| w.downcast::<gtk4::Window>().ok())
                     .find(|w| {
+                        if title == ALERT_TOPLEVEL {
+                            return w.is_mapped()
+                                && w.upcast_ref::<gtk4::Widget>()
+                                    != main_win.upcast_ref::<gtk4::Widget>()
+                                && find_type(w.upcast_ref(), "AdwAlertDialog").is_some();
+                        }
                         w.is_mapped()
                             && w.title().is_some_and(|t| {
                                 t == title || (title == "Pawchive Index" && t.starts_with(title))
                             })
                     })
             });
+            if state == "settings-lens-box" {
+                for w in gtk4::Window::list_toplevels() {
+                    println!(
+                        "TOPLEVEL {} mapped={} title={:?}",
+                        w.type_().name(),
+                        w.is_mapped(),
+                        w.downcast_ref::<gtk4::Window>().and_then(|w| w.title())
+                    );
+                }
+            }
             let main_app = win.application();
             let win: &gtk4::Window = logs_window.as_ref().unwrap_or(win.upcast_ref());
             if state.starts_with("review") {
@@ -1106,6 +1132,24 @@ fn prepare(window: &MainWindow, state: &str) {
         "failed" => window.show_failed_banner("The run stopped on a fault (synthetic)."),
         "activity" => window.set_mode("activity"),
         "parser-health" => window.activate_action("parser-health"),
+        // The list scrolled to its end, so the last site (`zerochan`) is drawn: what End does from
+        // anywhere in the dialog (DAN-2472 item 1), set on the adjustment after the dialog is laid out.
+        "parser-health-bottom" => {
+            window.activate_action("parser-health");
+            glib::timeout_add_local_once(std::time::Duration::from_millis(120), || {
+                let dialog = gtk4::Window::list_toplevels()
+                    .into_iter()
+                    .filter_map(|w| w.downcast::<gtk4::Window>().ok())
+                    .find(|w| w.title().is_some_and(|t| t == "Parser Health"));
+                if let Some(sw) = dialog
+                    .and_then(|d| find_type(d.upcast_ref(), "GtkScrolledWindow"))
+                    .and_then(|w| w.downcast::<gtk4::ScrolledWindow>().ok())
+                {
+                    let adj = sw.vadjustment();
+                    adj.set_value(adj.upper() - adj.page_size());
+                }
+            });
+        }
         // The dialog as a person meets it after opening it from the keyboard (menu, then Enter): the
         // toolkit shows the focus ring only after a key, which a shot has no key to give, so the
         // dialog's toplevel is told the last input was the keyboard and the focus is moved in (DAN-2330 item 2).
@@ -1290,6 +1334,16 @@ fn prepare_settings(window: &MainWindow, state: &str) {
         "found" => {
             d.find.set_text("minimum similarity");
             d.jump_to_setting(0);
+            // The state after Down from the Find box: the first result is the keyboard's row, so it
+            // wears the ring (a shot has no key to give, so the window is told the last input was the
+            // keyboard, as in `parser-health-kb`), next to the stamp on the setting it jumped to.
+            d.window.set_focus_visible(true);
+            let d2 = d.clone();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(60), move || {
+                if let Some(row) = d2.results.row_at_index(0) {
+                    row.grab_focus();
+                }
+            });
         }
         // `lens-box` is the same state seen from the main window: the "Google Lens cannot run" box is
         // an alert dialog on the main window, not on Settings, so the Settings shot never holds it.
@@ -1907,6 +1961,39 @@ fn prepare_review(window: &MainWindow, state: &str) {
                 r.candidate_combo.activate();
             });
         }
+        // The popup after Down from the first row: the second row is the keyboard's, the current
+        // candidate keeps its mark (DAN-2472 item 2).
+        "review-picker-kb" => {
+            win.set_focus_visible(true);
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+                r.candidate_combo.activate();
+                // Polled: the popup is mapped a few frames after it is asked for.
+                let mut tries = 0;
+                glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+                    tries += 1;
+                    let list = visible_popover_menu(win.upcast_ref())
+                        .and_then(|p| find_type(p.upcast_ref(), "GtkListView"));
+                    let Some(list) = list else {
+                        return if tries < 30 {
+                            glib::ControlFlow::Continue
+                        } else {
+                            glib::ControlFlow::Break
+                        };
+                    };
+                    // What Down does in a list view: the keyboard focus moves to the next item and the
+                    // selection (the current candidate) stays where it is.
+                    let second = list.first_child().and_then(|first| first.next_sibling());
+                    let moved = second.as_ref().is_some_and(|row| row.grab_focus());
+                    println!(
+                        "PICKER-KB focus on the second row: {moved} after {tries} polls, focus {:?}",
+                        list.root()
+                            .and_then(|r| gtk4::prelude::RootExt::focus(&r))
+                            .map(|f| describe(&f))
+                    );
+                    glib::ControlFlow::Break
+                });
+            });
+        }
         "review-addtags" => window.add_tags_to_current(),
         "review-conditions" => window.action_edit_conditions(),
         st if st.starts_with("review-focus-") && is_compare_state(st) => {
@@ -2245,6 +2332,9 @@ fn tallest_chain(root: &gtk4::Widget, width: i32) -> String {
     }
     out.join(" > ")
 }
+
+/// The `other` lookup key for the alert dialog's own toplevel (`settings-lens-box`).
+const ALERT_TOPLEVEL: &str = "\u{0}alert";
 
 fn find_type(w: &gtk4::Widget, name: &str) -> Option<gtk4::Widget> {
     if w.type_().name() == name {

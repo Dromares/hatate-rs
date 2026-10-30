@@ -245,7 +245,7 @@ palette in both). The `tab, own ring` rows are measured from the pixels inside t
 tab's 9px 20px: x 49 to 149, y 69 to 107, so the notebook ring is outside it) in the hosted shots of `910f429` (run 41019849510),
 by `worktrees/DAN-2221-tools/tabring.py`: the changed pixels against `settings-0-<scheme>`, 504 of them, 0 stock blue. The ring against the
 strip outside the box is 11.29 dark and 12.88 light. The same script on the hosted shots of `6b1b871` returns the blue values above.
-The pin is `theme.rs:663` (the rule is the `@ink` outline; reverting the rule turns it red).
+The pin is `theme.rs:677` (the rule is the `@ink` outline; reverting the rule turns it red).
 
 The OK button is the default button and is filled with the stamp colour, so its ring is drawn inside the fill: the table
 gives the ring against the fill it sits on, not against the page.

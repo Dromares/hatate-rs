@@ -47,8 +47,8 @@ Line 2.2 (`review-compare-differences-{dark,light}.png`, image pane box (30,180)
 
 ## 2. Findings
 
-- **F-B3 FAILS** (3:1 non-text floor): the `.survived-glyph` box border on the Nothing survived page is `ink_28`, 1.93:1 against the panel and 2.03:1 against the page in dark, 2.76:1 and 2.48:1 in light. Python draws it at `ink_46`. Not fixed in 6.j (no riders, DAN-2421); Oderisi rules fix or accepted gap.
-- Lines **1.5**, **2.5**, **2.6**, **2.9** are not contrast ratios. 2.5: all 102 shots whose surface states a minimum are `FIT` by PNG header at the CI toolkit (`index.tsv` of run 41082758250, 0 `OVER`, 0 `UNDER`). Four of the 102 are the `parser-health*-min-*` shots: Parser Health is a dialog with no enforced minimum, and its 760 x 460 is the size Python resizes it to (`resize(760, 460)`), which `shot --all` now states and checks. 2.6 (Cancel is the default) is pinned by the smoke tests cited in section 7 of `docs/phase6-coverage.md`. 1.5 (inactive selection needs a real compositor backdrop) and 2.9 (crop marks, ghost kanji parity) go to Oderisi's read.
+- **F-B3 FAILS** (3:1 non-text floor): the `.survived-glyph` box border on the Nothing survived page is `ink_28`, 1.93:1 against the panel and 2.03:1 against the page in dark, 2.76:1 and 2.48:1 in light. Python draws it at `ink_46`. Not fixed in 6.j (no riders, DAN-2421). **Fixed in the 6.j follow-ups (DAN-2472): the box and every popover edge are `ink_46` now, measured in section 5.**
+- Lines **1.5**, **2.5**, **2.6**, **2.9** are not contrast ratios. 2.5: all 102 shots whose surface states a minimum are `FIT` by PNG header at the CI toolkit (`index.tsv` of run 41082758250, 0 `OVER`, 0 `UNDER`). Four of the 102 are the `parser-health*-min-*` shots: Parser Health was a dialog with no enforced minimum; its 760 x 460 is the size Python resizes it to (`resize(760, 460)`), which `shot --all` states and checks and, since DAN-2472, the dialog enforces with `set_size_request` (section 5). 2.6 (Cancel is the default) is pinned by the smoke tests cited in section 7 of `docs/phase6-coverage.md`. 1.5 (inactive selection needs a real compositor backdrop) and 2.9 (crop marks, ghost kanji parity) go to Oderisi's read.
 - Line **1.2** (status tiers, six glyphs) is a look judgement, owner Oderisi.
 
 ## 3. Label scan (triage list, not verdicts)
@@ -74,3 +74,26 @@ The `disabled` labels below 4.5:1 (182 per scheme) are WCAG-exempt inactive text
 
 - Window chrome, GPU renderer (`GSK_RENDERER=ngl`), real-compositor inactive selection, HiDPI, hover wash: **Oderisi / board**, as DAN-2025's list.
 - The `review-picker` popover is its own surface, so the Tab walker cannot reach it: its Tab stops are **not judged** (section 8 of the coverage doc). Owner: Oderisi, from `review-picker-*.png`.
+
+## 5. 6.j follow-ups (DAN-2472, PR #84)
+
+Measured on the hosted-CI shots of head `c0ff4a9` (run 41117309295, GTK 4.14, 359 index rows, 0 non-FIT), extreme-pixel method, script `worktrees/DAN-2472-tools/measure.py` (outside the tree), output `worktrees/DAN-2472-evidence/measure.md`, `glyph.md`, `found-ring.md`, PNG headers in `headers.md`. Both schemes.
+
+| element | dark | light | floor | shot |
+|---|---|---|---|---|
+| popover and menu edge (`ink_46`) vs the popover fill | 3.19 | 3.27 | 3.0 | `menu-*`, `queue-menu-*`, `review-picker*-popover.png` |
+| popover and menu edge vs the page behind | 3.36 | **2.93** | 3.0 | same; light is below the floor |
+| glyph box top edge vs card | 3.19 | 3.27 | 3.0 | `survived-{dark,light}.png` |
+| site-list scrollbar thumb vs page | 4.38 | 4.27 | 3.0 | `parser-health-{,bottom-}{dark,light}.png` |
+| picker current-candidate bar vs popover | 10.70 | 14.35 | 3.0 | `review-picker-*.png` |
+| picker keyboard row (stamp) vs popover | 10.70 | 14.35 | 3.0 | `review-picker-kb-*.png` |
+| picker stamp text | 11.29 | 14.88 | 4.5 | `review-picker-kb-*.png` |
+| Parser Health Close, focus ring inside its own box | 11.29 | 12.88 | 3.0 | `parser-health-kb-*.png` |
+| Parser Health `Check every site now` (insensitive) | 3.07 | 3.09 | 4.5 | all Parser Health states; WCAG-exempt inactive control, listed so it is not passed by omission |
+
+- The `ink_46` edge against the **light page** is 2.93:1: the token itself, not a wrong tier (Python draws these edges at `ink_46`). A stronger edge needs a different token, a design call for Oderisi.
+- The dash row was not changed: all seven placeholder dashes are `CellInk::Ink65` (`queue_view.rs:996`). A 1 px sans dash straddles two pixel rows, so its extreme pixel reads about `ink_45`; that is rasterisation, not the tier.
+- Parser Health is 760 x 460 in every state at the hosted-CI toolkit (`headers.md`, 0 non-FIT). Its list takes no Tab stop (`Close` is the only one); the list scrolls on Up, Down, Page Up, Page Down, Home and End.
+- **Item 8, decided (Cloud, DAN-2458):** the Differences letterbox in light stays the panel colour (`#f2ede1`), not `#1a1a1a`. A black band on a light panel would be the loudest object on screen. The pane itself stays zero chroma (section 1, line 2.2).
+
+Assertions that pin these (each goes red when its line is reverted, `worktrees/DAN-2472-revert.log`): the 760 x 460 floor `tests/smoke.rs:9753`, the persistent bar `tests/smoke.rs:9766`, the non-focusable cells `tests/smoke.rs:9807`, Close the only Tab stop (the scroller is not a stop) `tests/smoke.rs:9819`, the glyph box edge `src/theme.rs:1026`, the popover edge `src/theme.rs:1032`, the picker stamp rows `src/theme.rs:1060` and `:1061`, the dash tier `src/queue_view.rs:996`.
