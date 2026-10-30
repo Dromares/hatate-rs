@@ -691,6 +691,37 @@ impl SettingsDialog {
         }
     }
 
+    /// A Test's result label and button as a run leaves them: `text` in the label, the button
+    /// insensitive while `busy`. Shots only: the pictures of the running, success and error states.
+    pub fn preview_result(&self, button_id: &str, result_id: &str, text: &str, busy: bool) {
+        self.set_live(result_id, text);
+        if let Some(b) = self.button_of(button_id) {
+            b.set_sensitive(!busy);
+        }
+    }
+
+    /// The fetched-services list as Fetch from Hydrus fills it in (the same path an answer takes).
+    /// Shots only.
+    pub fn preview_services(&self, services: Vec<(String, String)>) {
+        self.on_services_fetched(Ok(services));
+    }
+
+    /// The button `id`. Shots only: to focus it.
+    pub fn button_widget(&self, id: &str) -> Option<gtk::Button> {
+        self.button_of(id).cloned()
+    }
+
+    /// Opens the fetched-services list under the Tag service box. Shots only.
+    pub fn open_services(&self) {
+        if let Some(c) = self
+            .forms
+            .iter()
+            .find_map(|f| f.combo("hydrus_service_key"))
+        {
+            c.arrow.popup();
+        }
+    }
+
     /// Whether the button `id` takes a click. Tests only.
     pub fn button_sensitive(&self, id: &str) -> bool {
         self.button_of(id).is_some_and(|b| b.is_sensitive())

@@ -68,7 +68,10 @@ impl ShortcutsDialog {
         column.set_margin_end(r);
         column.set_margin_bottom(b);
         column.append(&widgets::heading(HEADING));
-        column.append(&widgets::muted(SUBTITLE));
+        // wraps, so the line's own length does not set the dialog's minimum width
+        let subtitle = widgets::muted(SUBTITLE);
+        subtitle.set_wrap(true);
+        column.append(&subtitle);
 
         let list = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let mut labels = Vec::new();
@@ -89,6 +92,8 @@ impl ShortcutsDialog {
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_child(Some(&list));
         scroll.set_vexpand(true);
+        // at the minimum height not every action fits: the bar stays showing, so the list is seen to scroll
+        scroll.set_overlay_scrolling(false);
         scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
         column.append(&scroll);
 

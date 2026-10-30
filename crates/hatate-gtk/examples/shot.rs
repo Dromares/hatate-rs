@@ -36,6 +36,7 @@ use hatate_core::paths::Paths;
 use hatate_core::quota_pause::{QuotaPause, QuotaPauseFile};
 use hatate_core::session::SessionStore;
 use hatate_gtk::settings_form::Control;
+use hatate_gtk::settings_tests::Test;
 use hatate_gtk::window::{Env, MIN_HEIGHT, MIN_WIDTH, MainWindow};
 use hatate_gtk::{app, fonts};
 use std::cell::Cell;
@@ -180,6 +181,23 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("queue-focus-selected", false),
     ("parser-health-kb", true),
     ("settings-lens-box", true),
+    // 6.h-2: the five site Tests and the Hydrus Test / Fetch in each state, and the Review Shortcuts dialog.
+    ("settings-tests-running", true),
+    ("settings-tests-ok", true),
+    ("settings-tests-error", true),
+    ("settings-tests-running-low", true),
+    ("settings-tests-ok-low", true),
+    ("settings-tests-error-low", true),
+    ("settings-hydrus-running", true),
+    ("settings-hydrus-ok", true),
+    ("settings-hydrus-failed", true),
+    ("settings-hydrus-fetched", true),
+    ("settings-hydrus-fetched-open", true),
+    ("settings-focus-test", false),
+    ("settings-focus-fetch", false),
+    ("shortcuts-dialog", true),
+    ("shortcuts-dialog-overrides", true),
+    ("shortcuts-focus-close", false),
 ];
 
 /// The size a state's surface states as its minimum, for the `fit` column of `index.tsv`; `None` for a
@@ -191,6 +209,8 @@ fn stated_minimum(state: &str) -> Option<(i32, i32)> {
             hatate_gtk::hydrus_query::MIN_WIDTH,
             hatate_gtk::hydrus_query::MIN_HEIGHT,
         ))
+    } else if state.starts_with("shortcuts") {
+        Some((hatate_gtk::shortcuts_dialog::MIN_WIDTH, 360))
     } else if state.starts_with("settings") && state != "settings-lens-box" {
         Some((
             hatate_gtk::settings_dialog::MIN_WIDTH,
@@ -491,6 +511,8 @@ const TAB_STATES: &[&str] = &[
     "settings-8",
     "settings-mcp-running",
     "settings-shortcuts-conflict",
+    "settings-hydrus-fetched",
+    "shortcuts-dialog",
 ];
 
 /// `shot --tabs OUTDIR [--only a,b]`: the Tab walk of every surface in `TAB_STATES`, dark and light, a child
@@ -666,6 +688,14 @@ fn main() -> glib::ExitCode {
             std::fs::write(paths.mcp_audit_log(), text).expect("audit log");
         }
     }
+    if state == "shortcuts-dialog-overrides" {
+        // two keys changed, one taken off: the dialog shows the keys the app has now, `(unbound)` included
+        settings.review_shortcuts = hatate_core::config::OrderedMap(vec![
+            ("next_row".to_owned(), "J".to_owned()),
+            ("compare".to_owned(), "Ctrl+Shift+K".to_owned()),
+            ("remove_row".to_owned(), String::new()),
+        ]);
+    }
     settings.save(&paths).expect("save settings");
     if let Err(e) = fonts::load(&home.path().join("fonts")) {
         eprintln!("fonts: {e}");
@@ -780,6 +810,11 @@ fn main() -> glib::ExitCode {
                         hatate_gtk::settings_dialog::MIN_HEIGHT,
                     );
                 }
+            } else if state.starts_with("shortcuts") {
+                if let Some(d) = window.s.shortcuts_dialog.borrow().as_ref() {
+                    d.window
+                        .set_default_size(hatate_gtk::shortcuts_dialog::MIN_WIDTH, 360);
+                }
             } else if state.starts_with("pawchive") {
                 if let Some(d) = window.s.pawchive_dialog.borrow().as_ref() {
                     d.window.set_default_size(
@@ -833,6 +868,8 @@ fn main() -> glib::ExitCode {
                 Some("Query Hydrus")
             } else if state.starts_with("pawchive") {
                 Some("Pawchive Index")
+            } else if state.starts_with("shortcuts") {
+                Some(hatate_gtk::shortcuts_dialog::TITLE)
             } else if state.starts_with("settings") && state != "settings-lens-box" {
                 Some("Settings")
             } else if state.starts_with("review-compare-d")
@@ -1046,6 +1083,15 @@ fn prepare(window: &MainWindow, state: &str) {
         st if st.starts_with("review") => prepare_review(window, st),
         st if st.starts_with("hydrus") || st.starts_with("pawchive") => prepare_hydrus(window, st),
         st if st.starts_with("settings") => prepare_settings(window, st),
+        st if st.starts_with("shortcuts") => {
+            window.action_show_shortcuts();
+            if st == "shortcuts-focus-close" {
+                if let Some(d) = window.s.shortcuts_dialog.borrow().as_ref() {
+                    d.window.set_focus_visible(true);
+                    d.close_button.grab_focus();
+                }
+            }
+        }
         "dialog" => window.activate_action("clear-session"),
         // The control for the glyph fragment under the dialog (DAN-2256): the same shot with the
         // Queue page's placeholder label hidden, so any pixel under the dialog's border that
@@ -1277,6 +1323,102 @@ fn prepare_settings(window: &MainWindow, state: &str) {
                 );
             }
         }
+        // 6.h-2: the Tests in each state. The words are the ones the Tests print (`settings_tests.rs`),
+        // put on the labels the way a run leaves them; the Site Logins page holds the five, the Hydrus
+        // page its Test and Fetch.
+        r if r.starts_with("tests-") => {
+            d.tabs.set_current_page(Some(6));
+            let (busy, texts): (bool, [&str; 5]) = match r.trim_end_matches("-low") {
+                "tests-running" => (
+                    true,
+                    [
+                        "Testing with 2 cookie(s): auth, auth_secure\u{2026}",
+                        "Testing with 1 cookie(s): anime_pictures_jwt\u{2026}",
+                        "Testing\u{2026}",
+                        "Testing as synthetic-user\u{2026}",
+                        "Testing\u{2026}",
+                    ],
+                ),
+                "tests-ok" => (
+                    false,
+                    [
+                        "Working. Artist 'synthetic'. Picture available (unblurred).",
+                        "Working. 14 tag(s), 1200\u{d7}1600, jpg.",
+                        "The post loaded normally - it would be kept as a live match.",
+                        "e621 accepted the credentials for synthetic-user. Posts under its global blacklist will be visible to searches.",
+                        "Working. Extracted 23 tag(s), artist 'synthetic', full-resolution URL found, 1200x1600.",
+                    ],
+                ),
+                _ => (
+                    false,
+                    [
+                        "Read the deviation (artist 'synthetic'), but the picture is still the BLURRED logged-out copy. Re-copy the cookies from a logged-in browser - they may have expired or been cut off.",
+                        "That post is gone (HTTP 404) - it was deleted or the ID does not exist. Try a different one; this says nothing about whether the cookies work.",
+                        "Came back as the blank \"no such post\" page, so it would be dropped. If you can see this post in your browser while logged in, the cookies above aren't working - re-copy them.",
+                        "e621 rejected the username or API key (401). Check both on e621 under Account > Manage API Access - the key is not your password, and it is case-sensitive.\n\nLeave them blank rather than wrong: a bad key makes e621 refuse every request, including ones that would have worked anonymously.",
+                        "Page fetched, but no data could be read from it. The cookie may have expired (they do, periodically) - try copying a fresh PHPSESSID from your browser. See Help > View Logs for the specific reason.",
+                    ],
+                ),
+            };
+            for (test, text) in [
+                Test::DeviantArt,
+                Test::AnimePictures,
+                Test::Sankaku,
+                Test::E621,
+                Test::Pixiv,
+            ]
+            .into_iter()
+            .zip(texts)
+            {
+                d.preview_result(test.button_id(), test.result_id(), text, busy);
+            }
+            // `-low`: scrolled to the lower Tests (Sankaku to DeviantArt), which the top shot does not hold
+            if rest.ends_with("-low") {
+                if let Some(b) = d.button_widget(Test::AnimePictures.button_id()) {
+                    scroll_to_top_of(b.upcast_ref(), 150.0);
+                }
+            }
+        }
+        "hydrus-running"
+        | "hydrus-ok"
+        | "hydrus-failed"
+        | "hydrus-fetched"
+        | "hydrus-fetched-open" => {
+            d.tabs.set_current_page(Some(4));
+            let (text, busy) = match rest {
+                "hydrus-running" => ("", true),
+                "hydrus-ok" => ("Connected \u{2713}", false),
+                "hydrus-failed" => (
+                    "Failed: Could not reach Hydrus at http://127.0.0.1:45869. Is the client running with its API switched on?",
+                    false,
+                ),
+                _ => ("", false),
+            };
+            d.preview_result("button.test_connection", "hydrus_test_result", text, busy);
+            if rest == "hydrus-running" {
+                d.preview_result("button.fetch_from_hydrus", "hydrus_test_result", "", true);
+            }
+            if rest.starts_with("hydrus-fetched") {
+                d.preview_services(vec![
+                    ("aaaaaaaaaaaaaaaaaaaaaaaa".to_owned(), "my tags".to_owned()),
+                    (
+                        "bbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+                        "downloader tags".to_owned(),
+                    ),
+                    (
+                        "cccccccccccccccccccccccc".to_owned(),
+                        "public tag repository".to_owned(),
+                    ),
+                ]);
+            }
+            if rest == "hydrus-fetched-open" {
+                // after the window is up: a popover opened before it maps has nothing to hang from
+                let d = d.clone();
+                glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
+                    d.open_services()
+                });
+            }
+        }
         // The MCP tab with the server started at launch (a free port, or a held one) and the
         // Shortcuts tab with a conflict or a recorder waiting for its key (6.i).
         "mcp-running" | "mcp-held" => d.tabs.set_current_page(Some(8)),
@@ -1348,6 +1490,16 @@ fn prepare_settings(window: &MainWindow, state: &str) {
                         }
                         _ => None,
                     }
+                }
+                "test" => {
+                    d.tabs.set_current_page(Some(6));
+                    d.button_widget(Test::E621.button_id())
+                        .map(|b| b.upcast::<gtk4::Widget>())
+                }
+                "fetch" => {
+                    d.tabs.set_current_page(Some(4));
+                    d.button_widget("button.fetch_from_hydrus")
+                        .map(|b| b.upcast::<gtk4::Widget>())
                 }
                 "shortcut" => {
                     d.tabs.set_current_page(Some(7));

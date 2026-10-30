@@ -364,6 +364,8 @@ impl Form {
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_child(Some(&list));
         scroll.set_propagate_natural_height(true);
+        // wide enough for the longest service name, as Qt's combo popup is, not a list that clips it
+        scroll.set_propagate_natural_width(true);
         scroll.set_max_content_height(240);
         scroll.set_min_content_width(260);
         let popover = gtk::Popover::new();
