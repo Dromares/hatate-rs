@@ -9134,6 +9134,10 @@ const SCENARIOS_6H2: &[Scenario] = &[
         "settings_transport_differential_driver",
         settings_transport_differential_driver,
     ),
+    (
+        "shortcuts_dialog_differential_driver",
+        shortcuts_dialog_differential_driver,
+    ),
 ];
 
 fn scenario_count() -> usize {
@@ -9345,4 +9349,73 @@ fn settings_diff_one(app: &adw::Application, spec: &serde_json::Value) -> serde_
     d.click_cancel();
     f.close();
     trace
+}
+
+/// The Review > Shortcuts dialog's differential driver (DAN-2460): inert unless `HATATE_DIFF_SHORTCUTS`
+/// (JSONL scenarios, each with the Settings overrides to start from) is set; writes the digest
+/// `py_shortcuts.py` writes for Python's dialog, to `HATATE_DIFF_OUT`.
+fn shortcuts_dialog_differential_driver(app: &adw::Application) {
+    use serde_json::json;
+    fn labels(w: &gtk4::Widget, out: &mut Vec<String>) {
+        // a button's own text is the button's (`buttons` below), not a label of the page
+        if w.is::<gtk4::Button>() {
+            return;
+        }
+        if let Some(l) = w.downcast_ref::<gtk4::Label>() {
+            out.push(l.text().to_string());
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            labels(&child, out);
+            c = child.next_sibling();
+        }
+    }
+    let Some(input) = std::env::var_os("HATATE_DIFF_SHORTCUTS") else {
+        return;
+    };
+    let out = std::env::var("HATATE_DIFF_OUT").expect("HATATE_DIFF_OUT");
+    let mut lines = String::new();
+    for line in std::fs::read_to_string(input).expect("scenarios").lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let spec: serde_json::Value = serde_json::from_str(line).expect("scenario line");
+        let f = fx(app);
+        f.w.set_mode("review");
+        {
+            let mut s = f.w.s.settings.lock().unwrap();
+            for (k, v) in spec["overrides"].as_object().into_iter().flatten() {
+                s.review_shortcuts
+                    .0
+                    .push((k.clone(), v.as_str().unwrap_or("").to_owned()));
+            }
+        }
+        f.w.s.review.shortcuts_btn.clone().emit_clicked();
+        let dialog =
+            f.w.s
+                .shortcuts_dialog
+                .borrow()
+                .clone()
+                .expect("the dialog opens");
+        let mut texts = Vec::new();
+        labels(dialog.window.upcast_ref::<gtk4::Widget>(), &mut texts);
+        let trace = json!({
+            "title": dialog.window.title().map(|t| t.to_string()).unwrap_or_default(),
+            "min_width": dialog.window.size_request().0,
+            "labels": texts,
+            "buttons": dialog.button_texts(),
+            "default": dialog.default_button_text().into_iter().collect::<Vec<_>>(),
+            "result": 0,
+        });
+        dialog.click_close();
+        let closed = f.w.s.shortcuts_dialog.borrow().is_none();
+        let mut trace = trace;
+        if !closed {
+            trace["result"] = json!(-1);
+        }
+        lines.push_str(&json!({"id": spec["id"], "side": "rs", "trace": trace}).to_string());
+        lines.push('\n');
+        f.close();
+    }
+    std::fs::write(out, lines).expect("out file");
 }
