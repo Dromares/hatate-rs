@@ -48,6 +48,10 @@ const SCENARIOS: &[Scenario] = &[
         settings_window_keeps_its_stated_minimum,
     ),
     (
+        "settings_highlight_second_call_inside_the_window_still_restores",
+        settings_highlight_second_call_inside_the_window_still_restores,
+    ),
+    (
         "settings_find_box_lists_jumps_and_marks_for_two_seconds",
         settings_find_box_lists_jumps_and_marks_for_two_seconds,
     ),
@@ -7163,6 +7167,30 @@ fn settings_window_keeps_its_stated_minimum(app: &adw::Application) {
             );
         }
     }
+    d.click_cancel();
+    f.close();
+}
+
+/// `TestHighlightReentrancy`: a double click on a result marks the same widget twice before the
+/// first revert has run. The first revert must not take the mark off the second call's window,
+/// and the mark must be gone once the second window has passed (`HIGHLIGHT_MS`, 2 s).
+fn settings_highlight_second_call_inside_the_window_still_restores(app: &adw::Application) {
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    let w: gtk4::Widget = d.ok_button.clone().upcast();
+    assert!(!w.has_css_class("found"));
+    d.highlight(&w);
+    assert!(w.has_css_class("found"));
+    pump_for(1200);
+    d.highlight(&w);
+    pump_for(1100); // 2.3 s after the first call: its revert has run, the second's is pending
+    assert!(
+        w.has_css_class("found"),
+        "the first call's revert took the second call's mark off"
+    );
+    pump_for(1200); // 2.3 s after the second call
+    assert!(!w.has_css_class("found"), "the mark is restored");
     d.click_cancel();
     f.close();
 }
