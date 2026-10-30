@@ -173,6 +173,63 @@ pub fn animepictures_cookies(raw: &str) -> Option<Cookies> {
     None
 }
 
+/// A pasted value that carries one of these was cut off by the browser's cookie panel
+/// (`TRUNCATION_HINTS`).
+const TRUNCATION_HINTS: [&str; 2] = ["\u{2026}", "..."];
+
+/// A session cookie shorter than this is probably cut short (`SUSPICIOUSLY_SHORT_SESSION_CHARS`).
+const SUSPICIOUSLY_SHORT_SESSION_CHARS: usize = 100;
+
+/// Problems worth mentioning about a pasted cookie string (`core/site_access.py:203-247`).
+///
+/// `session_name` is the cookie that carries the login for the site being configured, so the
+/// advice names the right one. Advisory only: none of these block anything.
+pub fn cookie_paste_warnings(raw: &str, session_name: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let cookies = parse_cookie_string(raw);
+    if cookies.is_empty() {
+        return warnings;
+    }
+    let truncated = |value: &str| TRUNCATION_HINTS.iter().any(|h| value.contains(h));
+    let items: Vec<(&str, &str)> = cookies
+        .names()
+        .filter_map(|n| cookies.get(n).map(|v| (n, v.expose())))
+        .collect();
+    for (name, value) in &items {
+        if truncated(value) {
+            warnings.push(format!(
+                "{name} looks truncated - its value contains an ellipsis, which is what the \
+                 browser's cookie panel shows when a value is too long to display. \
+                 Right-click the row and use Copy Value instead of selecting the text."
+            ));
+        }
+    }
+    let session: Vec<&(&str, &str)> = items
+        .iter()
+        .filter(|(n, _)| {
+            n.to_lowercase().contains("session") || n.to_lowercase() == session_name.to_lowercase()
+        })
+        .collect();
+    if session.is_empty() {
+        warnings.push(format!(
+            "No session cookie found. The one carrying your login is normally named \
+             {session_name}; without it these are only display preferences and \
+             you'll still be treated as logged out."
+        ));
+    } else {
+        for (name, value) in session {
+            let len = value.chars().count();
+            if len < SUSPICIOUSLY_SHORT_SESSION_CHARS && !truncated(value) {
+                warnings.push(format!(
+                    "{name} is only {len} characters, which is short for a session \
+                     cookie - check the whole value was copied."
+                ));
+            }
+        }
+    }
+    warnings
+}
+
 /// Site-specific auth cookies, when the user configured them
 /// (`core/site_access.py:250-286`). `None`, not an empty jar, when nothing is set.
 ///

@@ -34,6 +34,7 @@ pub mod settings_form;
 pub mod settings_mcp;
 pub mod settings_node;
 pub mod settings_spec;
+pub mod settings_tests;
 pub mod settings_values;
 pub mod shell;
 pub mod shortcuts_page;

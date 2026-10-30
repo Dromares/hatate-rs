@@ -883,6 +883,11 @@ fn digest(
                         "default_name": Path::new(default_name).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
                         "filter": filter}),
             Asked::AddTags { prompt } => json!({"kind": "add_tags", "prompt": prompt}),
+            Asked::GetText {
+                title,
+                label,
+                preset,
+            } => json!({"kind": "get_text", "title": title, "label": label, "preset": preset}),
             Asked::MatchConditions { opened_on } => {
                 json!({"kind": "match_conditions", "opened_on": opened_on})
             }

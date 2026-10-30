@@ -6,8 +6,9 @@
 //! and what OK writes is `settings_values.rs`. The Shortcuts tab is `shortcuts_page.rs` and the MCP
 //! tab `settings_mcp.rs` (6.i).
 //!
-//! The six Test buttons and Fetch from Hydrus are network code and 6.h-2's; the buttons are built
-//! and insensitive until then.
+//! The six Test buttons and Fetch from Hydrus (6.h-2) are `settings_tests.rs`'s texts and requests,
+//! run on the worker bridge from here: the button is insensitive while its request is out and the
+//! label shows the first line Python sets before it.
 
 use crate::dialogs::{Buttons, Kind, Prompter};
 use crate::mcp_audit_view::{self, Connection};
@@ -15,10 +16,12 @@ use crate::settings_form::{Control, Form};
 use crate::settings_mcp::{self, AuditCard};
 use crate::settings_node::Node;
 use crate::settings_spec::PAGES;
+use crate::settings_tests::{self, Plan, Test, Typed};
 use crate::settings_values::{self, Value, Values};
 use crate::shortcuts_page::{self, ShortcutsPage};
 use crate::widgets;
 use crate::window::MainWindow;
+use crate::worker::{Event, JobHandle};
 use gtk4 as gtk;
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -31,6 +34,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub const TITLE: &str = "Settings";
+const HYDRUS_TEST: &str = "button.test_connection";
+const HYDRUS_FETCH: &str = "button.fetch_from_hydrus";
 pub const MIN_WIDTH: i32 = 560;
 pub const MIN_HEIGHT: i32 = 440;
 /// `self.resize(940, 660)`.
@@ -72,6 +77,8 @@ pub struct SettingsDialog {
     /// reached (Python parents its boxes to the dialog). The scripted prompter has no windows
     /// and is used as it is.
     pub prompter: Rc<dyn Prompter>,
+    /// The requests the Test buttons have out; closing the window silences them.
+    test_jobs: RefCell<Vec<JobHandle>>,
 }
 
 impl SettingsDialog {
@@ -263,8 +270,9 @@ impl SettingsDialog {
                 .prompter
                 .over(&window)
                 .unwrap_or_else(|| main.s.prompter.clone()),
+            test_jobs: RefCell::new(Vec::new()),
         });
-        dialog.insensitive_network_buttons();
+        dialog.wire_tests();
         dialog.wire_controls();
         dialog.wire_mcp();
         {
@@ -299,6 +307,9 @@ impl SettingsDialog {
             let d = Rc::downgrade(&dialog);
             window.connect_close_request(move |_| {
                 if let Some(d) = d.upgrade() {
+                    for job in d.test_jobs.borrow().iter() {
+                        job.retire();
+                    }
                     d.main.s.settings_dialog.borrow_mut().take();
                 }
                 glib::Propagation::Proceed
@@ -407,20 +418,277 @@ impl SettingsDialog {
         );
     }
 
-    /// The Test buttons and Fetch from Hydrus (`_test_*`, `_fetch_tag_services`): network code, 6.h-2's.
-    fn insensitive_network_buttons(&self) {
-        for form in &self.forms {
-            for control in form.controls.values() {
-                if let Control::Button(b) = control {
-                    // Browse works, and so do the MCP page's buttons (6.i)
-                    if b.label().as_deref() != Some("Browse\u{2026}")
-                        && !form_is_mcp(&form.controls)
-                    {
-                        b.set_sensitive(false);
+    /// The Test buttons and Fetch from Hydrus (`clicked.connect(self._test_*)`).
+    fn wire_tests(self: &Rc<Self>) {
+        let ids = [
+            Test::DeviantArt,
+            Test::AnimePictures,
+            Test::Sankaku,
+            Test::E621,
+            Test::Pixiv,
+        ];
+        for test in ids {
+            if let Some(b) = self.button_of(test.button_id()) {
+                let d = Rc::downgrade(self);
+                b.connect_clicked(move |_| {
+                    if let Some(d) = d.upgrade() {
+                        d.start_test(test);
                     }
+                });
+            }
+        }
+        if let Some(b) = self.button_of(HYDRUS_TEST) {
+            let d = Rc::downgrade(self);
+            b.connect_clicked(move |_| {
+                if let Some(d) = d.upgrade() {
+                    d.test_hydrus();
+                }
+            });
+        }
+        if let Some(b) = self.button_of(HYDRUS_FETCH) {
+            let d = Rc::downgrade(self);
+            b.connect_clicked(move |_| {
+                if let Some(d) = d.upgrade() {
+                    d.fetch_tag_services();
+                }
+            });
+        }
+    }
+
+    /// A Test button pressed: the question first (Python's `QInputDialog.getText`), then the
+    /// fields as they are after it.
+    pub fn start_test(self: &Rc<Self>, test: Test) {
+        let Some((title, label, preset)) = test.question() else {
+            self.run_test(test, String::new());
+            return;
+        };
+        let d = Rc::downgrade(self);
+        self.prompter.get_text(
+            title,
+            label,
+            preset,
+            Box::new(move |answer| {
+                let Some(d) = d.upgrade() else { return };
+                let Some(url) = answer.filter(|u| !u.trim().is_empty()) else {
+                    return;
+                };
+                d.run_test(test, url);
+            }),
+        );
+    }
+
+    fn run_test(self: &Rc<Self>, test: Test, url: String) {
+        let typed = Typed {
+            url,
+            cookies: test
+                .cookie_id()
+                .map(|id| self.text_of(id))
+                .unwrap_or_default(),
+            e621_username: self.text_of("e621_username"),
+            e621_api_key: self.text_of("e621_api_key"),
+            search_timeout: self.main.s.settings.lock().unwrap().search_timeout,
+        };
+        let (first, job) = match settings_tests::plan(test, &typed) {
+            Plan::Done(text) => {
+                self.set_live(test.result_id(), &text);
+                return;
+            }
+            Plan::Run { first, job } => (first, job),
+        };
+        if let Some(first) = first {
+            self.set_live(test.result_id(), &first);
+        }
+        let Some(backend) = self.backend() else {
+            return;
+        };
+        let (button, label) = (
+            self.button_of(test.button_id()).cloned(),
+            self.live_of(test.result_id()).cloned(),
+        );
+        if let Some(b) = &button {
+            b.set_sensitive(false);
+        }
+        let engine = backend.engine.clone();
+        let handle = self.main.s.workers.run_async(
+            move |_ctx| async move { settings_tests::run(job, &engine.net, &engine.booru).await },
+            move |event: Event<(), String>| {
+                if let Event::Done(text) = event {
+                    if let Some(l) = &label {
+                        l.set_text(&text);
+                    }
+                    if let Some(b) = &button {
+                        b.set_sensitive(true);
+                    }
+                }
+            },
+        );
+        self.test_jobs.borrow_mut().push(handle);
+    }
+
+    /// The network layer the Tests send over: the search engine's, so a test that scripts the
+    /// sites scripts these too.
+    fn backend(&self) -> Option<crate::search_run::SearchBackend> {
+        match self.main.s.search.backend(&self.main.s.paths) {
+            Ok(b) => Some(b),
+            Err(e) => {
+                tracing::error!("the Tests have no network layer: {e}");
+                None
+            }
+        }
+    }
+
+    fn set_live(&self, id: &str, text: &str) {
+        if let Some(l) = self.live_of(id) {
+            l.set_text(text);
+        }
+    }
+
+    /// `replace(self.settings.hydrus, api_url=..., access_key=..., verify_ssl=...)`: the typed
+    /// connection over the saved one.
+    fn typed_hydrus(&self) -> hatate_core::config::HydrusSettings {
+        let mut temp = self.main.s.settings.lock().unwrap().hydrus.clone();
+        temp.api_url = self.text_of("hydrus_url");
+        temp.access_key = hatate_core::config::Secret::new(self.text_of("hydrus_key"));
+        temp.verify_ssl = self
+            .forms
+            .iter()
+            .find_map(|f| f.check("hydrus_verify_ssl"))
+            .is_none_or(|c| c.is_active());
+        temp
+    }
+
+    /// `_test_hydrus`.
+    pub fn test_hydrus(self: &Rc<Self>) {
+        let temp = self.typed_hydrus();
+        let Some(backend) = self.backend() else {
+            return;
+        };
+        let (button, label) = (
+            self.button_of(HYDRUS_TEST).cloned(),
+            self.live_of("hydrus_test_result").cloned(),
+        );
+        if let Some(b) = &button {
+            b.set_sensitive(false);
+        }
+        let factory = backend.hydrus_client.clone();
+        let handle = self.main.s.workers.run_async(
+            move |_ctx| async move {
+                let answer = match factory(&temp) {
+                    Ok(client) => client.test_connection().await,
+                    Err(e) => Err(e),
+                };
+                settings_tests::hydrus_text(&answer)
+            },
+            move |event: Event<(), String>| {
+                if let Event::Done(text) = event {
+                    if let Some(l) = &label {
+                        l.set_text(&text);
+                    }
+                    if let Some(b) = &button {
+                        b.set_sensitive(true);
+                    }
+                }
+            },
+        );
+        self.test_jobs.borrow_mut().push(handle);
+    }
+
+    /// `_fetch_tag_services`.
+    pub fn fetch_tag_services(self: &Rc<Self>) {
+        let temp = self.typed_hydrus();
+        let Some(backend) = self.backend() else {
+            return;
+        };
+        let button = self.button_of(HYDRUS_FETCH).cloned();
+        if let Some(b) = &button {
+            b.set_sensitive(false);
+        }
+        let factory = backend.hydrus_client.clone();
+        let d = Rc::downgrade(self);
+        let handle = self.main.s.workers.run_async(
+            move |_ctx| async move {
+                match factory(&temp) {
+                    Ok(client) => client.list_tag_services().await,
+                    Err(e) => Err(e),
+                }
+            },
+            move |event: Event<
+                (),
+                Result<Vec<(String, String)>, hatate_core::hydrus_client::HydrusError>,
+            >| {
+                let Event::Done(answer) = event else { return };
+                if let Some(b) = &button {
+                    b.set_sensitive(true);
+                }
+                let Some(d) = d.upgrade() else { return };
+                d.on_services_fetched(answer);
+            },
+        );
+        self.test_jobs.borrow_mut().push(handle);
+    }
+
+    fn on_services_fetched(
+        &self,
+        answer: Result<Vec<(String, String)>, hatate_core::hydrus_client::HydrusError>,
+    ) {
+        const TITLE: &str = "Fetch tag services";
+        match answer {
+            Err(e) => {
+                tracing::error!("Fetch tag services failed: {}", e.detail());
+                crate::dialogs::warning(
+                    &*self.prompter,
+                    TITLE,
+                    &format!("Could not fetch services: {}", e.user_message()),
+                );
+            }
+            Ok(services) if services.is_empty() => {
+                tracing::info!("Hydrus reported no tag services");
+                crate::dialogs::information(
+                    &*self.prompter,
+                    TITLE,
+                    "Hydrus reported no tag services.",
+                );
+            }
+            Ok(services) => {
+                tracing::info!("Fetched {} tag service(s) from Hydrus", services.len());
+                let items: Vec<(String, String)> = services
+                    .into_iter()
+                    .map(|(key, name)| (settings_tests::service_label(&key, &name), key))
+                    .collect();
+                if let Some(c) = self
+                    .forms
+                    .iter()
+                    .find_map(|f| f.combo("hydrus_service_key"))
+                {
+                    c.set_items(&items);
                 }
             }
         }
+    }
+
+    /// The fetched services' rows and keys. Tests only.
+    pub fn service_list(&self) -> (Vec<String>, Vec<String>) {
+        self.forms
+            .iter()
+            .find_map(|f| f.combo("hydrus_service_key"))
+            .map(|c| (c.labels(), c.keys()))
+            .unwrap_or_default()
+    }
+
+    /// Picks row `i` of the fetched services. Tests only.
+    pub fn pick_service(&self, i: usize) {
+        if let Some(c) = self
+            .forms
+            .iter()
+            .find_map(|f| f.combo("hydrus_service_key"))
+        {
+            c.pick(i);
+        }
+    }
+
+    /// Whether the button `id` takes a click. Tests only.
+    pub fn button_sensitive(&self, id: &str) -> bool {
+        self.button_of(id).is_some_and(|b| b.is_sensitive())
     }
 
     // -- the MCP tab ---------------------------------------------------------------------------
@@ -861,11 +1129,6 @@ impl SettingsDialog {
     pub fn click_cancel(&self) {
         self.cancel_button.emit_clicked();
     }
-}
-
-/// Whether `controls` are the MCP page's.
-fn form_is_mcp(controls: &std::collections::BTreeMap<&'static str, Control>) -> bool {
-    controls.contains_key("mcp_enabled")
 }
 
 /// `"{tab_name}  ›  {name}"`.

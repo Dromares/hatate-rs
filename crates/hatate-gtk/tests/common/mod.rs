@@ -170,6 +170,18 @@ impl Prompter for Script {
         }
     }
 
+    fn get_text(&self, title: &str, label: &str, preset: &str, done: Done<Option<String>>) {
+        self.asked.borrow_mut().push(Asked::GetText {
+            title: title.to_owned(),
+            label: label.to_owned(),
+            preset: preset.to_owned(),
+        });
+        match self.next_pick() {
+            Some(Answer::Text(t)) => done(t),
+            _ => done(None),
+        }
+    }
+
     fn match_conditions(
         &self,
         current: &hatate_core::config::MatchConditions,
