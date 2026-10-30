@@ -170,6 +170,14 @@ impl MainWindow {
         {
             self.on_selection_changed();
         }
+        // `_remove_rows` ends on the status line, after the selection has moved
+        if let Some(QueueEvent::Removed(ids)) = events
+            .iter()
+            .rev()
+            .find(|e| matches!(e, QueueEvent::Removed(_)))
+        {
+            self.say(&format!("Removed {} file(s) from the list", ids.len()));
+        }
     }
 
     /// The window half of `_research_rows`: the search a tool asked for runs as any re-search

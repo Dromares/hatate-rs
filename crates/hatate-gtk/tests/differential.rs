@@ -215,6 +215,7 @@ fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
                 _ => Response::No,
             }));
         }
+        WIRE_LAST.with(|l| *l.borrow_mut() = Value::Null);
         do_step(ctx, &w, &script, &search, step);
         settle(&w);
         trace.push(digest(
@@ -315,7 +316,9 @@ fn do_step(
         }
         "s_set" | "s_find" | "s_jump" | "s_tab" | "s_ok" | "s_cancel" => settings_step(w, step),
         // 6.i: the MCP page's buttons (no Browse answer to script) and the Shortcuts page's
-        "m_press" | "m_clear" | "m_reset" | "hold_port" | "release_port" => mcp_step(w, step),
+        "m_press" | "m_clear" | "m_reset" | "hold_port" | "release_port" | "wire" => {
+            mcp_step(w, step)
+        }
         "autosave" => w.autosave_now(),
         "delete_files" => {
             for p in strs("paths") {
@@ -945,6 +948,8 @@ fn digest(
     }
     if ctx.kind.borrow().as_str() == "mcp" {
         digest["mcp"] = mcp_digest(w, paths);
+        digest["mcp"]["wire"] = WIRE_LAST.with(|l| l.borrow().clone());
+        digest["mcp"]["audit"] = audit_lines(paths);
     }
     if let Some(h) = ctx.hydrus.borrow().as_ref() {
         digest["hydrus"] = h.log();
@@ -1228,6 +1233,9 @@ fn settings_digest(w: &MainWindow, paths: &Paths) -> Value {
 }
 
 thread_local! {
+    /// The last `wire` step's reply, the session id the server gave, and the digest reads them.
+    static WIRE_LAST: RefCell<Value> = const { RefCell::new(Value::Null) };
+    static WIRE_SID: RefCell<String> = const { RefCell::new(String::new()) };
     /// Ports the scenario holds with a listener of its own (the Python driver does the same).
     static HELD: RefCell<Vec<std::net::TcpListener>> = const { RefCell::new(Vec::new()) };
 }
@@ -1247,6 +1255,7 @@ fn mcp_step(w: &MainWindow, step: &Value) {
             HELD.with(|h| h.borrow_mut().clear());
             return;
         }
+        "wire" => return wire_step(step),
         _ => {}
     }
     let d =
@@ -1298,4 +1307,121 @@ fn mcp_digest(w: &MainWindow, paths: &Paths) -> Value {
         "dialog": dialog,
         "server_running": report.running,
     })
+}
+
+/// The audit file, one JSON value per line, the timestamp (the wall clock) set aside.
+fn audit_lines(paths: &Paths) -> Value {
+    let text = std::fs::read_to_string(paths.mcp_audit_log()).unwrap_or_default();
+    Value::Array(
+        text.lines()
+            .map(|l| {
+                let mut v: Value = serde_json::from_str(l).expect("an audit line is JSON");
+                v["timestamp"] = json!("T");
+                v
+            })
+            .collect(),
+    )
+}
+
+/// One raw HTTP request to the server the window started (6.i's wire differential). The client
+/// runs on a thread of its own while this one keeps the main loop turning, because a tool call
+/// is answered by the window. `$SID` in a header value is the session id the last reply gave.
+fn wire_step(step: &Value) {
+    let port = step["port"].as_u64().unwrap() as u16;
+    let sid = WIRE_SID.with(|s| s.borrow().clone());
+    let method = step["method"].as_str().unwrap().to_owned();
+    let body = step["body"].as_str().unwrap_or("").to_owned();
+    let headers: Vec<(String, String)> = step["headers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| {
+            (
+                h[0].as_str().unwrap().to_owned(),
+                h[1].as_str().unwrap().replace("$SID", &sid),
+            )
+        })
+        .collect();
+    let slot = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let out = slot.clone();
+    std::thread::spawn(move || {
+        let reply = wire_http(port, &method, &headers, &body);
+        *out.lock().unwrap() = Some(reply);
+    });
+    let done = pump_until(30_000, || slot.lock().unwrap().is_some());
+    assert!(done, "the server did not answer");
+    let (status, headers, body) = slot.lock().unwrap().take().unwrap();
+    let mut shown = serde_json::Map::new();
+    for (n, v) in &headers {
+        match n.as_str() {
+            "date" | "content-length" | "transfer-encoding" | "connection" => {}
+            "mcp-session-id" => {
+                WIRE_SID.with(|s| *s.borrow_mut() = v.clone());
+                shown.insert(n.clone(), json!(format!("<{} chars>", v.len())));
+            }
+            _ => {
+                shown.insert(n.clone(), json!(v));
+            }
+        }
+    }
+    let body = match body.strip_prefix("event: message\r\ndata: ") {
+        Some(rest) => {
+            let data = rest.strip_suffix("\r\n\r\n").unwrap_or(rest);
+            serde_json::from_str(data).unwrap_or(json!(body))
+        }
+        None => json!(body),
+    };
+    let reply = json!({"status": status, "headers": shown, "body": body});
+    WIRE_LAST.with(|l| *l.borrow_mut() = reply);
+}
+
+fn wire_http(
+    port: u16,
+    method: &str,
+    headers: &[(String, String)],
+    body: &str,
+) -> (u16, Vec<(String, String)>, String) {
+    use std::io::Read;
+    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect");
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(25)))
+        .unwrap();
+    let mut req = format!(
+        "{method} /mcp HTTP/1.1\r\nconnection: close\r\ncontent-length: {}\r\n",
+        body.len()
+    );
+    for (n, v) in headers {
+        req.push_str(&format!("{n}: {v}\r\n"));
+    }
+    req.push_str("\r\n");
+    req.push_str(body);
+    stream.write_all(req.as_bytes()).unwrap();
+    let mut raw = Vec::new();
+    let _ = stream.read_to_end(&mut raw);
+    let text = String::from_utf8_lossy(&raw).into_owned();
+    let (head, rest) = text.split_once("\r\n\r\n").expect("a reply");
+    let mut lines = head.lines();
+    let status = lines.next().unwrap().split(' ').nth(1).unwrap().parse().unwrap();
+    let headers: Vec<(String, String)> = lines
+        .filter_map(|l| l.split_once(": "))
+        .map(|(n, v)| (n.to_lowercase(), v.to_owned()))
+        .collect();
+    let chunked = headers
+        .iter()
+        .any(|(n, v)| n == "transfer-encoding" && v == "chunked");
+    let mut body = String::new();
+    if chunked {
+        let mut rest = rest;
+        while let Some((size, tail)) = rest.split_once("\r\n") {
+            let n = usize::from_str_radix(size.trim(), 16).unwrap_or(0);
+            if n == 0 {
+                break;
+            }
+            body.push_str(&tail[..n]);
+            rest = &tail[n + 2..];
+        }
+    } else {
+        body = rest.to_owned();
+    }
+    (status, headers, body)
 }
