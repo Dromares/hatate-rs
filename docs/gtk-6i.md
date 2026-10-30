@@ -132,7 +132,7 @@ row by row in the docs named in each row. Where a row names an assertion it is t
 | `test_mcp_audit.py` `TestAppending` (6 tests, lines 27, 32, 40, 44, 54, 61) | `docs/mcp-server.md` (Python test mapping, `TestAppending`): `audit::tests::creates_the_file_and_its_parent_and_writes_one_object_per_line`, `a_refusal_a_dry_run_and_a_candidate_index_are_logged`, `iso_format_matches_strftime`, `line_format_is_pythons_json_dumps_with_the_fixed_key_order`; and the wire differential (section 5) drives these tools through the window's own server |
 | `test_mcp_audit.py` `TestRedaction` (5 tests, lines 80, 89, 97, 106, 113) | `docs/mcp-server.md` (`TestRedaction`): `audit::tests::redaction_covers_every_key_nested_and_case_insensitive`, `secrets_never_reach_the_file`; and the wire differential (section 5) drives these tools through the window's own server |
 | `test_mcp_audit.py` `TestRotation` (2 tests, lines 129, 146) | `docs/mcp-server.md` (`TestRotation`): `audit::tests::rotates_once_the_cap_is_reached_and_keeps_one_generation`, `a_write_failure_is_swallowed`; and the wire differential (section 5) drives these tools through the window's own server |
-| `test_mcp_bridge.py` `TestMainThreadInvoker` (2 tests, lines 133, 137) | `docs/mcp-handlers.md` section 6 (`TestMainThreadInvoker`): `queue::tests::a_call_runs_on_the_owners_thread`, `a_call_reaches_the_owner_and_a_failure_is_the_message`, `a_closure_that_runs_longer_than_the_timeout_times_out`; the same-thread test does not apply (D3). This PR adds `queue::tests::an_inbox_runs_marshaled_calls_against_a_model_kept_elsewhere_and_wakes_its_owner` for the window's own channel; and the wire differential (section 5) drives these tools through the window's own server |
+| `test_mcp_bridge.py` `TestMainThreadInvoker` (5 tests, lines 111, 118, 124, 133, 137) | `docs/mcp-handlers.md` section 6 (`TestMainThreadInvoker`): `queue::tests::a_call_runs_on_the_owners_thread`, `a_call_reaches_the_owner_and_a_failure_is_the_message`, `a_closure_that_runs_longer_than_the_timeout_times_out`; the same-thread test does not apply (D3). This PR adds `queue::tests::an_inbox_runs_marshaled_calls_against_a_model_kept_elsewhere_and_wakes_its_owner` for the window's own channel; and the wire differential (section 5) drives these tools through the window's own server |
 | `test_mcp_bridge.py` `TestReadTools` (7 tests, lines 207, 215, 221, 229, 235, 241, 250) | `docs/mcp-handlers.md` section 6 (`TestReadTools`): `list_queue_reports_every_row_by_default`, `list_queue_respects_offset_and_limit`, `list_queue_filter_keyword_unreviewed`, `get_entry_reports_the_requested_row`, `get_entry_out_of_range_reports_an_error_not_a_crash`, `list_actions_reports_every_tool_with_its_gate_state`; and the wire differential (section 5) drives these tools through the window's own server |
 | `test_mcp_bridge.py` `TestLocalWrites` (3 tests, lines 263, 274, 281) | `docs/mcp-handlers.md` section 6 (`TestLocalWrites`): `select_candidate_switches_the_active_match`, `toggle_reviewed_sets_the_flag_and_local_writes_are_never_gated`; through the window: `crates/hatate-gtk/tests/smoke.rs:7496` and, for the status line, `crates/hatate-gtk/tests/smoke.rs:7501` (red with the line removed, `worktrees/DAN-2222-revert.log` R1); and the wire differential (section 5) drives these tools through the window's own server |
 | `test_mcp_bridge.py` `TestGatingAndAudit` (4 tests, lines 289, 299, 310, 318) | `docs/mcp-handlers.md` section 6 (`TestGatingAndAudit`): `a_disabled_tier_is_refused_with_the_setting_named_and_the_entry_survives`, `a_hydrus_write_is_refused_without_calling_hydrus_at_all`, `a_refusal_and_an_allowed_call_are_both_audited`; through the window: `crates/hatate-gtk/tests/smoke.rs:7520`; and the wire differential (section 5) drives these tools through the window's own server |
@@ -273,3 +273,26 @@ cannot print `None`; the synthetic seed in `examples/shot.rs` omitted it and now
 **Not judgeable from a shot:** unchanged from section 6 (the Got it and Shortcut conflict boxes). The Tab order of the MCP page is the walk of
 section 6 (`settings-tab-8`, taken at `866766f`, before this fixup, which adds no widget and no Tab stop); this fixup shows one tier check
 box's ring (the research one, `settings-focus-mcp-tier-{dark,light}.png`). The Hydrus and destructive tier boxes' rings were not shot.
+
+### 6.2 Low notes from the DAN-2222 approval (DAN-2436)
+
+Mutations the DAN-2222 verifier found surviving, and the Tool-column note. Each pin below was run red against its mutation
+(`worktrees/DAN-2436-mutants.log`); the F2 pins sit in `settings_mcp_low_notes_pins`, which the audit-table scenario calls, so the
+`smoke.rs` lines cited above did not move except for the 16 after that call.
+
+| Mutation | Pin | Red with |
+|---|---|---|
+| F2b `set_hscrollbar_policy(Never)` to `Automatic` (`settings_mcp.rs`) | `audit_card_keeps_a_long_path_and_a_wide_row_inside_the_page`: the scroller's minimum width is at least the grid's | the scroller asks for 24px of the grid's 367px |
+| F2c path caption `set_ellipsize(Middle)` removed | same function: the caption's natural width exceeds the room (the scenario cannot pass vacuously) and its minimum is below it; the card fits the minimum window | the path caption needs 1078px (a real fixture path, `TMPDIR=/tmp`) |
+| F2e column 3 `set_max_width_chars(14)` to `40` | same function: a 30 character Target cell asks for under 95% of the same text's width in an uncapped label | the Target cell asks for 247px of the text's 247px |
+| `DISPLAY_LIMIT` 200 to 201 | `mcp_audit_view::tests::the_display_limit_is_pythons_two_hundred` (the existing cap test is written in terms of the constant) | left: 201, right: 200 |
+| port-only rebind (the port dropped from the tuple `settings_dialog.rs` compares on OK) | `settings_mcp_low_notes_pins`: an OK that changes only the port releases the old port and answers on the new | `pump_until(... new port listening)` fails |
+| lazy-build guard of `restart_mcp` removed | same function: `restart_mcp` with the server off and nothing built leaves `McpBridge::built()` false | restart_mcp built a controller for a server that is off |
+
+The F2c fixture's own path is the fixture's temp directory, so the old scenario catches F2c or not by how long `TMPDIR` is. The new
+function builds its own path (two folder names of 40 and 54 characters), so the pin does not depend on the environment.
+
+**Tool column (design note, Phase 7).** At the minimum window (560 x 440) the Tool, Tier and Target columns give way before Outcome
+does, and Tool shows about three characters (`tog`, `Rev...`); the full text is in the tooltip. This is the same trade as section 6:
+the Outcome is the column the card exists for. It is a copy and layout item for Phase 7 (a shorter tool name, or a two line
+cell), carried on DAN-2319's ledger. `wontfix` in 6.i.
