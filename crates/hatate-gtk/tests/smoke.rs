@@ -88,6 +88,10 @@ const SCENARIOS: &[Scenario] = &[
         the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip,
     ),
     (
+        "the_review_title_is_hidden_rather_than_cut_when_the_header_cannot_hold_it",
+        the_review_title_is_hidden_rather_than_cut_when_the_header_cannot_hold_it,
+    ),
+    (
         "no_clipping_wrapper_on_the_review_page_is_a_tab_stop",
         no_clipping_wrapper_on_the_review_page_is_a_tab_stop,
     ),
@@ -4840,6 +4844,56 @@ fn the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip(app: &
             l.width()
         );
     }
+    f.close();
+}
+
+/// DAN-2373: on hosted `ci`'s fonts the header asked more than the column had at the stated
+/// minimum and the title was drawn cut ("01 // COMPA"). The title is hidden then, never half shown,
+/// and comes back when the room does. A title as long as the hosted fonts need stands in for them.
+fn the_review_title_is_hidden_rather_than_cut_when_the_header_cannot_hold_it(
+    app: &adw::Application,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let f = review_fx(app, dir.path());
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    assert!(pump_until(5_000, || f.w.s.review.local.shows_picture()));
+    smallest_window(&f);
+    let r = f.w.s.review.clone();
+    let natural = |r: &hatate_gtk::review_view::ReviewPage| {
+        r.title.measure(gtk4::Orientation::Horizontal, -1).1
+    };
+    // Whatever the toolkit's fonts: shown whole, or not shown.
+    r.fit_readout();
+    assert!(
+        !r.title.is_visible() || r.title.width() >= natural(&r),
+        "the title is drawn cut: {} px of {}",
+        r.title.width(),
+        natural(&r)
+    );
+    r.title
+        .set_text("01 // Compare the local file with the match under review");
+    pump_for(300);
+    r.fit_readout();
+    assert!(
+        !r.title.is_visible(),
+        "a title wider than the header's room is drawn cut ({} px of {})",
+        r.title.width(),
+        natural(&r)
+    );
+    r.title.set_text("01 // Compare");
+    // A mapped window does not grow to a new default size; the request does.
+    f.w.win.set_size_request(1510, 910);
+    pump_for(400);
+    r.fit_readout();
+    assert!(
+        r.title.is_visible(),
+        "the title is back once there is room (window {} x {}, title {} px of {})",
+        f.w.win.width(),
+        f.w.win.height(),
+        r.title.width(),
+        natural(&r)
+    );
     f.close();
 }
 

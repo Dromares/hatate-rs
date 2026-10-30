@@ -239,6 +239,9 @@ pub struct ReviewPage {
     /// The header row, and the line under it the readout drops to when the column is too narrow
     /// for both ([`ReviewPage::fit_readout`]).
     header: gtk::Box,
+    /// `title` inside its clipping wrapper; the wrapper is hidden when the header cannot hold the
+    /// title whole ([`ReviewPage::fit_readout`]).
+    title_wrap: gtk::ScrolledWindow,
     spacer: gtk::Box,
     readout_row: gtk::Box,
     compare_col: gtk::Box,
@@ -308,7 +311,8 @@ impl ReviewPage {
         // It gives way before the header asks for more than the window's minimum: hosted `ci`'s
         // fonts are wider than the author's and the header asked 1016 px of 1010 (DAN-2219).
         let title = widgets::section_label("01 // Compare");
-        header.append(&give_way(&title));
+        let title_wrap = give_way(&title);
+        header.append(&title_wrap);
         let (switch, view_buttons) = widgets::segmented(&VIEWS, "pair", |_| {});
         switch.add_css_class("review-switch");
         header.append(&switch);
@@ -638,6 +642,7 @@ impl ReviewPage {
             view_buttons,
             readout_root,
             header: header.clone(),
+            title_wrap,
             spacer: spacer.clone(),
             readout_row,
             compare_col: compare_col.clone(),
@@ -747,11 +752,19 @@ impl ReviewPage {
     /// that does not fit, and the readout takes the line under the header instead.
     pub fn fit_readout(&self) {
         let nat = |w: &gtk::Box| w.measure(gtk::Orientation::Horizontal, -1).1;
+        let nat_label = |w: &gtk::Label| w.measure(gtk::Orientation::Horizontal, -1).1;
         let inside = self.readout_in_header();
-        let need = if inside {
-            nat(&self.header)
+        // What the header asks with the title shown, whether or not it is (see below).
+        let title_need = if self.title_wrap.get_visible() {
+            0
         } else {
-            nat(&self.header) + self.header.spacing() + nat(&self.readout_root)
+            nat_label(&self.title) + self.header.spacing()
+        };
+        let header_need = nat(&self.header) + title_need;
+        let need = if inside {
+            header_need
+        } else {
+            header_need + self.header.spacing() + nat(&self.readout_root)
         };
         let fits = self.compare_col.width() >= need;
         if fits && !inside {
@@ -761,6 +774,14 @@ impl ReviewPage {
         } else if !fits && inside {
             self.header.remove(&self.readout_root);
             self.readout_row.append(&self.readout_root);
+        }
+        // At the minimum the header can still ask more than the column has: the title would be
+        // drawn cut ("01 // COMPA" on hosted `ci`, DAN-2373). It is hidden then, never half shown.
+        // `header_need` counts it whether or not it is shown, so hiding it does not flip it back.
+        let col = self.compare_col.width();
+        if col > 0 {
+            let header_now = nat(&self.header) + title_need;
+            self.title_wrap.set_visible(col >= header_now);
         }
         // `get_visible`, not `is_visible`: the latter also asks the row, which would keep itself hidden.
         self.readout_row
