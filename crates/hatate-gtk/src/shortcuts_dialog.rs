@@ -84,6 +84,8 @@ impl ShortcutsDialog {
             key_label.add_css_class("hint");
             key_label.set_xalign(1.0);
             key_label.set_valign(gtk::Align::Center);
+            // the bar sits on the list's right edge: the last glyph of `J` or `Shift+N` stays clear of it
+            key_label.set_margin_end(8);
             row.append(&label);
             row.append(&key_label);
             list.append(&row);

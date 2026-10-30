@@ -1445,7 +1445,7 @@ Needs the "Edit File Notes" permission on your Hydrus access key (services → r
                 }),
                 field: Node::Live {
                     id: r#"hydrus_test_result"#,
-                    wrap: false,
+                    wrap: true,
                     hint: false,
                 },
             },
