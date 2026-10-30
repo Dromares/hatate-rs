@@ -3,9 +3,8 @@
 //! (`gui/settings_search.py`).
 //!
 //! The pages are data (`settings_spec.rs`), built by `settings_form.rs`; what each control holds
-//! and what OK writes is `settings_values.rs`. The MCP tab is `settings_mcp.rs` (6.i); the
-//! Shortcuts tab is here as a tab with nothing on it yet (so the tab numbers, and the Find box's
-//! "Shortcuts" entry, are Python's), and OK leaves its key as it is.
+//! and what OK writes is `settings_values.rs`. The Shortcuts tab is `shortcuts_page.rs` and the MCP
+//! tab `settings_mcp.rs` (6.i).
 //!
 //! The six Test buttons and Fetch from Hydrus are network code and 6.h-2's; the buttons are built
 //! and insensitive until then.
@@ -17,6 +16,7 @@ use crate::settings_mcp::{self, AuditCard};
 use crate::settings_node::Node;
 use crate::settings_spec::PAGES;
 use crate::settings_values::{self, Value, Values};
+use crate::shortcuts_page::{self, ShortcutsPage};
 use crate::widgets;
 use crate::window::MainWindow;
 use gtk4 as gtk;
@@ -31,8 +31,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 pub const TITLE: &str = "Settings";
-/// The tabs after the spec's pages, in Python's order (6.i's).
-pub const LATER_TABS: &[&str] = &["Shortcuts"];
 pub const MIN_WIDTH: i32 = 560;
 pub const MIN_HEIGHT: i32 = 440;
 /// `self.resize(940, 660)`.
@@ -53,6 +51,8 @@ pub struct SettingsDialog {
     pub cancel_button: gtk::Button,
     /// The pages' forms: `PAGES` in order, then the MCP page's (the Shortcuts tab has none yet).
     forms: Vec<Form>,
+    /// The Shortcuts tab.
+    pub shortcuts: Rc<ShortcutsPage>,
     /// The MCP tab's Recent tool calls card.
     pub audit: Rc<AuditCard>,
     /// What Copy and Generate last put on the clipboard (the clipboard itself is asynchronous).
@@ -111,22 +111,14 @@ impl SettingsDialog {
             }
             live.set_text(&settings_values::pipeline_text(&settings, &all));
         }
-        // the Shortcuts tab: nothing on it yet
-        let mut placeholders = Vec::new();
-        for name in LATER_TABS {
-            let note = widgets::hint(&format!(
-                "The {name} page comes in a later step of the port."
-            ));
-            let (l, t, r, b) = widgets::PAGE_MARGINS;
-            note.set_margin_start(l);
-            note.set_margin_top(t);
-            note.set_margin_end(r);
-            note.set_margin_bottom(b);
-            let scroll = scrollable(&note);
-            tabs.append_page(&scroll, Some(&gtk::Label::new(Some(name))));
-            placeholders.push((*name, scroll.clone()));
-            scrolls.push(scroll);
-        }
+        // the Shortcuts tab (`_build_shortcuts_tab`)
+        let shortcuts = ShortcutsPage::build(&settings.review_shortcuts);
+        let shortcuts_scroll = scrollable(&shortcuts.root);
+        tabs.append_page(
+            &shortcuts_scroll,
+            Some(&gtk::Label::new(Some(shortcuts_page::TAB))),
+        );
+        scrolls.push(shortcuts_scroll.clone());
         // the MCP tab (`_build_mcp_tab`)
         let mut mcp_form = Form::build(&settings_mcp::PAGE);
         let main_for_open = main.clone();
@@ -179,9 +171,22 @@ impl SettingsDialog {
                 form.names(),
             ));
         }
-        for (name, scroll) in &placeholders {
-            index_pages.push((*name, scroll.clone().upcast::<gtk::Widget>(), Vec::new()));
-        }
+        index_pages.push((
+            shortcuts_page::TAB,
+            shortcuts_scroll.upcast::<gtk::Widget>(),
+            shortcuts
+                .names()
+                .into_iter()
+                .map(|(fixed, w)| {
+                    let text = fixed.unwrap_or_else(|| {
+                        w.downcast_ref::<gtk::Label>()
+                            .map(|l| l.text().to_string())
+                            .unwrap_or_default()
+                    });
+                    (text, w)
+                })
+                .collect(),
+        ));
         index_pages.push((
             settings_mcp::TAB,
             mcp_scroll.upcast::<gtk::Widget>(),
@@ -242,6 +247,7 @@ impl SettingsDialog {
             ok_button: ok_button.clone(),
             cancel_button: cancel_button.clone(),
             forms,
+            shortcuts,
             audit,
             copied: RefCell::new(None),
             scrolls,
@@ -421,7 +427,7 @@ impl SettingsDialog {
 
     /// The MCP tab's index (`self._mcp_tab_index`).
     pub fn mcp_tab_index() -> usize {
-        PAGES.len() + LATER_TABS.len()
+        PAGES.len() + 1
     }
 
     fn live_of(&self, id: &str) -> Option<&gtk::Label> {
@@ -625,11 +631,20 @@ impl SettingsDialog {
         for form in &self.forms {
             all.0.extend(form.read().0);
         }
+        for (id, edit) in &self.shortcuts.edits {
+            all.set(&format!("shortcut.{id}"), Value::Text(edit.value()));
+        }
         all
     }
 
     /// Sets a control as a click or a keystroke would. Test driver and tests only.
     pub fn set_value(&self, id: &str, value: &Value) {
+        if let (Some(action), Value::Text(key)) = (id.strip_prefix("shortcut."), value) {
+            if let Some(edit) = self.shortcuts.edit(action) {
+                edit.set(key);
+            }
+            return;
+        }
         let mut one = Values::default();
         one.set(id, value.clone());
         for form in &self.forms {
@@ -707,7 +722,7 @@ impl SettingsDialog {
         PAGES
             .iter()
             .map(|(n, _)| (*n).to_owned())
-            .chain(LATER_TABS.iter().map(|n| (*n).to_owned()))
+            .chain(std::iter::once(shortcuts_page::TAB.to_owned()))
             .chain(std::iter::once(settings_mcp::TAB.to_owned()))
             .collect()
     }
@@ -813,6 +828,22 @@ impl SettingsDialog {
     /// `accept()` then `MainWindow.action_open_settings`'s `apply_to_settings()` and the refreshes
     /// after it.
     pub fn accept(&self) {
+        // A warning that can be clicked past would leave two dead keys behind, and nothing later
+        // would explain why they stopped working: the dialog stays open.
+        if self.shortcuts.refresh_conflicts() {
+            self.prompter.message(
+                Kind::Warning,
+                shortcuts_page::CONFLICT_TITLE,
+                &format!(
+                    "{}{}",
+                    self.shortcuts.conflict.text(),
+                    shortcuts_page::CONFLICT_TAIL
+                ),
+                Buttons::Ok,
+                Box::new(|_| {}),
+            );
+            return;
+        }
         let values = self.values();
         self.window.close();
         self.main.apply_settings_dialog(&values, &self.da_snapshot);

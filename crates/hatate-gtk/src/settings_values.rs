@@ -15,6 +15,7 @@ use crate::settings_node::{Node, find};
 use crate::settings_spec::{ENGINES, PAGES};
 use hatate_core::config::{OrderedMap, Secret, Settings};
 use hatate_core::pycompat::strip;
+use hatate_core::shortcuts;
 use hatate_core::sidecar;
 use std::collections::BTreeMap;
 
@@ -271,6 +272,19 @@ pub fn initial(s: &Settings) -> Values {
         Value::Text(s.hydrus.tag_service_key.clone()),
     );
     v.set("hydrus_verify_ssl", Value::Bool(s.hydrus.verify_ssl));
+    // the Shortcuts page (6.i): one text per action, the key as `QKeySequence.toString()` writes it
+    let bound = shortcuts::resolve(Some(&s.review_shortcuts));
+    for a in shortcuts::REVIEW_ACTIONS {
+        let key = bound
+            .0
+            .iter()
+            .find(|(id, _)| id == a.id)
+            .map_or("", |(_, k)| k.as_str());
+        v.set(
+            &format!("shortcut.{}", a.id),
+            Value::Text(crate::shortcuts_page::canonical(key)),
+        );
+    }
     // the MCP page (6.i): `mcp_port` and the audit-log size are spin boxes, which hold what Qt's
     // `setValue` would (a stored port under 1024 shows as 1024 and saves as 1024)
     v.set("mcp_enabled", Value::Bool(s.mcp.enabled));
@@ -554,6 +568,23 @@ pub fn apply(v: &Values, da_snapshot: &str, s: &mut Settings) {
     s.write_hydrus_provenance_note = v.b("write_hydrus_provenance_note");
     s.hydrus_provenance_note_name = strip(v.t("hydrus_provenance_note_name")).to_owned();
 
+    // `prune(self._current_shortcut_bindings())`; a caller with no Shortcuts page leaves them be
+    if shortcuts::REVIEW_ACTIONS
+        .iter()
+        .any(|a| v.0.contains_key(&format!("shortcut.{}", a.id)))
+    {
+        s.review_shortcuts = shortcuts::prune(&OrderedMap(
+            shortcuts::REVIEW_ACTIONS
+                .iter()
+                .map(|a| {
+                    (
+                        a.id.to_owned(),
+                        v.t(&format!("shortcut.{}", a.id)).to_owned(),
+                    )
+                })
+                .collect(),
+        ));
+    }
     s.mcp.enabled = v.b("mcp_enabled");
     s.mcp.port = v.i("mcp_port");
     s.mcp.token = Secret::new(v.t("mcp_token"));

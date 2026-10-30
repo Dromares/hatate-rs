@@ -439,6 +439,10 @@ const SCENARIOS: &[Scenario] = &[
         mcp_tool_calls_change_the_list_and_the_table_follows,
     ),
     (
+        "settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict",
+        settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict,
+    ),
+    (
         "settings_mcp_page_states_the_server_and_follows_the_boxes",
         settings_mcp_page_states_the_server_and_follows_the_boxes,
     ),
@@ -7779,5 +7783,98 @@ fn settings_mcp_audit_table_follows_the_log_newest_first(app: &adw::Application)
     d.show_tab(0);
     assert!(!d.audit.following());
     d.click_cancel();
+    f.close();
+}
+
+/// The Shortcuts tab: the registry's keys in Qt's spelling, a click records the next key, Clear
+/// leaves an action unbound, a duplicate is named and OK refuses it, and what OK saves is only the
+/// keys that differ from their defaults.
+fn settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict(app: &adw::Application) {
+    use gtk4::gdk;
+    use hatate_core::shortcuts::REVIEW_ACTIONS;
+    use hatate_gtk::settings_values::Value;
+    let f = fx(app);
+    f.w.s.settings.lock().unwrap().review_shortcuts =
+        hatate_core::config::OrderedMap(vec![("next_row".to_owned(), "x".to_owned())]);
+    let d = open_settings(&f);
+    // a stored lower-case x shows as the sequence Qt writes
+    let page = &d.shortcuts;
+    assert_eq!(page.edit("next_row").unwrap().value(), "X");
+    assert_eq!(page.edit("prev_row").unwrap().value(), "K");
+    assert_eq!(page.edit("prev_unreviewed").unwrap().value(), "Shift+N");
+    assert_eq!(page.edits.len(), REVIEW_ACTIONS.len());
+    assert_eq!(page.conflict.text(), "");
+
+    // a click records the next key; a modifier on its own does not end it
+    let edit = page.edit("prev_row").unwrap().clone();
+    edit.start_recording();
+    assert!(edit.is_recording());
+    assert_eq!(edit.button.label().as_deref(), Some("Press a key\u{2026}"));
+    edit.press(gdk::Key::Shift_L, gdk::ModifierType::empty());
+    assert!(edit.is_recording());
+    edit.press(gdk::Key::q, gdk::ModifierType::SHIFT_MASK);
+    assert!(!edit.is_recording());
+    assert_eq!(edit.value(), "Shift+Q");
+    edit.start_recording();
+    edit.press(gdk::Key::Delete, gdk::ModifierType::empty());
+    assert_eq!(edit.value(), "Del");
+
+    // a duplicate is named, and OK keeps the dialog open with the warning
+    page.edit("prev_row").unwrap().set("x");
+    assert_eq!(
+        page.conflict.text(),
+        "Same key on more than one action - Qt fires neither, so these would both stop working:\nX is bound to Next image and Previous image"
+    );
+    f.script.reset();
+    d.click_ok();
+    assert!(
+        f.w.s.settings_dialog.borrow().is_some(),
+        "the dialog stays open on a conflict"
+    );
+    let shown = f.script.last_shown();
+    assert_eq!(shown.kind, Kind::Warning);
+    assert_eq!(shown.title, "Shortcut conflict");
+    assert!(
+        shown
+            .text
+            .ends_with("\n\nGive one of them a different key, or clear it."),
+        "{}",
+        shown.text
+    );
+    assert_eq!(
+        f.w.s.settings.lock().unwrap().review_shortcuts.0,
+        vec![("next_row".to_owned(), "x".to_owned())],
+        "nothing was saved"
+    );
+
+    // Clear leaves the action with no key at all, and that is not a conflict
+    page.clears[1].emit_clicked();
+    assert_eq!(page.edit("prev_row").unwrap().value(), "");
+    assert_eq!(page.conflict.text(), "");
+    // Reset puts every default back
+    d.set_value("shortcut.next_row", &Value::Text("shift+ctrl+a".into()));
+    assert_eq!(page.edit("next_row").unwrap().value(), "Ctrl+Shift+A");
+    page.reset.emit_clicked();
+    for a in REVIEW_ACTIONS {
+        assert_eq!(page.edit(a.id).unwrap().value(), a.default, "{}", a.id);
+    }
+
+    // OK saves only what differs from the default
+    d.set_value("shortcut.next_row", &Value::Text("F9".into()));
+    d.set_value("shortcut.prev_row", &Value::Text("".into()));
+    d.click_ok();
+    assert!(f.w.s.settings_dialog.borrow().is_none());
+    let saved = f.w.s.settings.lock().unwrap().review_shortcuts.0.clone();
+    assert_eq!(
+        saved,
+        vec![
+            ("next_row".to_owned(), "F9".to_owned()),
+            ("prev_row".to_owned(), "".to_owned())
+        ]
+    );
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(f.paths.config_file()).unwrap()).unwrap();
+    assert_eq!(json["review_shortcuts"]["next_row"], "F9");
+    assert_eq!(json["review_shortcuts"]["prev_row"], "");
     f.close();
 }
