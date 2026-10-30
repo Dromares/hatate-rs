@@ -6305,7 +6305,7 @@ fn scripted_pawchive(
 /// added, Index selected runs the crawl, Remove asks (Cancel by default) and then removes.
 /// DAN-2398 N1: the artist list is a table. Each column has one width and one alignment for the
 /// header cell and every row, so the right edge of a column is the same in all of them (a drifting
-/// row put `fanbox` under POSTS). Measured on allocations, in window coordinates, at +-1 px.
+/// row put `fanbox` under POSTS). Measured on allocations, in window coordinates, to within half a pixel (the design read asks for 1).
 fn pawchive_artist_columns_share_one_edge_in_the_header_and_every_row(app: &adw::Application) {
     use gtk4::prelude::*;
     let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
@@ -6368,7 +6368,7 @@ fn pawchive_artist_columns_share_one_edge_in_the_header_and_every_row(app: &adw:
         assert_eq!(row.len(), 5);
         for (i, ((hl, hr), (rl, rr))) in head.iter().zip(&row).enumerate() {
             assert!(
-                (hr - rr).abs() <= 1.0 && (hl - rl).abs() <= 1.0,
+                (hr - rr).abs() < 0.5 && (hl - rl).abs() < 0.5,
                 "row {n} column {i}: header {hl}..{hr} vs row {rl}..{rr}"
             );
         }
