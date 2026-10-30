@@ -1454,7 +1454,7 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 95 | `activity` | 9 | GtkButton [text-button.icon-boxed] Copy the whole log. | 388 / 388 | `activity-dark-tab9.png`, `activity-light-tab9.png` |
 | 96 | `activity` | 10 | GtkButton [text-button.icon-boxed] Open the folder the log file is in. | 396 / 396 | `activity-dark-tab10.png`, `activity-light-tab10.png` |
 | 97 | `activity` | 11 | GtkTextView [view.monospace.log] | 4756 / 4756 | `activity-dark-tab11.png`, `activity-light-tab11.png` |
-| 98 | `logs` | 0 | GtkLabel [log-path] Log file: /tmp/paperclip-run-dan-2453-79f26b5b-... | 13119 / 13119 | `logs-dark-tab0.png`, `logs-light-tab0.png` |
+| 98 | `logs` | 0 | GtkLabel [log-path] Log file: <profile dir> | 13119 / 13119 | `logs-dark-tab0.png`, `logs-light-tab0.png` |
 | 99 | `logs` | 1 | GtkTextView [view.monospace.log] | 4384 / 4384 | `logs-dark-tab1.png`, `logs-light-tab1.png` |
 | 100 | `logs` | 2 | GtkButton [text-button.pill.plain] Refresh | 564 / 564 | `logs-dark-tab2.png`, `logs-light-tab2.png` |
 | 101 | `logs` | 3 | GtkButton [text-button.pill.plain] Copy all | 568 / 568 | `logs-dark-tab3.png`, `logs-light-tab3.png` |
@@ -1715,7 +1715,7 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 356 | `hydrus-query-results` | 3 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `hydrus-query-results-dark-tab3.png`, `hydrus-query-results-light-tab3.png` |
 | 357 | `hydrus-query-results` | 4 | GtkButton [text-button.pill.primary.plain] Import selected | 800 / 800 | `hydrus-query-results-dark-tab4.png`, `hydrus-query-results-light-tab4.png` |
 | 358 | `pawchive-artists` | 0 | GtkListBoxRow [activatable] Another Synthetic | 2206 / 2206 | `pawchive-artists-dark-tab0.png`, `pawchive-artists-light-tab0.png` |
-| 359 | `pawchive-artists` | 1 | GtkListBoxRow [activatable] Synthetic Artist | 22115 / 22166 | `pawchive-artists-dark-tab1.png`, `pawchive-artists-light-tab1.png` |
+| 359 | `pawchive-artists` | 1 | GtkListBoxRow [activatable] Synthetic Artist | 22122 / 22170 | `pawchive-artists-dark-tab1.png`, `pawchive-artists-light-tab1.png` |
 | 360 | `pawchive-artists` | 2 | GtkListBoxRow [activatable] Third Synthetic | 22156 / 22192 | `pawchive-artists-dark-tab2.png`, `pawchive-artists-light-tab2.png` |
 | 361 | `pawchive-artists` | 3 | GtkText [] Artist name, or a pawchive link | 1332 / 1332 | `pawchive-artists-dark-tab3.png`, `pawchive-artists-light-tab3.png` |
 | 362 | `pawchive-artists` | 4 | GtkButton [text-button.pill.plain] Stops after the current request.... | 476 / 476 | `pawchive-artists-dark-tab4.png`, `pawchive-artists-light-tab4.png` |
@@ -1826,7 +1826,7 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 467 | `settings-0` | 29 | GtkCheckButton [text-button] Saves the working list periodically, n... | 4250 / 4212 | `settings-0-dark-tab29.png`, `settings-0-light-tab29.png` |
 | 468 | `settings-0` | 30 | GtkText [] | 4980 / 24162 | `settings-0-dark-tab30.png`, `settings-0-light-tab30.png` |
 | 469 | `settings-0` | 31 | GtkCheckButton [text-button] Log matched URLs to a text file | 5187 / 23848 | `settings-0-dark-tab31.png`, `settings-0-light-tab31.png` |
-| 470 | `settings-0` | 32 | GtkText [] | 5643 / 8049 | `settings-0-dark-tab32.png`, `settings-0-light-tab32.png` |
+| 470 | `settings-0` | 32 | GtkText [] | 5638 / 8047 | `settings-0-dark-tab32.png`, `settings-0-light-tab32.png` |
 | 471 | `settings-0` | 33 | GtkButton [text-button] Browse… | 406 / 408 | `settings-0-dark-tab33.png`, `settings-0-light-tab33.png` |
 | 472 | `settings-0` | 34 | GtkListBoxRow [activatable] User | 11109 / 14881 | `settings-0-dark-tab34.png`, `settings-0-light-tab34.png` |
 | 473 | `settings-0` | 35 | GtkCheckButton [text-button] User | 2924 / 2926 | `settings-0-dark-tab35.png`, `settings-0-light-tab35.png` |
@@ -1861,7 +1861,7 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 502 | `settings-1` | 15 | GtkCheckButton [text-button] yandex.com's reverse image search, ove... | 6258 / 6218 | `settings-1-dark-tab15.png`, `settings-1-light-tab15.png` |
 | 503 | `settings-1` | 16 | GtkCheckButton [text-button] Asks pawchive.pw whether it holds this... | 6138 / 6065 | `settings-1-dark-tab16.png`, `settings-1-light-tab16.png` |
 | 504 | `settings-1` | 17 | GtkCheckButton [text-button] Compares each picture against the pawc... | 6278 / 6233 | `settings-1-dark-tab17.png`, `settings-1-light-tab17.png` |
-| 505 | `settings-1` | 18 | GtkCheckButton [text-button] Skips a fresh IQDB/SauceNAO request if... | 5819 / 5766 | `settings-1-dark-tab18.png`, `settings-1-light-tab18.png` |
+| 505 | `settings-1` | 18 | GtkCheckButton [text-button] Skips a fresh IQDB/SauceNAO request if... | 5584 / 5766 | `settings-1-dark-tab18.png`, `settings-1-light-tab18.png` |
 | 506 | `settings-1` | 19 | GtkText [] | 4751 / 20747 | `settings-1-dark-tab19.png`, `settings-1-light-tab19.png` |
 | 507 | `settings-1` | 20 | GtkCheckButton [text-button] Retrieve tags from matched booru page | 5921 / 24061 | `settings-1-dark-tab20.png`, `settings-1-light-tab20.png` |
 | 508 | `settings-1` | 21 | GtkCheckButton [text-button] Orders the match dropdown so its first... | 5217 / 5171 | `settings-1-dark-tab21.png`, `settings-1-light-tab21.png` |
@@ -1918,8 +1918,8 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 559 | `settings-5` | 6 | GtkCheckButton [text-button] Turns the booru's own age rating for t... | 4418 / 28651 | `settings-5-dark-tab6.png`, `settings-5-light-tab6.png` |
 | 560 | `settings-5` | 7 | GtkText [] rating | 2528 / 8035 | `settings-5-dark-tab7.png`, `settings-5-light-tab7.png` |
 | 561 | `settings-5` | 8 | GtkCheckButton [text-button] Hydrus has no API to report your actua... | 5351 / 11564 | `settings-5-dark-tab8.png`, `settings-5-light-tab8.png` |
-| 562 | `settings-5` | 9 | GtkTextView [view.monospace] | 7124 / 64532 | `settings-5-dark-tab9.png`, `settings-5-light-tab9.png` |
-| 563 | `settings-5` | 10 | GtkTextView [view.monospace] Added to every image a match was found... | 3186 / 5692 | `settings-5-dark-tab10.png`, `settings-5-light-tab10.png` |
+| 562 | `settings-5` | 9 | GtkTextView [view.monospace] | 7124 / 63688 | `settings-5-dark-tab9.png`, `settings-5-light-tab9.png` |
+| 563 | `settings-5` | 10 | GtkTextView [view.monospace] Added to every image a match was found... | 3178 / 5692 | `settings-5-dark-tab10.png`, `settings-5-light-tab10.png` |
 | 564 | `settings-5` | 11 | GtkTextView [view.monospace] Added to every image no match was foun... | 3894 / 5566 | `settings-5-dark-tab11.png`, `settings-5-light-tab11.png` |
 | 565 | `settings-5` | 12 | GtkTextView [view.monospace] Added on top of the found tags when th... | 3894 / 5566 | `settings-5-dark-tab12.png`, `settings-5-light-tab12.png` |
 | 566 | `settings-5` | 13 | GtkButton [text-button.pill.plain] Cancel | 532 / 532 | `settings-5-dark-tab13.png`, `settings-5-light-tab13.png` |
@@ -1979,7 +1979,7 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 620 | `settings-8` | 5 | GtkButton [text-button.icon-boxed] Copy token to clipboard | 376 / 376 | `settings-8-dark-tab5.png`, `settings-8-light-tab5.png` |
 | 621 | `settings-8` | 6 | GtkButton [text-button.pill.plain] Generate new token | 920 / 920 | `settings-8-dark-tab6.png`, `settings-8-light-tab6.png` |
 | 622 | `settings-8` | 7 | GtkCheckButton [text-button] Dry run — practice mode | 3774 / 3776 | `settings-8-dark-tab7.png`, `settings-8-light-tab7.png` |
-| 623 | `settings-8` | 8 | GtkCheckButton [text-button] Let it send files and tags to Hydrus | 2448 / 2454 | `settings-8-dark-tab8.png`, `settings-8-light-tab8.png` |
+| 623 | `settings-8` | 8 | GtkCheckButton [text-button] Let it send files and tags to Hydrus | 2448 / 2576 | `settings-8-dark-tab8.png`, `settings-8-light-tab8.png` |
 | 624 | `settings-8` | 9 | GtkCheckButton [text-button] Let it re-search a stuck entry | 4402 / 4389 | `settings-8-dark-tab9.png`, `settings-8-light-tab9.png` |
 | 625 | `settings-8` | 10 | GtkCheckButton [text-button] Let it remove rows and reset results | 4056 / 4024 | `settings-8-dark-tab10.png`, `settings-8-light-tab10.png` |
 | 626 | `settings-8` | 11 | GtkToggleButton [text-button.toggle.caps] Actions | 4576 / 5081 | `settings-8-dark-tab11.png`, `settings-8-light-tab11.png` |
@@ -1994,7 +1994,7 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 635 | `settings-mcp-running` | 1 | GtkNotebook [frame] General | 6104 / 6104 | `settings-mcp-running-dark-tab1.png`, `settings-mcp-running-light-tab1.png` |
 | 636 | `settings-mcp-running` | 2 | GtkCheckButton [text-button] Enable the MCP server | 3774 / 3776 | `settings-mcp-running-dark-tab2.png`, `settings-mcp-running-light-tab2.png` |
 | 637 | `settings-mcp-running` | 3 | GtkButton [text-button.pill.plain] Restart server | 748 / 748 | `settings-mcp-running-dark-tab3.png`, `settings-mcp-running-light-tab3.png` |
-| 638 | `settings-mcp-running` | 4 | GtkText [] | 6850 / 6837 | `settings-mcp-running-dark-tab4.png`, `settings-mcp-running-light-tab4.png` |
+| 638 | `settings-mcp-running` | 4 | GtkText [] | 6849 / 6837 | `settings-mcp-running-dark-tab4.png`, `settings-mcp-running-light-tab4.png` |
 | 639 | `settings-mcp-running` | 5 | GtkText [] | 3550 / 3557 | `settings-mcp-running-dark-tab5.png`, `settings-mcp-running-light-tab5.png` |
 | 640 | `settings-mcp-running` | 6 | GtkButton [text-button.icon-boxed] Copy token to clipboard | 376 / 376 | `settings-mcp-running-dark-tab6.png`, `settings-mcp-running-light-tab6.png` |
 | 641 | `settings-mcp-running` | 7 | GtkButton [text-button.pill.plain] Generate new token | 920 / 920 | `settings-mcp-running-dark-tab7.png`, `settings-mcp-running-light-tab7.png` |

@@ -48,7 +48,7 @@ Line 2.2 (`review-compare-differences-{dark,light}.png`, image pane box (30,180)
 ## 2. Findings
 
 - **F-B3 FAILS** (3:1 non-text floor): the `.survived-glyph` box border on the Nothing survived page is `ink_28`, 1.93:1 against the panel and 2.03:1 against the page in dark, 2.76:1 and 2.48:1 in light. Python draws it at `ink_46`. Not fixed in 6.j (no riders, DAN-2421); Oderisi rules fix or accepted gap.
-- Lines **1.5**, **2.5**, **2.6**, **2.9** are not contrast ratios. 2.5: all 98 shots whose surface states a minimum are `FIT` by PNG header at the CI toolkit (`index.tsv`, 0 `OVER`, 0 `UNDER`). 2.6 (Cancel is the default) is pinned by the smoke tests cited in section 7 of `docs/phase6-coverage.md`. 1.5 (inactive selection needs a real compositor backdrop) and 2.9 (crop marks, ghost kanji parity) go to Oderisi's read.
+- Lines **1.5**, **2.5**, **2.6**, **2.9** are not contrast ratios. 2.5: all 102 shots whose surface states a minimum are `FIT` by PNG header at the CI toolkit (`index.tsv` of run 41082758250, 0 `OVER`, 0 `UNDER`). Four of the 102 are the `parser-health*-min-*` shots: Parser Health is a dialog with no enforced minimum, and its 760 x 460 is the size Python resizes it to (`resize(760, 460)`), which `shot --all` now states and checks. 2.6 (Cancel is the default) is pinned by the smoke tests cited in section 7 of `docs/phase6-coverage.md`. 1.5 (inactive selection needs a real compositor backdrop) and 2.9 (crop marks, ghost kanji parity) go to Oderisi's read.
 - Line **1.2** (status tiers, six glyphs) is a look judgement, owner Oderisi.
 
 ## 3. Label scan (triage list, not verdicts)
