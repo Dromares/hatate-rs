@@ -370,6 +370,18 @@ const SCENARIOS: &[Scenario] = &[
         "hydrus_thumbnails_come_from_hydrus_for_files_it_holds_and_from_disk_for_the_rest",
         hydrus_thumbnails_come_from_hydrus_for_files_it_holds_and_from_disk_for_the_rest,
     ),
+    (
+        "hydrus_thumbnails_fall_back_to_the_file_when_hydrus_cannot_supply_one",
+        hydrus_thumbnails_fall_back_to_the_file_when_hydrus_cannot_supply_one,
+    ),
+    (
+        "hydrus_menu_entries_and_the_h_key_reach_their_handlers",
+        hydrus_menu_entries_and_the_h_key_reach_their_handlers,
+    ),
+    (
+        "sending_the_row_you_are_on_away_keeps_your_place",
+        sending_the_row_you_are_on_away_keeps_your_place,
+    ),
 ];
 
 fn main() {
@@ -6395,5 +6407,159 @@ fn hydrus_thumbnails_come_from_hydrus_for_files_it_holds_and_from_disk_for_the_r
     f.w.start_thumbnail_generation(&ids[..1], true);
     assert!(pump_until(10_000, || f.w.s.thumbs.in_flight() == 0));
     assert_eq!(f.w.s.queue_view.thumb_state(ids[0]), ThumbState::Failed);
+    f.close();
+}
+
+/// `TestHydrusThumbnailPath` and `test_hydrus_source_without_an_access_key_falls_back_to_local`:
+/// whatever Hydrus cannot supply, the row's own file is drawn. With no access key Hydrus is not
+/// asked at all; an empty thumbnail and one that does not decode are asked for, then the file is
+/// read (its picture is readable here, so `Loaded` is the file's).
+fn hydrus_thumbnails_fall_back_to_the_file_when_hydrus_cannot_supply_one(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use hatate_core::thumb::ThumbState;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicU8, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    // 0: an empty thumbnail; 1: bytes that are not a picture.
+    let mode = Arc::new(AtomicU8::new(0));
+    let served = mode.clone();
+    let server =
+        common::hydrus::Hydrus::http(move |q| match q.target.split('?').next().unwrap_or("") {
+            "/get_files/file_metadata" => json_reply(json!({"metadata": [
+                {"hash": HELD_HASH, "file_id": 1, "is_local": true,
+                 "is_trashed": false, "is_deleted": false}]})),
+            "/get_files/thumbnail" if served.load(Ordering::SeqCst) == 0 => Reply::ok(Vec::new()),
+            "/get_files/thumbnail" => Reply::ok(b"not an image".to_vec()),
+            _ => json_reply(json!({})),
+        });
+    let pass = |key: bool| {
+        let mut seed = review_seed(dir.path());
+        seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+        let f = Fx::new(
+            app,
+            Opts {
+                seed,
+                tweak: Some(Box::new({
+                    let inner = hydrus_tweak(&server.url, key);
+                    move |s| {
+                        inner(s);
+                        s.thumbnail_source = "hydrus".to_owned();
+                    }
+                })),
+                missing: Some(Arc::new(|_, _| HashSet::new())),
+                ..Opts::default()
+            },
+        );
+        let ids = row_ids(&f);
+        f.w.start_thumbnail_generation(&ids[..1], true);
+        assert!(pump_until(10_000, || f.w.s.thumbs.in_flight() == 0));
+        let state = f.w.s.queue_view.thumb_state(ids[0]);
+        f.close();
+        state
+    };
+    // No access key: the source is the disk, and Hydrus hears nothing.
+    assert_eq!(pass(false), ThumbState::Loaded);
+    assert!(server.calls().is_empty(), "{:?}", server.calls());
+    // An empty thumbnail, then one that does not decode: each was asked for, each fell back.
+    for (m, what) in [(0, "empty"), (1, "undecodable")] {
+        mode.store(m, Ordering::SeqCst);
+        let before = server
+            .calls()
+            .iter()
+            .filter(|c| *c == "GET /get_files/thumbnail")
+            .count();
+        assert_eq!(pass(true), ThumbState::Loaded, "{what} thumbnail");
+        let after = server
+            .calls()
+            .iter()
+            .filter(|c| *c == "GET /get_files/thumbnail")
+            .count();
+        assert_eq!(after, before + 1, "{what}: Hydrus was asked first");
+    }
+}
+
+/// `TestHydrusMenu.test_*_triggers_the_real_handler` (the two Send entries and Re-check, through
+/// the menu's own actions) and `TestShowInHydrus.test_h_*` (the `H` key's handler, through the
+/// guard the key goes through).
+fn hydrus_menu_entries_and_the_h_key_reach_their_handlers(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let mut seed = review_seed(dir.path());
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    f.w.s.queue_view.select_ids(&[]);
+    f.activate("send-to-hydrus");
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Information,
+            "Send to Hydrus",
+            "Select at least one row."
+        )
+    );
+    f.activate("import-url-to-hydrus");
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Information,
+            "Send URL to Hydrus's Importer",
+            "Select at least one row."
+        )
+    );
+    f.activate("reconcile");
+    assert_eq!(
+        f.say(),
+        "Nothing is waiting on Hydrus - every sent file is confirmed"
+    );
+    // `H` with nothing selected says so and asks Hydrus nothing.
+    f.w.guarded_review_action("show_in_hydrus");
+    assert_eq!(f.say(), "Show in Hydrus: select an image first");
+    assert!(server.calls().is_empty(), "{:?}", server.calls());
+    // `H` on a row shows that row's file.
+    f.w.s.queue_view.select_row(0);
+    f.w.guarded_review_action("show_in_hydrus");
+    assert!(pump_until(10_000, || f.say() == "Showing 1 file(s) in Hydrus"));
+    assert!(
+        server
+            .calls()
+            .contains(&"POST /manage_pages/new_page".to_owned())
+    );
+    f.close();
+}
+
+/// `test_sending_the_current_image_away_keeps_your_place` and
+/// `test_sending_the_last_row_away_lands_on_the_new_last_row`, through the Send itself with
+/// Remove after import on: the selection lands on the row that followed, or the new last row.
+fn sending_the_row_you_are_on_away_keeps_your_place(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: review_seed(dir.path()),
+            tweak: Some(Box::new({
+                let inner = hydrus_tweak(&server.url, true);
+                move |s| {
+                    inner(s);
+                    s.remove_after_import = true;
+                }
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let ids = row_ids(&f);
+    let view = &f.w.s.queue_view;
+    view.select_row(1);
+    f.w.action_send_to_hydrus(&ids[1..2]);
+    assert!(pump_until(10_000, || f.len() == ids.len() - 1));
+    assert_eq!(view.selected_ids(), vec![ids[2]], "the row that followed");
+    // The last row goes: the new last row is selected.
+    view.select_row(1);
+    f.w.action_send_to_hydrus(&ids[2..3]);
+    assert!(pump_until(10_000, || f.len() == ids.len() - 2));
+    assert_eq!(view.selected_ids(), vec![ids[0]], "the new last row");
     f.close();
 }

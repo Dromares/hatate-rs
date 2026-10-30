@@ -1230,6 +1230,7 @@ impl MainWindow {
                 }
             }
             // The Review page's three buttons act on the selected rows, as the menu entries do.
+            "show_in_hydrus" => self.show_rows_in_hydrus(&self.s.queue_view.selected_ids()),
             "send_upload" => self.action_send_to_hydrus(&self.s.queue_view.selected_ids()),
             "send_url" => self.action_import_url_to_hydrus(&self.s.queue_view.selected_ids()),
             "download_send" => {
@@ -1255,7 +1256,7 @@ impl MainWindow {
 
     /// `review_shortcuts._guarded(window, id, handler)`: the checks the menu entry gets for free,
     /// answered in the status bar.
-    fn guarded_review_action(&self, action_id: &'static str) {
+    pub fn guarded_review_action(&self, action_id: &'static str) {
         let action = shortcuts::action(action_id);
         let navigational = matches!(
             action_id,
