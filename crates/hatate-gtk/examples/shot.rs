@@ -2,6 +2,11 @@
 //! fonts: `cargo run --example shot -- OUT.png [dark|light] [WxH|min] [STATE]`. A test-only tool:
 //! the shipped binary has no way to do this. Shows only the synthetic profile it creates.
 //!
+//! `shot --all OUTDIR [--only a,b]` renders the whole shot set (the `SHOT_SET` table: every state, dark and
+//! light, at 1100x800 and, where the table says so, at the minimum size), one child process per PNG,
+//! and writes `OUTDIR/index.tsv` with each PNG's header size next to the size its surface states as its
+//! minimum (DAN-2356: the header decides, not the host toolkit's numbers).
+//!
 //! `STATE` is one of `empty` (default), `rows`, `crashed`, `survived`, `quota`, `dialog` (the
 //! Clear Session question), `dialog-nolabel` (the same with the Queue page's placeholder label hidden, DAN-2256), `logs` (the log viewer), `logs-selected` (the log viewer with the path
 //! line selected and focused) or `logs-selected-body` (the log body selected and focused), `menu` (the first menu open) or `focus` (the
@@ -76,12 +81,514 @@ fn queue_rows(pics: &std::path::Path, n: usize) -> Vec<Entry> {
         .collect()
 }
 
+/// The shot set: `(state, also at the minimum size)`. Every state is rendered dark and light at 1100x800;
+/// the `true` ones again at the minimum size of the surface they show. States that only exist to print
+/// a measurement (`queue-5000*`, `tab*`) are not here.
+const SHOT_SET: &[(&str, bool)] = &[
+    ("empty", true),
+    ("rows", false),
+    ("crashed", false),
+    ("survived", false),
+    ("quota", true),
+    ("dialog", false),
+    ("dialog-nolabel", false),
+    ("logs", false),
+    ("logs-selected", false),
+    ("logs-selected-body", false),
+    ("menu", false),
+    ("menu-hover", false),
+    ("focus", false),
+    ("focus-files", false),
+    ("focus-folder", false),
+    ("hover-folder", false),
+    ("failed", true),
+    ("activity", true),
+    ("parser-health", true),
+    ("review", true),
+    ("review-empty", true),
+    ("review-nomatch", true),
+    ("review-picker", true),
+    ("review-addtags", true),
+    ("review-conditions", true),
+    ("review-focus-combo", false),
+    ("review-focus-mark", true),
+    ("review-focus-next", false),
+    ("review-focus-addtags", false),
+    ("review-focus-taglist", false),
+    ("review-focus-view", false),
+    ("review-wipe", true),
+    ("review-differences", true),
+    ("review-wipe-nomatch", true),
+    ("review-error", true),
+    ("review-focus-wslider", true),
+    ("review-focus-wview", false),
+    ("review-focus-zoom", false),
+    ("review-focus-popout", false),
+    ("review-compare", false),
+    ("review-compare-differences", false),
+    ("review-compare-nomatch", false),
+    ("review-focus-compare-slider", false),
+    ("review-focus-compare-diff", false),
+    ("hydrus-empty", true),
+    ("hydrus-delete", true),
+    ("hydrus-query", true),
+    ("hydrus-query-results", true),
+    ("hydrus-query-focus", true),
+    ("pawchive", true),
+    ("pawchive-artists", true),
+    ("hydrus-delete-confirm", true),
+    ("settings-0", true),
+    ("settings-1", true),
+    ("settings-2", true),
+    ("settings-3", true),
+    ("settings-4", true),
+    ("settings-5", true),
+    ("settings-6", true),
+    ("settings-7", true),
+    ("settings-8", true),
+    ("settings-find", true),
+    ("settings-find-none", true),
+    ("settings-found", true),
+    ("settings-lens", true),
+    ("settings-focus-find", false),
+    ("settings-focus-tab", false),
+    ("settings-focus-ok", false),
+    ("settings-focus-cancel", false),
+    ("settings-focus-check", false),
+    ("settings-focus-spin", false),
+    ("settings-focus-combo", false),
+    ("settings-focus-entry", false),
+    ("settings-mcp-running", true),
+    ("settings-mcp-held", true),
+    ("settings-mcp-audit", true),
+    ("settings-shortcuts-conflict", true),
+    ("settings-shortcuts-record", true),
+    ("settings-focus-mcp", false),
+    ("settings-focus-mcp-tier", true),
+    ("settings-focus-shortcut", false),
+    ("settings-mcp-tiers", true),
+    ("settings-mcp-tiers-dry", true),
+    ("settings-mcp-tiers-low", true),
+    ("queue", true),
+    ("queue-selected", false),
+    ("queue-sorted", false),
+    ("queue-filter", false),
+    ("queue-filter-empty", true),
+    ("queue-menu", false),
+    ("queue-remove", false),
+    ("queue-focus", false),
+    ("queue-focus-selected", false),
+    ("parser-health-kb", true),
+    ("settings-lens-box", true),
+];
+
+/// The size a state's surface states as its minimum, for the `fit` column of `index.tsv`; `None` for a
+/// surface with no stated minimum (the log viewer, Parser Health, the compare window, alert dialogs
+/// are sized by their content).
+fn stated_minimum(state: &str) -> Option<(i32, i32)> {
+    if state.starts_with("hydrus-query") {
+        Some((
+            hatate_gtk::hydrus_query::MIN_WIDTH,
+            hatate_gtk::hydrus_query::MIN_HEIGHT,
+        ))
+    } else if state.starts_with("settings") && state != "settings-lens-box" {
+        Some((
+            hatate_gtk::settings_dialog::MIN_WIDTH,
+            hatate_gtk::settings_dialog::MIN_HEIGHT,
+        ))
+    } else if state.starts_with("pawchive") {
+        Some((
+            hatate_gtk::pawchive_dialog::MIN_WIDTH,
+            hatate_gtk::pawchive_dialog::MIN_HEIGHT,
+        ))
+    } else if state.starts_with("parser-health") {
+        // Python only calls `resize(760, 460)` (`gtk-6e.md` section 3 calls it the minimum): the dialog's
+        // own size, which the shot must be, so the fit column checks it. GTK is not asked to enforce it.
+        Some((760, 460))
+    } else if state.starts_with("logs") || state.contains("compare") {
+        None
+    } else {
+        // `window.width()` is the window without its 5 px client-side shadow: 1100x800 renders as a
+        // 1090x790 PNG, so the minimum does too.
+        Some((MIN_WIDTH - 10, MIN_HEIGHT - 10))
+    }
+}
+
+/// `width x height` from a PNG's IHDR.
+fn png_size(path: &std::path::Path) -> Option<(u32, u32)> {
+    use std::io::Read;
+    let mut head = [0u8; 24];
+    std::fs::File::open(path).ok()?.read_exact(&mut head).ok()?;
+    (&head[..8] == b"\x89PNG\r\n\x1a\n").then(|| {
+        (
+            u32::from_be_bytes(head[16..20].try_into().unwrap()),
+            u32::from_be_bytes(head[20..24].try_into().unwrap()),
+        )
+    })
+}
+
+/// `shot --all OUTDIR [--only a,b,c]`: the whole set, a child process per PNG (a GTK application runs
+/// once per process). Exit code 1 if any child failed or wrote no PNG; a minimum-size shot whose header
+/// differs from the stated minimum is marked `OVER`/`UNDER` in the `fit` column, not failed here.
+fn run_all() -> glib::ExitCode {
+    let mut args = std::env::args().skip(2);
+    let dir = std::path::PathBuf::from(args.next().expect("OUTDIR"));
+    let only: Option<Vec<String>> = match (args.next().as_deref(), args.next()) {
+        (Some("--only"), Some(list)) => Some(list.split(',').map(str::to_owned).collect()),
+        _ => None,
+    };
+    std::fs::create_dir_all(&dir).expect("OUTDIR");
+    let exe = std::env::current_exe().expect("this binary");
+    let (mut index, mut failed, mut n) = (
+        String::from("file\tstate\tscheme\tsize\tpng\tstated_min\tfit\n"),
+        0,
+        0,
+    );
+    for scheme in ["dark", "light"] {
+        for &(state, min) in SHOT_SET {
+            if only.as_ref().is_some_and(|o| !o.iter().any(|s| s == state)) {
+                continue;
+            }
+            for size in std::iter::once("1100x800").chain(min.then_some("min")) {
+                let name = if size == "min" {
+                    format!("{state}-min-{scheme}.png")
+                } else {
+                    format!("{state}-{scheme}.png")
+                };
+                let out = dir.join(&name);
+                let _ = std::fs::remove_file(&out);
+                let run = std::process::Command::new(&exe)
+                    .arg(&out)
+                    .args([scheme, size, state])
+                    .output();
+                let ok = run.as_ref().is_ok_and(|r| r.status.success()) && out.exists();
+                let png = png_size(&out);
+                let stated = (size == "min").then(|| stated_minimum(state)).flatten();
+                let fit = match (ok, size, png, stated) {
+                    (false, ..) => "FAILED".to_string(),
+                    (_, "min", Some((w, h)), Some((sw, sh)))
+                        if (w as i32, h as i32) == (sw, sh) =>
+                    {
+                        "FIT".into()
+                    }
+                    (_, "min", Some((w, h)), Some((sw, sh)))
+                        if w as i32 >= sw && h as i32 >= sh =>
+                    {
+                        "OVER".into()
+                    }
+                    (_, "min", Some(_), Some(_)) => "UNDER".into(),
+                    _ => "-".into(),
+                };
+                if !ok {
+                    failed += 1;
+                    eprintln!(
+                        "FAILED {name}: {}",
+                        run.map(|r| String::from_utf8_lossy(&r.stderr)
+                            .lines()
+                            .last()
+                            .unwrap_or("")
+                            .to_string())
+                            .unwrap_or_default()
+                    );
+                }
+                n += 1;
+                index.push_str(&format!(
+                    "{name}\t{state}\t{scheme}\t{size}\t{}\t{}\t{fit}\n",
+                    png.map_or("-".into(), |(w, h)| format!("{w}x{h}")),
+                    stated.map_or("-".into(), |(w, h)| format!("{w}x{h}")),
+                ));
+            }
+        }
+    }
+    std::fs::write(dir.join("index.tsv"), &index).expect("index.tsv");
+    println!(
+        "SHOT-SET {n} shots, {failed} failed, index {}",
+        dir.join("index.tsv").display()
+    );
+    if failed == 0 {
+        glib::ExitCode::SUCCESS
+    } else {
+        glib::ExitCode::FAILURE
+    }
+}
+
+/// The window's pixels as `(width, height, BGRA premultiplied)`.
+fn pixels_of(
+    win: &gtk4::Window,
+    renderer: &gtk4::gsk::Renderer,
+) -> Option<(usize, usize, Vec<u8>)> {
+    let tex = texture_of(win.upcast_ref(), renderer)?;
+    let (w, h) = (tex.width() as usize, tex.height() as usize);
+    let mut buf = vec![0u8; w * h * 4];
+    tex.download(&mut buf, w * 4);
+    Some((w, h, buf))
+}
+
+/// What the Tab walk has seen so far.
+#[derive(Default)]
+struct TabWalk {
+    i: usize,
+    plain: Option<(usize, usize, Vec<u8>)>,
+    seen: Vec<String>,
+    stops: Vec<gtk4::Widget>,
+    without: usize,
+}
+
+/// `shot ... --tabs`: Tab walked from the top of `win`, one `TABSTOP` line per stop (DAN-2424 line 7).
+/// For each stop the window is drawn twice, once with the focus taken away and once with the stop focused
+/// and the ring showing, and the pixels inside the stop's bounds (plus 6 px) are compared: a stop where
+/// nothing changes has no visible indicator (`indicator=NO`). A crop of the stop with its ring is written
+/// next to the shot as `<out stem>-tab<i>.png`, so the table can name the file that shows each stop.
+/// The walk is a timer, two ticks per stop, because a focus change reaches the style only when the frame
+/// clock runs, and it does not run inside the tick that started the walk.
+fn start_tab_walk(
+    win: gtk4::Window,
+    renderer: gtk4::gsk::Renderer,
+    out: std::path::PathBuf,
+    app: Option<gtk4::Application>,
+) {
+    win.set_focus_visible(true);
+    let st = std::rc::Rc::new(std::cell::RefCell::new(TabWalk::default()));
+    glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
+        let mut st = st.borrow_mut();
+        let finish = |st: &TabWalk| {
+            println!(
+                "TABWALK stops={} without_indicator={}",
+                st.seen.len(),
+                st.without
+            );
+            if let Some(a) = &app {
+                a.quit();
+            }
+            glib::ControlFlow::Break
+        };
+        if st.plain.is_none() {
+            // phase A: the focus is taken away; the next tick draws the window without a ring
+            if st.i >= 80 {
+                return finish(&st);
+            }
+            GtkWindowExt::set_focus(&win, gtk4::Widget::NONE);
+            st.plain = Some((0, 0, Vec::new()));
+            return glib::ControlFlow::Continue;
+        }
+        if st.plain.as_ref().is_some_and(|p| p.2.is_empty()) {
+            // phase B: record the plain window, then move the focus on from the last stop
+            st.plain = pixels_of(&win, &renderer);
+            if st.plain.is_none() {
+                return finish(&st);
+            }
+            if let Some(prev) = st.stops.last() {
+                prev.grab_focus();
+            }
+            // A headless pointer that moves turns the ring off (GTK drops `focus-visible` on pointer
+            // input); a person tabbing has just used the keyboard, so it is on.
+            win.set_focus_visible(true);
+            win.child_focus(gtk4::DirectionType::TabForward);
+            win.set_focus_visible(true);
+            return glib::ControlFlow::Continue;
+        }
+        // phase C: the stop is focused and has been drawn
+        let Some(f) = GtkWindowExt::focus(&win) else {
+            return finish(&st);
+        };
+        let what = describe(&f).replace(['\n', '|'], " ");
+        let i = st.i;
+        if st.seen.first() == Some(&what) && i > 0 {
+            return finish(&st);
+        }
+        let (w, h, plain) = st.plain.take().unwrap();
+        let Some((_, _, ringed)) = pixels_of(&win, &renderer) else {
+            return finish(&st);
+        };
+        let b = f
+            .compute_bounds(&win)
+            .unwrap_or_else(|| gtk4::graphene::Rect::new(0.0, 0.0, 0.0, 0.0));
+        let clamp = |v: f32, hi: usize| (v as i32).clamp(0, hi as i32) as usize;
+        let (x0, y0) = (clamp(b.x() - 6.0, w), clamp(b.y() - 6.0, h));
+        let (x1, y1) = (
+            clamp(b.x() + b.width() + 6.0, w),
+            clamp(b.y() + b.height() + 6.0, h),
+        );
+        let mut diff = 0usize;
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let o = (y * w + x) * 4;
+                if (0..4).any(|c| plain[o + c].abs_diff(ringed[o + c]) > 8) {
+                    diff += 1;
+                }
+            }
+        }
+        let crop = out.with_file_name(format!(
+            "{}-tab{i}.png",
+            out.file_stem().and_then(|s| s.to_str()).unwrap_or("shot")
+        ));
+        if x1 > x0 && y1 > y0 {
+            let mut c = Vec::with_capacity((x1 - x0) * (y1 - y0) * 4);
+            for y in y0..y1 {
+                c.extend_from_slice(&ringed[(y * w + x0) * 4..(y * w + x1) * 4]);
+            }
+            gdk::MemoryTexture::new(
+                (x1 - x0) as i32,
+                (y1 - y0) as i32,
+                gdk::MemoryFormat::B8g8r8a8Premultiplied,
+                &glib::Bytes::from_owned(c),
+                (x1 - x0) * 4,
+            )
+            .save_to_png(&crop)
+            .expect("crop");
+        }
+        if diff == 0 {
+            st.without += 1;
+        }
+        println!(
+            "TABSTOP {i} {what} | bounds {},{} {}x{} | diffpx {diff} | indicator={} | {}",
+            b.x() as i32,
+            b.y() as i32,
+            b.width() as i32,
+            b.height() as i32,
+            if diff > 0 { "yes" } else { "NO" },
+            crop.file_name().and_then(|s| s.to_str()).unwrap_or("-"),
+        );
+        st.stops.push(f);
+        st.seen.push(what);
+        st.i += 1;
+        glib::ControlFlow::Continue
+    });
+}
+
+/// The surfaces whose Tab order the exit check lists (`shot --tabs`): every window and page, in the
+/// states that put controls on them.
+const TAB_STATES: &[&str] = &[
+    "empty",
+    "rows",
+    "queue-selected",
+    "queue-filter",
+    "crashed",
+    "survived",
+    "quota",
+    "failed",
+    "activity",
+    "logs",
+    "parser-health",
+    "review",
+    "review-nomatch",
+    "review-picker",
+    "review-wipe",
+    "review-differences",
+    "review-compare",
+    "hydrus-empty",
+    "hydrus-query",
+    "hydrus-query-results",
+    "pawchive-artists",
+    "settings-0",
+    "settings-1",
+    "settings-2",
+    "settings-3",
+    "settings-4",
+    "settings-5",
+    "settings-6",
+    "settings-7",
+    "settings-8",
+    "settings-mcp-running",
+    "settings-shortcuts-conflict",
+];
+
+/// `shot --tabs OUTDIR [--only a,b]`: the Tab walk of every surface in `TAB_STATES`, dark and light, a child
+/// process each. Writes `OUTDIR/tabs.tsv` (state, scheme, stop, widget, bounds, changed pixels, indicator,
+/// the crop that shows the stop) and the crops. Exit code 1 if a walk failed or a stop shows no indicator.
+fn run_tabs() -> glib::ExitCode {
+    let mut args = std::env::args().skip(2);
+    let dir = std::path::PathBuf::from(args.next().expect("OUTDIR"));
+    let only: Option<Vec<String>> = match (args.next().as_deref(), args.next()) {
+        (Some("--only"), Some(list)) => Some(list.split(',').map(str::to_owned).collect()),
+        _ => None,
+    };
+    std::fs::create_dir_all(&dir).expect("OUTDIR");
+    let exe = std::env::current_exe().expect("this binary");
+    let mut tsv = String::from("state\tscheme\tstop\twidget\tbounds\tdiffpx\tindicator\tcrop\n");
+    let (mut stops, mut without, mut failed) = (0, 0, 0);
+    for &state in TAB_STATES {
+        if only.as_ref().is_some_and(|o| !o.iter().any(|s| s == state)) {
+            continue;
+        }
+        for scheme in ["dark", "light"] {
+            let out = dir.join(format!("{state}-{scheme}.png"));
+            let run = std::process::Command::new(&exe)
+                .arg(&out)
+                .args([scheme, "1100x800", state, "--tabs"])
+                .output();
+            let text = run
+                .as_ref()
+                .map(|r| String::from_utf8_lossy(&r.stdout).into_owned())
+                .unwrap_or_default();
+            if !run.as_ref().is_ok_and(|r| r.status.success()) || !text.contains("TABWALK") {
+                failed += 1;
+                eprintln!("FAILED tab walk {state}-{scheme}");
+                continue;
+            }
+            for l in text.lines().filter(|l| l.starts_with("TABSTOP ")) {
+                let parts: Vec<&str> = l["TABSTOP ".len()..].split(" | ").collect();
+                if parts.len() != 5 {
+                    failed += 1;
+                    eprintln!("FAILED tab walk {state}-{scheme}: malformed line {l:?}");
+                    continue;
+                }
+                let (i, widget) = parts[0].split_once(' ').unwrap_or((parts[0], ""));
+                let ind = parts[3].trim_start_matches("indicator=");
+                stops += 1;
+                if ind != "yes" {
+                    without += 1;
+                }
+                tsv.push_str(&format!(
+                    "{state}\t{scheme}\t{i}\t{widget}\t{}\t{}\t{ind}\t{}\n",
+                    parts[1].trim_start_matches("bounds "),
+                    parts[2].trim_start_matches("diffpx "),
+                    parts[4]
+                ));
+            }
+        }
+    }
+    std::fs::write(dir.join("tabs.tsv"), &tsv).expect("tabs.tsv");
+    println!(
+        "TABS {stops} stops, {without} without an indicator, {failed} walks failed, {}",
+        dir.join("tabs.tsv").display()
+    );
+    if failed == 0 && without == 0 {
+        glib::ExitCode::SUCCESS
+    } else {
+        glib::ExitCode::FAILURE
+    }
+}
+
+/// Every state `shot` renders: the table, the two scroll measurements and the `tab*` walks.
+fn known_state(s: &str) -> bool {
+    SHOT_SET.iter().any(|&(n, _)| n == s)
+        || matches!(s, "queue-5000" | "queue-5000-scroll")
+        || s.starts_with("tab")
+}
+
 fn main() -> glib::ExitCode {
+    if std::env::args().nth(1).as_deref() == Some("--all") {
+        return run_all();
+    }
+    if std::env::args().nth(1).as_deref() == Some("--tabs") {
+        return run_tabs();
+    }
     let mut args = std::env::args().skip(1);
     let out = std::path::PathBuf::from(args.next().expect("OUT.png"));
     let scheme = args.next().unwrap_or_else(|| "dark".into());
     let size = args.next();
     let state = args.next().unwrap_or_else(|| "empty".into());
+    let tabs = args.next().as_deref() == Some("--tabs");
+    // Python's `render_states.py` fails loudly on a name it does not know and writes nothing
+    // (`test_unknown_state_fails_loudly_and_writes_nothing`); a typo here used to render the
+    // default window and exit 0 (DAN-2223).
+    if !known_state(&state) {
+        eprintln!(
+            "shot: no such state {state:?}: the states are the SHOT_SET table, queue-5000[-scroll] and tab*"
+        );
+        return glib::ExitCode::from(2);
+    }
     let home = tempfile::tempdir().expect("temp profile");
     let root = home.path().to_path_buf();
     let lookup = move |k: &str| -> Option<OsString> {
@@ -192,7 +699,7 @@ fn main() -> glib::ExitCode {
     let mut unclean = false;
     match state.as_str() {
         "rows" | "dialog" | "dialog-nolabel" | "failed" | "activity" | "parser-health"
-        | "tab-failed" | "tab-activity" => save(&rows(12)),
+        | "parser-health-kb" | "tab-failed" | "tab-activity" => save(&rows(12)),
         st if st.starts_with("review") && st != "review-bare" => save(&review_rows(&pics, st)),
         st if st.starts_with("queue") || st.starts_with("hydrus-delete") => save(&queue_rows(
             &pics,
@@ -310,6 +817,7 @@ fn main() -> glib::ExitCode {
             let settle = match state.as_str() {
                 "menu-hover" => 60,
                 "queue-5000-scroll" => 400,
+                "parser-health-kb" => 90,
                 st if st.starts_with("review") => 60,
                 _ => 14,
             };
@@ -319,13 +827,13 @@ fn main() -> glib::ExitCode {
             // The log viewer is its own window; its shot is that window's, not the main one's.
             let other = if state.starts_with("logs") {
                 Some("Logs")
-            } else if state == "parser-health" {
+            } else if state.starts_with("parser-health") {
                 Some("Parser Health")
             } else if state.starts_with("hydrus-query") {
                 Some("Query Hydrus")
             } else if state.starts_with("pawchive") {
                 Some("Pawchive Index")
-            } else if state.starts_with("settings") {
+            } else if state.starts_with("settings") && state != "settings-lens-box" {
                 Some("Settings")
             } else if state.starts_with("review-compare-d")
                 || state.starts_with("review-compare-l")
@@ -364,6 +872,11 @@ fn main() -> glib::ExitCode {
             let tex = texture_of(win.upcast_ref(), &renderer).expect("snapshot");
             tex.save_to_png(&out).expect("png");
             println!("SHOT {} {}x{}", out.display(), win.width(), win.height());
+            if tabs {
+                // The walk quits the application when it is done; the popover shots below are not taken.
+                start_tab_walk(win.clone(), renderer.clone(), out.clone(), main_app.clone());
+                return glib::ControlFlow::Break;
+            }
             // Where every label is, for the measuring script (`<shot>.rects`, tab separated:
             // x y w h state text); the contrast table is computed from the pixels under each box.
             let mut rects = String::new();
@@ -376,6 +889,7 @@ fn main() -> glib::ExitCode {
                     | "review-compare-nomatch"
                     | "hydrus-delete"
                     | "hydrus-delete-confirm"
+                    | "settings-lens-box"
             ) {
                 find_type(win.upcast_ref(), "AdwAlertDialog")
             } else {
@@ -546,6 +1060,24 @@ fn prepare(window: &MainWindow, state: &str) {
         "failed" => window.show_failed_banner("The run stopped on a fault (synthetic)."),
         "activity" => window.set_mode("activity"),
         "parser-health" => window.activate_action("parser-health"),
+        // The dialog as a person meets it after opening it from the keyboard (menu, then Enter): the
+        // toolkit shows the focus ring only after a key, which a shot has no key to give, so the
+        // dialog's toplevel is told the last input was the keyboard and the focus is moved in (DAN-2330 item 2).
+        "parser-health-kb" => {
+            window.activate_action("parser-health");
+            glib::timeout_add_local_once(std::time::Duration::from_millis(60), || {
+                let dialog = gtk4::Window::list_toplevels()
+                    .into_iter()
+                    .filter_map(|w| w.downcast::<gtk4::Window>().ok())
+                    .find(|w| w.title().is_some_and(|t| t == "Parser Health"));
+                if let Some(d) = dialog {
+                    d.set_focus_visible(true);
+                    if GtkWindowExt::focus(&d).is_none() {
+                        d.child_focus(gtk4::DirectionType::TabForward);
+                    }
+                }
+            });
+        }
         "logs-selected" | "logs-selected-body" => {
             window.activate_action("view-logs");
             let viewer = window
@@ -713,7 +1245,9 @@ fn prepare_settings(window: &MainWindow, state: &str) {
             d.find.set_text("minimum similarity");
             d.jump_to_setting(0);
         }
-        "lens" => {
+        // `lens-box` is the same state seen from the main window: the "Google Lens cannot run" box is
+        // an alert dialog on the main window, not on Settings, so the Settings shot never holds it.
+        "lens" | "lens-box" => {
             d.tabs.set_current_page(Some(1));
             d.lens_env
                 .replace(hatate_core::lens_browser::deps::BrowserEnv {

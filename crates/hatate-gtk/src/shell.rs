@@ -451,5 +451,16 @@ mod tests {
         assert_eq!(ghost_glyph("activity"), "動");
         assert_eq!(EMPTY_GHOST_GLYPH, "空");
         assert_eq!(MARK_GLYPH, "鏡");
+        // `test_ghost_kanji.py::test_the_empty_glyph_is_in_the_bundled_subset`: every ghost glyph
+        // is one the bundled kanji face carries.
+        for g in ["queue", "review", "activity"]
+            .map(ghost_glyph)
+            .into_iter()
+            .chain([EMPTY_GHOST_GLYPH])
+        {
+            let c = g.chars().next().unwrap();
+            assert_eq!(g.chars().count(), 1);
+            assert!(crate::fonts::KANJI_GLYPHS.contains(&c), "{g:?}");
+        }
     }
 }

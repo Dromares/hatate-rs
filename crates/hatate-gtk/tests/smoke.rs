@@ -183,6 +183,14 @@ const SCENARIOS: &[Scenario] = &[
         restore_after_a_crash_shows_the_banner,
     ),
     ("nothing_survived_variant", nothing_survived_variant),
+    (
+        "nothing_survived_page_content",
+        nothing_survived_page_content,
+    ),
+    (
+        "ghost_and_brackets_take_no_input_and_the_marks_are_12_by_2",
+        ghost_and_brackets_take_no_input_and_the_marks_are_12_by_2,
+    ),
     ("missing_files_dialog", missing_files_dialog),
     ("save_session_as", save_session_as),
     ("open_session", open_session),
@@ -626,6 +634,8 @@ fn empty_state_and_idle_strip(app: &adw::Application) {
     assert_eq!(f.say(), "Ready");
     assert_eq!(f.w.s.shell.run_progress_label.text(), IDLE_PROGRESS);
     assert_eq!(f.w.s.shell.run_eta_label.text(), IDLE_ETA);
+    // An ordinary start has no note on the strip (`test_nothing_survived.py::TestRunStrip`).
+    assert_eq!(f.w.s.shell.run_note_label.text(), "");
     assert!(!f.w.s.run_banner.root.is_visible());
     assert!(!f.w.s.quota_banner.root.is_visible());
     f.close();
@@ -884,6 +894,195 @@ fn restore_after_a_crash_shows_the_banner(app: &adw::Application) {
     assert_eq!(f.say(), "Ready");
     assert!(f.w.s.shell.run_note_label.text().starts_with("stopped "));
     f.close();
+}
+
+/// DAN-2223 (6.j): `tests/test_ghost_kanji.py`'s hit-test rows. The ghost glyph, its holder and the
+/// four crop marks must take no pointer input, so a button under them still takes the click; the
+/// marks are 12 px arms, 2 px thick (`theme.rs` `.corner`). Pixels are the shot set's.
+fn ghost_and_brackets_take_no_input_and_the_marks_are_12_by_2(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            unclean: true,
+            empty_session_file: true,
+            ..Opts::default()
+        },
+    );
+    let win = f.w.win.clone().upcast::<gtk4::Widget>();
+    // The ghost: the label, and the holder it sits in, are not pick targets.
+    let ghost = find_class(&win, "ghost-kanji").expect("the ghost kanji");
+    assert!(!ghost.can_target() && !ghost.can_focus());
+    let holder = ghost
+        .ancestor(gtk4::ScrolledWindow::static_type())
+        .expect("the holder the glyph sits in");
+    assert!(!holder.can_target(), "the holder takes no input");
+    // The marks: every `.corner` under the window takes no input and no focus, and the page that
+    // is showing has all four, 12 x 12 with 2 px arms.
+    let mut corners = Vec::new();
+    fn collect(w: &gtk4::Widget, out: &mut Vec<gtk4::Widget>) {
+        if w.has_css_class("corner") {
+            out.push(w.clone());
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            collect(&child, out);
+            c = child.next_sibling();
+        }
+    }
+    collect(&win, &mut corners);
+    assert!(
+        corners.len() >= 4 && corners.len() % 4 == 0,
+        "{}",
+        corners.len()
+    );
+    for c in &corners {
+        assert!(!c.can_target() && !c.can_focus());
+        let (min, ..) = c.measure(gtk4::Orientation::Horizontal, -1);
+        let (minv, ..) = c.measure(gtk4::Orientation::Vertical, -1);
+        assert_eq!((min, minv), (12, 12), "{:?}", c.css_classes());
+    }
+    assert_eq!(
+        (
+            hatate_gtk::widgets::BRACKET_ARM,
+            hatate_gtk::widgets::BRACKET_WEIGHT
+        ),
+        (12, 2)
+    );
+    f.close();
+}
+
+/// DAN-2223 (6.j): what `tests/test_nothing_survived.py` measures on the "Nothing survived." page,
+/// as far as a widget tree can say it: the boxed cross, the headline, the prose, the meta line's
+/// pairs and their classes, the three actions in order, the uppercase-mono voice and the single
+/// primary. Sizes and pixels are the shot set's (`queue-nothing-survived` in `shot --all`).
+fn nothing_survived_page_content(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            unclean: true,
+            empty_session_file: true,
+            ..Opts::default()
+        },
+    );
+    let g = f.w.s.nothing_survived.borrow();
+    let p = g.as_ref().expect("the variant is showing");
+    let root = p.root.clone().upcast::<gtk4::Widget>();
+    // Boxed cross: a 42 px square holding U+2715.
+    let glyph = find_class(&root, "survived-glyph").expect("the boxed cross");
+    let glyph = glyph.downcast::<gtk4::Label>().expect("a label");
+    assert_eq!(glyph.text(), "\u{2715}");
+    assert_eq!(glyph.size_request(), (42, 42));
+    // Headline and prose.
+    assert_eq!(p.title.text(), "Nothing survived.");
+    assert!(p.title.has_css_class("display-title"));
+    assert!(p.body.text().contains("no queue to restore"));
+    assert!(p.body.text().chars().count() > 80);
+    let section = find_class(&root, "section-label")
+        .and_then(|w| w.downcast::<gtk4::Label>().ok())
+        .map(|l| l.text().to_string());
+    assert_eq!(section.as_deref(), Some("01 // Queue"));
+    // The three actions, in order, uppercase mono; only the first is the primary.
+    let buttons = [&p.new_search, &p.crash_log, &p.add_files];
+    // In the order the tree lays them out, not the order the struct names them.
+    fn buttons_in_order(w: &gtk4::Widget, out: &mut Vec<String>) {
+        if let Some(b) = w.downcast_ref::<gtk4::Button>() {
+            out.push(b.label().unwrap_or_default().to_string());
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            buttons_in_order(&child, out);
+            c = child.next_sibling();
+        }
+    }
+    let mut labels = Vec::new();
+    buttons_in_order(&root, &mut labels);
+    assert_eq!(
+        labels,
+        ["Start new search", "View crash log", "Add files\u{2026}"]
+    );
+    assert!(buttons.iter().all(|b| b.has_css_class("caps")));
+    assert_eq!(
+        buttons.map(|b| b.has_css_class("primary")),
+        [true, false, false]
+    );
+    // The meta line: dim labels, bright figures, caps; no log means `no new entry`; the age of the
+    // saved file is the second pair.
+    let mut all = Vec::new();
+    all_labels(&root, &mut all);
+    let meta: Vec<_> = all
+        .iter()
+        .filter(|l| l.has_css_class("meta-label") || l.has_css_class("meta-figure"))
+        .collect();
+    let kinds: Vec<_> = meta.iter().map(|l| l.has_css_class("meta-label")).collect();
+    assert_eq!(kinds, [true, false, true, false]);
+    assert!(meta.iter().all(|l| l.has_css_class("caps")));
+    let texts: Vec<_> = meta.iter().map(|l| l.text().to_string()).collect();
+    assert_eq!(
+        &texts[..3],
+        ["Crash log", "no new entry", "Last saved session"]
+    );
+    assert!(texts[3].ends_with(" ago"), "{texts:?}");
+    // The three actions are `--space-3` (12 px) apart, the page keeps its four crop marks, and the
+    // watermark stays the list's glyph (the Empty glyph is the drop zone's).
+    let row = p.new_search.parent().and_downcast::<gtk4::Box>().unwrap();
+    assert_eq!(row.spacing(), 12);
+    let mut corners = Vec::new();
+    find_all_class(&root, "corner", &mut corners);
+    assert_eq!(corners.len(), 4);
+    assert_eq!(f.w.s.shell.root.glyph(), "\u{529B}");
+    // The buttons are wired: View crash log opens the viewer on the crash log, Add files asks for
+    // images.
+    let (crash_log, add_files) = (p.crash_log.clone(), p.add_files.clone());
+    drop(g);
+    crash_log.emit_clicked();
+    let on_crash_log =
+        f.w.s
+            .log_viewer
+            .borrow()
+            .as_ref()
+            .map(|v| v.showing_crash_log());
+    assert_eq!(on_crash_log, Some(true));
+    add_files.emit_clicked();
+    assert!(
+        matches!(f.script.asked.borrow().last(), Some(Asked::OpenFiles { title, .. }) if title == "Add images")
+    );
+    // An unreadable session age is left out, not invented: with the store gone the meta line holds
+    // the crash-log pair alone.
+    for p in [f.w.s.paths.session_db(), f.w.s.paths.session_json()] {
+        let _ = std::fs::remove_file(p);
+    }
+    f.w.dismiss_nothing_survived();
+    f.w.show_nothing_survived();
+    let mut all = Vec::new();
+    all_labels(
+        f.w.s
+            .nothing_survived
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .root
+            .upcast_ref(),
+        &mut all,
+    );
+    let meta: Vec<_> = all
+        .iter()
+        .filter(|l| l.has_css_class("meta-label") || l.has_css_class("meta-figure"))
+        .map(|l| l.text().to_string())
+        .collect();
+    assert_eq!(meta, ["Crash log", "no new entry"]);
+    f.close();
+}
+
+/// Every widget under `w` (itself included) with the CSS class `class`.
+fn find_all_class(w: &gtk4::Widget, class: &str, out: &mut Vec<gtk4::Widget>) {
+    if w.has_css_class(class) {
+        out.push(w.clone());
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        find_all_class(&child, class, out);
+        c = child.next_sibling();
+    }
 }
 
 fn nothing_survived_variant(app: &adw::Application) {
