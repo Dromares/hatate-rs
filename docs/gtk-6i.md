@@ -270,6 +270,6 @@ DAN-2319 and named there, not changed here (it would move every Settings page).
 key (Python's `outcome.get(...)` prints `None` the same way). The real handler always writes that key (`mcp/tool_handlers.rs:532`), so a real row
 cannot print `None`; the synthetic seed in `examples/shot.rs` omitted it and now carries `"selected_candidate_index": 1`.
 
-**Not judgeable from a shot:** unchanged from section 6 (the Got it and Shortcut conflict boxes). The Tab order of the new states is the same
-tab walk as section 6 (`settings-tab-8`); the tier boxes add three stops, each shown with a ring in `settings-focus-mcp-tier-{dark,light}.png`
-(the research one) and by the same ring class on the other two.
+**Not judgeable from a shot:** unchanged from section 6 (the Got it and Shortcut conflict boxes). The Tab order of the MCP page is the walk of
+section 6 (`settings-tab-8`, taken at `866766f`, before this fixup, which adds no widget and no Tab stop); this fixup shows one tier check
+box's ring (the research one, `settings-focus-mcp-tier-{dark,light}.png`). The Hydrus and destructive tier boxes' rings were not shot.
