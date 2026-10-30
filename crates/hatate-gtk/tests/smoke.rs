@@ -52,8 +52,8 @@ const SCENARIOS: &[Scenario] = &[
         settings_highlight_second_call_inside_the_window_still_restores,
     ),
     (
-        "settings_find_box_lists_jumps_and_marks_for_two_seconds",
-        settings_find_box_lists_jumps_and_marks_for_two_seconds,
+        "settings_find_box_lists_and_jumps",
+        settings_find_box_lists_and_jumps,
     ),
     (
         "review_page_follows_the_selection",
@@ -7195,7 +7195,7 @@ fn settings_highlight_second_call_inside_the_window_still_restores(app: &adw::Ap
     f.close();
 }
 
-fn settings_find_box_lists_jumps_and_marks_for_two_seconds(app: &adw::Application) {
+fn settings_find_box_lists_and_jumps(app: &adw::Application) {
     let f = fx(app);
     f.w.activate_action("preferences");
     let d = f.w.s.settings_dialog.borrow().clone().unwrap();
@@ -7263,6 +7263,27 @@ fn settings_engine_line_lens_warning_and_browse_follow_python(app: &adw::Applica
     f.script.reset();
     d.set_value("enable_google_lens", &Value::Bool(false));
     assert_eq!(f.script.count_shown(), 0);
+    // a working install says nothing (`test_a_working_install_says_nothing`): a browser on PATH
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = tempfile::tempdir().unwrap();
+        let exe = bin.path().join("chromium");
+        std::fs::write(&exe, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        *d.lens_env.borrow_mut() = BrowserEnv {
+            home: Some(empty.path().to_path_buf()),
+            path: Some(bin.path().into()),
+            ..BrowserEnv::default()
+        };
+        f.script.reset();
+        d.set_value("enable_google_lens", &Value::Bool(true));
+        assert_eq!(
+            f.script.count_shown(),
+            0,
+            "a browser is found: nothing to say"
+        );
+        d.set_value("enable_google_lens", &Value::Bool(false));
+    }
 
     // Browse: the chooser opens on the current path, and the answer fills the field
     let chosen = f.dir.path().join("log.txt");
