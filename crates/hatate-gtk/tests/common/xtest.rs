@@ -23,6 +23,10 @@ const KEYSYM_ESCAPE: u32 = 0xff1b;
 const KEYSYM_LEFT: u32 = 0xff51;
 const KEYSYM_RIGHT: u32 = 0xff53;
 const KEYSYM_TAB: u32 = 0xff09;
+const KEYSYM_DOWN: u32 = 0xff54;
+const KEYSYM_PAGE_DOWN: u32 = 0xff56;
+const KEYSYM_END: u32 = 0xff57;
+const KEYSYM_HOME: u32 = 0xff50;
 
 pub struct Xtest {
     sock: UnixStream,
@@ -49,6 +53,10 @@ pub enum Key {
     Left,
     Right,
     Tab,
+    Down,
+    PageDown,
+    End,
+    Home,
     /// A letter or digit, by its ASCII (X keysyms for Latin-1 are the code points).
     Char(char),
 }
@@ -61,6 +69,10 @@ impl Key {
             Key::Left => KEYSYM_LEFT,
             Key::Right => KEYSYM_RIGHT,
             Key::Tab => KEYSYM_TAB,
+            Key::Down => KEYSYM_DOWN,
+            Key::PageDown => KEYSYM_PAGE_DOWN,
+            Key::End => KEYSYM_END,
+            Key::Home => KEYSYM_HOME,
             Key::Char(c) => c as u32,
         }
     }
