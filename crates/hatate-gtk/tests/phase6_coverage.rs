@@ -166,7 +166,7 @@ fn every_row_has_a_rust_home_a_pr_and_names_only_files_that_exist() {
         );
         let open = r.home.starts_with("**OPEN**");
         assert!(
-            r.pr.contains('#') || (open && r.pr == "OPEN"),
+            r.pr.contains('#') || (open && r.pr == "OPEN (DAN-2448)"),
             "{at}: no PR"
         );
         for span in r.home.split('`').skip(1).step_by(2) {
