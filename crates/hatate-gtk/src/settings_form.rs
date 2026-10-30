@@ -309,7 +309,9 @@ impl Form {
                     drop.set_selected(data.iter().position(|x| x == d).unwrap_or(0) as u32)
                 }
                 (Control::Text(e), Value::Text(t)) => e.set_text(t),
-                (Control::Multi(view), Value::Text(t)) => view.buffer().set_text(t),
+                (Control::Multi(view), Value::Text(t)) => view
+                    .buffer()
+                    .set_text(&crate::settings_values::qt_plain_text(t)),
                 (Control::Checks { boxes, items }, Value::Checked(on)) => {
                     for (b, name) in boxes.iter().zip(items) {
                         b.set_active(on.iter().any(|o| o == name));

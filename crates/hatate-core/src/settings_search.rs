@@ -43,10 +43,14 @@ pub fn name_of(text: &str) -> Option<String> {
     Some(text.trim_end_matches(':').to_owned())
 }
 
+/// One tab for [`index_tabs`]: its name, the widget standing for the whole page, and the
+/// `(text, widget)` of every label, check box and group title in it, in tree order.
+pub type TabNames<'a, W> = (&'a str, W, Vec<(String, W)>);
+
 /// `index_tabs`: `pages` is, per tab, its name, the widget standing for the whole page, and the
 /// `(text, widget)` of every label, check box and group title in it, in tree order. Every tab is
 /// reachable by its own name, then each name once per tab (the first widget that carries it).
-pub fn index_tabs<W: Clone>(pages: &[(&str, W, Vec<(String, W)>)]) -> Vec<SettingEntry<W>> {
+pub fn index_tabs<W: Clone>(pages: &[TabNames<'_, W>]) -> Vec<SettingEntry<W>> {
     let mut found = Vec::new();
     for (tab_index, (tab_name, page, widgets)) in pages.iter().enumerate() {
         found.push(SettingEntry {

@@ -73,6 +73,26 @@ pub fn qt_double(v: f64, min: f64, max: f64, dec: u32) -> f64 {
     rounded.clamp(min, max)
 }
 
+/// What a `QPlainTextEdit` holds after `setPlainText(text)`, read back by `toPlainText()`: every
+/// line ending (`\r\n`, `\r`, and the Unicode line and paragraph separators) is one `\n`.
+pub fn qt_plain_text(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                out.push('\n');
+            }
+            '\u{2028}' | '\u{2029}' => out.push('\n'),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 /// `QSpinBox.setValue`: bound to `[min, max]`.
 pub fn qt_int(v: i64, min: i64, max: i64) -> i64 {
     v.clamp(min, max)
@@ -544,4 +564,184 @@ pub fn pipeline_text(base: &Settings, v: &Values) -> String {
     t.enable_pawchive = v.b("enable_pawchive");
     t.enable_pawchive_index = v.b("enable_pawchive_index");
     hatate_core::engine_ids::pipeline_summary(&t)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn defaults() -> Settings {
+        let paths = hatate_core::paths::Paths::from_lookup(|k| match k {
+            "HOME" => Some("/tmp/x".into()),
+            _ => None,
+        })
+        .unwrap();
+        Settings::with_defaults(&paths)
+    }
+
+    /// `apply(initial(s))` with the controls edited by `edit`.
+    fn saved(edit: impl FnOnce(&mut Values)) -> Settings {
+        let s = defaults();
+        let mut v = initial(&s);
+        edit(&mut v);
+        let mut out = s.clone();
+        apply(&v, s.deviantart_cookies.expose(), &mut out);
+        out
+    }
+
+    #[test]
+    fn a_double_spin_rounds_to_its_decimals_then_bounds() {
+        assert_eq!(qt_double(2.71828, 0.0, 10.0, 2), 2.72);
+        assert_eq!(qt_double(0.005, 0.0, 10.0, 2), 0.01);
+        assert_eq!(qt_double(3.0, 5.0, 600.0, 2), 5.0);
+        assert_eq!(qt_double(1000.0, 5.0, 300.0, 2), 300.0);
+        assert_eq!(qt_double(12.3456, 5.0, 900.0, 2), 12.35);
+    }
+
+    #[test]
+    fn plain_text_has_one_kind_of_line_ending() {
+        assert_eq!(
+            qt_plain_text("a\r\nb\rc\u{2028}d\u{2029}e\nf"),
+            "a\nb\nc\nd\ne\nf"
+        );
+    }
+
+    #[test]
+    fn an_unopened_dialog_saves_what_python_saves() {
+        // untouched controls: the values come back, bounded to the spin ranges
+        let s = saved(|_| {});
+        assert_eq!(s.delay_min_seconds, 45.0);
+        assert_eq!(
+            s.tag_namespace_remap.0,
+            vec![("artist".to_owned(), "creator".to_owned())]
+        );
+        assert_eq!(
+            s.enabled_tag_sources,
+            ["User", "Hydrus", "Booru", "Hatate-linux"]
+        );
+    }
+
+    #[test]
+    fn the_max_delay_never_sits_under_the_min() {
+        let s = saved(|v| {
+            v.set("delay_min", Value::Num(100.0));
+            v.set("delay_max", Value::Num(60.0));
+        });
+        assert_eq!((s.delay_min_seconds, s.delay_max_seconds), (100.0, 100.0));
+    }
+
+    #[test]
+    fn an_engine_delay_of_zero_is_no_override_and_one_zero_copies_the_other() {
+        let s = saved(|v| {
+            v.set("engine_delay_min.iqdb", Value::Num(0.0));
+            v.set("engine_delay_max.iqdb", Value::Num(0.0));
+            v.set("engine_delay_min.saucenao", Value::Num(0.0));
+            v.set("engine_delay_max.saucenao", Value::Num(40.0));
+            v.set("engine_delay_min.ascii2d", Value::Num(30.0));
+            v.set("engine_delay_max.ascii2d", Value::Num(20.0));
+        });
+        assert_eq!(
+            s.engine_delays.0,
+            vec![
+                ("saucenao".to_owned(), vec![40.0, 40.0]),
+                ("ascii2d".to_owned(), vec![20.0, 30.0]),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_deviantart_cookie_is_written_only_when_the_box_was_changed() {
+        let mut s = defaults();
+        s.deviantart_cookies = Secret::new("old");
+        let mut v = initial(&s);
+        // a search rotated the stored cookie while the dialog was open
+        let mut now = s.clone();
+        now.deviantart_cookies = Secret::new("rotated");
+        apply(&v, "old", &mut now);
+        assert_eq!(now.deviantart_cookies.expose(), "rotated");
+        // an edit wins, clearing the box included
+        v.set("deviantart_cookies", Value::Text("  ".into()));
+        apply(&v, "old", &mut now);
+        assert_eq!(now.deviantart_cookies.expose(), "");
+    }
+
+    #[test]
+    fn remap_and_colour_lines_parse_the_way_python_splits_them() {
+        let s = saved(|v| {
+            v.set(
+                "namespace_remap_edit",
+                Value::Text("a:b\n c : d \n\nnocolon\n:x\nk:\na:z".into()),
+            );
+            v.set(
+                "namespace_colors_edit",
+                Value::Text("character:#f00\n:#0f0\nns:\nns2 : #123 \ncharacter:#abc".into()),
+            );
+        });
+        // a later line replaces the value and keeps the first place; an empty new name is kept
+        assert_eq!(
+            s.tag_namespace_remap.0,
+            vec![
+                ("a".to_owned(), "z".to_owned()),
+                ("c".to_owned(), "d".to_owned()),
+                ("k".to_owned(), String::new()),
+            ]
+        );
+        // an empty namespace is "unnamespaced"; an empty colour is no entry
+        assert_eq!(
+            s.tag_namespace_colors.0,
+            vec![
+                ("character".to_owned(), "#abc".to_owned()),
+                (String::new(), "#0f0".to_owned()),
+                ("ns2".to_owned(), "#123".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn rule_tags_and_the_blacklist_keep_their_lines_trimmed_without_the_blank_ones() {
+        let s = saved(|v| {
+            v.set(
+                "tag_blacklist_edit",
+                Value::Text("  bad_* \n\n meta:*\r\n".into()),
+            );
+            v.set(
+                "tags_for_found_edit",
+                Value::Text("hatate:found\n   \nx".into()),
+            );
+        });
+        assert_eq!(s.tag_blacklist, ["bad_*", "meta:*"]);
+        assert_eq!(s.tags_for_found, ["hatate:found", "x"]);
+    }
+
+    #[test]
+    fn the_hydrus_fields_lose_their_trailing_slashes_and_blanks() {
+        let s = saved(|v| {
+            v.set("hydrus_url", Value::Text("http://h:1///".into()));
+            v.set("hydrus_service_key", Value::Text("  abc ".into()));
+            v.set("hydrus_provenance_note_name", Value::Text(" n ".into()));
+            v.set("hydrus_key", Value::Text(" kept as typed ".into()));
+        });
+        assert_eq!(s.hydrus.api_url, "http://h:1");
+        assert_eq!(s.hydrus.tag_service_key, "abc");
+        assert_eq!(s.hydrus_provenance_note_name, "n");
+        assert_eq!(s.hydrus.access_key.expose(), " kept as typed ");
+    }
+
+    #[test]
+    fn a_choice_the_combo_does_not_offer_saves_as_its_first_item() {
+        let mut s = defaults();
+        s.hash_source = "nonsense".into();
+        s.sidecar_overwrite = "nonsense".into();
+        let v = initial(&s);
+        assert_eq!(v.t("hash_source"), "hydrus");
+        assert_eq!(v.t("sidecar_overwrite"), "ask");
+    }
+
+    #[test]
+    fn checked_lists_keep_the_list_order_and_drop_names_the_list_lacks() {
+        let mut s = defaults();
+        s.enabled_tag_sources = vec!["Booru".into(), "Gone".into(), "User".into()];
+        let v = initial(&s);
+        assert_eq!(v.checked("tag_sources_list"), ["User", "Booru"]);
+    }
 }

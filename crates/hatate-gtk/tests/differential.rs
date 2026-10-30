@@ -300,6 +300,19 @@ fn do_step(
             w.delete_rows_from_hydrus(&w.s.queue_view.selected_ids());
         }
         "set_theme" => w.set_theme(step["mode"].as_str().unwrap()),
+        "s_open" => {
+            w.activate_action("preferences");
+            // the Lens check reads a browser-less process, as the Python driver patches it to
+            if let Some(d) = w.s.settings_dialog.borrow().as_ref() {
+                *d.lens_env.borrow_mut() = hatate_core::lens_browser::deps::BrowserEnv::default();
+            }
+        }
+        "s_press" => {
+            // Browse asks for a path: the step names the answer (null is Cancel)
+            script.push(Answer::Path(step["pick"].as_str().map(|p| abs(ctx, p))));
+            settings_step(w, step)
+        }
+        "s_set" | "s_find" | "s_jump" | "s_tab" | "s_ok" | "s_cancel" => settings_step(w, step),
         "autosave" => w.autosave_now(),
         "delete_files" => {
             for p in strs("paths") {
@@ -923,6 +936,9 @@ fn digest(
     if ctx.kind.borrow().as_str() == "compare" {
         digest["compare"] = compare_digest(w);
     }
+    if ctx.kind.borrow().as_str() == "settings" {
+        digest["settings"] = settings_digest(w, paths);
+    }
     if let Some(h) = ctx.hydrus.borrow().as_ref() {
         digest["hydrus"] = h.log();
         digest["errors"] = json!(
@@ -1117,4 +1133,89 @@ fn tree_state(ctx: &Ctx) -> Value {
     let mut out = BTreeMap::new();
     walk(&ctx.files, &ctx.files, &mut out);
     json!(out)
+}
+
+// -- Settings (DAN-2221) -----------------------------------------------------------------------
+
+fn decode_value(v: &Value) -> hatate_gtk::settings_values::Value {
+    use hatate_gtk::settings_values::Value as V;
+    if let Some(b) = v.get("b") {
+        V::Bool(b.as_bool().unwrap())
+    } else if let Some(n) = v.get("n") {
+        V::Num(n.as_f64().unwrap())
+    } else if let Some(t) = v.get("t") {
+        V::Text(t.as_str().unwrap().to_owned())
+    } else if let Some(c) = v.get("c") {
+        V::Choice(c.as_str().unwrap().to_owned())
+    } else {
+        V::Checked(
+            v["k"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_str().unwrap().to_owned())
+                .collect(),
+        )
+    }
+}
+
+fn encode_value(v: &hatate_gtk::settings_values::Value) -> Value {
+    use hatate_gtk::settings_values::Value as V;
+    match v {
+        V::Bool(b) => json!({"b": b}),
+        V::Num(n) => json!({"n": n}),
+        V::Text(t) => json!({"t": t}),
+        V::Choice(c) => json!({"c": c}),
+        V::Checked(k) => json!({"k": k}),
+    }
+}
+
+fn settings_step(w: &MainWindow, step: &Value) {
+    let d =
+        w.s.settings_dialog
+            .borrow()
+            .clone()
+            .expect("the Settings dialog is open");
+    match step["op"].as_str().unwrap() {
+        "s_set" => d.set_value(step["id"].as_str().unwrap(), &decode_value(&step["v"])),
+        "s_find" => d.find.set_text(step["text"].as_str().unwrap()),
+        "s_jump" => d.jump_to_setting(step["i"].as_u64().unwrap() as usize),
+        "s_tab" => d
+            .tabs
+            .set_current_page(Some(step["i"].as_u64().unwrap() as u32)),
+        "s_press" => d.press(step["id"].as_str().unwrap()),
+        "s_ok" => d.click_ok(),
+        "s_cancel" => d.click_cancel(),
+        other => panic!("{other}"),
+    }
+}
+
+/// The open Settings dialog as the Python driver reads it: the tabs, the Find box and its
+/// results, every control's value, the pipeline line. `config.json` as bytes, not parsed.
+fn settings_digest(w: &MainWindow, paths: &Paths) -> Value {
+    let config_text = std::fs::read_to_string(paths.config_file()).ok();
+    let open = w.s.settings_dialog.borrow().clone();
+    let dialog = match open {
+        None => Value::Null,
+        Some(d) => {
+            let values: BTreeMap<String, Value> = d
+                .values()
+                .0
+                .iter()
+                .map(|(k, v)| (k.clone(), encode_value(v)))
+                .collect();
+            let results = d.result_texts();
+            json!({
+                "tabs": d.tab_names(),
+                "tab": d.current_tab(),
+                "find": d.find.text().to_string(),
+                "results": results,
+                "results_visible": d.results_visible(),
+                "activatable": (0..results.len()).map(|i| d.result_is_activatable(i)).collect::<Vec<_>>(),
+                "pipeline": d.live_text("engine_pipeline"),
+                "values": values,
+            })
+        }
+    };
+    json!({"config_text": config_text, "dialog": dialog})
 }
