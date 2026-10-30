@@ -31,6 +31,7 @@ pub mod search_run;
 pub mod session_ops;
 pub mod settings_dialog;
 pub mod settings_form;
+pub mod settings_mcp;
 pub mod settings_node;
 pub mod settings_spec;
 pub mod settings_values;

@@ -23,6 +23,15 @@ use crate::error::ErrorKind;
 /// that could be `0.0.0.0` is a setting that, for somebody, eventually will be.
 pub const HOST: &str = "127.0.0.1";
 
+/// `secrets.token_urlsafe(nbytes)`: `nbytes` random bytes from the system, URL-safe base64 with
+/// no padding (43 characters for 32 bytes). The Settings page's Generate button.
+pub fn token_urlsafe(nbytes: usize) -> Option<String> {
+    use base64::Engine as _;
+    let mut bytes = vec![0u8; nbytes];
+    getrandom::fill(&mut bytes).ok()?;
+    Some(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
+}
+
 /// An MCP-layer failure with the Phase 6 shape: a fixed kind, a message for the user that
 /// carries no path, token or OS text, and the raw detail for a log.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +86,18 @@ impl std::error::Error for McpError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_generated_token_is_43_urlsafe_characters_and_never_the_same_twice() {
+        let a = token_urlsafe(32).expect("system randomness");
+        let b = token_urlsafe(32).expect("system randomness");
+        assert_eq!(a.len(), 43);
+        assert!(
+            a.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        );
+        assert_ne!(a, b);
+    }
 
     #[test]
     fn error_shape_has_a_fixed_kind_and_no_raw_text_in_the_user_message() {

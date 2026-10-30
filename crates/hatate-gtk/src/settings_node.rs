@@ -86,6 +86,20 @@ pub enum Node {
         text: &'static str,
         tip: &'static str,
     },
+    /// `widgets.pill_button(text, ..., uppercase=False)` (the MCP page's buttons).
+    Pill {
+        id: &'static str,
+        text: &'static str,
+        tip: &'static str,
+    },
+    /// `widgets.icon_button(glyph, tooltip, ...)`.
+    Icon {
+        id: &'static str,
+        glyph: &'static str,
+        tip: &'static str,
+    },
+    /// `layout.addStretch(1)` in a line.
+    Stretch,
     /// A `QLabel` the dialog writes into as it runs: the pipeline sentence, and the answer a Test
     /// button gives.
     Live {
@@ -137,6 +151,8 @@ impl Node {
             | Node::Multiline { id, .. }
             | Node::Checks { id, .. }
             | Node::Button { id, .. }
+            | Node::Pill { id, .. }
+            | Node::Icon { id, .. }
             | Node::Live { id, .. } => Some(id),
             _ => None,
         }

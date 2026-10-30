@@ -844,9 +844,10 @@ fn digest(
                     Buttons::RemoveCancel => "remove_cancel",
                     Buttons::DeleteCancel => "delete_cancel",
                     Buttons::Ok => "ok",
+                    Buttons::GotIt => "got_it",
                 },
                 "default": button(d.default),
-                "result": if d.buttons == Buttons::Ok { "ok" } else { button(*r) },
+                "result": if matches!(d.buttons, Buttons::Ok | Buttons::GotIt) { "ok" } else { button(*r) },
             });
             // `setDetailedText`, when the box has any: older steps have none, so their digests
             // do not change.

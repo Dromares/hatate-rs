@@ -155,6 +155,10 @@ textview text selection, textview text selection:focus-within, textview text sel
 .screen-title, .display-title { font-family: %serif%; font-size: %display%px; font-weight: 600; color: @ink; }
 .muted { color: @ink_65; }
 .hint { color: @ink_65; font-size: %body%px; }
+/* the ink ramp's two ends on a label that changes weight with its state (Settings > MCP: a line that
+   needs the user is `ink_100`, a routine one `ink_65`) */
+label.ink-100, .hint.ink-100 { color: @ink; }
+label.ink-65 { color: @ink_65; }
 
 /* ---- the page chrome: top bar, mode switch, run strip ---- */
 .mark-glyph { font-family: %kanji%; font-size: 22px; color: @ink; }
