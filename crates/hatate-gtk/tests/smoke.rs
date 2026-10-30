@@ -7699,7 +7699,7 @@ fn settings_mcp_token_buttons_restart_and_ok_rebind_the_server(app: &adw::Applic
     let json: serde_json::Value = serde_json::from_str(&on_disk).unwrap();
     assert_eq!(json["mcp"]["port"], i64::from(other));
     assert_eq!(json["mcp"]["dry_run"], true);
-    let mut client = mcp::Client::new(other);
+    let client = mcp::Client::new(other);
     assert!(client.listening());
     // the new token is the one the server wants
     let ok = client.post_with(
