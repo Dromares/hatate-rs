@@ -421,13 +421,19 @@ fn test_id(line: &str, cell: &str) -> String {
     format!("{file}:{line} {}", name.trim_end_matches('`'))
 }
 
-/// The backticked `path:line` citations in a cell.
+/// The backticked `path:line` citations in a cell: every `` `file.rs:12` `` (or `.md`, `.txt`) token.
 fn cites(cell: &str) -> Vec<(String, usize)> {
-    cell.split(", ")
-        .filter(|c| c.starts_with('`') && c.contains(':'))
-        .map(|c| {
-            let (path, n) = c.trim_matches('`').rsplit_once(':').unwrap();
-            (path.to_string(), n.parse().unwrap_or(0))
+    cell.split('`')
+        .skip(1)
+        .step_by(2)
+        .filter_map(|t| {
+            let (path, n) = t.rsplit_once(':')?;
+            let ext_ok = [".rs", ".md", ".txt"].iter().any(|e| path.ends_with(e));
+            let path_ok = path
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "./_-".contains(c));
+            (ext_ok && path_ok && n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty())
+                .then(|| (path.to_string(), n.parse().unwrap()))
         })
         .collect()
 }
@@ -591,5 +597,128 @@ fn section_6_2_lists_the_gui_tests_outside_the_phase_6_list_exactly() {
             row.contains("**behaviour: unmapped, Phase 7**"),
             "{f}: {row}"
         );
+    }
+}
+
+/// Every `` `op` op``, shot family (`` `x-*` ``) and `path:line` a cell names exists.
+fn check_cell_refs(who: &str, cell: &str, ops: &str, shots: &str) {
+    for w in cell.split("` op").collect::<Vec<_>>().windows(2) {
+        let op = w[0].rsplit('`').next().unwrap();
+        assert!(
+            ops.contains(&format!("\"{op}\"")),
+            "{who}: the differential has no op {op:?}"
+        );
+    }
+    for t in cell.split('`').skip(1).step_by(2) {
+        if let Some(state) = t.strip_suffix("-*") {
+            assert!(
+                shots.contains(&format!("(\"{state}\", "))
+                    || shots.contains(&format!("(\"{state}-")),
+                "{who}: no shot state {state:?}"
+            );
+        }
+        if let Some(state) = t.strip_suffix("-dark.png") {
+            assert!(
+                shots.contains(&format!("(\"{state}\", ")),
+                "{who}: no shot state {state:?}"
+            );
+        }
+    }
+    for (path, n) in cites(cell) {
+        let all: Vec<String> = read(&path).lines().map(str::to_string).collect();
+        assert!(
+            n >= 1 && n <= all.len(),
+            "{who}: {path}:{n} is past the end"
+        );
+        if path.ends_with(".rs") {
+            let window = &all[n.saturating_sub(4)..n];
+            assert!(
+                window.iter().any(|l| l.contains("assert")
+                    || l.contains(" fn ")
+                    || l.trim_start().starts_with("fn ")),
+                "{who}: {path}:{n} is neither an assertion nor a fn"
+            );
+        }
+    }
+}
+
+#[test]
+fn every_candidate_of_the_python_window_has_exactly_one_row_in_section_7_and_a_coverage_that_exists()
+ {
+    let doc = read("docs/phase6-coverage.md");
+    let section = between(&doc, "\n### 7.2 ", "\n## 8. ");
+    let want: Vec<String> = read("docs/phase6-feature-inventory-76c85c4.txt")
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        want.len(),
+        226,
+        "the listing holds the 226 candidates of run B2"
+    );
+    let ops = read("crates/hatate-gtk/tests/differential.rs");
+    let shots = read("crates/hatate-gtk/examples/shot.rs");
+    let classes = [
+        "op",
+        "smoke",
+        "unit",
+        "differential",
+        "open",
+        "n/a",
+        "by design",
+    ];
+    let mut got = Vec::new();
+    for r in numbered_rows(&section, 6) {
+        let (site, kind) = (r[1].trim_matches('`'), r[2].as_str());
+        let who = format!("{site} {kind}");
+        got.push(who.clone());
+        let (class, why) = r[5]
+            .strip_prefix("**")
+            .and_then(|x| x.split_once("**: "))
+            .unwrap_or_else(|| panic!("{who}: the coverage is not `**class**: reason`"));
+        assert!(classes.contains(&class), "{who}: class {class:?}");
+        assert!(why.chars().count() >= 20, "{who}: the reason is a stub");
+        if class == "open" {
+            assert!(
+                why.contains("DAN-2448"),
+                "{who}: an open row names its ruling"
+            );
+        }
+        if matches!(class, "op" | "smoke" | "unit" | "differential") {
+            assert!(
+                !cites(&r[5].replace("). ", ", ")).is_empty() || why.contains("op"),
+                "{who}: cites nothing"
+            );
+        }
+        check_cell_refs(&who, &r[5], &ops, &shots);
+        // the Rust text cell names a place that exists
+        for (path, n) in cites(&r[4]) {
+            let all = read(&path).lines().count();
+            assert!(n >= 1 && n <= all, "{who}: {path}:{n} is past the end");
+        }
+    }
+    got.sort();
+    let mut want = want;
+    want.sort();
+    assert_eq!(got, want, "section 7.2 and the listing differ");
+}
+
+#[test]
+fn every_state_row_of_section_7_1_names_shots_and_a_scenario_that_exist() {
+    let doc = read("docs/phase6-coverage.md");
+    let section = between(&doc, "\n### 7.1 ", "\n### 7.2 ");
+    let ops = read("crates/hatate-gtk/tests/differential.rs");
+    let shots = read("crates/hatate-gtk/examples/shot.rs");
+    let rows = numbered_rows(&section, 5);
+    assert!(
+        rows.len() >= 18,
+        "section 7.1 lists the surfaces of the window"
+    );
+    for r in rows {
+        let who = format!("7.1 {}", r[0]);
+        assert!(r[3].contains("-*`"), "{who}: names no shot family");
+        assert!(!cites(&r[4]).is_empty(), "{who}: names no scenario");
+        check_cell_refs(&who, &r[3], &ops, &shots);
+        check_cell_refs(&who, &r[4], &ops, &shots);
     }
 }
