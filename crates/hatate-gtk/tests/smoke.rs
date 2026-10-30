@@ -7495,6 +7495,11 @@ fn mcp_tool_calls_change_the_list_and_the_table_follows(app: &adw::Application) 
     );
     assert_eq!(answered["reviewed"], true, "{answered}");
     assert!(f.w.s.queue.borrow().entry_at(1).unwrap().reviewed);
+    // `_set_rows_reviewed` ends on the status line, as it does for a click
+    assert_eq!(
+        f.say(),
+        "Marked 1 image(s) as reviewed \u{2014} 1 still to review"
+    );
     let id = f.w.s.queue.borrow().id_at(1).unwrap();
     let row = f.w.s.queue_view.row_of(id).expect("the row is shown");
     let reviewed_cell = hatate_gtk::queue_view::cell_view(
@@ -7522,6 +7527,8 @@ fn mcp_tool_calls_change_the_list_and_the_table_follows(app: &adw::Application) 
     let removed = client.payload("remove_row", serde_json::json!({"row": 0}));
     assert_eq!(removed["row"], 0, "{removed}");
     assert_eq!(f.len(), 1);
+    // `_remove_rows` ends on the status line
+    assert_eq!(f.say(), "Removed 1 file(s) from the list");
     assert_eq!(f.w.s.queue_view.total_count(), 1);
     f.close();
 }
