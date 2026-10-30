@@ -470,6 +470,10 @@ const SCENARIOS: &[Scenario] = &[
         "settings_mcp_audit_table_follows_the_log_newest_first",
         settings_mcp_audit_table_follows_the_log_newest_first,
     ),
+    (
+        "settings_mcp_audit_table_keeps_a_long_path_and_a_wide_row_inside_the_page",
+        settings_mcp_audit_table_keeps_a_long_path_and_a_wide_row_inside_the_page,
+    ),
 ];
 
 fn main() {
@@ -7445,6 +7449,14 @@ fn mcp_server_stays_off_when_disabled_and_reports_a_held_port_and_a_blank_token(
     assert!(!f.w.mcp_report().running);
     assert!(!f.w.s.mcp.running());
     assert!(!mcp::Client::new(port).listening());
+    // switching it off with nothing running builds nothing: no controller, so no "not built" state
+    let mut off = f.w.s.settings.lock().unwrap().mcp.clone();
+    off.enabled = false;
+    assert!(!f.w.restart_mcp(&off));
+    assert!(
+        !f.w.s.mcp.built(),
+        "restart_mcp built a controller for a server that is off"
+    );
     f.close();
 
     // a port already held
@@ -7749,11 +7761,23 @@ fn settings_mcp_token_buttons_restart_and_ok_rebind_the_server(app: &adw::Applic
     );
     assert!(client.listening());
 
+    // a save that changes the port alone re-binds: the old port is released, the new one answers
+    let third = mcp::free_port();
+    let d = open_settings(&f);
+    d.set_value("mcp_port", &Value::Num(f64::from(third)));
+    d.click_ok();
+    assert_eq!(f.w.s.settings.lock().unwrap().mcp.port, i64::from(third));
+    assert!(pump_until(5_000, || mcp::Client::new(third).listening()));
+    assert!(
+        !mcp::Client::new(other).listening(),
+        "the old port was released"
+    );
+
     // switching it off stops the server
     let d = open_settings(&f);
     d.set_value("mcp_enabled", &Value::Bool(false));
     d.click_ok();
-    assert!(pump_until(5_000, || !mcp::Client::new(other).listening()));
+    assert!(pump_until(5_000, || !mcp::Client::new(third).listening()));
     f.close();
 }
 
@@ -7822,6 +7846,67 @@ fn settings_mcp_audit_table_follows_the_log_newest_first(app: &adw::Application)
     );
     d.click_cancel();
     f.close();
+}
+
+/// The Recent tool calls card at a real `$HOME` path and a row that is wider than its columns: the
+/// path caption gives way in the middle, the table never scrolls sideways, and the Target column
+/// is held to 14 characters. The short temp path of the scenario above fits whatever these do.
+fn settings_mcp_audit_table_keeps_a_long_path_and_a_wide_row_inside_the_page(
+    _app: &adw::Application,
+) {
+    use hatate_gtk::settings_mcp::AuditCard;
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir
+        .path()
+        .join("home-of-a-user-with-a-long-name-0123456789")
+        .join("config-folder-with-a-long-name-0123456789-abcdef");
+    std::fs::create_dir_all(&folder).unwrap();
+    let log = folder.join("mcp_audit.jsonl");
+    std::fs::write(
+        &log,
+        "{\"timestamp\": \"2020-01-02T03:04:05Z\", \"tool\": \"select_candidate\", \"tier\": \"reversible\", \
+         \"allowed\": true, \"dry_run\": false, \"row\": 123456789012345, \"candidate_index\": 3, \
+         \"outcome\": {\"selected_candidate_index\": 3}}\n",
+    )
+    .unwrap();
+    let card = AuditCard::build(log, 5, Rc::new(|| 1_577_934_245), Rc::new(|| {}));
+    card.all.set_active(true);
+    let room = hatate_gtk::settings_dialog::MIN_WIDTH - 40;
+    let horizontal = gtk4::Orientation::Horizontal;
+
+    // F2c: the path has no break to wrap at, so only the middle ellipsis keeps it inside the page
+    let path_caption = &card.labels[3];
+    let (_, path_natural, _, _) = path_caption.measure(horizontal, -1);
+    assert!(
+        path_natural > room,
+        "the path is only {path_natural}px: this scenario would pass without the ellipsis"
+    );
+    let (path_min, _, _, _) = path_caption.measure(horizontal, -1);
+    assert!(path_min < room, "the path caption needs {path_min}px");
+    let (card_min, _, _, _) = card.root.measure(horizontal, -1);
+    assert!(
+        card_min <= room,
+        "the audit card needs {card_min}px, the minimum window gives {room}"
+    );
+
+    // F2b: the scroller never offers a sideways bar, so it asks for the grid's own minimum width
+    let (grid_min, _, _, _) = card.grid.measure(horizontal, -1);
+    let (scroll_min, _, _, _) = card.scroll.measure(horizontal, -1);
+    assert!(
+        scroll_min >= grid_min,
+        "the scroller asks for {scroll_min}px of the grid's {grid_min}px: it scrolls sideways"
+    );
+
+    // F2e: a Target cell wider than 14 characters ("#123456789012345 -> candidate 3") is held to 14
+    let target = card.grid.child_at(3, 1).expect("the Target cell of row 1");
+    let text = card.rows()[0].target.clone();
+    assert_eq!(text, "#123456789012345 \u{2192} candidate 3");
+    let (_, capped, _, _) = target.measure(horizontal, -1);
+    let (_, uncapped, _, _) = gtk4::Label::new(Some(&text)).measure(horizontal, -1);
+    assert!(
+        capped * 100 < uncapped * 95,
+        "the Target cell asks for {capped}px of the text's {uncapped}px: no 14 character cap"
+    );
 }
 
 /// The Shortcuts tab: the registry's keys in Qt's spelling, a click records the next key, Clear

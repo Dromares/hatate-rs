@@ -710,6 +710,13 @@ mod tests {
         assert_eq!(entries[0]["tool"], "list_queue");
     }
 
+    // `_MCP_AUDIT_DISPLAY_LIMIT = 200` (`gui/settings_dialog.py:44`): the cap test below is written in
+    // terms of the constant, so the number itself is pinned here
+    #[test]
+    fn the_display_limit_is_pythons_two_hundred() {
+        assert_eq!(DISPLAY_LIMIT, 200);
+    }
+
     #[test]
     fn the_table_is_newest_first_filtered_to_actions_and_capped_with_a_caption() {
         let mut entries = vec![
