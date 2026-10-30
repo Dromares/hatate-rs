@@ -32,6 +32,18 @@ type Scenario = (&'static str, fn(&adw::Application));
 
 const SCENARIOS: &[Scenario] = &[
     (
+        "settings_dialog_opens_on_the_stored_values_and_ok_saves_what_python_would",
+        settings_dialog_opens_on_the_stored_values_and_ok_saves_what_python_would,
+    ),
+    (
+        "settings_dialog_widgets_hand_back_the_values_they_were_given",
+        settings_dialog_widgets_hand_back_the_values_they_were_given,
+    ),
+    (
+        "settings_find_box_lists_jumps_and_marks_for_two_seconds",
+        settings_find_box_lists_jumps_and_marks_for_two_seconds,
+    ),
+    (
         "review_page_follows_the_selection",
         review_page_follows_the_selection,
     ),
@@ -7011,5 +7023,136 @@ fn tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers(app: &adw::A
             .is_some_and(|w| w.is_ancestor(&d.query) || *w == d.query),
         "the name/link entry is the first stop with an artist indexed: {first:?}"
     );
+    f.close();
+}
+
+// -- Settings (6.h) ----------------------------------------------------------------------------
+
+fn settings_dialog_opens_on_the_stored_values_and_ok_saves_what_python_would(
+    app: &adw::Application,
+) {
+    use hatate_core::config::Settings;
+    use hatate_gtk::settings_values::{self, Value};
+    let f = fx(app);
+    {
+        let mut s = f.w.s.settings.lock().unwrap();
+        s.delay_min_seconds = 12.5;
+        s.hash_source = "nonsense".into();
+        s.tag_blacklist = vec!["bad_*".into(), "meta:*".into()];
+        s.hydrus.api_url = "http://example.test:1234/".into();
+        s.enabled_tag_sources = vec!["User".into(), "Booru".into(), "Gone".into()];
+    }
+    let before = f.w.s.settings.lock().unwrap().clone();
+    f.w.activate_action("preferences");
+    let d =
+        f.w.s
+            .settings_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog is open");
+    assert_eq!(
+        d.tab_names(),
+        [
+            "General",
+            "Engine",
+            "Import",
+            "SauceNAO",
+            "Hydrus",
+            "Tag Namespaces",
+            "Site Logins",
+            "Shortcuts",
+            "MCP"
+        ]
+    );
+    assert_eq!(
+        d.values(),
+        settings_values::initial(&before),
+        "the controls open on the stored values"
+    );
+    // Cancel changes nothing and stores nothing
+    let cfg = f.paths.config_file();
+    let existed = cfg.exists();
+    d.click_cancel();
+    assert!(f.w.s.settings_dialog.borrow().is_none());
+    assert_eq!(f.w.s.settings.lock().unwrap().clone(), before);
+    assert_eq!(cfg.exists(), existed);
+
+    // OK after one edit: what Python's apply_to_settings would write, normalisation included
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    d.set_value("delay_max", &Value::Num(10.0));
+    d.click_ok();
+    let mut want = before.clone();
+    let mut v = settings_values::initial(&before);
+    v.set("delay_max", Value::Num(10.0));
+    settings_values::apply(&v, before.deviantart_cookies.expose(), &mut want);
+    assert_eq!(
+        want.delay_max_seconds, 12.5,
+        "the max never sits under the min"
+    );
+    assert_eq!(
+        want.hash_source, "hydrus",
+        "an unknown choice saves as the first item"
+    );
+    assert_eq!(want.hydrus.api_url, "http://example.test:1234");
+    assert_eq!(want.enabled_tag_sources, ["User", "Booru"]);
+    assert_eq!(f.w.s.settings.lock().unwrap().clone(), want);
+    assert_eq!(Settings::load(&f.paths).settings, want, "and it is on disk");
+    f.close();
+}
+
+fn settings_dialog_widgets_hand_back_the_values_they_were_given(app: &adw::Application) {
+    use hatate_gtk::settings_values;
+    let f = fx(app);
+    {
+        let mut s = f.w.s.settings.lock().unwrap();
+        // outside the ranges and finer than two decimals: the spin boxes round, then bound
+        s.delay_min_seconds = 3.0;
+        s.delay_max_seconds = 12.3456;
+        s.search_timeout = 1000.0;
+        s.hash_workers = 99;
+        s.autosave_interval_seconds = 1;
+        s.borrow_tags_similarity_slack = 0.005;
+        s.url_import_confirm_interval = 0.25;
+        s.engine_delays.0 = vec![
+            ("iqdb".into(), vec![30.0, 20.0]),
+            ("yandex".into(), vec![0.0, 40.0]),
+        ];
+        s.tag_namespace_remap.0 = vec![
+            ("artist".into(), "creator".into()),
+            ("x".into(), String::new()),
+        ];
+    }
+    let settings = f.w.s.settings.lock().unwrap().clone();
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    assert_eq!(d.values(), settings_values::initial(&settings));
+    d.click_cancel();
+    f.close();
+}
+
+fn settings_find_box_lists_jumps_and_marks_for_two_seconds(app: &adw::Application) {
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    assert!(!d.results_visible());
+    d.find.set_text("quota pause");
+    assert_eq!(
+        d.result_texts(),
+        ["SauceNAO  \u{203a}  Pause searching when the daily quota runs out"]
+    );
+    assert!(d.results_visible());
+    d.find.set_text("zzzzzz");
+    assert_eq!(d.result_texts(), ["Nothing matches that."]);
+    assert!(d.results_visible() && !d.result_is_activatable(0));
+    d.find.set_text("   ");
+    assert!(d.result_texts().is_empty() && !d.results_visible());
+
+    d.find.set_text("hydrus key");
+    assert_eq!(d.result_texts().len(), 1);
+    assert_eq!(d.current_tab(), 0);
+    d.jump_to_setting(0);
+    assert_eq!(d.current_tab(), 4, "the Hydrus tab");
+    d.click_cancel();
     f.close();
 }

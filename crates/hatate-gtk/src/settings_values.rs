@@ -11,10 +11,10 @@
 //! Not here (6.i): the Shortcuts and MCP pages. Their keys are left as found.
 
 use crate::add_tags::splitlines;
-use hatate_core::config::{OrderedMap, Secret, Settings};
-use hatate_core::pycompat::strip;
 use crate::settings_node::{Node, find};
 use crate::settings_spec::{ENGINES, PAGES};
+use hatate_core::config::{OrderedMap, Secret, Settings};
+use hatate_core::pycompat::strip;
 use hatate_core::sidecar;
 use std::collections::BTreeMap;
 
@@ -106,7 +106,6 @@ fn put<V>(map: &mut Vec<(String, V)>, key: String, value: V) {
     }
 }
 
-
 /// `__init__`: the value each control starts at for `s`.
 pub fn initial(s: &Settings) -> Values {
     let engines = ENGINES;
@@ -140,7 +139,10 @@ pub fn initial(s: &Settings) -> Values {
     );
     v.set("log_matched", Value::Bool(s.log_matched_urls));
     v.set("log_path", Value::Text(s.log_file_path.clone()));
-    v.set("filter_sent_tags", Value::Bool(s.filter_sent_tags_by_source));
+    v.set(
+        "filter_sent_tags",
+        Value::Bool(s.filter_sent_tags_by_source),
+    );
     v.set(
         "tag_sources_list",
         Value::Checked(checked_of("tag_sources_list", &s.enabled_tag_sources)),
@@ -149,16 +151,25 @@ pub fn initial(s: &Settings) -> Values {
         "saucenao_tag_types",
         Value::Checked(checked_of("saucenao_tag_types", &s.saucenao.tag_types)),
     );
-    v.set("extras_only_as_fallback", Value::Bool(s.extras_only_as_fallback));
+    v.set(
+        "extras_only_as_fallback",
+        Value::Bool(s.extras_only_as_fallback),
+    );
     v.set("enable_ascii2d", Value::Bool(s.enable_ascii2d));
     v.set("enable_tracemoe", Value::Bool(s.enable_tracemoe));
     v.set("enable_iqdb3d", Value::Bool(s.enable_iqdb3d));
     v.set("enable_google_images", Value::Bool(s.enable_google_images));
     v.set("enable_google_lens", Value::Bool(s.enable_google_lens));
-    v.set("lens_search_whole_image", Value::Bool(s.lens_search_whole_image));
+    v.set(
+        "lens_search_whole_image",
+        Value::Bool(s.lens_search_whole_image),
+    );
     v.set("enable_yandex", Value::Bool(s.enable_yandex));
     v.set("enable_pawchive", Value::Bool(s.enable_pawchive));
-    v.set("enable_pawchive_index", Value::Bool(s.enable_pawchive_index));
+    v.set(
+        "enable_pawchive_index",
+        Value::Bool(s.enable_pawchive_index),
+    );
     v.set(
         "google_images_key",
         Value::Text(s.google_images_api_key.expose().to_owned()),
@@ -176,7 +187,10 @@ pub fn initial(s: &Settings) -> Values {
         "search_cache_ttl",
         dbl(s.search_cache_ttl_days, 0.0, 3650.0),
     );
-    v.set("retrieve_booru_tags", Value::Bool(s.retrieve_tags_from_booru));
+    v.set(
+        "retrieve_booru_tags",
+        Value::Bool(s.retrieve_tags_from_booru),
+    );
     v.set("rank_by_quality", Value::Bool(s.rank_matches_by_quality));
     v.set("drop_dead_matches", Value::Bool(s.drop_dead_matches));
     v.set(
@@ -188,7 +202,10 @@ pub fn initial(s: &Settings) -> Values {
         "borrow_tags_slack",
         dbl(s.borrow_tags_similarity_slack, 0.0, 25.0),
     );
-    v.set("retry_failed_searches", Value::Bool(s.retry_failed_searches));
+    v.set(
+        "retry_failed_searches",
+        Value::Bool(s.retry_failed_searches),
+    );
     v.set("remove_after_import", Value::Bool(s.remove_after_import));
     v.set("auto_import_enabled", Value::Bool(s.auto_import_enabled));
     v.set(
@@ -203,7 +220,10 @@ pub fn initial(s: &Settings) -> Values {
         "url_import_confirm_interval",
         dbl(s.url_import_confirm_interval, 0.5, 30.0),
     );
-    v.set("saucenao_key", Value::Text(s.saucenao.api_key.expose().to_owned()));
+    v.set(
+        "saucenao_key",
+        Value::Text(s.saucenao.api_key.expose().to_owned()),
+    );
     v.set("saucenao_json", Value::Bool(s.saucenao.use_json_api));
     v.set(
         "saucenao_pause_on_quota",
@@ -213,10 +233,19 @@ pub fn initial(s: &Settings) -> Values {
         "continue_without_saucenao",
         Value::Bool(s.continue_without_saucenao_on_quota),
     );
-    v.set("saucenao_min_sim", dbl(s.saucenao.min_similarity, 0.0, 100.0));
-    v.set("saucenao_namespace", Value::Text(s.saucenao.namespace.clone()));
+    v.set(
+        "saucenao_min_sim",
+        dbl(s.saucenao.min_similarity, 0.0, 100.0),
+    );
+    v.set(
+        "saucenao_namespace",
+        Value::Text(s.saucenao.namespace.clone()),
+    );
     v.set("hydrus_url", Value::Text(s.hydrus.api_url.clone()));
-    v.set("hydrus_key", Value::Text(s.hydrus.access_key.expose().to_owned()));
+    v.set(
+        "hydrus_key",
+        Value::Text(s.hydrus.access_key.expose().to_owned()),
+    );
     v.set(
         "hydrus_service_key",
         Value::Text(s.hydrus.tag_service_key.clone()),
@@ -243,7 +272,10 @@ pub fn initial(s: &Settings) -> Values {
         Value::Text(pairs_text(&s.tag_namespace_remap)),
     );
     v.set("enable_tag_blacklist", Value::Bool(s.enable_tag_blacklist));
-    v.set("tag_blacklist_edit", Value::Text(s.tag_blacklist.join("\n")));
+    v.set(
+        "tag_blacklist_edit",
+        Value::Text(s.tag_blacklist.join("\n")),
+    );
     v.set("add_rating_tag", Value::Bool(s.add_rating_tag));
     v.set(
         "rating_tag_namespace",
@@ -254,7 +286,10 @@ pub fn initial(s: &Settings) -> Values {
         "namespace_colors_edit",
         Value::Text(pairs_text(&s.tag_namespace_colors)),
     );
-    v.set("tags_for_found_edit", Value::Text(s.tags_for_found.join("\n")));
+    v.set(
+        "tags_for_found_edit",
+        Value::Text(s.tags_for_found.join("\n")),
+    );
     v.set(
         "tags_for_not_found_edit",
         Value::Text(s.tags_for_not_found.join("\n")),
@@ -263,10 +298,22 @@ pub fn initial(s: &Settings) -> Values {
         "tags_for_low_tag_count_edit",
         Value::Text(s.tags_for_low_tag_count.join("\n")),
     );
-    v.set("pixiv_session_cookie", Value::Text(s.pixiv_session_cookie.expose().to_owned()));
-    v.set("e621_username", Value::Text(s.e621_username.expose().to_owned()));
-    v.set("e621_api_key", Value::Text(s.e621_api_key.expose().to_owned()));
-    v.set("sankaku_cookies", Value::Text(s.sankaku_cookies.expose().to_owned()));
+    v.set(
+        "pixiv_session_cookie",
+        Value::Text(s.pixiv_session_cookie.expose().to_owned()),
+    );
+    v.set(
+        "e621_username",
+        Value::Text(s.e621_username.expose().to_owned()),
+    );
+    v.set(
+        "e621_api_key",
+        Value::Text(s.e621_api_key.expose().to_owned()),
+    );
+    v.set(
+        "sankaku_cookies",
+        Value::Text(s.sankaku_cookies.expose().to_owned()),
+    );
     v.set(
         "animepictures_cookies",
         Value::Text(s.animepictures_cookies.expose().to_owned()),
@@ -277,7 +324,10 @@ pub fn initial(s: &Settings) -> Values {
     );
     // the combos' stored values
     v.set("hash_source", choice("hash_source", &s.hash_source));
-    v.set("thumbnail_source", choice("thumbnail_source", &s.thumbnail_source));
+    v.set(
+        "thumbnail_source",
+        choice("thumbnail_source", &s.thumbnail_source),
+    );
     v.set(
         "sidecar_style",
         Value::Choice(sidecar::style_of(Some(s)).to_owned()),
@@ -286,7 +336,10 @@ pub fn initial(s: &Settings) -> Values {
         "sidecar_overwrite",
         Value::Choice(sidecar::overwrite_policy_of(Some(s)).to_owned()),
     );
-    v.set("primary_engine", choice("primary_engine", &s.primary_engine));
+    v.set(
+        "primary_engine",
+        choice("primary_engine", &s.primary_engine),
+    );
     v.set(
         "secondary_engine_mode",
         choice("secondary_engine_mode", &s.secondary_engine_mode),
