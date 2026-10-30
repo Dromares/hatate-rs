@@ -44,6 +44,10 @@ const SCENARIOS: &[Scenario] = &[
         settings_dialog_widgets_hand_back_the_values_they_were_given,
     ),
     (
+        "settings_window_keeps_its_stated_minimum",
+        settings_window_keeps_its_stated_minimum,
+    ),
+    (
         "settings_find_box_lists_jumps_and_marks_for_two_seconds",
         settings_find_box_lists_jumps_and_marks_for_two_seconds,
     ),
@@ -7131,6 +7135,34 @@ fn settings_dialog_widgets_hand_back_the_values_they_were_given(app: &adw::Appli
     f.w.activate_action("preferences");
     let d = f.w.s.settings_dialog.borrow().clone().unwrap();
     assert_eq!(d.values(), settings_values::initial(&settings));
+    d.click_cancel();
+    f.close();
+}
+
+/// DAN-2221: the Settings window, told to be as small as it can, does not need more than the
+/// minimum its code states, on every page and with the Find results list showing. The fit test
+/// measures the window's child at the stated width, so the window's own size request cannot hide
+/// an overflow. On the shot path (hosted `ci`, GTK 4.14) the `settings-*-min` shots carry the same
+/// numbers in their PNG headers.
+fn settings_window_keeps_its_stated_minimum(app: &adw::Application) {
+    use hatate_gtk::settings_dialog::{MIN_HEIGHT, MIN_WIDTH};
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    for (i, name) in d.tab_names().iter().enumerate() {
+        d.tabs.set_current_page(Some(i as u32));
+        pump_for(50);
+        for query in ["", "delay"] {
+            d.find.set_text(query);
+            pump_for(50);
+            let (w, h) = content_need(d.window.upcast_ref(), MIN_WIDTH);
+            println!("OUTER settings {name} find={query:?} content={w}x{h}");
+            assert!(
+                w <= MIN_WIDTH && h <= MIN_HEIGHT,
+                "the Settings window ({name}, find {query:?}) is {w}x{h}; its stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}"
+            );
+        }
+    }
     d.click_cancel();
     f.close();
 }

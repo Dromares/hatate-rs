@@ -535,7 +535,9 @@ fn label_row(text: &str) -> gtk::Label {
 fn scrollable(page: &impl IsA<gtk::Widget>) -> gtk::ScrolledWindow {
     let area = gtk::ScrolledWindow::new();
     area.set_child(Some(page));
-    area.set_hscrollbar_policy(gtk::PolicyType::Never);
+    // Qt's `QScrollArea` scrolls both ways, and Python lets the window shrink to 480 wide: a
+    // narrow window scrolls the page sideways, it does not force the window wide.
+    area.set_hscrollbar_policy(gtk::PolicyType::Automatic);
     area.set_vexpand(true);
     area
 }

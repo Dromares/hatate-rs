@@ -21,7 +21,7 @@
 //! `review-wipe`, `review-differences`, `review-wipe-nomatch` (only the local picture), `review-error` (the local file is gone; design
 //! gate 2.8), `review-focus-<wslider|wview|zoom|popout>` (a Wipe control focused with the ring showing), `review-compare` and
 //! `review-compare-differences` (the compare window, which is its own surface), `review-compare-nomatch` (its "no match" box) and
-//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The size `min` is the window's stated minimum.
+//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The Settings states (6.h) are `settings-<0..8>` (that tab of the Settings window, in Python's order: General to MCP), `settings-find` (a query with results), `settings-find-none` ("Nothing matches that."), `settings-lens` (the Google Lens warning over the Engine page), `settings-found` (a jumped-to setting wearing the stamp) and `settings-focus-<find|tab|ok|cancel|check|spin|combo|entry>` (that control focused with the ring showing). The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -207,6 +207,13 @@ fn main() -> glib::ExitCode {
                         hatate_gtk::hydrus_query::MIN_HEIGHT,
                     );
                 }
+            } else if state.starts_with("settings") {
+                if let Some(d) = window.s.settings_dialog.borrow().as_ref() {
+                    d.window.set_default_size(
+                        hatate_gtk::settings_dialog::MIN_WIDTH,
+                        hatate_gtk::settings_dialog::MIN_HEIGHT,
+                    );
+                }
             } else if state.starts_with("pawchive") {
                 if let Some(d) = window.s.pawchive_dialog.borrow().as_ref() {
                     d.window.set_default_size(
@@ -259,6 +266,8 @@ fn main() -> glib::ExitCode {
                 Some("Query Hydrus")
             } else if state.starts_with("pawchive") {
                 Some("Pawchive Index")
+            } else if state.starts_with("settings") {
+                Some("Settings")
             } else if state.starts_with("review-compare-d")
                 || state.starts_with("review-compare-l")
                 || state == "review-compare"
@@ -463,6 +472,7 @@ fn prepare(window: &MainWindow, state: &str) {
         st if st.starts_with("queue") => prepare_queue(window, st),
         st if st.starts_with("review") => prepare_review(window, st),
         st if st.starts_with("hydrus") || st.starts_with("pawchive") => prepare_hydrus(window, st),
+        st if st.starts_with("settings") => prepare_settings(window, st),
         "dialog" => window.activate_action("clear-session"),
         // The control for the glyph fragment under the dialog (DAN-2256): the same shot with the
         // Queue page's placeholder label hidden, so any pixel under the dialog's border that
@@ -571,6 +581,71 @@ fn prepare(window: &MainWindow, state: &str) {
             window.win.set_focus_visible(true);
             if let Some(b) = first_button(window.win.upcast_ref()) {
                 b.grab_focus();
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The 6.h states: the Settings window over a default profile (nothing here reaches a network;
+/// the Test buttons are insensitive). The window is told the size `main` is given: its default
+/// is Python's 940x660, its minimum is its own.
+fn prepare_settings(window: &MainWindow, state: &str) {
+    use hatate_gtk::settings_values::Value;
+    window.activate_action("preferences");
+    let d = window
+        .s
+        .settings_dialog
+        .borrow()
+        .clone()
+        .expect("the Settings window");
+    d.window.set_default_size(
+        hatate_gtk::settings_dialog::DEFAULT_WIDTH,
+        hatate_gtk::settings_dialog::DEFAULT_HEIGHT,
+    );
+    let rest = state.strip_prefix("settings-").unwrap_or("");
+    if let Ok(n) = rest.parse::<u32>() {
+        d.tabs.set_current_page(Some(n));
+    }
+    match rest {
+        "find" => d.find.set_text("delay"),
+        "find-none" => d.find.set_text("zzzzzz"),
+        "found" => {
+            d.find.set_text("minimum similarity");
+            d.jump_to_setting(0);
+        }
+        "lens" => {
+            d.tabs.set_current_page(Some(1));
+            d.lens_env
+                .replace(hatate_core::lens_browser::deps::BrowserEnv {
+                    home: Some(std::env::temp_dir().join("hatate-shot-nohome")),
+                    path: Some(OsString::from("/nonexistent")),
+                    ..Default::default()
+                });
+            d.set_value("enable_google_lens", &Value::Bool(true));
+        }
+        f if f.starts_with("focus-") => {
+            d.window.set_focus_visible(true);
+            let target: Option<gtk4::Widget> = match &f["focus-".len()..] {
+                "find" => Some(d.find.clone().upcast()),
+                "ok" => Some(d.ok_button.clone().upcast()),
+                "cancel" => Some(d.cancel_button.clone().upcast()),
+                "tab" => Some(d.tabs.clone().upcast()),
+                kind => {
+                    let want = match kind {
+                        "check" => "GtkCheckButton",
+                        "spin" => "GtkSpinButton",
+                        "combo" => "GtkDropDown",
+                        _ => "GtkEntry",
+                    };
+                    d.tabs.nth_page(Some(0)).and_then(|p| find_type(&p, want))
+                }
+            };
+            match target {
+                Some(w) => {
+                    w.grab_focus();
+                }
+                None => eprintln!("{state}: no control"),
             }
         }
         _ => {}
