@@ -439,6 +439,10 @@ const SCENARIOS: &[Scenario] = &[
         mcp_tool_calls_change_the_list_and_the_table_follows,
     ),
     (
+        "mcp_research_runs_the_windows_own_search_and_the_tool_goes_on_when_it_ends",
+        mcp_research_runs_the_windows_own_search_and_the_tool_goes_on_when_it_ends,
+    ),
+    (
         "settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict",
         settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict,
     ),
@@ -7876,5 +7880,51 @@ fn settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict(app: &ad
         serde_json::from_str(&std::fs::read_to_string(f.paths.config_file()).unwrap()).unwrap();
     assert_eq!(json["review_shortcuts"]["next_row"], "F9");
     assert_eq!(json["review_shortcuts"]["prev_row"], "");
+    f.close();
+}
+
+/// The `research` tool starts a search of the window's own (the strip, the button and the rows
+/// follow it), refuses while one is running, and answers when it ends. The server's thread waits
+/// for it; the main loop does not.
+fn mcp_research_runs_the_windows_own_search_and_the_tool_goes_on_when_it_ends(
+    app: &adw::Application,
+) {
+    let pics = tempfile::tempdir().unwrap();
+    let port = mcp::free_port();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: unsearched(pics.path(), 2),
+            tweak: Some(Box::new(move |s| {
+                (search_tweak())(s);
+                s.mcp.enabled = true;
+                s.mcp.port = i64::from(port);
+                s.mcp.token = mcp::TOKEN.into();
+                s.mcp.allow_research = true;
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    for _ in 0..2 {
+        f.search
+            .engines
+            .iqdb
+            .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    }
+    let mut client = mcp::Client::new(port);
+    let answer = client.payload("research", serde_json::json!({"rows": [0, 1]}));
+    assert_eq!(answer["research_started"], true, "{answer}");
+    assert_eq!(answer["completed"], true, "{answer}");
+    // the window's own run did it: both rows were searched, the strip is idle again
+    assert_eq!(statuses(&f), vec![MatchStatus::NotFound; 2]);
+    assert!(!f.w.s.run_active.get());
+    assert!(!f.w.s.queue.borrow().search_running());
+    assert_eq!(f.search.engines.calls(), vec!["iqdb"; 2]);
+    assert_eq!(f.say(), "Search finished");
+    assert_eq!(start_button(&f), "\u{25B6} Start Search");
+    // and the audit says what happened
+    let audit = std::fs::read_to_string(f.paths.mcp_audit_log()).unwrap();
+    assert!(audit.contains("\"tool\": \"research\"") && audit.contains("\"allowed\": true"));
     f.close();
 }
