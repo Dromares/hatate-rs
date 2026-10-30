@@ -311,6 +311,13 @@ fn run_all() -> glib::ExitCode {
     }
 }
 
+/// Every state `shot` renders: the table, the two scroll measurements and the `tab*` walks.
+fn known_state(s: &str) -> bool {
+    SHOT_SET.iter().any(|&(n, _)| n == s)
+        || matches!(s, "queue-5000" | "queue-5000-scroll")
+        || s.starts_with("tab")
+}
+
 fn main() -> glib::ExitCode {
     if std::env::args().nth(1).as_deref() == Some("--all") {
         return run_all();
@@ -320,6 +327,15 @@ fn main() -> glib::ExitCode {
     let scheme = args.next().unwrap_or_else(|| "dark".into());
     let size = args.next();
     let state = args.next().unwrap_or_else(|| "empty".into());
+    // Python's `render_states.py` fails loudly on a name it does not know and writes nothing
+    // (`test_unknown_state_fails_loudly_and_writes_nothing`); a typo here used to render the
+    // default window and exit 0 (DAN-2223).
+    if !known_state(&state) {
+        eprintln!(
+            "shot: no such state {state:?}: the states are the SHOT_SET table, queue-5000[-scroll] and tab*"
+        );
+        return glib::ExitCode::from(2);
+    }
     let home = tempfile::tempdir().expect("temp profile");
     let root = home.path().to_path_buf();
     let lookup = move |k: &str| -> Option<OsString> {

@@ -53,6 +53,11 @@ jobs:
           # The renderer walks its own state table (`SHOT_SET` in `examples/shot.rs`) and writes
           # `shots/index.tsv`: each PNG's header size next to the size its surface states as its minimum.
           xvfb-run -a -s "-screen 0 1440x900x24" target/debug/examples/shot --all shots
+          # An unknown state name fails loudly and writes nothing (Python's `render_states.py` did).
+          if xvfb-run -a -s "-screen 0 1440x900x24" target/debug/examples/shot /tmp/nope.png dark 1100x800 no-such-state; then
+            echo "shot accepted an unknown state"; exit 1
+          fi
+          test ! -e /tmp/nope.png
       - uses: actions/upload-artifact@v4
         with:
           name: shots

@@ -105,6 +105,31 @@ mod tests {
         assert_eq!(faults_in_previous_run(&three), 1);
     }
 
+    /// DAN-2223: `tests/test_nothing_survived.py::TestFaultsInPreviousRun`, case by case, with its
+    /// exact strings (`MARK`, `FAULT`).
+    #[test]
+    fn the_python_cases_of_faults_in_the_previous_run() {
+        let fault = format!(
+            "{FAULT_HEADER} Segmentation fault\n\nThread 0x1 (most recent call first):\n  File x\n"
+        );
+        let m = SESSION_START_MARK;
+        let count = |t: String| faults_in_previous_run(&t);
+        // a fault in the previous run's section counts
+        assert_eq!(count(format!("\n{m}\n{fault}\n{m}\n")), 1);
+        // one per fault, not per thread stack
+        assert_eq!(count(format!("\n{m}\n{fault}\n{fault}\n{m}\n")), 2);
+        // a kill that wrote nothing is zero
+        assert_eq!(count(format!("\n{m}\n\n{m}\n")), 0);
+        // this run's own section (after the last mark) is not counted
+        assert_eq!(count(format!("\n{m}\n\n{m}\n{fault}")), 0);
+        // older runs are not counted
+        assert_eq!(count(format!("\n{m}\n{fault}\n{m}\n\n{m}\n")), 0);
+        // a first-ever run has no previous run
+        assert_eq!(count(format!("\n{m}\n")), 0);
+        // an empty log is zero
+        assert_eq!(count(String::new()), 0);
+    }
+
     #[test]
     fn only_a_line_that_starts_with_the_header_is_a_fault() {
         let log = format!(

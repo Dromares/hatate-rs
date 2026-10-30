@@ -179,6 +179,14 @@ const SCENARIOS: &[Scenario] = &[
         restore_after_a_crash_shows_the_banner,
     ),
     ("nothing_survived_variant", nothing_survived_variant),
+    (
+        "nothing_survived_page_content",
+        nothing_survived_page_content,
+    ),
+    (
+        "ghost_and_brackets_take_no_input_and_the_marks_are_12_by_2",
+        ghost_and_brackets_take_no_input_and_the_marks_are_12_by_2,
+    ),
     ("missing_files_dialog", missing_files_dialog),
     ("save_session_as", save_session_as),
     ("open_session", open_session),
@@ -879,6 +887,130 @@ fn restore_after_a_crash_shows_the_banner(app: &adw::Application) {
     // The banner replaces the status-bar line rather than joining it.
     assert_eq!(f.say(), "Ready");
     assert!(f.w.s.shell.run_note_label.text().starts_with("stopped "));
+    f.close();
+}
+
+/// DAN-2223 (6.j): `tests/test_ghost_kanji.py`'s hit-test rows. The ghost glyph, its holder and the
+/// four crop marks must take no pointer input, so a button under them still takes the click; the
+/// marks are 12 px arms, 2 px thick (`theme.rs` `.corner`). Pixels are the shot set's.
+fn ghost_and_brackets_take_no_input_and_the_marks_are_12_by_2(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            unclean: true,
+            empty_session_file: true,
+            ..Opts::default()
+        },
+    );
+    let win = f.w.win.clone().upcast::<gtk4::Widget>();
+    // The ghost: the label, and the holder it sits in, are not pick targets.
+    let ghost = find_class(&win, "ghost-kanji").expect("the ghost kanji");
+    assert!(!ghost.can_target() && !ghost.can_focus());
+    let holder = ghost
+        .ancestor(gtk4::ScrolledWindow::static_type())
+        .expect("the holder the glyph sits in");
+    assert!(!holder.can_target(), "the holder takes no input");
+    // The marks: every `.corner` under the window takes no input and no focus, and the page that
+    // is showing has all four, 12 x 12 with 2 px arms.
+    let mut corners = Vec::new();
+    fn collect(w: &gtk4::Widget, out: &mut Vec<gtk4::Widget>) {
+        if w.has_css_class("corner") {
+            out.push(w.clone());
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            collect(&child, out);
+            c = child.next_sibling();
+        }
+    }
+    collect(&win, &mut corners);
+    assert!(
+        corners.len() >= 4 && corners.len() % 4 == 0,
+        "{}",
+        corners.len()
+    );
+    for c in &corners {
+        assert!(!c.can_target() && !c.can_focus());
+        let (min, ..) = c.measure(gtk4::Orientation::Horizontal, -1);
+        let (minv, ..) = c.measure(gtk4::Orientation::Vertical, -1);
+        assert_eq!((min, minv), (12, 12), "{:?}", c.css_classes());
+    }
+    assert_eq!(
+        (
+            hatate_gtk::widgets::BRACKET_ARM,
+            hatate_gtk::widgets::BRACKET_WEIGHT
+        ),
+        (12, 2)
+    );
+    f.close();
+}
+
+/// DAN-2223 (6.j): what `tests/test_nothing_survived.py` measures on the "Nothing survived." page,
+/// as far as a widget tree can say it: the boxed cross, the headline, the prose, the meta line's
+/// pairs and their classes, the three actions in order, the uppercase-mono voice and the single
+/// primary. Sizes and pixels are the shot set's (`queue-nothing-survived` in `shot --all`).
+fn nothing_survived_page_content(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            unclean: true,
+            empty_session_file: true,
+            ..Opts::default()
+        },
+    );
+    let g = f.w.s.nothing_survived.borrow();
+    let p = g.as_ref().expect("the variant is showing");
+    let root = p.root.clone().upcast::<gtk4::Widget>();
+    // Boxed cross: a 42 px square holding U+2715.
+    let glyph = find_class(&root, "survived-glyph").expect("the boxed cross");
+    let glyph = glyph.downcast::<gtk4::Label>().expect("a label");
+    assert_eq!(glyph.text(), "\u{2715}");
+    assert_eq!(glyph.size_request(), (42, 42));
+    // Headline and prose.
+    assert_eq!(p.title.text(), "Nothing survived.");
+    assert!(p.title.has_css_class("display-title"));
+    assert!(p.body.text().contains("no queue to restore"));
+    assert!(p.body.text().chars().count() > 80);
+    assert_eq!(
+        find_class(&root, "section-label")
+            .and_then(|w| w.downcast::<gtk4::Label>().ok())
+            .map(|l| l.text().to_string())
+            .as_deref(),
+        Some("01 // Queue")
+    );
+    // The three actions, in order, uppercase mono; only the first is the primary.
+    let buttons = [&p.new_search, &p.crash_log, &p.add_files];
+    let labels: Vec<_> = buttons
+        .iter()
+        .map(|b| b.label().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        labels,
+        ["Start new search", "View crash log", "Add files\u{2026}"]
+    );
+    assert!(buttons.iter().all(|b| b.has_css_class("caps")));
+    assert_eq!(
+        buttons.map(|b| b.has_css_class("primary")),
+        [true, false, false]
+    );
+    // The meta line: dim labels, bright figures, caps; no log means `no new entry`; the age of the
+    // saved file is the second pair.
+    let mut all = Vec::new();
+    all_labels(&root, &mut all);
+    let meta: Vec<_> = all
+        .iter()
+        .filter(|l| l.has_css_class("meta-label") || l.has_css_class("meta-figure"))
+        .collect();
+    let kinds: Vec<_> = meta.iter().map(|l| l.has_css_class("meta-label")).collect();
+    assert_eq!(kinds, [true, false, true, false]);
+    assert!(meta.iter().all(|l| l.has_css_class("caps")));
+    let texts: Vec<_> = meta.iter().map(|l| l.text().to_string()).collect();
+    assert_eq!(
+        &texts[..3],
+        ["Crash log", "no new entry", "Last saved session"]
+    );
+    assert!(texts[3].ends_with(" ago"), "{texts:?}");
+    drop(g);
     f.close();
 }
 
