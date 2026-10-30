@@ -9196,6 +9196,14 @@ const SCENARIOS_6H2: &[Scenario] = &[
         "settings_e621_test_sends_the_typed_credentials_not_the_saved_ones",
         settings_e621_test_sends_the_typed_credentials_not_the_saved_ones,
     ),
+    (
+        "settings_hydrus_failed_status_wraps_to_the_page_at_both_window_sizes",
+        settings_hydrus_failed_status_wraps_to_the_page_at_both_window_sizes,
+    ),
+    (
+        "shortcuts_dialog_key_column_keeps_a_gutter_against_the_scroll_bar",
+        shortcuts_dialog_key_column_keeps_a_gutter_against_the_scroll_bar,
+    ),
 ];
 
 fn scenario_count() -> usize {
@@ -9627,5 +9635,79 @@ fn settings_hydrus_test_and_fetch_after_an_error_rerun_clean(app: &adw::Applicat
     assert!(again.service_list().0.is_empty());
     assert!(again.button_sensitive(test) && again.button_sensitive("button.fetch_from_hydrus"));
     again.click_cancel();
+    f.close();
+}
+
+/// DAN-2467 (6.h-2 R-1): the Hydrus Test's failed line is a sentence, and it wraps to the page. Unwrapped
+/// it widened the page past the window, the entries and Fetch from Hydrus ran off the right edge and the
+/// half of the sentence that says what to do was never on screen. The window is opened with the state
+/// already on the page, at the default size and at the stated minimum.
+fn settings_hydrus_failed_status_wraps_to_the_page_at_both_window_sizes(app: &adw::Application) {
+    use hatate_gtk::settings_dialog::{DEFAULT_HEIGHT, DEFAULT_WIDTH, MIN_HEIGHT, MIN_WIDTH};
+    let f = fx(app);
+    let d = open_settings(&f);
+    d.tabs.set_current_page(Some(4));
+    d.preview_result(
+        "button.test_connection",
+        "hydrus_test_result",
+        "Failed: Could not reach Hydrus at http://127.0.0.1:45869. Is the client running with its API switched on?",
+        false,
+    );
+    for (w, h) in [(DEFAULT_WIDTH, DEFAULT_HEIGHT), (MIN_WIDTH, MIN_HEIGHT)] {
+        d.window.set_default_size(w, h);
+        pump_for(200);
+        let page = d.tabs.nth_page(Some(4)).expect("page");
+        let scroll = page
+            .downcast_ref::<gtk4::ScrolledWindow>()
+            .expect("a page is a scrolled window");
+        let adj = scroll.hadjustment();
+        // at the default size the whole page fits; at the minimum the entries keep their sideways scroll
+        // (as before), so there it is the failed line that has to fit the view
+        if w == DEFAULT_WIDTH {
+            assert!(
+                adj.upper() <= adj.page_size() + 0.5,
+                "{w}x{h}: the page is {} px wide in a {} px view",
+                adj.upper(),
+                adj.page_size()
+            );
+        }
+        let mut labels = Vec::new();
+        all_labels(&page, &mut labels);
+        let status = labels
+            .iter()
+            .find(|l| l.text().starts_with("Failed: "))
+            .expect("the failed line");
+        assert!(status.wraps(), "{w}x{h}: the failed line does not wrap");
+        assert!(
+            f64::from(status.width()) <= adj.page_size(),
+            "{w}x{h}: the failed line is {} px wide in a {} px view",
+            status.width(),
+            adj.page_size()
+        );
+    }
+    d.click_cancel();
+    f.close();
+}
+
+/// DAN-2467 (6.h-2 R-2): the key column of the Shortcuts dialog ends 8 px short of the list's right edge,
+/// so the scroll bar never sits on the last glyph of `J`, `Shift+N` or `]`.
+fn shortcuts_dialog_key_column_keeps_a_gutter_against_the_scroll_bar(app: &adw::Application) {
+    let f = fx(app);
+    f.w.set_mode("review");
+    f.w.s.review.shortcuts_btn.clone().emit_clicked();
+    let dialog = f.w.s.shortcuts_dialog.borrow().clone().unwrap();
+    let mut labels = Vec::new();
+    all_labels(dialog.window.upcast_ref(), &mut labels);
+    let keys: Vec<_> = labels.iter().filter(|l| l.has_css_class("hint")).collect();
+    assert!(!keys.is_empty(), "the key labels");
+    for k in keys {
+        assert!(
+            k.margin_end() >= 8,
+            "{:?}: {} px between the key and the bar",
+            k.text(),
+            k.margin_end()
+        );
+    }
+    dialog.click_close();
     f.close();
 }
