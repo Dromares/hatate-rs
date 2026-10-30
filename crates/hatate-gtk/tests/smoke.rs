@@ -1019,8 +1019,68 @@ fn nothing_survived_page_content(app: &adw::Application) {
         ["Crash log", "no new entry", "Last saved session"]
     );
     assert!(texts[3].ends_with(" ago"), "{texts:?}");
+    // The three actions are `--space-3` (12 px) apart, the page keeps its four crop marks, and the
+    // watermark stays the list's glyph (the Empty glyph is the drop zone's).
+    let row = p.new_search.parent().and_downcast::<gtk4::Box>().unwrap();
+    assert_eq!(row.spacing(), 12);
+    let mut corners = Vec::new();
+    find_all_class(&root, "corner", &mut corners);
+    assert_eq!(corners.len(), 4);
+    assert_eq!(f.w.s.shell.root.glyph(), "\u{529B}");
+    // The buttons are wired: View crash log opens the viewer on the crash log, Add files asks for
+    // images.
+    let (crash_log, add_files) = (p.crash_log.clone(), p.add_files.clone());
     drop(g);
+    crash_log.emit_clicked();
+    assert!(
+        f.w.s
+            .log_viewer
+            .borrow()
+            .as_ref()
+            .expect("the viewer")
+            .showing_crash_log()
+    );
+    add_files.emit_clicked();
+    assert!(
+        matches!(f.script.asked.borrow().last(), Some(Asked::OpenFiles { title, .. }) if title == "Add images")
+    );
+    // An unreadable session age is left out, not invented: with the store gone the meta line holds
+    // the crash-log pair alone.
+    for p in [f.w.s.paths.session_db(), f.w.s.paths.session_json()] {
+        let _ = std::fs::remove_file(p);
+    }
+    f.w.dismiss_nothing_survived();
+    f.w.show_nothing_survived();
+    let mut all = Vec::new();
+    all_labels(
+        f.w.s
+            .nothing_survived
+            .borrow()
+            .as_ref()
+            .unwrap()
+            .root
+            .upcast_ref(),
+        &mut all,
+    );
+    let meta: Vec<_> = all
+        .iter()
+        .filter(|l| l.has_css_class("meta-label") || l.has_css_class("meta-figure"))
+        .map(|l| l.text().to_string())
+        .collect();
+    assert_eq!(meta, ["Crash log", "no new entry"]);
     f.close();
+}
+
+/// Every widget under `w` (itself included) with the CSS class `class`.
+fn find_all_class(w: &gtk4::Widget, class: &str, out: &mut Vec<gtk4::Widget>) {
+    if w.has_css_class(class) {
+        out.push(w.clone());
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        find_all_class(&child, class, out);
+        c = child.next_sibling();
+    }
 }
 
 fn nothing_survived_variant(app: &adw::Application) {
