@@ -380,6 +380,8 @@ window.settings-window notebook > header > tabs > tab { background: transparent;
 window.settings-window notebook > header > tabs > tab:hover { color: @ink; }
 window.settings-window notebook > header > tabs > tab:checked { background: @raised; color: @ink; }
 window.settings-window notebook > header > tabs > tab label { color: inherit; }
+window.settings-window notebook:focus:focus-visible > header > tabs > tab:checked { outline: 2px solid @ink;
+  outline-offset: -4px; }
 window.settings-window notebook > stack { background: @page; border: none; }
 window.settings-window check { background: transparent; color: @stamp_fg; border: 1px solid @ink_46;
   border-radius: 0; box-shadow: none; }
@@ -657,6 +659,11 @@ mod tests {
                 rule("window.settings-window notebook > header > tabs > tab:checked")
                     .contains("background: @raised"),
                 "{scheme:?}: the selected tab is not the raised sheet"
+            );
+            assert!(
+                rule("window.settings-window notebook:focus:focus-visible > header > tabs > tab:checked")
+                    .contains("outline: 2px solid @ink"),
+                "{scheme:?}: the tab's own focus ring is libadwaita's accent blue"
             );
             assert!(
                 rule("window.settings-window spinbutton:focus-within").contains("box-shadow: none"),
