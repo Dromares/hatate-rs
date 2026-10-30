@@ -30,6 +30,23 @@ pub const TITLE: &str = "Pawchive Index";
 pub const MIN_WIDTH: i32 = 720;
 pub const MIN_HEIGHT: i32 = 680;
 pub const COLUMNS: [&str; 5] = ["Artist", "Service", "Images", "Posts", "Indexed"];
+/// The numeric columns (Images, Posts, Indexed) are right-aligned, header cell and rows alike;
+/// Artist and Service read left to right.
+pub const RIGHT_ALIGNED: [bool; 5] = [false, false, true, true, true];
+
+/// One cell of the artist list, aligned and sized like every other cell of its column
+/// (`sizes` holds one `SizeGroup` per column, shared by the header and each row).
+fn cell(text: &str, i: usize, sizes: &[gtk::SizeGroup], header: bool) -> gtk::Label {
+    let label = if header {
+        widgets::section_label(text)
+    } else {
+        gtk::Label::new(Some(text))
+    };
+    label.set_xalign(if RIGHT_ALIGNED[i] { 1.0 } else { 0.0 });
+    label.set_hexpand(i == 0);
+    sizes[i].add_widget(&label);
+    label
+}
 
 /// What the index worker tells the window.
 #[derive(Debug)]
@@ -126,6 +143,9 @@ pub struct PawchiveIndexDialog {
     pub window: gtk::Window,
     pub table: gtk::ListBox,
     table_scroll: gtk::ScrolledWindow,
+    /// One per column, shared by the header cell and every row's cell.
+    pub sizes: Vec<gtk::SizeGroup>,
+    pub head: gtk::ListBox,
     pub none_yet: gtk::Label,
     pub query: gtk::Entry,
     pub find_button: gtk::Button,
@@ -178,14 +198,23 @@ impl PawchiveIndexDialog {
         let sizes: Vec<gtk::SizeGroup> = (0..COLUMNS.len())
             .map(|_| gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal))
             .collect();
-        let head = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+        // the header sits in a list of its own, so its cells get the rows' padding and the list's
+        // border and line up with the rows under it
+        let head_row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
         for (i, name) in COLUMNS.iter().enumerate() {
-            let h = widgets::section_label(name);
-            h.set_xalign(0.0);
-            h.set_hexpand(i == 0);
-            sizes[i].add_widget(&h);
-            head.append(&h);
+            head_row.append(&cell(name, i, &sizes, true));
         }
+        let head = gtk::ListBox::new();
+        head.set_selection_mode(gtk::SelectionMode::None);
+        head.add_css_class("pick-list");
+        head.set_margin_start(1);
+        head.set_margin_end(1);
+        head.append(&head_row);
+        if let Some(r) = head.row_at_index(0) {
+            r.set_activatable(false);
+            r.set_can_focus(false);
+        }
+        head.set_can_focus(false);
         column.append(&head);
         let table = gtk::ListBox::new();
         table.set_selection_mode(gtk::SelectionMode::Multiple);
@@ -294,6 +323,8 @@ impl PawchiveIndexDialog {
             window: window.clone(),
             table,
             table_scroll,
+            sizes,
+            head,
             none_yet,
             query: query.clone(),
             find_button: find_button.clone(),
@@ -402,10 +433,7 @@ impl PawchiveIndexDialog {
         for c in &creators {
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             for (i, text) in row_cells(c).iter().enumerate() {
-                let label = gtk::Label::new(Some(text));
-                label.set_xalign(0.0);
-                label.set_hexpand(i == 0);
-                row.append(&label);
+                row.append(&cell(text, i, &self.sizes, false));
             }
             self.table.append(&row);
         }

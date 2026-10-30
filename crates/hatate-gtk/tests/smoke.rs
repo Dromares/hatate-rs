@@ -355,6 +355,10 @@ const SCENARIOS: &[Scenario] = &[
         tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers,
     ),
     (
+        "pawchive_artist_columns_share_one_edge_in_the_header_and_every_row",
+        pawchive_artist_columns_share_one_edge_in_the_header_and_every_row,
+    ),
+    (
         "hydrus_requests_leave_the_main_loop_running_while_the_server_stalls",
         hydrus_requests_leave_the_main_loop_running_while_the_server_stalls,
     ),
@@ -6299,6 +6303,87 @@ fn scripted_pawchive(
 
 /// The window's whole path: a link adds an artist at once, a name is searched, the ticked ones are
 /// added, Index selected runs the crawl, Remove asks (Cancel by default) and then removes.
+/// DAN-2398 N1: the artist list is a table. Each column has one width and one alignment for the
+/// header cell and every row, so the right edge of a column is the same in all of them (a drifting
+/// row put `fanbox` under POSTS). Measured on allocations, in window coordinates, at +-1 px.
+fn pawchive_artist_columns_share_one_edge_in_the_header_and_every_row(app: &adw::Application) {
+    use gtk4::prelude::*;
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    let index = hatate_core::pawchive_index::PawchiveIndex::new(f.w.s.paths.pawchive_index_db());
+    for (service, id, name, images, posts) in [
+        ("patreon", "1001", "Synthetic Artist", 1284usize, 96usize),
+        ("fanbox", "2002", "Another Synthetic", 37, 5),
+        ("fanbox", "3003", "Third Synthetic", 0, 0),
+    ] {
+        index.add_creator(service, id, Some(name)).expect("artist");
+        let rows: Vec<_> = (0..images)
+            .map(|i| hatate_core::pawchive_index::ImageRow {
+                service: service.to_owned(),
+                user_id: id.to_owned(),
+                post_id: format!("p{i}"),
+                page_index: 0,
+                sha256: format!("{i:064x}"),
+                path: format!("/synthetic/{id}/{i}.png"),
+                title: None,
+                dhash8: Some(format!("{i:016x}")),
+                dhash16: Some(format!("{i:064x}")),
+            })
+            .collect();
+        index.add_images(&rows).expect("images");
+        if posts > 0 {
+            index
+                .finish_creator(service, id, Some(name), posts)
+                .expect("stamp");
+        }
+    }
+    f.w.action_pawchive_index();
+    let d = f.w.s.pawchive_dialog.borrow().clone().expect("opened");
+    d.window.present();
+    pump_for(400);
+    let cells = |w: &gtk4::Widget| -> Vec<gtk4::Widget> {
+        let mut v = Vec::new();
+        let mut c = w.first_child();
+        while let Some(x) = c {
+            c = x.next_sibling();
+            v.push(x);
+        }
+        v
+    };
+    let edges = |row: &gtk4::Widget| -> Vec<(f32, f32)> {
+        cells(row)
+            .iter()
+            .map(|c| {
+                let b = c.compute_bounds(&d.window).expect("bounds");
+                (b.x(), b.x() + b.width())
+            })
+            .collect()
+    };
+    let head_row = d.head.row_at_index(0).unwrap().child().unwrap();
+    let head = edges(&head_row);
+    assert_eq!(head.len(), 5, "{head:?}");
+    let mut n = 0;
+    while let Some(r) = d.table.row_at_index(n) {
+        let row = edges(&r.child().unwrap());
+        assert_eq!(row.len(), 5);
+        for (i, ((hl, hr), (rl, rr))) in head.iter().zip(&row).enumerate() {
+            assert!(
+                (hr - rr).abs() <= 1.0 && (hl - rl).abs() <= 1.0,
+                "row {n} column {i}: header {hl}..{hr} vs row {rl}..{rr}"
+            );
+        }
+        n += 1;
+    }
+    assert_eq!(n, 3, "all three artists are rows");
+    // the numeric columns read against their right edge, the others against their left
+    for (i, w) in cells(&head_row).iter().enumerate() {
+        let label = w.downcast_ref::<gtk4::Label>().unwrap();
+        let want = if hatate_gtk::pawchive_dialog::RIGHT_ALIGNED[i] { 1.0 } else { 0.0 };
+        assert_eq!(label.xalign(), want, "header column {i}");
+    }
+    f.close();
+}
+
 fn pawchive_index_window_adds_by_link_searches_by_name_indexes_and_removes(app: &adw::Application) {
     let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
     let f = pawchive_fx(app, &server, Vec::new());
