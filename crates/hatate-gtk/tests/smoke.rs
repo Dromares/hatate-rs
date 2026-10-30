@@ -343,6 +343,10 @@ const SCENARIOS: &[Scenario] = &[
         hydrus_reconcile_confirms_queued_rows_and_says_when_nothing_waits,
     ),
     (
+        "pawchive_and_query_windows_keep_their_stated_minimum",
+        pawchive_and_query_windows_keep_their_stated_minimum,
+    ),
+    (
         "hydrus_requests_leave_the_main_loop_running_while_the_server_stalls",
         hydrus_requests_leave_the_main_loop_running_while_the_server_stalls,
     ),
@@ -6017,6 +6021,80 @@ fn hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched(app: &adw::Ap
 // Pawchive Index (6.g, DAN-2220): a scripted Pawchive over https with a throw-away CA, handed to
 // the window through its constructor.
 // ---------------------------------------------------------------------------------------------
+
+/// What a window's content asks for: its least width, and its height at `width` (the stated
+/// minimum width), read from the child so the window's own size request does not hide an overflow.
+fn content_need(win: &gtk4::Window, width: i32) -> (i32, i32) {
+    let child = win.child().expect("a window with content");
+    let w = child.measure(gtk4::Orientation::Horizontal, -1).0;
+    let h = child.measure(gtk4::Orientation::Vertical, width.max(w)).0;
+    (w, h)
+}
+
+/// DAN-2220: each 6.g window, told to be as small as it can, does not grow past the minimum its
+/// code states (the Query window with its long result rows wrapped, the Pawchive window with its
+/// two note paragraphs and its button rows). On the shot path (hosted `ci`, GTK 4.14) the
+/// `hydrus-query-results` and `pawchive` shots at `min` carry the same numbers in their headers.
+fn pawchive_and_query_windows_keep_their_stated_minimum(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+        "/get_files/search_files" => json_reply(json!({"file_ids": [1, 2]})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": NEW_HASH, "file_id": 1, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {}},
+            {"hash": HELD_HASH, "file_id": 2, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {}},
+        ]})),
+        "/get_files/file" => Reply::ok(common::search::PNG.to_vec()),
+        _ => json_reply(json!({})),
+    });
+    let mut seed = review_seed(dir.path());
+    seed[1].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    f.w.action_query_hydrus();
+    let d =
+        f.w.s
+            .hydrus_query_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog opened");
+    d.set_tags_text("solo");
+    d.search();
+    assert!(pump_until(10_000, || d.labels().len() == 2));
+    pump_for(300);
+    let (w, h) = content_need(d.window.upcast_ref(), hatate_gtk::hydrus_query::MIN_WIDTH);
+    println!("OUTER query-hydrus content={w}x{h}");
+    use hatate_gtk::hydrus_query::{MIN_HEIGHT, MIN_WIDTH};
+    assert!(
+        w <= MIN_WIDTH && h <= MIN_HEIGHT,
+        "the Query Hydrus window is {w}x{h}; its stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}"
+    );
+    f.close();
+
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let d =
+        f.w.s
+            .pawchive_dialog
+            .borrow()
+            .clone()
+            .expect("the window opened");
+    pump_for(300);
+    let (w, h) = content_need(
+        d.window.upcast_ref(),
+        hatate_gtk::pawchive_dialog::MIN_WIDTH,
+    );
+    println!("OUTER pawchive content={w}x{h}");
+    use hatate_gtk::pawchive_dialog::{MIN_HEIGHT as PH, MIN_WIDTH as PW};
+    assert!(
+        w <= PW && h <= PH,
+        "the Pawchive Index window is {w}x{h}; its stated minimum is {PW}x{PH}"
+    );
+    f.close();
+}
 
 fn pawchive_fx(
     app: &adw::Application,

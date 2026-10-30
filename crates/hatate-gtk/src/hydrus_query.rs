@@ -25,7 +25,7 @@ use std::rc::Rc;
 
 pub const TITLE: &str = "Query Hydrus";
 pub const MIN_WIDTH: i32 = 420;
-pub const MIN_HEIGHT: i32 = 400;
+pub const MIN_HEIGHT: i32 = 480;
 
 /// `str(None)` where Python formats an unknown int or mime.
 fn shown<T: ToString>(v: &Option<T>) -> String {
@@ -133,6 +133,8 @@ impl HydrusQueryDialog {
         results.set_selection_mode(gtk::SelectionMode::Multiple);
         let results_scroll = gtk::ScrolledWindow::new();
         results_scroll.set_child(Some(&results));
+        // A row wraps rather than clips, so the "[already in list]" tail shows at the minimum size.
+        results_scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
         results_scroll.set_vexpand(true);
         results_scroll.set_min_content_height(120);
         results_scroll.add_css_class("field");
@@ -289,6 +291,7 @@ impl HydrusQueryDialog {
             for m in &metadata {
                 let label = gtk::Label::new(Some(&result_label(m, existing.contains(&m.hash))));
                 label.set_xalign(0.0);
+                label.set_wrap(true);
                 label.set_margin_start(8);
                 label.set_margin_end(8);
                 label.set_margin_top(4);

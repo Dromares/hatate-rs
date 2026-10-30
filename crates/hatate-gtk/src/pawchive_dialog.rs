@@ -25,6 +25,10 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 pub const TITLE: &str = "Pawchive Index";
+/// The least the window shows without clipping its notes or its button rows (set on the window,
+/// and held by `pawchive_and_query_windows_keep_their_stated_minimum`). Python states none.
+pub const MIN_WIDTH: i32 = 720;
+pub const MIN_HEIGHT: i32 = 680;
 pub const COLUMNS: [&str; 5] = ["Artist", "Service", "Images", "Posts", "Indexed"];
 
 /// What the index worker tells the window.
@@ -148,6 +152,7 @@ impl PawchiveIndexDialog {
             .default_width(760)
             .default_height(560)
             .build();
+        window.set_size_request(MIN_WIDTH, MIN_HEIGHT);
         let column = gtk::Box::new(gtk::Orientation::Vertical, widgets::PAGE_SPACING);
         let (l, t, r, b) = widgets::PAGE_MARGINS;
         column.set_margin_start(l);

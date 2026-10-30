@@ -197,6 +197,25 @@ fn main() -> glib::ExitCode {
         };
         window.win.set_default_size(w, h);
         prepare(window, &state);
+        if size.as_deref() == Some("min") {
+            // The 6.g windows are their own surfaces with their own minimum, not the main
+            // window's: the Query window states it; the Pawchive window's is its own constant.
+            if state.starts_with("hydrus-query") {
+                if let Some(d) = window.s.hydrus_query_dialog.borrow().as_ref() {
+                    d.window.set_default_size(
+                        hatate_gtk::hydrus_query::MIN_WIDTH,
+                        hatate_gtk::hydrus_query::MIN_HEIGHT,
+                    );
+                }
+            } else if state == "pawchive" {
+                if let Some(d) = window.s.pawchive_dialog.borrow().as_ref() {
+                    d.window.set_default_size(
+                        hatate_gtk::pawchive_dialog::MIN_WIDTH,
+                        hatate_gtk::pawchive_dialog::MIN_HEIGHT,
+                    );
+                }
+            }
+        }
         let win = window.win.clone();
         let main_win = window.win.clone();
         let frames = Rc::new(Cell::new(0u32));
@@ -362,6 +381,7 @@ fn prepare_hydrus(window: &MainWindow, state: &str) {
                 ] {
                     let label = gtk4::Label::new(Some(text));
                     label.set_xalign(0.0);
+                    label.set_wrap(true);
                     label.set_margin_start(8);
                     label.set_margin_end(8);
                     label.set_margin_top(4);
