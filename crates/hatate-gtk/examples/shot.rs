@@ -21,7 +21,7 @@
 //! `review-wipe`, `review-differences`, `review-wipe-nomatch` (only the local picture), `review-error` (the local file is gone; design
 //! gate 2.8), `review-focus-<wslider|wview|zoom|popout>` (a Wipe control focused with the ring showing), `review-compare` and
 //! `review-compare-differences` (the compare window, which is its own surface), `review-compare-nomatch` (its "no match" box) and
-//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The Settings states (6.h) are `settings-<0..8>` (that tab of the Settings window, in Python's order: General to MCP), `settings-find` (a query with results), `settings-find-none` ("Nothing matches that."), `settings-lens` (the Google Lens warning over the Engine page), `settings-found` (a jumped-to setting wearing the stamp) and `settings-focus-<find|tab|ok|cancel|check|spin|combo|entry>` (that control focused with the ring showing; `check` and `entry` are on the Hydrus page, `combo` on the Import page, the rest on General). The size `min` is the window's stated minimum.
+//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The Settings states (6.h) are `settings-<0..8>` (that tab of the Settings window, in Python's order: General to MCP), `settings-find` (a query with results), `settings-find-none` ("Nothing matches that."), `settings-lens` (the Engine page with Google Lens ticked and its dependencies missing; libadwaita presents the warning box as a window of its own, which this snapshot does not hold), `settings-found` (a jumped-to setting wearing the stamp) and `settings-focus-<find|tab|ok|cancel|check|spin|combo|entry>` (that control focused with the ring showing; `check` and `entry` are on the Hydrus page, `combo` on the Import page, the rest on General). The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -661,6 +661,28 @@ fn prepare_settings(window: &MainWindow, state: &str) {
     }
 }
 
+/// The part of `b` that a scrolled window above `w` shows; `None` when it is cut vertically (a label
+/// scrolled out of its page is mapped and has bounds, but its box would read other pixels, or a row of
+/// the page without a glyph in it). A label cut at the side keeps its visible part.
+fn clip_to_scrolled(
+    w: &gtk4::Widget,
+    root: &gtk4::Widget,
+    mut b: gtk4::graphene::Rect,
+) -> Option<gtk4::graphene::Rect> {
+    let mut up = w.parent();
+    while let Some(p) = up {
+        if p.is::<gtk4::ScrolledWindow>() {
+            let shown = b.intersection(&p.compute_bounds(root)?)?;
+            if shown.height() < b.height() - 0.5 {
+                return None;
+            }
+            b = shown;
+        }
+        up = p.parent();
+    }
+    Some(b)
+}
+
 /// Every mapped label under `w` with its box in `root`'s coordinates.
 fn label_rects(w: &gtk4::Widget, root: &gtk4::Widget, out: &mut String) {
     // A popover is its own surface: its labels are measured against its own snapshot.
@@ -670,7 +692,10 @@ fn label_rects(w: &gtk4::Widget, root: &gtk4::Widget, out: &mut String) {
     if let Some(l) = w.downcast_ref::<gtk4::Label>() {
         let text = l.text();
         if l.is_mapped() && !text.is_empty() {
-            if let Some(b) = w.compute_bounds(root) {
+            if let Some(b) = w
+                .compute_bounds(root)
+                .and_then(|b| clip_to_scrolled(w, root, b))
+            {
                 // A selected label's box is cut to its text: past it is the page, and the farthest
                 // pixel from the wash would be the page, not a glyph (two pixels in: the selection ends short of the
                 // layout's rounded width).
@@ -735,12 +760,21 @@ fn text_view_rects(tv: &gtk4::TextView, root: &gtk4::Widget, out: &mut String) {
         let (wx, wy) = tv.buffer_to_window_coords(gtk4::TextWindowType::Widget, a.x(), a.y());
         let selected = sel
             .is_some_and(|(s0, s1)| s0.offset() <= start.offset() && end.offset() <= s1.offset());
+        let line_box = gtk4::graphene::Rect::new(
+            wx as f32 + origin.x(),
+            wy as f32 + origin.y(),
+            (b.x() - a.x()).max(1) as f32,
+            a.height() as f32,
+        );
+        let Some(shown) = clip_to_scrolled(tv.upcast_ref(), root, line_box) else {
+            continue;
+        };
         out.push_str(&format!(
-            "{:.0}\t{:.0}\t{}\t{}\t{}\t{}\n",
-            f64::from(wx) + f64::from(origin.x()),
-            f64::from(wy) + f64::from(origin.y()),
-            (b.x() - a.x()).max(1),
-            a.height(),
+            "{:.0}\t{:.0}\t{:.0}\t{:.0}\t{}\t{}\n",
+            shown.x(),
+            shown.y(),
+            shown.width(),
+            shown.height(),
             if selected { "selected" } else { "on" },
             text
         ));

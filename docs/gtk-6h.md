@@ -38,6 +38,7 @@ built and insensitive (section 2, D-C).
 | **D-C** | The Test buttons and Fetch from Hydrus are insensitive. | 6.h-2 (above). | `settings_dialog.rs` `insensitive_network_buttons` |
 | **D-D** (C1) | A JSON integer in a float field of a hand-edited `config.json` (`min_similarity: 101`, `engine_delays.<name>: [1, 2]`) is written back as `101.0` and `[1.0, 2.0]` on a close with no OK; Python keeps `101`. Numerically identical. | The cause is the config module (PR #5), not this window. **Ruled by Cloud on DAN-2406 (Option A, three conditions).** The P2 against the module is DAN-2407; it removes this class. | the comparer's `c1_map` (exact `N` to `N.0` at float-typed paths, then **byte-identical**); negative control below |
 | **D-E** | The window has a stated minimum of 560 x 440 and its pages scroll sideways below their natural width. Python states only a minimum width of 480. | Gate 2.5 wants a stated minimum that every state fits. | `smoke.rs:7151` (`settings_window_keeps_its_stated_minimum`), red at 837 x 209 before the change (`worktrees/DAN-2221-revert.log` R2) |
+| **D-F** | The Settings window asks its questions (the Lens warning is the one it asks today) over itself. Python parents each `QMessageBox` to the dialog, so the box sits over it. | A modal window cannot be answered through a box that opens over the main window beneath it. `dialogs.rs` `Prompter::over` hands the window's own prompter its parent. | `smoke::settings_window_asks_its_questions_over_itself` (`smoke.rs:7183`), red on the revert of `AdwPrompter::over` (`worktrees/DAN-2221-revert.log` R8) |
 | (ruled) | The saved `table_header_state` is `hatate-rs:1:` and the widths, not a Qt blob. | DAN-2293. | (not this ticket's) |
 
 **C1, the three conditions** (DAN-2406): (1) exact mapping only, then byte-identical texts; (2) negative control; (3) the
@@ -169,4 +170,227 @@ the number of defects. The C1 evidence (condition 3) is the full unified diff of
 
 ## 6. Minimum size, shots and contrast
 
-HOSTED_SECTION
+Hosted `ci` run 41012629165 at `13c251c5e9a684617b145f3cd0badd82f0a55387` (GTK 4.14 / libadwaita 1.5), artifact `shots`. Every number below is read from that
+artifact, not from the author's host (GTK 4.24), which reads a different minimum on some surfaces (DAN-2324, DAN-2345).
+
+**Minimum size** (DAN-2356): the stated minimum is 560 x 440 (`settings_dialog::MIN_WIDTH/MIN_HEIGHT`), held by
+`smoke::settings_window_keeps_its_stated_minimum` (`smoke.rs:7151`; red before the sideways scroll, R2). Size read from each PNG
+header of the 13 minimum-size states in both schemes; the fit test went red on the shot path's own number before the fix
+(837 x 209 on the host; the host shot header read 837 x 440), and the shot headers are the test where the host and the
+hosted toolkit differ.
+
+| state | dark shot | light shot | width x height (dark / light) | stated | ok |
+|---|---|---|---|---|---|
+| General | `settings-0-min-dark.png` | `settings-0-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| Engine | `settings-1-min-dark.png` | `settings-1-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| Import | `settings-2-min-dark.png` | `settings-2-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| SauceNAO | `settings-3-min-dark.png` | `settings-3-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| Hydrus | `settings-4-min-dark.png` | `settings-4-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| Tag Namespaces | `settings-5-min-dark.png` | `settings-5-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| Site Logins | `settings-6-min-dark.png` | `settings-6-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| Shortcuts (placeholder) | `settings-7-min-dark.png` | `settings-7-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| MCP (placeholder) | `settings-8-min-dark.png` | `settings-8-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| Find results open | `settings-find-min-dark.png` | `settings-find-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| Find, nothing matches | `settings-find-none-min-dark.png` | `settings-find-none-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| a jumped-to setting marked | `settings-found-min-dark.png` | `settings-found-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+| Engine page, Lens ticked (the warning box is not in the shot) | `settings-lens-min-dark.png` | `settings-lens-min-light.png` | 560 x 440 / 560 x 440 | 560 x 440 | yes |
+
+0 of 13 rows differ from the stated minimum. The focus states are shot at the default size, not at the minimum; the Find row, the page's controls and
+both buttons are all in the 560 x 440 shots above.
+
+**Focus rings** (non-text 3:1 floor; `worktrees/DAN-2221-tools/focusdiff.py`; the baseline is the page's own shot, with the
+Find box holding the initial focus, so the ring around the Find box is measured from the baseline against the shot where
+focus has moved to OK):
+
+| control | scheme | ring | around | ratio | cluster box | px |
+|---|---|---|---|---|---|---|
+| find | dark | #cdc4ba | #0d0d0d | 11.29 | (61, 14, 922, 58) | 5398 |
+| tab | dark | #cdc4ba | #0d0d0d | 11.29 | (18, 70, 922, 586) | 4200 |
+| ok | dark | #0d0d0d | #cdc4ba | 11.29 | (851, 598, 916, 640) | 412 |
+| cancel | dark | #cdc4ba | #0d0d0d | 11.29 | (739, 598, 835, 640) | 536 |
+| check | dark | #cdc4ba | #0d0d0d | 11.29 | (41, 252, 899, 290) | 3824 |
+| spin | dark | #cdc4ba | #0d0d0d | 11.29 | (287, 178, 473, 222) | 2464 |
+| combo | dark | #cdc4ba | #0d0d0d | 11.29 | (309, 360, 899, 398) | 2496 |
+| entry | dark | #cdc4ba | #090909 | 11.57 | (207, 120, 899, 164) | 10343 |
+| find | light | #211d17 | #e8e1d2 | 12.88 | (61, 14, 922, 58) | 5398 |
+| tab | light | #211d17 | #e8e1d2 | 12.88 | (18, 70, 922, 586) | 4200 |
+| ok | light | #f6f1e6 | #211d17 | 14.88 | (851, 598, 916, 640) | 412 |
+| cancel | light | #211d17 | #e8e1d2 | 12.88 | (739, 598, 835, 640) | 536 |
+| check | light | #211d17 | #e8e1d2 | 12.88 | (41, 252, 899, 290) | 3824 |
+| spin | light | #211d17 | #e8e1d2 | 12.88 | (287, 178, 473, 222) | 2464 |
+| combo | light | #211d17 | #e8e1d2 | 12.88 | (309, 360, 899, 398) | 2496 |
+| entry | light | #211d17 | #ddd2bd | 11.20 | (207, 120, 899, 164) | 10343 |
+
+The OK button is the default button and is filled with the stamp colour, so its ring is drawn inside the fill: the table
+gives the ring against the fill it sits on, not against the page.
+
+**Contrast** (extreme-pixel method, `worktrees/DAN-2221-tools/contrast.py`, a copy of `DAN-2220-tools/contrast.py`, over every
+Settings shot of the artifact; the full table is `worktrees/DAN-2221-contrast.md`, not committed): 1760 rows,
+1570 pass the 4.5:1 text floor, 32 are disabled controls (exempt, listed as such),
+**158 FAIL**. Lowest passing row: dark 5.24 `optional, e.g. "sn"`, light 5.09 `optional, e.g. "sn"`.
+
+The failing rows:
+
+| Shot | Element | fg | bg | ratio | scheme | 4.5:1 |
+|---|---|---|---|---|---|---|
+| settings-0-dark |     ↳ Pawchive delay: | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-0-dark | min | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-0-dark | max (seconds) | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-0-dark |     ↳ Pawchive index delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-0-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-0-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-0-light |     ↳ Pawchive delay: | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-0-light | min | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-0-light | max (seconds) | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-0-light |     ↳ Pawchive index delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-0-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-0-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-0-min-dark |     ↳ trace.moe delay: | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-0-min-dark | min | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-0-min-dark |     ↳ IQDB 3D delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-0-min-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-0-min-light |     ↳ trace.moe delay: | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-0-min-light | min | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-0-min-light |     ↳ IQDB 3D delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-0-min-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-1-dark | Also search Google Images (the whole web, no tag | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-1-light | Also search Google Images (the whole web, no tag | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-1-min-dark | Extra engines | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-1-min-light | Extra engines | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-2-min-dark | Auto-import method: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-2-min-dark | Hydrus import confirm timeout: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-2-min-light | Auto-import method: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-2-min-light | Hydrus import confirm timeout: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-3-min-dark | material | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-3-min-light | material | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-4-min-dark | Source note name: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-4-min-light | Source note name: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-5-dark | tagme | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-5-dark | commentary | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-5-dark | commentary_request | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-5-dark | commentary_typo | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-5-dark | Rating namespace: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-5-light | tagme | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-5-light | commentary | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-5-light | commentary_request | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-5-light | commentary_typo | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-5-light | Rating namespace: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-6-min-dark | Sankaku cookies: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-6-min-light | Sankaku cookies: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-dark | General  ›  ↳ trace.moe delay | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-dark | min | #3b3b3b | #0d0d0d | 1.74 | dark | FAIL |
+| settings-find-dark |     ↳ Google Images delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-dark |     ↳ Google Lens delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-light | General  ›  ↳ trace.moe delay | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-light | min | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-find-light |     ↳ Google Images delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-light |     ↳ Google Lens delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-min-dark | General  ›  ↳ trace.moe delay | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-min-dark | min | #3b3b3b | #0d0d0d | 1.74 | dark | FAIL |
+| settings-find-min-dark |     ↳ IQDB delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-min-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-min-dark |     ↳ SauceNAO delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-min-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-min-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-min-light | General  ›  ↳ trace.moe delay | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-min-light | min | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-find-min-light |     ↳ IQDB delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-min-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-min-light |     ↳ SauceNAO delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-min-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-min-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-dark |     ↳ Yandex delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-dark |     ↳ Pawchive delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-light |     ↳ Yandex delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-light |     ↳ Pawchive delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-min-dark |     ↳ ascii2d delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-min-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-min-dark |     ↳ trace.moe delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-min-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-find-none-min-light |     ↳ ascii2d delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-min-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-min-light |     ↳ trace.moe delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-find-none-min-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-cancel-dark |     ↳ Pawchive delay: | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-cancel-dark | min | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-cancel-dark | max (seconds) | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-cancel-dark |     ↳ Pawchive index delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-cancel-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-cancel-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-cancel-light |     ↳ Pawchive delay: | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-cancel-light | min | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-cancel-light | max (seconds) | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-cancel-light |     ↳ Pawchive index delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-cancel-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-cancel-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-find-dark |     ↳ Pawchive delay: | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-find-dark | min | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-find-dark | max (seconds) | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-find-dark |     ↳ Pawchive index delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-find-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-find-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-find-light |     ↳ Pawchive delay: | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-find-light | min | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-find-light | max (seconds) | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-find-light |     ↳ Pawchive index delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-find-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-find-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-ok-dark |     ↳ Pawchive delay: | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-ok-dark | min | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-ok-dark | max (seconds) | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-ok-dark |     ↳ Pawchive index delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-ok-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-ok-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-ok-light |     ↳ Pawchive delay: | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-ok-light | min | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-ok-light | max (seconds) | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-ok-light |     ↳ Pawchive index delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-ok-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-ok-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-spin-dark |     ↳ Pawchive delay: | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-spin-dark | min | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-spin-dark | max (seconds) | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-focus-spin-dark |     ↳ Pawchive index delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-spin-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-spin-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-spin-light |     ↳ Pawchive delay: | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-spin-light | min | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-spin-light | max (seconds) | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-focus-spin-light |     ↳ Pawchive index delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-spin-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-spin-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-tab-dark |     ↳ Pawchive index delay: | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-tab-dark | min | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-tab-dark | max (seconds) | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-focus-tab-light |     ↳ Pawchive index delay: | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-tab-light | min | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-focus-tab-light | max (seconds) | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-found-min-dark | API key: | #7c7771 | #0d0d0d | 4.38 | dark | FAIL |
+| settings-found-min-dark | Tag namespace: | #353331 | #0d0d0d | 1.54 | dark | FAIL |
+| settings-found-min-dark | character | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-found-min-light | API key: | #6c685e | #e8e1d2 | 4.27 | light | FAIL |
+| settings-found-min-light | Tag namespace: | #afaba1 | #e8e1d2 | 1.76 | light | FAIL |
+| settings-found-min-light | character | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-lens-dark | Also search Google Images (the whole web, no tag | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-lens-light | Also search Google Images (the whole web, no tag | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+| settings-lens-min-dark | Extra engines | #0d0d0d | #0d0d0d | 1.00 | dark | FAIL |
+| settings-lens-min-light | Extra engines | #e8e1d2 | #e8e1d2 | 1.00 | light | FAIL |
+
+
+**Not shot: the Lens warning box.** libadwaita presents it as a window of its own when the parent is not an `AdwWindow`, and the Settings window's snapshot (`settings-lens-*`) shows the Engine page it was raised over, not the box. The box is pinned by text and parentage instead: `smoke.rs:7249-7261` (title, text, detail, the check stays ticked) and D-F (`smoke.rs:7183`, it opens over the Settings window). A shot of that toplevel is not part of this PR.
