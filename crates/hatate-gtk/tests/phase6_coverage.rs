@@ -722,3 +722,59 @@ fn every_state_row_of_section_7_1_names_shots_and_a_scenario_that_exist() {
         check_cell_refs(&who, &r[4], &ops, &shots);
     }
 }
+
+#[test]
+fn section_8_lists_every_tab_stop_with_the_shot_that_shows_its_indicator() {
+    let doc = read("docs/phase6-coverage.md");
+    let section = doc.split("\n## 8. ").nth(1).expect("section 8");
+    let want: Vec<String> = read("docs/phase6-tab-stops-76c85c4.txt")
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert!(
+        want.len() >= 600,
+        "the listing holds the stops of every surface"
+    );
+    let shots = read("crates/hatate-gtk/examples/shot.rs");
+    let mut got = Vec::new();
+    let mut surfaces = BTreeSet::new();
+    for r in numbered_rows(section, 6) {
+        let state = r[1].trim_matches('`');
+        got.push(format!("{state} {}", r[2]));
+        surfaces.insert(state.to_string());
+        // each stop names its crop in both schemes, and nothing is left with `NO INDICATOR`
+        for scheme in ["dark", "light"] {
+            let file = format!("`{state}-{scheme}-tab{}.png`", r[2]);
+            assert!(r[5].contains(&file), "{state} stop {}: no {file}", r[2]);
+        }
+        assert!(
+            !r[5].contains("NO INDICATOR"),
+            "{state} stop {} has no visible indicator (a finding, to be fixed)",
+            r[2]
+        );
+        // the walk's surfaces are states of the renderer
+        assert!(
+            shots.contains(&format!("(\"{state}\", ")),
+            "{state} is not a state of the renderer"
+        );
+    }
+    assert_eq!(got, want, "section 8 and the listing differ");
+    // every surface the walk covers is in the walk's own table
+    for st in [
+        "empty",
+        "rows",
+        "review",
+        "hydrus-query",
+        "pawchive-artists",
+        "settings-0",
+        "settings-8",
+        "logs",
+        "activity",
+    ] {
+        assert!(surfaces.contains(st), "no Tab stops for {st}");
+        assert!(
+            shots.contains(&format!("\"{st}\"")),
+            "{st} is not in TAB_STATES"
+        );
+    }
+}
