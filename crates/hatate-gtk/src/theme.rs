@@ -356,6 +356,10 @@ window.pick-window scrolledwindow.field { border: 1px solid @ink_58; }
 window.pick-window scrolledwindow.field:focus-within { border-color: @ink; }
 window.pick-window textview, window.pick-window textview text { background: @sunken; color: @ink; }
 window.pick-window entry.field:focus-within { border-color: @ink; outline: 2px solid @ink; outline-offset: 2px; }
+/* a disabled primary button in these windows is the hollow, dimmed look Stop has when disabled, not the
+   stamp fill at half opacity (DAN-2398 P3-2) */
+window.pick-window button.pill.primary:disabled { background: transparent; color: @ink_45; border-color: @ink_46; opacity: 1; }
+window.pick-window button.pill.primary:disabled label { color: @ink_45; }
 window.pick-window progressbar trough { background: @ink_18; min-height: 4px; border-radius: 0; border: none; }
 window.pick-window progressbar progress { background: @ink; min-height: 4px; border-radius: 0; border: none; }
 dialog.alert check { background: transparent; color: @stamp_fg; border: 1px solid @ink_46; border-radius: 0;

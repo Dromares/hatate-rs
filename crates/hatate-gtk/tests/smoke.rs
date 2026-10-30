@@ -6923,10 +6923,17 @@ fn tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers(app: &adw::A
         Some("Close"),
         "{buttons:?}"
     );
-    assert!(
-        buttons.contains(&"Remove selected".to_owned()),
-        "Tab reaches Remove selected on the way: {buttons:?}"
+    // nothing to act on: Index selected, Index / refresh all and Remove selected are insensitive
+    // (DAN-2398 P3-3), so they are not Tab stops (this was the walk's assertion that Remove
+    // selected was reached; changed on purpose with the sensitivity)
+    assert_eq!(
+        buttons,
+        ["Find / Add", "Add artists from my matches", "Close"],
+        "{buttons:?}"
     );
+    assert!(!d.index_selected_button.is_sensitive());
+    assert!(!d.index_all_button.is_sensitive());
+    assert!(!d.remove_button.is_sensitive());
     // and Close wraps to the entry rather than to nothing
     use common::xtest::Key;
     keys.tap(Key::Tab, &[]).expect("inject");
@@ -6945,8 +6952,16 @@ fn tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers(app: &adw::A
     only(&mut keys, &d.window);
     gtk4::prelude::GtkWindowExt::set_focus(&d.window, Some(&d.query));
     pump_for(200);
-    // one artist indexed: the table row joins the walk and Close is still reachable
-    tab_to_button(&mut keys, &d.window, "Close");
+    // one artist, selected: the three list buttons are live, the table row joins the walk and
+    // Close is still reachable
+    assert!(d.index_selected_button.is_sensitive());
+    assert!(d.index_all_button.is_sensitive());
+    assert!(d.remove_button.is_sensitive());
+    let stops = tab_to_button(&mut keys, &d.window, "Close");
+    assert!(
+        button_stops(&stops).contains(&"Remove selected".to_owned()),
+        "Tab reaches Remove selected: {stops:?}"
+    );
     keys.tap(Key::Tab, &[]).expect("inject");
     pump_for(250);
     let wrapped = gtk4::prelude::GtkWindowExt::focus(&d.window);

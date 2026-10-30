@@ -380,6 +380,14 @@ impl PawchiveIndexDialog {
                 gtk::glib::Propagation::Proceed
             });
         }
+        {
+            let d = Rc::downgrade(&dialog);
+            dialog.table.connect_selected_rows_changed(move |_| {
+                if let Some(d) = d.upgrade() {
+                    d.refresh_actions();
+                }
+            });
+        }
         dialog.populate();
         dialog
     }
@@ -439,6 +447,7 @@ impl PawchiveIndexDialog {
         }
         self.window.set_title(Some(&window_title(&creators)));
         self.table.set_focusable(!creators.is_empty());
+        self.refresh_actions();
         // `set_focusable(false)` alone parks Tab on the widget before the empty table, or on nothing
         self.table_scroll.set_can_focus(!creators.is_empty());
         *self.creators.borrow_mut() = creators;
@@ -744,18 +753,29 @@ impl PawchiveIndexDialog {
         self.main.s.pawchive_index_worker.replace(job);
     }
 
+    /// The three buttons that act on the list: Index selected and Remove selected need a selected
+    /// row, Index / refresh all needs a row at all, and none acts while a job runs. An insensitive
+    /// button is out of the Tab order, so an empty index walks entry -> Find / Add -> Add artists
+    /// from my matches -> Close.
+    fn refresh_actions(&self) {
+        let idle = !self.busy.get();
+        let selected = !self.table.selected_rows().is_empty();
+        let any = self.table.row_at_index(0).is_some();
+        self.index_selected_button.set_sensitive(idle && selected);
+        self.remove_button.set_sensitive(idle && selected);
+        self.index_all_button.set_sensitive(idle && any);
+    }
+
     pub fn set_busy(&self, busy: bool) {
         self.busy.set(busy);
         for b in [
-            &self.index_selected_button,
-            &self.index_all_button,
-            &self.remove_button,
             &self.from_matches_button,
             &self.find_button,
             &self.add_checked_button,
         ] {
             b.set_sensitive(!busy);
         }
+        self.refresh_actions();
         self.stop_button.set_sensitive(busy);
         self.progress.set_visible(busy);
         if busy {
