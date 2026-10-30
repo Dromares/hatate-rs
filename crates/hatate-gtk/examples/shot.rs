@@ -21,7 +21,7 @@
 //! `review-wipe`, `review-differences`, `review-wipe-nomatch` (only the local picture), `review-error` (the local file is gone; design
 //! gate 2.8), `review-focus-<wslider|wview|zoom|popout>` (a Wipe control focused with the ring showing), `review-compare` and
 //! `review-compare-differences` (the compare window, which is its own surface), `review-compare-nomatch` (its "no match" box) and
-//! `review-focus-compare-<slider|diff>`. The size `min` is the window's stated minimum.
+//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty, with synthetic results, and its search button focused), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -135,7 +135,7 @@ fn main() -> glib::ExitCode {
         "rows" | "dialog" | "dialog-nolabel" | "failed" | "activity" | "parser-health"
         | "tab-failed" | "tab-activity" => save(&rows(12)),
         st if st.starts_with("review") && st != "review-bare" => save(&review_rows(&pics, st)),
-        st if st.starts_with("queue") => save(&queue_rows(
+        st if st.starts_with("queue") || st == "hydrus-delete" => save(&queue_rows(
             &pics,
             if st.starts_with("queue-5000") {
                 5000
@@ -236,6 +236,10 @@ fn main() -> glib::ExitCode {
                 Some("Logs")
             } else if state == "parser-health" {
                 Some("Parser Health")
+            } else if state.starts_with("hydrus-query") {
+                Some("Query Hydrus")
+            } else if state == "pawchive" {
+                Some("Pawchive Index")
             } else if state.starts_with("review-compare-d")
                 || state.starts_with("review-compare-l")
                 || state == "review-compare"
@@ -249,7 +253,12 @@ fn main() -> glib::ExitCode {
                 gtk4::Window::list_toplevels()
                     .into_iter()
                     .filter_map(|w| w.downcast::<gtk4::Window>().ok())
-                    .find(|w| w.title().as_deref() == Some(title) && w.is_mapped())
+                    .find(|w| {
+                        w.is_mapped()
+                            && w.title().is_some_and(|t| {
+                                t == title || (title == "Pawchive Index" && t.starts_with(title))
+                            })
+                    })
             });
             let main_app = win.application();
             let win: &gtk4::Window = logs_window.as_ref().unwrap_or(win.upcast_ref());
@@ -275,7 +284,7 @@ fn main() -> glib::ExitCode {
             // dialog's own labels are measured.
             let dialog = if matches!(
                 state.as_str(),
-                "review-addtags" | "review-conditions" | "review-compare-nomatch"
+                "review-addtags" | "review-conditions" | "review-compare-nomatch" | "hydrus-delete"
             ) {
                 find_type(win.upcast_ref(), "AdwAlertDialog")
             } else {
@@ -323,11 +332,58 @@ fn main() -> glib::ExitCode {
     code
 }
 
+/// The 6.g states: a synthetic access key (the page's Hydrus actions are gated on it), then the
+/// surface. Nothing here reaches a server: the Query window's results are put in the list by
+/// hand, and the Delete box is shown before its request.
+fn prepare_hydrus(window: &MainWindow, state: &str) {
+    window.s.settings.lock().unwrap().hydrus.access_key =
+        hatate_core::config::Secret::new("synthetic-access-key");
+    match state {
+        "hydrus-empty" => {}
+        "hydrus-delete" => {
+            let ids = window.s.queue_view.visible_ids();
+            window.delete_rows_from_hydrus(&ids[1..3]);
+        }
+        "pawchive" => window.activate_action("pawchive-index"),
+        _ => {
+            window.activate_action("query-hydrus");
+            let dialog = window
+                .s
+                .hydrus_query_dialog
+                .borrow()
+                .clone()
+                .expect("the Query Hydrus window is open");
+            if state != "hydrus-query" {
+                dialog.set_tags_text("creator:synthetic artist\nsolo");
+                for text in [
+                    "00000000aaaa\u{2026}  (image/png, 640x480, 4 tag(s))",
+                    "00000001bbbb\u{2026}  (image/jpeg, 1024x768, 12 tag(s)) [already in list]",
+                    "00000002cccc\u{2026}  (image/png, 800x600, 7 tag(s))",
+                ] {
+                    let label = gtk4::Label::new(Some(text));
+                    label.set_xalign(0.0);
+                    label.set_margin_start(8);
+                    label.set_margin_end(8);
+                    label.set_margin_top(4);
+                    label.set_margin_bottom(4);
+                    dialog.results.append(&label);
+                }
+                dialog.select_results(&[0, 2]);
+            }
+            if state == "hydrus-query-focus" {
+                dialog.window.set_focus_visible(true);
+                dialog.search_button.grab_focus();
+            }
+        }
+    }
+}
+
 /// What the state does once the window is up.
 fn prepare(window: &MainWindow, state: &str) {
     match state {
         st if st.starts_with("queue") => prepare_queue(window, st),
         st if st.starts_with("review") => prepare_review(window, st),
+        st if st.starts_with("hydrus") || st == "pawchive" => prepare_hydrus(window, st),
         "dialog" => window.activate_action("clear-session"),
         // The control for the glyph fragment under the dialog (DAN-2256): the same shot with the
         // Queue page's placeholder label hidden, so any pixel under the dialog's border that

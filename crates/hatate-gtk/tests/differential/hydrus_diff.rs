@@ -174,10 +174,7 @@ impl Server {
                 .recorded()
                 .iter()
                 .map(|q| {
-                    let body = if q
-                        .header("content-type")
-                        .is_some_and(|c| c.contains("json"))
-                    {
+                    let body = if q.header("content-type").is_some_and(|c| c.contains("json")) {
                         serde_json::from_slice::<Value>(&q.body).unwrap_or(Value::Null)
                     } else {
                         json!({"len": q.body.len()})

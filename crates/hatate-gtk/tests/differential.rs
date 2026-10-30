@@ -199,7 +199,12 @@ fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
         let op = step["op"].as_str().unwrap();
         // The Delete from Hydrus box is Delete/Cancel here and Yes/No in Python (design gate 2.6):
         // `do_step` answers it.
-        for a in step["msg"].as_array().into_iter().flatten().filter(|_| op != "delete") {
+        for a in step["msg"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|_| op != "delete")
+        {
             script.push(Answer::Msg(match a.as_str() {
                 Some("yes") => Response::Yes,
                 Some("keep") => Response::Keep,
@@ -282,8 +287,16 @@ fn do_step(
         "reconcile" => w.action_reconcile_with_hydrus(),
         "show" => w.show_rows_in_hydrus(&w.s.queue_view.selected_ids()),
         "delete" => {
-            let yes = step["msg"].as_array().and_then(|a| a.first()).and_then(|a| a.as_str()) == Some("yes");
-            script.push(Answer::Msg(if yes { Response::Delete } else { Response::Cancel }));
+            let yes = step["msg"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|a| a.as_str())
+                == Some("yes");
+            script.push(Answer::Msg(if yes {
+                Response::Delete
+            } else {
+                Response::Cancel
+            }));
             w.delete_rows_from_hydrus(&w.s.queue_view.selected_ids());
         }
         "set_theme" => w.set_theme(step["mode"].as_str().unwrap()),
@@ -912,7 +925,12 @@ fn digest(
     }
     if let Some(h) = ctx.hydrus.borrow().as_ref() {
         digest["hydrus"] = h.log();
-        digest["errors"] = json!(entries.iter().map(|e| e.error_message.clone()).collect::<Vec<_>>());
+        digest["errors"] = json!(
+            entries
+                .iter()
+                .map(|e| e.error_message.clone())
+                .collect::<Vec<_>>()
+        );
     }
     digest
 }
