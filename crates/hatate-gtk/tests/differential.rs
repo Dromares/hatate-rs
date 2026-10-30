@@ -152,6 +152,7 @@ fn make_files(ctx: &Ctx, spec: &Value) {
 
 fn run_scenario(app: &adw::Application, ctx: &Ctx, spec: &Value) -> Vec<Value> {
     *ctx.kind.borrow_mut() = spec["kind"].as_str().unwrap_or("").to_owned();
+    HELD.with(|h| h.borrow_mut().clear());
     make_files(ctx, spec);
     let _ = std::fs::remove_dir_all(&ctx.root);
     let paths = temp_paths(&ctx.root);
