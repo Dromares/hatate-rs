@@ -152,7 +152,20 @@ repo; the log is `worktrees/DAN-2221-differential.log`). Python's `SettingsDialo
 bytes, the dialog's tabs and current tab, the Find text and result list, all 97 control values, the pipeline line, message
 boxes and file choosers. The generator starts from awkward but loadable configs (`cfg_overrides`).
 
-SEEDS_TABLE
+| Seed | Scenarios | Differing | L1 (Lens wording) | C1 (int in a float field) | M1 (Shortcuts and MCP rows dropped) |
+|---|---|---|---|---|---|
+| 1 | 40 | 0 | 24 | 0 | 12 |
+| 2 | 40 | 0 | 18 | 2 | 332 |
+| 3 | 40 | 0 | 16 | 3 | 25 |
+| 4 | 40 | 0 | 28 | 3 | 102 |
+| 5 | 40 | 0 | 20 | 1 | 77 |
+| **all** | **200** | **0** | 106 | 9 | 548 |
+
+Seeds 1 to 3 ran at `7d30f9d` and were re-compared at the head after the C1 ruling (the saved outputs, comparer only);
+seeds 4 and 5 ran at `c3a693d`, the head whose code is the head of this PR. At `7d30f9d` seeds 2 and 3 had 5 cases
+differing, all C1, which Cloud ruled on DAN-2406. **Differences left after the documented classes: 0.** The M1 count is
+a count of rows dropped from Python's Find results, so it grows with the number of Find steps a seed draws, not with
+the number of defects. The C1 evidence (condition 3) is the full unified diff of every C1 case, 9 in all, in the log.
 
 ## 6. Minimum size, shots and contrast
 
