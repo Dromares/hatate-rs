@@ -275,3 +275,113 @@ fn no_menu_action_is_deferred() {
         "DEFERRED markers left in menu.rs: {markers:?}"
     );
 }
+
+/// The rows of section 6: `(python test file, line, qualified name, disposition kind, text, assertion
+/// cell, red-under cell)`.
+type TestRow = (String, u32, String, String, String, String, String);
+
+fn section6() -> Vec<TestRow> {
+    let doc = read("docs/phase6-coverage.md");
+    let section = doc
+        .split("\n## 6. ")
+        .nth(1)
+        .expect("section 6")
+        .split("\n## 7. ")
+        .next()
+        .unwrap();
+    let mut rows = Vec::new();
+    for l in section.lines() {
+        if !(l.starts_with("| ") && l[2..].starts_with(|c: char| c.is_ascii_digit())) {
+            continue;
+        }
+        let cells: Vec<&str> = l.trim_matches('|').split(" | ").map(str::trim).collect();
+        assert_eq!(cells.len(), 5, "row {l:?} does not have five cells");
+        let (file, name) = cells[1]
+            .trim_start_matches('`')
+            .split_once("` `")
+            .unwrap_or_else(|| panic!("bad test cell {:?}", cells[1]));
+        let (kind, text) = cells[2]
+            .strip_prefix("**")
+            .and_then(|r| r.split_once("**: "))
+            .unwrap_or_else(|| panic!("row {l:?}: the disposition is not `**kind**: reason`"));
+        rows.push((
+            file.trim_end_matches(".py").to_string(),
+            cells[0].parse().unwrap(),
+            name.trim_end_matches('`').to_string(),
+            kind.to_string(),
+            text.to_string(),
+            cells[3].to_string(),
+            cells[4].to_string(),
+        ));
+    }
+    rows
+}
+
+#[test]
+fn every_python_test_no_earlier_doc_named_has_exactly_one_row_in_section_6() {
+    let want: BTreeSet<String> = read("docs/phase6-unmapped-tests-76c85c4.txt")
+        .lines()
+        .map(str::to_string)
+        .collect();
+    assert_eq!(want.len(), 50, "the listing holds the 50 tests of run B");
+    let rows = section6();
+    let got: Vec<String> = rows
+        .iter()
+        .map(|r| format!("{}.py:{} {}", r.0, r.1, r.2))
+        .collect();
+    let got_set: BTreeSet<String> = got.iter().cloned().collect();
+    assert_eq!(got.len(), got_set.len(), "a test is listed twice");
+    let missing: Vec<_> = want.difference(&got_set).collect();
+    let extra: Vec<_> = got_set.difference(&want).collect();
+    assert!(missing.is_empty(), "tests with no row: {missing:?}");
+    assert!(
+        extra.is_empty(),
+        "rows for tests not in the listing: {extra:?}"
+    );
+}
+
+#[test]
+fn every_row_of_section_6_says_what_it_is_and_a_pinned_row_cites_a_real_assertion() {
+    let kinds = ["pinned", "not asserted", "judged in the shot set", "n/a"];
+    for (file, line, name, kind, text, cite, red) in section6() {
+        let who = format!("{file}.py:{line} {name}");
+        assert!(
+            kinds.contains(&kind.as_str()),
+            "{who}: disposition {kind:?}"
+        );
+        assert!(text.chars().count() >= 20, "{who}: the reason is a stub");
+        if kind != "pinned" {
+            continue;
+        }
+        assert!(
+            red != "-" && red.contains('`'),
+            "{who}: a pinned row names the mutation that turned it red, and the test"
+        );
+        let cites: Vec<&str> = cite.split(", ").collect();
+        assert!(!cites.is_empty(), "{who}: a pinned row cites an assertion");
+        for c in cites {
+            let (path, n) = c
+                .trim_matches('`')
+                .rsplit_once(':')
+                .unwrap_or_else(|| panic!("{who}: bad citation {c:?}"));
+            let src = read(path);
+            let n: usize = n
+                .parse()
+                .unwrap_or_else(|_| panic!("{who}: bad line in {c:?}"));
+            // The cited line is an assertion, or sits in one that opened up to three lines above
+            // (a long `assert_eq!` is formatted over several lines).
+            let all: Vec<&str> = src.lines().collect();
+            assert!(
+                n >= 1 && n <= all.len(),
+                "{who}: {c} is past the end of the file"
+            );
+            let window = &all[n.saturating_sub(4)..n];
+            assert!(
+                window.iter().any(|l| l.contains("assert")
+                    || l.contains("matches!")
+                    || l.contains("no-such-state")),
+                "{who}: {c} is not in an assertion: {window:?}"
+            );
+        }
+    }
+}

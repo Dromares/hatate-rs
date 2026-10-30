@@ -971,13 +971,10 @@ fn nothing_survived_page_content(app: &adw::Application) {
     assert!(p.title.has_css_class("display-title"));
     assert!(p.body.text().contains("no queue to restore"));
     assert!(p.body.text().chars().count() > 80);
-    assert_eq!(
-        find_class(&root, "section-label")
-            .and_then(|w| w.downcast::<gtk4::Label>().ok())
-            .map(|l| l.text().to_string())
-            .as_deref(),
-        Some("01 // Queue")
-    );
+    let section = find_class(&root, "section-label")
+        .and_then(|w| w.downcast::<gtk4::Label>().ok())
+        .map(|l| l.text().to_string());
+    assert_eq!(section.as_deref(), Some("01 // Queue"));
     // The three actions, in order, uppercase mono; only the first is the primary.
     let buttons = [&p.new_search, &p.crash_log, &p.add_files];
     // In the order the tree lays them out, not the order the struct names them.
@@ -1032,14 +1029,13 @@ fn nothing_survived_page_content(app: &adw::Application) {
     let (crash_log, add_files) = (p.crash_log.clone(), p.add_files.clone());
     drop(g);
     crash_log.emit_clicked();
-    assert!(
+    let on_crash_log =
         f.w.s
             .log_viewer
             .borrow()
             .as_ref()
-            .expect("the viewer")
-            .showing_crash_log()
-    );
+            .map(|v| v.showing_crash_log());
+    assert_eq!(on_crash_log, Some(true));
     add_files.emit_clicked();
     assert!(
         matches!(f.script.asked.borrow().last(), Some(Asked::OpenFiles { title, .. }) if title == "Add images")
