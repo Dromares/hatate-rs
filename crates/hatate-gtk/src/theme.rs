@@ -381,7 +381,9 @@ dialog.alert spinbutton > text { background: transparent; color: @ink; box-shado
 /* ---- the Settings window (DAN-2221). A pick-window, so the sunken well, the field border and the ring
    above already reach its entries and lists; these are the controls only it holds. The tab strip is
    gui/theme.py's QTabBar: transparent at rest, the raised sheet when selected, ink on hover. `.found` is
-   QSS `#Found` (stamp fill, 1px 5px) on the label or tick a Find jump has just landed on ---- */
+   QSS `#Found` (stamp fill, 1px 5px) on the label or tick a Find jump has just landed on. The selected
+   tab's `inset 0 -2px` renders as ONE ink row: the notebook header border covers the bottom one, and
+   `-1px` would paint nothing visible (DAN-2442) ---- */
 window.settings-window notebook > header { background: @page; border: none; box-shadow: none; }
 window.settings-window notebook > header > tabs > tab { background: transparent; color: @ink_65; border: none;
   border-radius: 0; box-shadow: none; padding: 9px 20px; margin: 0 6px 0 0; min-height: 0; min-width: 0; }
