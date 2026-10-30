@@ -3,7 +3,7 @@
 //! `workers/pawchive_index_worker.py`): choose the artists whose images are indexed, index or
 //! refresh them one after another, and search pawchive's artists by name.
 //!
-//! Not modal: indexing an artist takes minutes and the list stays usable meanwhile. One window at a
+//! Not modal: indexing an artist takes minutes and the list keeps responding meanwhile. One window at a
 //! time; asking again raises it. The crawl and the artist search are the merged
 //! `hatate_core::pawchive_index` code on the worker bridge; the crawler's hosts are given to the
 //! window ([`crate::window::Env::pawchive`]), so a test points it at a local server and the
