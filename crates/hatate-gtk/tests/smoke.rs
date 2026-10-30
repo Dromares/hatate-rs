@@ -319,6 +319,18 @@ const SCENARIOS: &[Scenario] = &[
         queue_header_titles_are_not_clipped_at_the_minimum_window_size,
     ),
     (
+        "queue_status_and_file_cells_fit_and_sent_is_in_view_at_both_window_sizes",
+        queue_status_and_file_cells_fit_and_sent_is_in_view_at_both_window_sizes,
+    ),
+    (
+        "queue_scrollbar_is_10_px_wide_and_sent_still_fits_beside_it",
+        queue_scrollbar_is_10_px_wide_and_sent_still_fits_beside_it,
+    ),
+    (
+        "settings_prose_wraps_to_the_page_and_every_page_keeps_its_bar_at_rest",
+        settings_prose_wraps_to_the_page_and_every_page_keeps_its_bar_at_rest,
+    ),
+    (
         "clear_search_cache_label_carries_the_cache_size",
         clear_search_cache_label_carries_the_cache_size,
     ),
@@ -4008,6 +4020,190 @@ fn queue_header_titles_are_not_clipped_at_the_minimum_window_size(app: &adw::App
     }
 }
 
+/// DAN-2319 F1 and F5: at the default (1090 x 790) and the minimum (1000 x 780) window sizes the
+/// Status chip is drawn whole (`Unsearched`, `Not found` were cut to `Unsearc...`, `Not fou...`),
+/// a File name that does not fit is cut in the middle, and the `SENT` column lies inside the
+/// viewport at 1000.
+fn queue_status_and_file_cells_fit_and_sent_is_in_view_at_both_window_sizes(
+    app: &adw::Application,
+) {
+    use gtk4::pango::EllipsizeMode;
+    use hatate_core::table_cells::Column;
+    for (width, height) in [(1090, 790), (1000, 780)] {
+        for scheme in ["dark", "light"] {
+            let mut seed = seeded(MatchStatus::ALL.len(), MatchStatus::NotSearched);
+            for (i, e) in seed.iter_mut().enumerate() {
+                e.status = MatchStatus::ALL[i];
+                e.path = format!("/lib/synthetic-{i:04}-a-long-file-name-that-cannot-fit.png");
+            }
+            let s = scheme.to_owned();
+            let f = Fx::new(
+                app,
+                Opts {
+                    seed,
+                    missing: Some(Arc::new(|_, _| HashSet::new())),
+                    tweak: Some(Box::new(move |c| c.theme = s.clone())),
+                    ..Opts::default()
+                },
+            );
+            f.w.win.set_default_size(width, height);
+            // A mapped window does not grow to a new default size; the request does.
+            // (The window's content is 10 px smaller than the frame the shots are named after.)
+            f.w.win.set_size_request(width + 10, height + 10);
+            pump_for(400);
+            let mut labels = Vec::new();
+            all_labels(f.w.s.queue_view.view.upcast_ref(), &mut labels);
+            println!(
+                "FIT {width}x{height} {scheme} window={}x{} widths={:?}",
+                f.w.win.width(),
+                f.w.win.height(),
+                f.w.s
+                    .queue_view
+                    .header_sections()
+                    .iter()
+                    .map(|s| s.width)
+                    .collect::<Vec<_>>()
+            );
+            let mut chips = 0;
+            let mut chip_clipped = false;
+            let mut file_modes = Vec::new();
+            for label in labels.iter().filter(|l| l.is_mapped() && l.width() > 0) {
+                let text = label.text();
+                let is_chip = [
+                    "Good",
+                    "Review",
+                    "Not found",
+                    "Error",
+                    "Searching",
+                    "Unsearched",
+                ]
+                .iter()
+                .any(|t| text.ends_with(t) && text.len() > t.len());
+                if is_chip {
+                    chips += 1;
+                    println!(
+                        "FIT {width}x{height} {scheme} chip {text:?} width={} natural={} ellipsized={}",
+                        label.width(),
+                        label.measure(gtk4::Orientation::Horizontal, -1).1,
+                        label.layout().is_ellipsized()
+                    );
+                    chip_clipped |= label.layout().is_ellipsized();
+                }
+                if text.starts_with("synthetic-") {
+                    file_modes.push((text.to_string(), label.ellipsize()));
+                }
+            }
+            assert_eq!(
+                chips,
+                MatchStatus::ALL.len(),
+                "{scheme}: every Status chip drawn"
+            );
+            assert!(
+                !chip_clipped,
+                "{width}x{height} {scheme}: a Status chip is ellipsized"
+            );
+            assert!(!file_modes.is_empty(), "{scheme}: File cells drawn");
+            for (text, mode) in &file_modes {
+                assert_eq!(
+                    *mode,
+                    EllipsizeMode::Middle,
+                    "{width}x{height} {scheme}: File {text:?} must ellipsize in the middle"
+                );
+            }
+            // The title of SENT sits inside the viewport (the scrolled window), not past its edge.
+            let scroller = f.w.s.queue_view.scroller.clone();
+            let sent = labels
+                .iter()
+                .find(|l| l.text() == Column::Sent.title() && l.is_mapped())
+                .unwrap_or_else(|| panic!("{scheme}: no drawn SENT title"));
+            let b = sent.compute_bounds(&scroller).expect("bounds");
+            println!(
+                "FIT {width}x{height} {scheme} SENT x={:.1}..{:.1} viewport={}",
+                b.x(),
+                b.x() + b.width(),
+                scroller.width()
+            );
+            assert!(
+                b.x() + b.width() <= scroller.width() as f32 + 0.5,
+                "{width}x{height} {scheme}: SENT is off-screen"
+            );
+            // And the whole column, not only its title: Thumb to Sent end inside the viewport.
+            let through_sent: i32 = f.w.s.queue_view.header_sections()[..=Column::Sent.index()]
+                .iter()
+                .map(|s| s.width)
+                .sum();
+            println!("FIT {width}x{height} {scheme} through_sent={through_sent}");
+            assert!(
+                through_sent <= scroller.width(),
+                "{width}x{height} {scheme}: the SENT column ends at {through_sent}, past the viewport"
+            );
+            f.close();
+        }
+    }
+}
+
+/// The first widget under `w` whose CSS node is `name` and that is mapped.
+fn find_css_node(w: &gtk4::Widget, name: &str, out: &mut Vec<gtk4::Widget>) {
+    if w.css_name() == name && w.is_mapped() {
+        out.push(w.clone());
+    }
+    let mut child = w.first_child();
+    while let Some(c) = child {
+        find_css_node(&c, name, out);
+        child = c.next_sibling();
+    }
+}
+
+/// DAN-2319 F2: the Queue's persistent scrollbar is 10 px wide (design gate 2.4, `tokens.css`),
+/// not the toolkit's 22, and with 5,000 rows the `SENT` column still ends inside what is left of
+/// the 1000 px window's viewport.
+fn queue_scrollbar_is_10_px_wide_and_sent_still_fits_beside_it(app: &adw::Application) {
+    use hatate_core::table_cells::Column;
+    for scheme in ["dark", "light"] {
+        let mut seed = seeded(5000, MatchStatus::NotSearched);
+        for (i, e) in seed.iter_mut().enumerate() {
+            e.status = MatchStatus::ALL[i % MatchStatus::ALL.len()];
+        }
+        let s = scheme.to_owned();
+        let f = Fx::new(
+            app,
+            Opts {
+                seed,
+                missing: Some(Arc::new(|_, _| HashSet::new())),
+                tweak: Some(Box::new(move |c| c.theme = s.clone())),
+                ..Opts::default()
+            },
+        );
+        f.w.win.set_default_size(1000, 780);
+        f.w.win.set_size_request(1010, 790);
+        pump_for(400);
+        let scroller = f.w.s.queue_view.scroller.clone();
+        let mut bars = Vec::new();
+        find_css_node(scroller.upcast_ref(), "scrollbar", &mut bars);
+        let vertical: Vec<_> = bars
+            .iter()
+            .filter(|b| b.has_css_class("vertical"))
+            .collect();
+        assert_eq!(vertical.len(), 1, "{scheme}: one vertical scrollbar");
+        let bar_width = vertical[0].width();
+        println!(
+            "SCROLLBAR {scheme} width={bar_width} viewport={}",
+            scroller.width()
+        );
+        assert_eq!(bar_width, 10, "{scheme}: the scrollbar is 10 px wide");
+        let through_sent: i32 = f.w.s.queue_view.header_sections()[..=Column::Sent.index()]
+            .iter()
+            .map(|s| s.width)
+            .sum();
+        assert!(
+            through_sent <= scroller.width() - bar_width,
+            "{scheme}: SENT ends at {through_sent}, under the scrollbar ({} left)",
+            scroller.width() - bar_width
+        );
+        f.close();
+    }
+}
+
 /// The first label under `w` that is a `GtkModelButton` text, per visible popover menu: what menus
 /// are open, by their first entry.
 fn open_menu_first_entries(w: &gtk4::Widget, out: &mut Vec<String>) {
@@ -7540,6 +7736,50 @@ fn open_settings(f: &Fx) -> Rc<hatate_gtk::settings_dialog::SettingsDialog> {
         .borrow()
         .clone()
         .expect("the dialog is open")
+}
+
+/// DAN-2319 (6.h F3, 6.i riders): a paragraph on a Settings page wraps to the page, so at the 560 px
+/// minimum it is read, not scrolled sideways (`general:bik` was cut mid-sentence); and every page's
+/// scroll bar is persistent, because an overlay one is invisible at rest (the MCP page at its
+/// default size gave no sign that more lay below the fold).
+fn settings_prose_wraps_to_the_page_and_every_page_keeps_its_bar_at_rest(app: &adw::Application) {
+    let f = fx(app);
+    let d = open_settings(&f);
+    let mut unwrapped = Vec::new();
+    for (i, name) in d.tab_names().iter().enumerate() {
+        d.tabs.set_current_page(Some(i as u32));
+        pump_for(50);
+        let page = d.tabs.nth_page(Some(i as u32)).expect("page");
+        let scroll = page
+            .downcast_ref::<gtk4::ScrolledWindow>()
+            .unwrap_or_else(|| panic!("{name}: a page is a scrolled window"));
+        assert!(
+            !scroll.is_overlay_scrolling(),
+            "{name}: the page's bar is an overlay"
+        );
+        let mut labels = Vec::new();
+        all_labels(&page, &mut labels);
+        for l in labels {
+            let t = l.text();
+            // A tick's own words, a list's rows, a drop-down's entries and a card's heading are a
+            // control row (they keep the sideways scroll), and a path caption is cut in the middle
+            // on purpose.
+            let in_tick = l.ancestor(gtk4::CheckButton::static_type()).is_some()
+                || l.ancestor(gtk4::ListBoxRow::static_type()).is_some()
+                || l.ancestor(gtk4::DropDown::static_type()).is_some()
+                || l.has_css_class("heading");
+            let cut = l.ellipsize() != gtk4::pango::EllipsizeMode::None;
+            if (t.contains('\n') || t.chars().count() > 48) && !l.wraps() && !in_tick && !cut {
+                unwrapped.push(format!("{name}: {t:?}"));
+            }
+        }
+    }
+    assert!(
+        unwrapped.is_empty(),
+        "paragraphs that do not wrap: {unwrapped:#?}"
+    );
+    d.click_cancel();
+    f.close();
 }
 
 /// The Connection card says what the server is doing, the Dry run sentence flips with its box, the

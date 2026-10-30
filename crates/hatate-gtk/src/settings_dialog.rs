@@ -890,6 +890,9 @@ fn scrollable(page: &impl IsA<gtk::Widget>) -> gtk::ScrolledWindow {
     // Qt's `QScrollArea` scrolls both ways, and Python lets the window shrink to 480 wide: a
     // narrow window scrolls the page sideways, it does not force the window wide.
     area.set_hscrollbar_policy(gtk::PolicyType::Automatic);
+    // A page taller than the window shows its bar at rest: an overlay one is invisible until it is
+    // used, so the MCP page at its default size gave no sign that more lies below (DAN-2319).
+    area.set_overlay_scrolling(false);
     area.set_vexpand(true);
     area
 }

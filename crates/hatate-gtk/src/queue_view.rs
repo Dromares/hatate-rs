@@ -229,13 +229,18 @@ type CellRows = Rc<RefCell<HashMap<usize, EntryId>>>;
 
 fn text_factory(column: Column, cells: CellRows) -> gtk::SignalListItemFactory {
     let factory = gtk::SignalListItemFactory::new();
-    factory.connect_setup(|_, item| {
+    factory.connect_setup(move |_, item| {
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
             return;
         };
         let label = gtk::Label::new(None);
         label.set_xalign(0.0);
-        label.set_ellipsize(pango::EllipsizeMode::End);
+        // A file name keeps its extension (DAN-2319 F1); every other cell is cut at the end.
+        label.set_ellipsize(if column == Column::File {
+            pango::EllipsizeMode::Middle
+        } else {
+            pango::EllipsizeMode::End
+        });
         label.add_css_class("queue-cell");
         item.set_child(Some(&label));
     });
@@ -405,16 +410,31 @@ pub struct QueueView {
 const THUMB_COLUMN_WIDTH: i32 = THUMB_COLUMN_SIZE as i32 + 44;
 
 /// Least default width of a column whose letter-spaced title is wider than Python's minimum
-/// leaves room for: a GTK header cell is 25 px narrower than its column (Qt's is not), so the
+/// leaves room for: a GTK header cell is 17 px narrower than its column (Qt's is not; the 12 px
+/// left padding lines the title up with the cell text, the right is 4 px, DAN-2319 F5), so the
 /// ported `DEFAULT_COLUMN_MINIMUMS` clip `ENGINE` by a pixel and `SIMILARITY`, `TAGS`, `CACHE` and `REVIEWED`
 /// by more. Measured at the minimum window size by the header-title scenario.
-const HEADER_TITLE_FLOORS: [(Column, i32); 6] = [
-    (Column::Engine, 84),
-    (Column::Tags, 68),
-    (Column::Cache, 80),
-    (Column::Similarity, 116),
-    (Column::SizeDelta, 104),
-    (Column::Reviewed, 106),
+const HEADER_TITLE_FLOORS: [(Column, i32); 7] = [
+    (Column::Engine, 76),
+    (Column::Booru, 72),
+    (Column::Tags, 60),
+    (Column::Cache, 72),
+    (Column::Similarity, 108),
+    (Column::SizeDelta, 96),
+    (Column::Reviewed, 98),
+];
+
+/// First-run widths that replace the proportional ones (DAN-2319 F1 and F5; the floors above
+/// still apply on top). Status is the width its widest chip needs: a GTK cell is 13 px narrower
+/// than its column, so the 120 px minimum cut `Unsearched`, `Not found` and `Searching` to
+/// `Unsearc...`; 136 clears the widest chip (`Unsearched`, 118 px natural). File gives up 34 px (it is
+/// cut in the middle, so the extension stays), which pays for it so that `SENT` lies inside what is
+/// left of the 934 px viewport of a 1000 px window beside the 10 px scrollbar (924 px).
+const FIRST_RUN_WIDTHS: [(Column, i32); 4] = [
+    (Column::File, 130),
+    (Column::Status, 136),
+    (Column::Booru, 72),
+    (Column::Sent, 80),
 ];
 
 impl QueueView {
@@ -452,7 +472,11 @@ impl QueueView {
                             .iter()
                             .find(|(c, _)| *c == column)
                             .map_or(0, |(_, f)| *f);
-                        col.set_fixed_width((*w).max(floor));
+                        let first_run = FIRST_RUN_WIDTHS
+                            .iter()
+                            .find(|(c, _)| *c == column)
+                            .map_or(*w, |(_, f)| *f);
+                        col.set_fixed_width(first_run.max(floor));
                     }
                 }
             }
