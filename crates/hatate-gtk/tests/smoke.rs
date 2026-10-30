@@ -4882,10 +4882,18 @@ fn the_review_title_is_hidden_rather_than_cut_when_the_header_cannot_hold_it(
         natural(&r)
     );
     r.title.set_text("01 // Compare");
-    f.w.win.set_default_size(1500, 900);
+    // A mapped window does not grow to a new default size; the request does.
+    f.w.win.set_size_request(1510, 910);
     pump_for(400);
     r.fit_readout();
-    assert!(r.title.is_visible(), "the title is back once there is room");
+    assert!(
+        r.title.is_visible(),
+        "the title is back once there is room (window {} x {}, title {} px of {})",
+        f.w.win.width(),
+        f.w.win.height(),
+        r.title.width(),
+        natural(&r)
+    );
     f.close();
 }
 
