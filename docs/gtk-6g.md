@@ -69,8 +69,10 @@ minimum is 420x400`; 560 for Pawchive: `671x627 ... 720x560`). The numbers that 
 | Pawchive Index, empty index | `pawchive-min-dark.png` | `pawchive-min-light.png` | 720 x 680 / 720 x 680 | 720 x 680 | yes |
 | Main window, empty page with Query Hydrus live | `hydrus-empty-min-dark.png` | `hydrus-empty-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
 | Delete from Hydrus box | `hydrus-delete-min-dark.png` | `hydrus-delete-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
+| Pawchive Index, three artists, one indexing (`576db59`) | `pawchive-artists-min-dark.png` | `pawchive-artists-min-light.png` | 720 x 680 / 720 x 680 | 720 x 680 | yes |
+| Delete from Hydrus confirm (`576db59`) | `hydrus-delete-confirm-min-dark.png` | `hydrus-delete-confirm-min-light.png` | 1000 x 780 / 1000 x 780 | 1000 x 780 | yes |
 
-**0 of 6 rows differ from the stated minimum.** The Query window's default size is 520 x 520 and the Pawchive window's
+**0 of 8 rows differ from the stated minimum** (the last two rows were added at `576db59`, read from the run 40992212821 artifact). The Query window's default size is 520 x 520 and the Pawchive window's
 760 x 680 (`hydrus-query-*.png`, `pawchive-*.png`). The Hydrus *search* error box and the Pawchive Remove question are
 `AdwAlertDialog`s over a window that is already at its minimum; they are not shot separately. These numbers were re-read
 from the artifact of the code head `1a44fc9`; commits after it change only this file, so the artifact stays that head's. The fit test was red on the
@@ -130,12 +132,13 @@ below are read from that artifact. Commits after `1a44fc9` change only this file
 
 **Contrast** (extreme-pixel method, `worktrees/DAN-2220-tools/contrast.py`, a copy of `DAN-2218-tools/contrast.py`, over
 the 24 shots above; the full 244-row table is `worktrees/DAN-2220-contrast-c2.md`, not committed): 232 rows pass the 4.5:1
-text floor, 8 are disabled controls (exempt, listed as such), **4 rows FAIL**. The four are one element in four shots:
-the Pawchive artist field's **placeholder** ("Artist name, or a pawchive link"), `#7f7a74` on `#201f1e` **3.87** dark and
-`#726c63` on `#d4cdbf` **3.29** light. It is the shared rule `entry.field text > placeholder { color: @ink_65 }`
-(`theme.rs:207`), the same colour the filter bar's placeholder uses; this ticket does not change it. It is a design
-ruling (raise the token, or accept a placeholder as non-text), not a 6.g port question, and is **open for the design
-read**. Lowest passing row per state (dark / light): Query Hydrus window (empty, focus and min shots) `Query Hydrus`
+text floor, 8 are disabled controls (exempt, listed as such), **4 rows FAIL** at `1a44fc9`. The four were one element in four shots: the Pawchive artist field's **placeholder**
+("Artist name, or a pawchive link"), `#7f7a74` on `#201f1e` **3.87** dark and `#726c63` on `#d4cdbf` **3.29** light, because
+the entry was a stock libadwaita entry with its own fill. **Resolved at `576db59`** (design read DAN-2395, F1): the entry
+takes the `field` class, so it is transparent over the page and the shared rule `entry.field text > placeholder
+{ color: @ink_65 }` applies unchanged (no token touched). Measured on the hosted `576db59` shots, extreme-pixel inside the
+entry's box inset 3 px (so the focus ring is not read as text): `#8a847e` on `#0d0d0d` **5.26** dark, `#5c574f` on `#e8e1d2`
+**5.50** light, in `pawchive-dark/light`, `pawchive-min-*`, `pawchive-artists-*` and `pawchive-artists-min-*`. Lowest passing row per state (dark / light): Query Hydrus window (empty, focus and min shots) `Query Hydrus`
 heading 11.29 / 12.88; with results 11.29 / 12.63 (`creator:synthetic artist`); empty page `ETA` column 5.05 / 5.20;
 Pawchive `Artist` header 5.26 / 5.50; Delete box `Delete from Hydrus` 10.70 / 14.35.
 
@@ -154,14 +157,45 @@ x = 22 (1 px wide) is the tag box's text caret, not a ring. Only the Search Hydr
 controls (tag box, results rows, Cancel, Import selected, the Pawchive entry and buttons) take the same theme rule and are
 not shot focused. The same comparison is not shot for the Pawchive window.
 
-**Tab order** (walked in a live Xvfb session at `1a44fc9` by the author, temp `HOME`, `Window::child_focus(TabForward)`
-from no focus, a throwaway scenario that is not committed; `worktrees/DAN-2220-tabwalk-c2.log`). Query Hydrus, empty: tag
-box, Search Hydrus, the results scroller (a stop while empty), Cancel, Import selected, then it wraps. Query Hydrus with two
-results: tag box, Search Hydrus, result row 1, result row 2, Cancel, Import selected, wraps. Pawchive Index, empty: the
-artist table's scroller, the name/link entry, Find / Add, Add artists from my matches, Index selected, Index / refresh all,
-Remove selected, the status label, Close, wraps; with one artist the first stop is that artist's row and the rest is the
-same. Each walk follows the top-to-bottom layout. Two things the design read may want a ruling on: the empty results
-scroller and the status label are stops, and Import selected is a stop while nothing is selected.
+**Tab order** (revised at `576db59` for DAN-2395 F5 and the Tab ruling). The stops are read off `is_focusable` and
+`is_sensitive`, the properties the Tab chain keys on, as `no_clipping_wrapper_on_the_review_page_is_a_tab_stop` does
+(DAN-2366): `child_focus` in a headless window stalls (four attempts at this head, logs `worktrees/DAN-2220-tabwalk-d3*.log`,
+stopped on the same button whatever the layout, so a walk is not claimed). `smoke::query_and_pawchive_windows_follow_the_design_read`
+pins: Import selected is insensitive until a row is selected (so it is no stop), an empty results list, its scroller and an empty
+artist table are not focusable, the status label is not focusable, and the Pawchive entry carries the `field` class.
+Intended order, top to bottom. Query Hydrus, empty: tag box, Search Hydrus, Cancel. With results and a selection: tag box,
+Search Hydrus, the rows, Cancel, Import selected. Pawchive Index, empty index: the name/link entry (it takes initial focus),
+Find / Add, Add artists from my matches, Index selected, Index / refresh all, Remove selected, Close; with artists the table
+is the first stop. A live Tab walk in a real session is the verifier's.
+
+**Design-read fixup (DAN-2395, `8a7eede`..`576db59`).**
+- **F1:** the Pawchive entry takes `field` (placeholder above). **F2:** `window.pick-window` (a class on the Query and Pawchive
+  windows) gives their tag box the sunken well and their lists and tag box an `@ink_58` border that goes to `@ink` on focus
+  (`theme.rs`). Measured on the hosted shots, border rows against the page: dark `#7c7771` **4.38:1**, light `#6c685e`
+  **4.27:1** (floor 3:1); no `#ffffff` or `#1e1e1e` pixel in `hydrus-query-results-*`, `hydrus-query-focus-*` or
+  `pawchive-artists-*` (0 each, both schemes). **F6:** `.pick-list > row` has the tag list's `@ink_18` divider.
+- **F3:** the artist list says `No artists indexed yet. Add one below.` when empty (the `hint` tier), and the new shots
+  `pawchive-artists-{dark,light}` and `-min-` show three artists (one selected, one being indexed: Stop enabled, progress
+  line `Indexing Third Synthetic (fanbox): 3 of 8`). **F4:** `hydrus-delete-confirm-{dark,light}` and `-min-` show the
+  destructive confirm, Cancel default with its ring, Delete in the stamp style. Both are in the CI shot loop.
+- **F5:** see Tab order. **F7 not done:** the Pawchive window is titled by the window manager (title text
+  `Pawchive Index - N artist(s), ...`, tested); an in-window heading would cost about 40 px of the stated 680 and chrome is not
+  judgeable from shots, so this is left to Oderisi's re-read.
+- **Found while shooting, fixed:** the Pawchive progress bar was libadwaita's accent blue and the entry's focus ring was its
+  accent-blue outline, the only chroma in the window (read by eye on the local shot; not measured). Both now take the palette (`window.pick-window progressbar`,
+  `window.pick-window entry.field:focus-within`); entry ring measured `#cdc4ba` dark / `#211d17` light on the page. The main
+  window's filter bar uses the same `entry.field` and was **not** changed or re-shot here; whether it shows the same accent
+  outline is for the re-read.
+- Hosted `ci` run 40992212821 at `576db59` (success; shots artifact 328 files). PNG headers: `pawchive-artists-min-*`
+  720 x 680, `hydrus-delete-confirm-min-*` 1000 x 780, `pawchive-min-*` 720 x 680, `hydrus-query*-min-*` 420 x 480 (0 differ
+  from stated). Full contrast table over the artifact, `worktrees/DAN-2220-contrast-d3-6g.md` (384 rows for the 6.g shots:
+  348 pass, 36 disabled-control rows exempt, 0 FAIL); script `worktrees/DAN-2220-tools/contrast.py`.
+- Revert-and-red on the new pins: `worktrees/DAN-2220-revert-design.log`, 9 changes, each red (import always sensitive, entry
+  without `field`, status label focusable, empty table focusable, no `pick-window` class, border on `@ink_46`, no row divider,
+  each of the two scrollers set focusable). A tenth, the same scroller mutation before its assertion looked at the
+  ScrolledWindow and not its Viewport, survived; the assertion was fixed in `370c1fb` and the mutation then went red. The
+  rules for the well, the progress bar and the entry ring are pinned by `theme::tests::pick_windows_get_the_well_the_border_and_row_dividers`
+  and were not mutated.
 
 **Not judgeable from shots:** window chrome, GPU renderer, the real compositor's inactive-selection backdrop, HiDPI,
 hover wash (owner: Oderisi's design read and the board's live check).
