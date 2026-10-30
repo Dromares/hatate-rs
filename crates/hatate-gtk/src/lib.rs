@@ -37,6 +37,7 @@ pub mod settings_spec;
 pub mod settings_tests;
 pub mod settings_values;
 pub mod shell;
+pub mod shortcuts_dialog;
 pub mod shortcuts_page;
 pub mod startup;
 pub mod table_actions;

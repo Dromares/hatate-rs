@@ -112,6 +112,8 @@ pub struct Typed {
     pub e621_api_key: String,
     /// `self.settings.search_timeout`: the saved value, not a typed one.
     pub search_timeout: f64,
+    /// The `20` Sankaku's check and e621's request wait ([`FIXED_TIMEOUT`]).
+    pub fixed_timeout: f64,
 }
 
 /// The request half of a Test.
@@ -246,7 +248,7 @@ pub fn plan(test: Test, typed: &Typed) -> Plan {
                 job: Job::Available {
                     url,
                     cookies: scoped(cookies, ["sankakucomplex.com"]),
-                    timeout: FIXED_TIMEOUT,
+                    timeout: typed.fixed_timeout,
                 },
             }
         }
@@ -268,7 +270,7 @@ pub fn plan(test: Test, typed: &Typed) -> Plan {
                 job: Job::E621 {
                     user,
                     key,
-                    timeout: FIXED_TIMEOUT,
+                    timeout: typed.fixed_timeout,
                 },
             }
         }

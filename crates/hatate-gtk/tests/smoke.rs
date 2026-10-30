@@ -494,6 +494,26 @@ const SCENARIOS: &[Scenario] = &[
         "settings_mcp_audit_table_follows_the_log_newest_first",
         settings_mcp_audit_table_follows_the_log_newest_first,
     ),
+    (
+        "settings_e621_test_sends_python_request_and_says_what_python_says",
+        settings_e621_test_sends_python_request_and_says_what_python_says,
+    ),
+    (
+        "settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages",
+        settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages,
+    ),
+    (
+        "settings_tests_wait_on_a_stalled_server_without_blocking_the_window",
+        settings_tests_wait_on_a_stalled_server_without_blocking_the_window,
+    ),
+    (
+        "settings_hydrus_test_and_fetch_follow_python",
+        settings_hydrus_test_and_fetch_follow_python,
+    ),
+    (
+        "review_shortcuts_dialog_lists_every_action_with_its_key",
+        review_shortcuts_dialog_lists_every_action_with_its_key,
+    ),
 ];
 
 fn main() {
@@ -8659,4 +8679,451 @@ fn audit_card_keeps_a_long_path_and_a_wide_row_inside_the_page() {
         capped * 100 < uncapped * 95,
         "the Target cell asks for {capped}px of the text's {uncapped}px: no 14 character cap"
     );
+}
+
+// -- Phase 6.h-2: the Settings Test buttons, Fetch from Hydrus and Review > Shortcuts ---------------
+
+/// A window whose sites are one scripted https server: each name in `names` connects to it, and
+/// its certificate is valid for them and trusted by the window's net layer.
+fn site_fx(
+    app: &adw::Application,
+    names: &'static [&'static str],
+    handler: impl Fn(&common::hydrus::Recorded) -> common::hydrus::Reply + Send + Sync + 'static,
+) -> (Fx, common::hydrus::Hydrus) {
+    let server = common::hydrus::Hydrus::https_for(names, handler);
+    let (ca, addr) = (server.ca_der.clone().unwrap(), server.addr());
+    let f = Fx::new_with(
+        app,
+        Opts {
+            tweak: Some(offline()),
+            ..Opts::default()
+        },
+        move |env| {
+            // a host the test did not script fails here instead of reaching the real site
+            let mut net = hatate_core::net::NetConfig::default()
+                .with_root_certificate_der(ca)
+                .with_only_scripted_hosts();
+            for n in names {
+                net = net.with_host_override(n, addr);
+            }
+            let paths = env.paths.clone();
+            let (backend, _) = common::search::Scripted::with_net(&paths, net);
+            env.search = Some(backend);
+        },
+    );
+    (f, server)
+}
+
+/// Presses a Test button and waits for its request to end. Returns the label's text.
+fn press_and_wait(
+    d: &hatate_gtk::settings_dialog::SettingsDialog,
+    button: &str,
+    label: &str,
+) -> String {
+    d.press(button);
+    assert!(
+        pump_until(8_000, || d.button_sensitive(button)),
+        "{button} never came back"
+    );
+    d.live_text(label)
+}
+
+/// `_test_e621`: half-filled credentials send nothing; the request is `GET /posts.json?limit=1` with
+/// the Basic header and the descriptive User-Agent; each status has its text; an unreachable
+/// host says so without its address.
+fn settings_e621_test_sends_python_request_and_says_what_python_says(app: &adw::Application) {
+    use common::hydrus::Reply;
+    let status = Arc::new(std::sync::atomic::AtomicU16::new(200));
+    let s = status.clone();
+    let (f, server) = site_fx(app, &["e621.net"], move |_| {
+        let code = s.load(std::sync::atomic::Ordering::SeqCst);
+        if code == 0 {
+            Reply::aborted()
+        } else {
+            Reply::new(code, "{}")
+        }
+    });
+    let d = open_settings(&f);
+    // half filled: no request, and the box says which half
+    d.type_into("e621_username", "synthetic-user");
+    let text = press_and_wait(&d, "button.test_e621_login", "e621_test_result");
+    assert!(
+        text.starts_with("No API key entered. Both halves are needed"),
+        "{text}"
+    );
+    d.type_into("e621_username", "");
+    d.type_into("e621_api_key", "synthetic-key");
+    let text = press_and_wait(&d, "button.test_e621_login", "e621_test_result");
+    assert!(
+        text.starts_with("No username entered. Both halves"),
+        "{text}"
+    );
+    assert!(
+        server.recorded().is_empty(),
+        "nothing was sent for a half-filled pair"
+    );
+
+    d.type_into("e621_username", "  synthetic-user ");
+    d.press("button.test_e621_login");
+    assert_eq!(
+        d.live_text("e621_test_result"),
+        "Testing as synthetic-user\u{2026}"
+    );
+    assert!(
+        !d.button_sensitive("button.test_e621_login"),
+        "the button waits for the answer"
+    );
+    assert!(pump_until(8_000, || d.button_sensitive("button.test_e621_login")));
+    assert_eq!(
+        d.live_text("e621_test_result"),
+        "e621 accepted the credentials for synthetic-user. Posts under its global blacklist will be visible to searches."
+    );
+    let sent = server.recorded();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(
+        (sent[0].method.as_str(), sent[0].target.as_str()),
+        ("GET", "/posts.json?limit=1")
+    );
+    assert_eq!(
+        sent[0].header("authorization"),
+        Some("Basic c3ludGhldGljLXVzZXI6c3ludGhldGljLWtleQ==")
+    );
+    assert_eq!(
+        sent[0].header("user-agent"),
+        Some(hatate_core::net::USER_AGENT)
+    );
+    assert!(
+        sent[0]
+            .header("host")
+            .is_some_and(|h| h.starts_with("e621.net"))
+    );
+
+    for (code, start) in [
+        (401, "e621 rejected the username or API key (401)."),
+        (403, "e621 answered 403."),
+        (503, "e621 answered 503 - it is rate-limiting"),
+        (
+            418,
+            "e621 answered HTTP 418, which is neither an accept nor a rejection.",
+        ),
+    ] {
+        status.store(code, std::sync::atomic::Ordering::SeqCst);
+        let text = press_and_wait(&d, "button.test_e621_login", "e621_test_result");
+        assert!(text.starts_with(start), "{code}: {text}");
+    }
+    // unreachable: a connection that is closed without an answer
+    status.store(0, std::sync::atomic::Ordering::SeqCst);
+    let text = press_and_wait(&d, "button.test_e621_login", "e621_test_result");
+    assert!(
+        text.starts_with(
+            "Couldn't reach e621. That is a network problem, not a verdict on the credentials."
+        ),
+        "{text}"
+    );
+    for leak in [
+        "127.0.0.1",
+        "e621.net",
+        "os error",
+        "synthetic-key",
+        "?",
+        "Basic",
+    ] {
+        assert!(!text.contains(leak), "the text carries {leak:?}: {text}");
+    }
+    // a re-run after the error state works, and so does closing and reopening the window
+    status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let text = press_and_wait(&d, "button.test_e621_login", "e621_test_result");
+    assert!(text.starts_with("e621 accepted"), "{text}");
+    d.click_cancel();
+    let d = open_settings(&f);
+    assert_eq!(
+        d.live_text("e621_test_result"),
+        "",
+        "the result does not outlive the window"
+    );
+    assert!(d.button_sensitive("button.test_e621_login"));
+    d.click_cancel();
+    f.close();
+}
+
+/// The four page Tests (DeviantArt, Anime-Pictures, Pixiv) and Sankaku's check ask for a URL first;
+/// Cancel and a blank answer send nothing; a URL on the wrong site is refused before any request;
+/// a 404 is "gone", a 500 is "could not fetch", and a page that yields nothing says so.
+fn settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages(app: &adw::Application) {
+    use common::hydrus::Reply;
+    let status = Arc::new(std::sync::atomic::AtomicU16::new(404));
+    let s = status.clone();
+    let (f, server) = site_fx(
+        app,
+        &[
+            "www.deviantart.com",
+            "anime-pictures.net",
+            "api.anime-pictures.net",
+            "www.pixiv.net",
+        ],
+        move |_| Reply::new(s.load(std::sync::atomic::Ordering::SeqCst), "<html></html>"),
+    );
+    let d = open_settings(&f);
+    let cases = [
+        (
+            "button.test_deviantart",
+            "deviantart_test_result",
+            "Test DeviantArt",
+            "https://www.deviantart.com/",
+            "https://www.pixiv.net/artworks/1",
+            "That does not look like a DeviantArt URL.",
+            "https://www.deviantart.com/someone/art/title-12345",
+            "That deviation is gone (HTTP 404) - deleted, or the URL is wrong.",
+        ),
+        (
+            "button.test_anime_pictures",
+            "animepictures_test_result",
+            "Test Anime-Pictures",
+            "https://anime-pictures.net/pictures/view_post/",
+            "https://example.org/x",
+            "That does not look like an Anime-Pictures URL.",
+            "https://anime-pictures.net/pictures/view_post/1",
+            "That post is gone (HTTP 404) - it was deleted or the ID does not exist.",
+        ),
+        (
+            "button.test_pixiv",
+            "pixiv_test_result",
+            "Test Pixiv",
+            "https://www.pixiv.net/artworks/",
+            "https://example.org/x",
+            "That does not look like a Pixiv URL.",
+            "https://www.pixiv.net/artworks/1",
+            "That artwork is gone (HTTP 404) - it was deleted or the ID does not exist.",
+        ),
+    ];
+    for (button, label, title, preset, wrong, wrong_text, right, gone) in cases {
+        f.script.reset();
+        // Cancel: nothing happens
+        f.script.push(Answer::Text(None));
+        d.press(button);
+        // a blank answer: nothing happens
+        f.script.push(Answer::Text(Some("   ".into())));
+        d.press(button);
+        assert_eq!(
+            d.live_text(label),
+            "",
+            "{button}: Cancel and blank leave the label alone"
+        );
+        assert!(d.button_sensitive(button));
+        match &f.script.asked.borrow()[0] {
+            Asked::GetText {
+                title: t,
+                preset: p,
+                ..
+            } => assert_eq!((t.as_str(), p.as_str()), (title, preset)),
+            other => panic!("{button}: {other:?}"),
+        }
+        // the wrong site: refused before any request
+        let before = server.recorded().len();
+        f.script.push(Answer::Text(Some(wrong.into())));
+        d.press(button);
+        assert_eq!(d.live_text(label), wrong_text);
+        assert_eq!(
+            server.recorded().len(),
+            before,
+            "{button}: {:?}",
+            server.calls()
+        );
+        // a 404
+        f.script.push(Answer::Text(Some(right.into())));
+        status.store(404, std::sync::atomic::Ordering::SeqCst);
+        let text = press_and_wait(&d, button, label);
+        assert!(text.starts_with(gone), "{button}: {text}");
+        // a 500
+        f.script.push(Answer::Text(Some(right.into())));
+        status.store(500, std::sync::atomic::Ordering::SeqCst);
+        let text = press_and_wait(&d, button, label);
+        assert!(
+            text.starts_with("Could not fetch it: the site did not answer as expected."),
+            "{button}: {text}"
+        );
+        for leak in ["127.0.0.1", "?", "os error", "HTTP 500"] {
+            assert!(
+                !text.contains(leak),
+                "{button}: the text carries {leak:?}: {text}"
+            );
+        }
+    }
+    d.click_cancel();
+    f.close();
+}
+
+/// A server that holds its answer: the window keeps handling actions while the Test waits, the
+/// button is out for the wait, and it comes back when the request times out.
+fn settings_tests_wait_on_a_stalled_server_without_blocking_the_window(app: &adw::Application) {
+    use common::hydrus::Reply;
+    let (f, _server) = site_fx(app, &["e621.net"], |_| {
+        Reply::ok("{}").delayed(std::time::Duration::from_secs(6))
+    });
+    let d = open_settings(&f);
+    d.test_timeout.set(1.0);
+    d.type_into("e621_username", "synthetic-user");
+    d.type_into("e621_api_key", "synthetic-key");
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    d.press("button.test_e621_login");
+    assert!(!d.button_sensitive("button.test_e621_login"));
+    pump_for(500);
+    assert!(
+        ticks.get() >= 10,
+        "the main loop kept running: {} ticks in 500 ms",
+        ticks.get()
+    );
+    // an action goes through while the request is out
+    d.show_tab(1);
+    assert_eq!(d.current_tab(), 1);
+    assert!(pump_until(5_000, || d.button_sensitive("button.test_e621_login")));
+    assert!(
+        d.live_text("e621_test_result")
+            .starts_with("Couldn't reach e621."),
+        "{}",
+        d.live_text("e621_test_result")
+    );
+    tick.remove();
+    d.click_cancel();
+    f.close();
+}
+
+/// `_test_hydrus` and `_fetch_tag_services` over a scripted https Hydrus.
+fn settings_hydrus_test_and_fetch_follow_python(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    let server = common::hydrus::Hydrus::https(|q| {
+        let path = q.target.split('?').next().unwrap_or("");
+        match path {
+            "/verify_access_key" => json_reply(serde_json::json!({"basic_permissions": [0]})),
+            "/get_services" => json_reply(serde_json::json!({"services": {
+                "aaaaaaaaaaaaaaaaaaaaaaaa": {"name": "my tags", "type_pretty": "local tag service"},
+                "bbbbbbbbbbbbbbbbbbbbbbbb": {"name": "my files", "type_pretty": "local file domain"},
+            }})),
+            _ => Reply::new(404, ""),
+        }
+    });
+    // the window's net layer does not trust the throw-away CA
+    let f = Fx::new_with(app, Opts::default(), |_| {});
+    let d = open_settings(&f);
+    d.type_into("hydrus_url", &server.url);
+    d.type_into("hydrus_key", common::hydrus::KEY);
+    // verification on: a certificate no root vouches for is a failure, and says nothing of the address
+    let text = press_and_wait(&d, "button.test_connection", "hydrus_test_result");
+    assert!(text.starts_with("Failed: "), "{text}");
+    for leak in ["127.0.0.1", "os error", common::hydrus::KEY] {
+        assert!(!text.contains(leak), "the text carries {leak:?}: {text}");
+    }
+    assert!(
+        server.recorded().is_empty(),
+        "the handshake failed before any request"
+    );
+    // verify_ssl off is honoured: it connects
+    d.set_value(
+        "hydrus_verify_ssl",
+        &hatate_gtk::settings_values::Value::Bool(false),
+    );
+    let text = press_and_wait(&d, "button.test_connection", "hydrus_test_result");
+    assert_eq!(text, "Connected \u{2713}");
+    let sent = server.recorded();
+    assert_eq!(sent[0].target, "/verify_access_key");
+    assert_eq!(
+        sent[0].header("hydrus-client-api-access-key"),
+        Some(common::hydrus::KEY)
+    );
+    // Fetch from Hydrus: the tag services, shown as `name  (key[:12]\u{2026})`, the key written on a pick
+    d.type_into("hydrus_service_key", "typed-by-hand");
+    d.press("button.fetch_from_hydrus");
+    assert!(pump_until(8_000, || !d.service_list().0.is_empty()));
+    let (labels, keys) = d.service_list();
+    assert_eq!(labels, vec!["my tags  (aaaaaaaaaaaa\u{2026})".to_owned()]);
+    assert_eq!(keys, vec!["aaaaaaaaaaaaaaaaaaaaaaaa".to_owned()]);
+    assert_eq!(
+        d.text_of("hydrus_service_key"),
+        "typed-by-hand",
+        "what was typed stays"
+    );
+    d.pick_service(0);
+    assert_eq!(d.text_of("hydrus_service_key"), "aaaaaaaaaaaaaaaaaaaaaaaa");
+    d.click_cancel();
+    f.close();
+}
+
+/// `_show_shortcuts_dialog`: every review action in order with its key, `(unbound)` for none, a
+/// Close button that is the default, and the Settings overrides in the list.
+fn review_shortcuts_dialog_lists_every_action_with_its_key(app: &adw::Application) {
+    use hatate_gtk::shortcuts_dialog as sd;
+    let f = fx(app);
+    f.w.set_mode("review");
+    let button = f.w.s.review.shortcuts_btn.clone();
+    assert!(button.is_sensitive());
+    assert_eq!(
+        button.tooltip_text().as_deref(),
+        Some("Show all review keyboard shortcuts."),
+        "Python's own tooltip, not the \"arrives in a later step\" one"
+    );
+    button.emit_clicked();
+    let dialog =
+        f.w.s
+            .shortcuts_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog opens");
+    assert_eq!(dialog.window.title().unwrap(), "Review Keyboard Shortcuts");
+    let texts = dialog.texts();
+    assert_eq!(texts.len(), hatate_core::shortcuts::REVIEW_ACTIONS.len());
+    for ((label, key), action) in texts
+        .iter()
+        .zip(hatate_core::shortcuts::REVIEW_ACTIONS.iter())
+    {
+        assert_eq!(label, &format!("{}:", action.label));
+        assert_eq!(
+            key,
+            if action.default.is_empty() {
+                sd::UNBOUND
+            } else {
+                action.default
+            }
+        );
+    }
+    assert_eq!(dialog.button_texts(), vec!["Close".to_owned()]);
+    assert_eq!(dialog.default_button_text().as_deref(), Some("Close"));
+    // a second press raises the one that is open
+    button.emit_clicked();
+    assert_eq!(
+        f.w.s.shortcuts_dialog.borrow().as_ref().unwrap().window,
+        dialog.window
+    );
+    dialog.click_close();
+    assert!(f.w.s.shortcuts_dialog.borrow().is_none());
+    // an override and an unbound action show as they are
+    {
+        let mut s = f.w.s.settings.lock().unwrap();
+        s.review_shortcuts
+            .0
+            .push(("next_row".to_owned(), "N".to_owned()));
+        s.review_shortcuts
+            .0
+            .push(("compare".to_owned(), String::new()));
+    }
+    button.emit_clicked();
+    let dialog = f.w.s.shortcuts_dialog.borrow().clone().unwrap();
+    let find = |label: &str| {
+        dialog
+            .texts()
+            .into_iter()
+            .find(|(l, _)| l == label)
+            .map(|(_, k)| k)
+            .unwrap()
+    };
+    let next = hatate_core::shortcuts::action("next_row").unwrap().label;
+    let compare = hatate_core::shortcuts::action("compare").unwrap().label;
+    assert_eq!(find(&format!("{next}:")), "N");
+    assert_eq!(find(&format!("{compare}:")), sd::UNBOUND);
+    dialog.click_close();
+    f.close();
 }

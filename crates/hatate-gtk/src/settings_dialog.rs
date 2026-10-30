@@ -79,6 +79,9 @@ pub struct SettingsDialog {
     pub prompter: Rc<dyn Prompter>,
     /// The requests the Test buttons have out; closing the window silences them.
     test_jobs: RefCell<Vec<JobHandle>>,
+    /// How long Sankaku's check and e621's request wait: 20 s, as in Python. A test sets it to
+    /// stall a scripted server without waiting that long.
+    pub test_timeout: Cell<f64>,
 }
 
 impl SettingsDialog {
@@ -271,6 +274,7 @@ impl SettingsDialog {
                 .over(&window)
                 .unwrap_or_else(|| main.s.prompter.clone()),
             test_jobs: RefCell::new(Vec::new()),
+            test_timeout: Cell::new(settings_tests::FIXED_TIMEOUT),
         });
         dialog.wire_tests();
         dialog.wire_controls();
@@ -487,6 +491,7 @@ impl SettingsDialog {
             e621_username: self.text_of("e621_username"),
             e621_api_key: self.text_of("e621_api_key"),
             search_timeout: self.main.s.settings.lock().unwrap().search_timeout,
+            fixed_timeout: self.test_timeout.get(),
         };
         let (first, job) = match settings_tests::plan(test, &typed) {
             Plan::Done(text) => {

@@ -25,16 +25,38 @@ pub struct Hydrus {
 
 impl Hydrus {
     pub fn http(handler: impl Fn(&Recorded) -> Reply + Send + Sync + 'static) -> Hydrus {
-        Hydrus::start(false, handler)
+        Hydrus::start(false, &[], handler)
     }
 
     pub fn https(handler: impl Fn(&Recorded) -> Reply + Send + Sync + 'static) -> Hydrus {
-        Hydrus::start(true, handler)
+        Hydrus::start(true, &[], handler)
     }
 
-    fn start(tls: bool, handler: impl Fn(&Recorded) -> Reply + Send + Sync + 'static) -> Hydrus {
+    /// An https server whose certificate is also valid for `names`: the site hosts a test
+    /// reaches through `NetConfig::with_host_override`.
+    pub fn https_for(
+        names: &[&str],
+        handler: impl Fn(&Recorded) -> Reply + Send + Sync + 'static,
+    ) -> Hydrus {
+        Hydrus::start(true, names, handler)
+    }
+
+    /// The socket the server listens on.
+    pub fn addr(&self) -> std::net::SocketAddr {
+        self.url
+            .split("://")
+            .nth(1)
+            .and_then(|a| a.trim_end_matches('/').parse().ok())
+            .expect("a socket address")
+    }
+
+    fn start(
+        tls: bool,
+        names: &[&str],
+        handler: impl Fn(&Recorded) -> Reply + Send + Sync + 'static,
+    ) -> Hydrus {
         let (info_tx, info_rx) = std::sync::mpsc::channel();
-        let pki = tls.then(TestPki::generate);
+        let pki = tls.then(|| TestPki::generate_for(names));
         let ca_der = pki.as_ref().map(|p| p.ca_der.clone());
         let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
         let thread = std::thread::spawn(move || {

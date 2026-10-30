@@ -53,6 +53,7 @@ impl Scripted {
         let clock = Arc::new(ManualClock::new(super::NOW, 0.0));
         let engines = Arc::new(ScriptedEngines::default());
         let runner = EngineRunner::new(engines.clone(), clock.clone());
+        let hydrus_net = net.clone();
         let net = NetClient::new(net).expect("the net client");
         let engine = Arc::new(SearchEngine::with_recorder(
             net,
@@ -76,7 +77,13 @@ impl Scripted {
             reset_run_state: Arc::new(move || {
                 r.fetch_add(1, Ordering::SeqCst);
             }),
-            hydrus_client: Arc::new(hatate_core::hydrus_client::HydrusClient::new),
+            // the same sockets and roots as the sites: `verify_ssl` still decides verification
+            hydrus_client: Arc::new(move |settings| {
+                hatate_core::hydrus_client::HydrusClient::with_net_config(
+                    settings,
+                    hydrus_net.clone(),
+                )
+            }),
             alerts: alerts.clone(),
             unit_random: Arc::new(|| 0.5),
             shutdown: Arc::new(move || d.store(true, Ordering::SeqCst)),
