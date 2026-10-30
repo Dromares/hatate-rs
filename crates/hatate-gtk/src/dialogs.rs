@@ -41,6 +41,9 @@ pub enum Buttons {
     /// A destructive confirmation (design gate 2.6): Cancel is the default and what Escape
     /// means; the destructive button is never the default.
     RemoveCancel,
+    /// Delete from Hydrus: the same shape as [`Buttons::RemoveCancel`] with "Delete" for the
+    /// destructive button (Python's Yes/No box, whose default was already No).
+    DeleteCancel,
 }
 
 /// What the user pressed.
@@ -52,6 +55,7 @@ pub enum Response {
     Keep,
     Replace,
     Remove,
+    Delete,
     Cancel,
 }
 
@@ -64,6 +68,8 @@ pub struct Shown {
     pub buttons: Buttons,
     /// The default button (and, for a question, the one Escape means).
     pub default: Response,
+    /// `QMessageBox.setDetailedText`: the lines under "Show Details"; empty when there are none.
+    pub detail: String,
 }
 
 /// What a file chooser was asked, for a test to read.
@@ -102,6 +108,25 @@ pub type Done<T> = Box<dyn FnOnce(T)>;
 pub trait Prompter {
     /// A message box. `done` runs with the pressed button.
     fn message(&self, kind: Kind, title: &str, text: &str, buttons: Buttons, done: Done<Response>);
+    /// A message box with `setDetailedText` as well: `text` is `setText` and `setInformativeText`
+    /// joined by a blank line, `detail` the lines under the expander. A prompter with no
+    /// expander appends them to the text.
+    fn message_detailed(
+        &self,
+        kind: Kind,
+        title: &str,
+        text: &str,
+        detail: &str,
+        buttons: Buttons,
+        done: Done<Response>,
+    ) {
+        let joined = if detail.is_empty() {
+            text.to_owned()
+        } else {
+            format!("{text}\n\n{detail}")
+        };
+        self.message(kind, title, &joined, buttons, done);
+    }
     /// `QFileDialog.getOpenFileNames`: none picked is an empty list.
     fn open_files(&self, title: &str, filter: &str, done: Done<Vec<PathBuf>>);
     /// `QFileDialog.getExistingDirectory`.
@@ -145,7 +170,7 @@ pub fn default_response(kind: Kind, buttons: Buttons) -> Response {
         (Kind::Question, Buttons::YesNo) => Response::No,
         (_, Buttons::YesNo) => Response::No,
         (_, Buttons::KeepReplaceCancel) => Response::Keep,
-        (_, Buttons::RemoveCancel) => Response::Cancel,
+        (_, Buttons::RemoveCancel | Buttons::DeleteCancel) => Response::Cancel,
         (_, Buttons::Ok) => Response::Ok,
     }
 }
@@ -216,7 +241,24 @@ impl AdwPrompter {
 
 impl Prompter for AdwPrompter {
     fn message(&self, kind: Kind, title: &str, text: &str, buttons: Buttons, done: Done<Response>) {
+        self.message_detailed(kind, title, text, "", buttons, done);
+    }
+
+    fn message_detailed(
+        &self,
+        kind: Kind,
+        title: &str,
+        text: &str,
+        detail: &str,
+        buttons: Buttons,
+        done: Done<Response>,
+    ) {
         let dialog = adw::AlertDialog::new(Some(title), Some(text));
+        if !detail.is_empty() {
+            // `setDetailedText`: the lines sit in a scrolling, selectable field under the text.
+            let (scroller, _) = detail_box(detail);
+            dialog.set_extra_child(Some(&scroller));
+        }
         match buttons {
             Buttons::Ok => {
                 dialog.add_responses(&[("ok", "OK")]);
@@ -247,6 +289,12 @@ impl Prompter for AdwPrompter {
                 dialog.set_default_response(Some("cancel"));
                 dialog.set_close_response("cancel");
             }
+            Buttons::DeleteCancel => {
+                dialog.add_responses(&[("cancel", "Cancel"), ("delete", "Delete")]);
+                dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+                dialog.set_default_response(Some("cancel"));
+                dialog.set_close_response("cancel");
+            }
         }
         // A keyboard-first app: the default button shows its focus ring the moment the dialog
         // opens (GTK would draw it only after a key press), so the answer Enter gives is visible
@@ -259,6 +307,7 @@ impl Prompter for AdwPrompter {
                 "keep" => Response::Keep,
                 "replace" => Response::Replace,
                 "remove" => Response::Remove,
+                "delete" => Response::Delete,
                 "cancel" => Response::Cancel,
                 _ => Response::Ok,
             });
@@ -459,6 +508,29 @@ impl Prompter for AdwPrompter {
 
 fn part_name<'a>(name: &'a str, part: &'a str) -> &'a str {
     if name.is_empty() { part } else { name }
+}
+
+/// The detail field of a message box: the lines in a scrolling, selectable, monospace label. They
+/// start at the top-left of the box and are indented like the text in the Query Hydrus tag box
+/// (centred, a short list left a blank first line, DAN-2398 P3-1).
+pub fn detail_box(detail: &str) -> (gtk::ScrolledWindow, gtk::Label) {
+    let lines = gtk::Label::new(Some(detail));
+    lines.set_selectable(true);
+    lines.set_wrap(true);
+    lines.set_xalign(0.0);
+    lines.set_yalign(0.0);
+    lines.set_margin_start(8);
+    lines.set_margin_end(8);
+    lines.set_margin_top(4);
+    lines.set_margin_bottom(4);
+    lines.add_css_class("monospace");
+    let scroller = gtk::ScrolledWindow::new();
+    scroller.set_child(Some(&lines));
+    scroller.set_min_content_height(96);
+    scroller.set_max_content_height(220);
+    scroller.set_propagate_natural_height(true);
+    scroller.add_css_class("field");
+    (scroller, lines)
 }
 
 #[cfg(test)]

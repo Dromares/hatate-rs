@@ -34,9 +34,8 @@ use std::collections::HashSet;
 /// `PREVIEW_DECODE_SIZE`: the longest side the Side by side view decodes the local file at.
 pub const PREVIEW_DECODE: u32 = 2048;
 
-/// The ids with a handler in this ticket. The Hydrus ones are 6.g's;
-/// an action with no handler is not bound ("never bind a dead key", `install`).
-pub const WIRED: [&str; 12] = [
+/// The ids with a handler (the three send ids are 6.g's). An action with no handler is not bound ("never bind a dead key", `install`).
+pub const WIRED: [&str; 15] = [
     "next_row",
     "prev_row",
     "next_unreviewed",
@@ -49,6 +48,9 @@ pub const WIRED: [&str; 12] = [
     "remove_row",
     "toggle_reviewed",
     "compare",
+    "send_upload",
+    "send_url",
+    "download_send",
 ];
 
 /// How many decoded local pictures are kept (`_local_pixmap_cache`, which Python never trims).
@@ -314,10 +316,17 @@ impl MainWindow {
         r.shortcuts_btn.set_sensitive(false);
         r.shortcuts_btn
             .set_tooltip_text(Some("The shortcuts list arrives in a later step."));
-        for b in [&r.send_btn, &r.url_btn, &r.download_btn] {
-            b.button.set_sensitive(false);
-            b.button
-                .set_tooltip_text(Some("Sending to Hydrus arrives in a later step."));
+        for (b, id) in [
+            (&r.send_btn, "send_upload"),
+            (&r.url_btn, "send_url"),
+            (&r.download_btn, "download_send"),
+        ] {
+            let w = self.downgrade();
+            b.button.connect_clicked(move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.run_review_action(id);
+                }
+            });
         }
         self.wire_review_compare();
         self.install_review_shortcuts();
@@ -1220,6 +1229,13 @@ impl MainWindow {
                     self.open_compare_dialog(id);
                 }
             }
+            // The Review page's three buttons act on the selected rows, as the menu entries do.
+            "show_in_hydrus" => self.show_rows_in_hydrus(&self.s.queue_view.selected_ids()),
+            "send_upload" => self.action_send_to_hydrus(&self.s.queue_view.selected_ids()),
+            "send_url" => self.action_import_url_to_hydrus(&self.s.queue_view.selected_ids()),
+            "download_send" => {
+                self.action_download_and_send_to_hydrus(&self.s.queue_view.selected_ids())
+            }
             other => tracing::warn!("No handler for review shortcut {other:?}"),
         }
     }
@@ -1240,7 +1256,7 @@ impl MainWindow {
 
     /// `review_shortcuts._guarded(window, id, handler)`: the checks the menu entry gets for free,
     /// answered in the status bar.
-    fn guarded_review_action(&self, action_id: &'static str) {
+    pub fn guarded_review_action(&self, action_id: &'static str) {
         let action = shortcuts::action(action_id);
         let navigational = matches!(
             action_id,

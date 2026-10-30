@@ -314,6 +314,90 @@ const SCENARIOS: &[Scenario] = &[
         "clear_search_cache_asks_then_removes_the_saved_results",
         clear_search_cache_asks_then_removes_the_saved_results,
     ),
+    (
+        "hydrus_send_uploads_the_selected_rows_and_marks_them_sent",
+        hydrus_send_uploads_the_selected_rows_and_marks_them_sent,
+    ),
+    (
+        "hydrus_send_works_over_https_with_the_users_verify_setting",
+        hydrus_send_works_over_https_with_the_users_verify_setting,
+    ),
+    (
+        "hydrus_send_reports_what_failed_in_one_box_and_leaves_the_rows_unsent",
+        hydrus_send_reports_what_failed_in_one_box_and_leaves_the_rows_unsent,
+    ),
+    (
+        "hydrus_actions_ask_for_a_selection_and_a_key_before_anything_goes_out",
+        hydrus_actions_ask_for_a_selection_and_a_key_before_anything_goes_out,
+    ),
+    (
+        "hydrus_delete_defaults_to_cancel_and_only_deletes_after_the_answer",
+        hydrus_delete_defaults_to_cancel_and_only_deletes_after_the_answer,
+    ),
+    (
+        "hydrus_show_opens_a_page_and_explains_a_refusal",
+        hydrus_show_opens_a_page_and_explains_a_refusal,
+    ),
+    (
+        "hydrus_reconcile_confirms_queued_rows_and_says_when_nothing_waits",
+        hydrus_reconcile_confirms_queued_rows_and_says_when_nothing_waits,
+    ),
+    (
+        "pawchive_and_query_windows_keep_their_stated_minimum",
+        pawchive_and_query_windows_keep_their_stated_minimum,
+    ),
+    (
+        "query_and_pawchive_windows_follow_the_design_read",
+        query_and_pawchive_windows_follow_the_design_read,
+    ),
+    (
+        "tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers",
+        tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers,
+    ),
+    (
+        "pawchive_artist_columns_share_one_edge_in_the_header_and_every_row",
+        pawchive_artist_columns_share_one_edge_in_the_header_and_every_row,
+    ),
+    (
+        "message_detail_box_starts_at_its_top_left_and_is_indented",
+        message_detail_box_starts_at_its_top_left_and_is_indented,
+    ),
+    (
+        "hydrus_requests_leave_the_main_loop_running_while_the_server_stalls",
+        hydrus_requests_leave_the_main_loop_running_while_the_server_stalls,
+    ),
+    (
+        "hydrus_query_searches_lists_and_imports_what_the_list_does_not_hold",
+        hydrus_query_searches_lists_and_imports_what_the_list_does_not_hold,
+    ),
+    (
+        "hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched",
+        hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched,
+    ),
+    (
+        "pawchive_index_window_adds_by_link_searches_by_name_indexes_and_removes",
+        pawchive_index_window_adds_by_link_searches_by_name_indexes_and_removes,
+    ),
+    (
+        "pawchive_index_window_is_one_window_and_the_search_does_not_block_the_loop",
+        pawchive_index_window_is_one_window_and_the_search_does_not_block_the_loop,
+    ),
+    (
+        "hydrus_thumbnails_come_from_hydrus_for_files_it_holds_and_from_disk_for_the_rest",
+        hydrus_thumbnails_come_from_hydrus_for_files_it_holds_and_from_disk_for_the_rest,
+    ),
+    (
+        "hydrus_thumbnails_fall_back_to_the_file_when_hydrus_cannot_supply_one",
+        hydrus_thumbnails_fall_back_to_the_file_when_hydrus_cannot_supply_one,
+    ),
+    (
+        "hydrus_menu_entries_and_the_h_key_reach_their_handlers",
+        hydrus_menu_entries_and_the_h_key_reach_their_handlers,
+    ),
+    (
+        "sending_the_row_you_are_on_away_keeps_your_place",
+        sending_the_row_you_are_on_away_keeps_your_place,
+    ),
 ];
 
 fn main() {
@@ -2762,7 +2846,10 @@ fn design_follow_ups_paint_as_specified(app: &adw::Application) {
         // disabled button with `opacity` / `filter: opacity()`, which would take the edge to half of
         // this; the rule that cancels it (`opacity: 1; filter: none`) is what this reads.
         let query = find_button(&root, "Query Hydrus\u{2026}").expect("Query Hydrus");
-        assert!(!query.is_sensitive(), "Query Hydrus waits for 6.g");
+        // Query Hydrus is live since 6.g; the sample of a disabled hollow control is made disabled
+        // here, which is what the rule below is about.
+        query.set_sensitive(false);
+        assert!(!query.is_sensitive());
         assert!(
             (edge_alpha(&query) - pal.ink_46.3).abs() < 0.02,
             "{name}: a disabled hollow control keeps its ink-46 border ({}), got {}",
@@ -5443,6 +5530,1486 @@ fn the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_col
     assert!(
         px.chunks_exact(4).any(|p| p[3] == 255 && p[0] > 150),
         "the highlighted patch is lifted toward the ramp's light end"
+    );
+    f.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Hydrus (6.g, DAN-2220). Every answer comes from a scripted local server; every key is a
+// placeholder.
+// ---------------------------------------------------------------------------------------------
+
+const NEW_HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const HELD_HASH: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+/// Settings that point the window at the scripted Hydrus (`hydrus.api_url`, as the user's own
+/// setting does) and keep it off every other host.
+fn hydrus_tweak(url: &str, key: bool) -> Tweak {
+    let url = url.to_owned();
+    Box::new(move |s: &mut hatate_core::config::Settings| {
+        s.retrieve_tags_from_booru = false;
+        s.drop_dead_matches = false;
+        s.hydrus.api_url = url.clone();
+        if key {
+            s.hydrus.access_key = hatate_core::config::Secret::new(common::hydrus::KEY);
+        }
+        s.hydrus.timeout = 5.0;
+        // The scripted https server's CA is throw-away: the user's own `verify_ssl` setting.
+        s.hydrus.verify_ssl = false;
+        s.remove_after_import = false;
+    })
+}
+
+fn hydrus_fx(
+    app: &adw::Application,
+    url: &str,
+    key: bool,
+    seed: Vec<hatate_core::model::Entry>,
+) -> Fx {
+    Fx::new(
+        app,
+        Opts {
+            seed,
+            tweak: Some(hydrus_tweak(url, key)),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    )
+}
+
+fn row_ids(f: &Fx) -> Vec<hatate_core::queue::EntryId> {
+    let q = f.w.s.queue.borrow();
+    (0..q.len() as i64).filter_map(|r| q.id_at(r)).collect()
+}
+
+/// A Hydrus that takes every upload and answers `file_metadata` from `state`.
+fn accepting_hydrus(
+    state: &'static str,
+) -> impl Fn(&common::hydrus::Recorded) -> common::hydrus::Reply + Send + Sync + 'static {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    move |q| match q.target.split('?').next().unwrap_or("") {
+        "/add_files/add_file" => json_reply(json!({"status": 1, "hash": NEW_HASH, "note": ""})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": HELD_HASH, "file_id": 1, "is_local": state == "present",
+             "is_trashed": state == "trashed", "is_deleted": state == "deleted"}]})),
+        "/manage_pages/new_page" => json_reply(json!({"page_key": "k"})),
+        _ => json_reply(json!({})),
+    }
+}
+
+/// `action_send_to_hydrus`: the selected rows go up with their URL and tags, the Sent column
+/// follows, and the status line counts them.
+fn hydrus_send_uploads_the_selected_rows_and_marks_them_sent(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    f.w.action_send_to_hydrus(&[ids[0], ids[2]]);
+    assert!(pump_until(10_000, || f.say().starts_with("Sent ")));
+    assert_eq!(f.say(), "Sent 2 file(s) to Hydrus");
+    {
+        let q = f.w.s.queue.borrow();
+        for i in [0, 2] {
+            let e = &q.entries()[i];
+            assert!(e.sent_to_hydrus && e.hydrus_import_confirmed, "row {i}");
+            assert_eq!(e.hydrus_hash.as_deref(), Some(NEW_HASH));
+        }
+        assert!(
+            !q.entries()[1].sent_to_hydrus,
+            "the unselected row is untouched"
+        );
+    }
+    let calls = server.calls();
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|c| *c == "POST /add_files/add_file")
+            .count(),
+        2
+    );
+    assert!(calls.iter().any(|c| c == "POST /add_urls/associate_url"));
+    assert!(calls.iter().any(|c| c == "POST /add_tags/add_tags"));
+    assert_eq!(f.script.count_shown(), 0, "nothing to warn about");
+    f.close();
+}
+
+/// The same send over https: the scheme the shipped client uses against a TLS Hydrus.
+fn hydrus_send_works_over_https_with_the_users_verify_setting(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::https(accepting_hydrus("present"));
+    assert!(server.url.starts_with("https://"));
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    f.w.action_send_to_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.say().starts_with("Sent ")));
+    assert_eq!(f.say(), "Sent 1 file(s) to Hydrus");
+    assert!(f.w.s.queue.borrow().entries()[0].sent_to_hydrus);
+    assert!(
+        server
+            .calls()
+            .contains(&"POST /add_files/add_file".to_owned()),
+        "the upload reached the https server"
+    );
+    f.close();
+}
+
+/// A refusal is one box for the batch, with the file and Hydrus's own words in the details, and
+/// the rows stay unsent.
+fn hydrus_send_reports_what_failed_in_one_box_and_leaves_the_rows_unsent(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|_| common::hydrus::Reply::new(500, "boom"));
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    f.w.action_send_to_hydrus(&[ids[0], ids[1]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (Kind::Warning, "Send to Hydrus")
+    );
+    assert_eq!(d.text, "2 file(s) failed to import.");
+    assert!(d.detail.starts_with("a.png: "), "{}", d.detail);
+    assert!(d.detail.contains("\nb.png: "), "{}", d.detail);
+    assert_eq!(f.say(), "Sent 0 file(s) to Hydrus, 2 failed");
+    let q = f.w.s.queue.borrow();
+    assert!(q.entries().iter().all(|e| !e.sent_to_hydrus));
+    assert!(q.entries()[0].error_message.is_some(), "the row says why");
+    drop(q);
+    f.close();
+}
+
+/// The checks every Hydrus action makes first, in Python's order: a selection, then a key. No
+/// request leaves the window for either.
+fn hydrus_actions_ask_for_a_selection_and_a_key_before_anything_goes_out(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let f = hydrus_fx(app, &server.url, false, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    f.w.action_send_to_hydrus(&[]);
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Information,
+            "Send to Hydrus",
+            "Select at least one row."
+        )
+    );
+    f.w.action_send_to_hydrus(&ids[..1]);
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Warning,
+            "Send to Hydrus",
+            "Set your Hydrus access key in Settings first."
+        )
+    );
+    f.w.action_import_url_to_hydrus(&ids[..1]);
+    assert_eq!(f.script.last_shown().title, "Send URL to Hydrus's Importer");
+    f.w.action_download_and_send_to_hydrus(&ids[..1]);
+    assert_eq!(f.script.last_shown().title, "Download + Send to Hydrus");
+    f.w.show_rows_in_hydrus(&ids[..1]);
+    assert_eq!(f.script.last_shown().title, "Show in Hydrus");
+    f.w.delete_rows_from_hydrus(&ids[..1]);
+    assert_eq!(f.script.last_shown().title, "Delete from Hydrus");
+    assert_eq!(f.script.count_shown(), 6);
+    assert!(
+        server.calls().is_empty(),
+        "nothing was sent: {:?}",
+        server.calls()
+    );
+    assert!(!f.w.hydrus_configured());
+    f.close();
+}
+
+/// `_delete_rows_from_hydrus`: Hydrus is asked first, the confirmation's default is Cancel, and
+/// only a Delete answer reaches the delete endpoint and takes the rows out of the list.
+fn hydrus_delete_defaults_to_cancel_and_only_deletes_after_the_answer(app: &adw::Application) {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let deleted = Arc::new(AtomicBool::new(false));
+    let d2 = deleted.clone();
+    let server =
+        common::hydrus::Hydrus::http(move |q| match q.target.split('?').next().unwrap_or("") {
+            "/add_files/delete_files" => {
+                d2.store(true, Ordering::SeqCst);
+                json_reply(json!({}))
+            }
+            "/get_files/file_metadata" => {
+                let gone = d2.load(Ordering::SeqCst);
+                json_reply(json!({"metadata": [
+                    {"hash": HELD_HASH, "file_id": 1, "is_local": !gone,
+                     "is_trashed": gone, "is_deleted": false}]}))
+            }
+            _ => json_reply(json!({})),
+        });
+    let mut seed = review_seed(dir.path());
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    let ids = row_ids(&f);
+
+    // Unscripted: the box is answered by its default button, as Enter would.
+    f.w.delete_rows_from_hydrus(&[ids[0], ids[1]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (Kind::Warning, "Delete from Hydrus")
+    );
+    assert_eq!(d.buttons, Buttons::DeleteCancel);
+    assert_eq!(
+        d.default,
+        Response::Cancel,
+        "destructive: Cancel is the default"
+    );
+    assert!(
+        d.text.starts_with(
+            "Tell Hydrus to delete 1 file(s)?\n\n1 of the selected file(s) aren't in Hydrus"
+        ),
+        "{}",
+        d.text
+    );
+    assert_eq!(d.detail, "a.png");
+    assert!(pump_until(2_000, || f.say() == "Delete cancelled"));
+    assert!(!deleted.load(Ordering::SeqCst));
+    assert_eq!(f.len(), 3);
+
+    f.script.reset();
+    f.script.push(Answer::Msg(Response::Delete));
+    f.w.delete_rows_from_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.len() == 2));
+    assert!(deleted.load(Ordering::SeqCst));
+    assert!(
+        server
+            .calls()
+            .contains(&"POST /add_files/delete_files".to_owned())
+    );
+    let shown = f.script.shown.borrow().clone();
+    assert_eq!(shown.last().unwrap().title, "Delete from Hydrus");
+    assert_eq!(
+        shown.last().unwrap().text,
+        "Hydrus deleted 1 file(s) (now in its trash)."
+    );
+    assert_eq!(f.say(), "Hydrus deleted 1 file(s)");
+    f.close();
+}
+
+/// `_show_rows_in_hydrus` and `_explain_show_in_hydrus_failure`.
+fn hydrus_show_opens_a_page_and_explains_a_refusal(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let mut seed = review_seed(dir.path());
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed.clone());
+    let ids = row_ids(&f);
+    // A row Hydrus does not hold (the window may have hashed it by now): nothing to show.
+    f.w.show_rows_in_hydrus(&[ids[1]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let text = f.script.last_shown().text;
+    assert!(
+        text.starts_with("None of the selected files have a hash yet")
+            || text.starts_with("Hydrus doesn't have any of the selected files"),
+        "{text}"
+    );
+    f.script.reset();
+    f.w.show_rows_in_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.say().starts_with("Showing ")));
+    assert_eq!(f.say(), "Showing 1 file(s) in Hydrus");
+    assert!(
+        server
+            .calls()
+            .contains(&"POST /manage_pages/new_page".to_owned())
+    );
+    f.close();
+
+    let refusing =
+        common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+            "/get_files/file_metadata" => json_reply(json!({"metadata": [
+                {"hash": HELD_HASH, "file_id": 1, "is_local": true,
+                 "is_trashed": false, "is_deleted": false}]})),
+            "/manage_pages/new_page" => Reply::new(403, "no"),
+            _ => json_reply(json!({})),
+        });
+    let f = hydrus_fx(app, &refusing.url, true, seed.clone());
+    let ids = row_ids(&f);
+    f.w.show_rows_in_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str()),
+        (Kind::Warning, "Show in Hydrus")
+    );
+    assert!(
+        d.text.starts_with(
+            "Hydrus refused this because the access key lacks the \"manage pages\" permission."
+        ),
+        "{}",
+        d.text
+    );
+    f.close();
+
+    // Any other failure (D-B): the headline is the prefix and `user_message()`, which says what
+    // to do and carries none of what the server wrote; Python wrote `str(exc)` there.
+    let failing =
+        common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+            "/get_files/file_metadata" => json_reply(json!({"metadata": [
+                {"hash": HELD_HASH, "file_id": 1, "is_local": true,
+                 "is_trashed": false, "is_deleted": false}]})),
+            "/manage_pages/new_page" => Reply::new(500, "scripted-boom-text"),
+            _ => json_reply(json!({})),
+        });
+    let f = hydrus_fx(app, &failing.url, true, seed);
+    let ids = row_ids(&f);
+    f.w.show_rows_in_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let d = f.script.last_shown();
+    assert!(
+        d.text.starts_with(
+            "Hydrus could not open the page: Hydrus answered with an error (HTTP 500)."
+        ),
+        "{}",
+        d.text
+    );
+    assert!(
+        !d.text.contains("scripted-boom-text"),
+        "the headline carries what the server wrote: {}",
+        d.text
+    );
+    f.close();
+}
+
+/// `action_reconcile_with_hydrus` and the status it leaves.
+fn hydrus_reconcile_confirms_queued_rows_and_says_when_nothing_waits(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let mut seed = review_seed(dir.path());
+    seed[0].sent_to_hydrus = true;
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    f.w.action_reconcile_with_hydrus();
+    assert!(pump_until(10_000, || f.say() == "confirmed 1 of 1"));
+    assert!(f.w.s.queue.borrow().entries()[0].hydrus_import_confirmed);
+    f.w.action_reconcile_with_hydrus();
+    assert_eq!(
+        f.say(),
+        "Nothing is waiting on Hydrus - every sent file is confirmed"
+    );
+    f.close();
+}
+
+/// Nothing blocks the main loop: the window keeps turning (and handling actions) while Hydrus
+/// holds an upload.
+fn hydrus_requests_leave_the_main_loop_running_while_the_server_stalls(app: &adw::Application) {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| {
+        let r = json_reply(json!({"status": 1, "hash": NEW_HASH}));
+        if q.target.starts_with("/add_files/add_file") {
+            r.delayed(std::time::Duration::from_millis(900))
+        } else {
+            r
+        }
+    });
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    let ids = row_ids(&f);
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    f.w.action_send_to_hydrus(&[ids[0]]);
+    assert!(f.w.s.hydrus_batch_worker.is_running());
+    pump_for(250);
+    let before = ticks.get();
+    // The window still answers an action while the upload waits.
+    f.w.run_review_action("toggle_reviewed");
+    pump_for(200);
+    assert!(
+        ticks.get() >= before + 4,
+        "the main loop kept turning: {before} -> {}",
+        ticks.get()
+    );
+    assert!(
+        f.w.s.hydrus_batch_worker.is_running(),
+        "still waiting on Hydrus"
+    );
+    // A second send is refused politely rather than racing the first.
+    f.w.action_send_to_hydrus(&[ids[2]]);
+    assert!(
+        f.script
+            .last_shown()
+            .text
+            .starts_with("A Hydrus request is already under way.")
+    );
+    assert!(pump_until(10_000, || f.say().starts_with("Sent ")));
+    tick.remove();
+    f.close();
+}
+
+/// `HydrusQueryDialog`: the search lists the files with their facts, marks the ones already in
+/// the list, and Import selected downloads only the rest, with Hydrus's tags on them.
+fn hydrus_query_searches_lists_and_imports_what_the_list_does_not_hold(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+        "/get_files/search_files" => json_reply(json!({"file_ids": [1, 2]})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": NEW_HASH, "file_id": 1, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {"svc": {"display_tags": {"0": ["series:foo", "solo"]}}}},
+            {"hash": HELD_HASH, "file_id": 2, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {}},
+        ]})),
+        "/get_files/file" => Reply::ok(common::search::PNG.to_vec()),
+        _ => json_reply(json!({})),
+    });
+    let mut seed = review_seed(dir.path());
+    seed[1].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    f.w.action_query_hydrus();
+    let d =
+        f.w.s
+            .hydrus_query_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog opened");
+    d.set_tags_text("  solo \n\n series:foo\n");
+    d.search();
+    assert!(pump_until(10_000, || d.labels().len() == 2));
+    let labels = d.labels();
+    assert_eq!(
+        labels[0],
+        "aaaaaaaaaaaa\u{2026}  (image/png, 4x3, 2 tag(s))"
+    );
+    assert_eq!(
+        labels[1],
+        "bbbbbbbbbbbb\u{2026}  (image/png, 4x3, 0 tag(s)) [already in list]"
+    );
+    // Nothing selected: a box, not an import.
+    d.import_selected();
+    assert_eq!(
+        f.script.last_shown().text,
+        "Select at least one file to import."
+    );
+    d.select_results(&[0, 1]);
+    d.import_selected();
+    assert!(pump_until(10_000, || f.len() == 4));
+    assert_eq!(
+        f.say(),
+        "Imported 1 file(s) from Hydrus (1 duplicate(s) already in the list, skipped)"
+    );
+    let calls = server.calls();
+    assert_eq!(
+        calls.iter().filter(|c| *c == "GET /get_files/file").count(),
+        1
+    );
+    let q = f.w.s.queue.borrow();
+    let imported = q.entries().last().unwrap();
+    assert_eq!(imported.hydrus_hash.as_deref(), Some(NEW_HASH));
+    assert!(imported.path.ends_with(&format!("{NEW_HASH}.png")));
+    assert!(std::path::Path::new(&imported.path).exists());
+    let mut tags: Vec<(Option<String>, String, hatate_core::model::TagSource)> = imported
+        .tags
+        .iter()
+        .map(|t| (t.namespace.clone(), t.name.clone(), t.source))
+        .collect();
+    tags.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+    assert_eq!(
+        tags,
+        vec![
+            (
+                None,
+                "solo".to_owned(),
+                hatate_core::model::TagSource::Hydrus
+            ),
+            (
+                Some("series".to_owned()),
+                "foo".to_owned(),
+                hatate_core::model::TagSource::Hydrus
+            ),
+        ]
+    );
+    drop(q);
+    f.close();
+}
+
+/// The dialog's own checks: a tag, a key, and the empty answer.
+fn hydrus_query_asks_for_a_tag_a_key_and_says_when_nothing_matched(app: &adw::Application) {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    let server = common::hydrus::Hydrus::http(|_| json_reply(json!({"file_ids": []})));
+    let f = hydrus_fx(app, &server.url, false, Vec::new());
+    f.w.action_query_hydrus();
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Warning,
+            "Query Hydrus",
+            "Set your Hydrus access key in Settings first."
+        )
+    );
+    assert!(f.w.s.hydrus_query_dialog.borrow().is_none());
+    f.close();
+
+    let f = hydrus_fx(app, &server.url, true, Vec::new());
+    f.w.action_query_hydrus();
+    let d = f.w.s.hydrus_query_dialog.borrow().clone().unwrap();
+    d.search();
+    assert_eq!(f.script.last_shown().text, "Enter at least one tag.");
+    d.set_tags_text("nothing");
+    d.search();
+    assert!(pump_until(10_000, || f.script.count_shown() == 2));
+    assert_eq!(f.script.last_shown().text, "No files matched those tags.");
+    assert_eq!(server.calls(), ["GET /get_files/search_files"]);
+    d.window.close();
+    f.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Pawchive Index (6.g, DAN-2220): a scripted Pawchive over https with a throw-away CA, handed to
+// the window through its constructor.
+// ---------------------------------------------------------------------------------------------
+
+/// What a window's content asks for: its least width, and its height at `width` (the stated
+/// minimum width), read from the child so the window's own size request does not hide an overflow.
+fn content_need(win: &gtk4::Window, width: i32) -> (i32, i32) {
+    let child = win.child().expect("a window with content");
+    let w = child.measure(gtk4::Orientation::Horizontal, -1).0;
+    let h = child.measure(gtk4::Orientation::Vertical, width.max(w)).0;
+    (w, h)
+}
+
+/// DAN-2220: each 6.g window, told to be as small as it can, does not grow past the minimum its
+/// code states (the Query window with its long result rows wrapped, the Pawchive window with its
+/// two note paragraphs and its button rows). On the shot path (hosted `ci`, GTK 4.14) the
+/// `hydrus-query-results` and `pawchive` shots at `min` carry the same numbers in their headers.
+fn pawchive_and_query_windows_keep_their_stated_minimum(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+        "/get_files/search_files" => json_reply(json!({"file_ids": [1, 2]})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": NEW_HASH, "file_id": 1, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {}},
+            {"hash": HELD_HASH, "file_id": 2, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {}},
+        ]})),
+        "/get_files/file" => Reply::ok(common::search::PNG.to_vec()),
+        _ => json_reply(json!({})),
+    });
+    let mut seed = review_seed(dir.path());
+    seed[1].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    f.w.action_query_hydrus();
+    let d =
+        f.w.s
+            .hydrus_query_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog opened");
+    d.set_tags_text("solo");
+    d.search();
+    assert!(pump_until(10_000, || d.labels().len() == 2));
+    pump_for(300);
+    let (w, h) = content_need(d.window.upcast_ref(), hatate_gtk::hydrus_query::MIN_WIDTH);
+    println!("OUTER query-hydrus content={w}x{h}");
+    use hatate_gtk::hydrus_query::{MIN_HEIGHT, MIN_WIDTH};
+    assert!(
+        w <= MIN_WIDTH && h <= MIN_HEIGHT,
+        "the Query Hydrus window is {w}x{h}; its stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}"
+    );
+    f.close();
+
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let d =
+        f.w.s
+            .pawchive_dialog
+            .borrow()
+            .clone()
+            .expect("the window opened");
+    pump_for(300);
+    let (w, h) = content_need(
+        d.window.upcast_ref(),
+        hatate_gtk::pawchive_dialog::MIN_WIDTH,
+    );
+    println!("OUTER pawchive content={w}x{h}");
+    use hatate_gtk::pawchive_dialog::{MIN_HEIGHT as PH, MIN_WIDTH as PW};
+    assert!(
+        w <= PW && h <= PH,
+        "the Pawchive Index window is {w}x{h}; its stated minimum is {PW}x{PH}"
+    );
+    f.close();
+}
+
+/// DAN-2395 (F1, F2, F5, Tab order): the two windows carry the pick-window class that the theme's
+/// well and border rules key on, Import selected acts only on a selection, an empty list and the
+/// status label are not Tab stops, and the Pawchive entry takes the page's `field` look.
+fn query_and_pawchive_windows_follow_the_design_read(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+        "/get_files/search_files" => json_reply(json!({"file_ids": [1]})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": NEW_HASH, "file_id": 1, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {}},
+        ]})),
+        "/get_files/file" => Reply::ok(common::search::PNG.to_vec()),
+        _ => json_reply(json!({})),
+    });
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    f.w.action_query_hydrus();
+    let d =
+        f.w.s
+            .hydrus_query_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog opened");
+    assert!(d.window.has_css_class("pick-window"));
+    assert!(
+        !d.import_button.is_sensitive(),
+        "Import selected promises nothing while there is nothing to import"
+    );
+    assert!(
+        !d.results.is_focusable(),
+        "an empty results list is not a Tab stop"
+    );
+    assert!(
+        !d.results
+            .ancestor(gtk4::ScrolledWindow::static_type())
+            .unwrap()
+            .is_focusable()
+    );
+    d.set_tags_text("solo");
+    d.search();
+    assert!(pump_until(10_000, || d.labels().len() == 1));
+    pump_for(100);
+    assert!(
+        !d.import_button.is_sensitive(),
+        "results with no row selected do not enable Import"
+    );
+    assert!(d.results.is_focusable(), "a list with rows takes focus");
+    d.select_results(&[0]);
+    assert!(d.import_button.is_sensitive());
+    d.select_results(&[]);
+    assert!(!d.import_button.is_sensitive());
+    f.close();
+
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let d =
+        f.w.s
+            .pawchive_dialog
+            .borrow()
+            .clone()
+            .expect("the window opened");
+    assert!(d.window.has_css_class("pick-window"));
+    assert!(
+        d.query.has_css_class("field"),
+        "the entry takes the page's field look, whose placeholder is 4.5:1"
+    );
+    assert!(
+        !d.status.is_focusable(),
+        "the status label is not a Tab stop"
+    );
+    assert!(
+        !d.table.is_focusable(),
+        "the empty artist table is not a Tab stop"
+    );
+    assert!(
+        !d.table
+            .ancestor(gtk4::ScrolledWindow::static_type())
+            .unwrap()
+            .is_focusable()
+    );
+    assert_eq!(
+        d.none_yet.text(),
+        "No artists indexed yet. Add one below.",
+        "an empty index says so inside the list"
+    );
+    assert!(d.none_yet.parent().is_some(), "and the line is in the list");
+    d.query
+        .set_text("https://pawchive.pw/fanbox/user/42/post/9");
+    d.find_or_add();
+    assert!(d.table.is_focusable(), "an index with artists takes focus");
+    assert!(
+        d.none_yet.parent().is_some(),
+        "the placeholder survives a refresh of the rows"
+    );
+    f.close();
+}
+
+fn pawchive_fx(
+    app: &adw::Application,
+    server: &common::hydrus::Hydrus,
+    seed: Vec<hatate_core::model::Entry>,
+) -> Fx {
+    let ca = server.ca_der.clone().expect("an https server");
+    let base = server.url.clone();
+    Fx::new_with(
+        app,
+        Opts {
+            seed,
+            tweak: Some(offline()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+        move |env| {
+            let net = hatate_core::net::NetClient::new(
+                hatate_core::net::NetConfig::default().with_root_certificate_der(ca),
+            )
+            .unwrap();
+            env.pawchive = Some(Arc::new(
+                hatate_core::pawchive_index::PawchiveCrawler::with_hosts(
+                    net,
+                    &format!("{base}/api/v1"),
+                    &format!("{base}/t"),
+                ),
+            ));
+        },
+    )
+}
+
+fn scripted_pawchive(
+    delay: std::time::Duration,
+) -> impl Fn(&common::hydrus::Recorded) -> common::hydrus::Reply + Send + Sync + 'static {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    move |q| {
+        let path = q.target.split('?').next().unwrap_or("");
+        if path.ends_with("/creators") {
+            return json_reply(json!([
+                {"id": "1", "name": "TEKU", "service": "patreon", "favorited": 50, "public_id": "t"},
+                {"id": "2", "name": "Tekuho", "service": "fanbox", "favorited": 1900, "public_id": "u"},
+                {"id": "3", "name": "Someone", "service": "fanbox", "favorited": 10, "public_id": "x"},
+            ]))
+            .delayed(delay);
+        }
+        if path.ends_with("/posts") {
+            return json_reply(json!([]));
+        }
+        json_reply(json!({}))
+    }
+}
+
+/// The window's whole path: a link adds an artist at once, a name is searched, the ticked ones are
+/// added, Index selected runs the crawl, Remove asks (Cancel by default) and then removes.
+/// DAN-2398 N1: the artist list is a table. Each column has one width and one alignment for the
+/// header cell and every row, so the right edge of a column is the same in all of them (a drifting
+/// row put `fanbox` under POSTS). Measured on allocations, in window coordinates, to within half a pixel (the design read asks for 1).
+fn pawchive_artist_columns_share_one_edge_in_the_header_and_every_row(app: &adw::Application) {
+    use gtk4::prelude::*;
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    let index = hatate_core::pawchive_index::PawchiveIndex::new(f.w.s.paths.pawchive_index_db());
+    for (service, id, name, images, posts) in [
+        ("patreon", "1001", "Synthetic Artist", 1284usize, 96usize),
+        ("fanbox", "2002", "Another Synthetic", 37, 5),
+        ("fanbox", "3003", "Third Synthetic", 0, 0),
+    ] {
+        index.add_creator(service, id, Some(name)).expect("artist");
+        let rows: Vec<_> = (0..images)
+            .map(|i| hatate_core::pawchive_index::ImageRow {
+                service: service.to_owned(),
+                user_id: id.to_owned(),
+                post_id: format!("p{i}"),
+                page_index: 0,
+                sha256: format!("{i:064x}"),
+                path: format!("/synthetic/{id}/{i}.png"),
+                title: None,
+                dhash8: Some(format!("{i:016x}")),
+                dhash16: Some(format!("{i:064x}")),
+            })
+            .collect();
+        index.add_images(&rows).expect("images");
+        if posts > 0 {
+            index
+                .finish_creator(service, id, Some(name), posts)
+                .expect("stamp");
+        }
+    }
+    f.w.action_pawchive_index();
+    let d = f.w.s.pawchive_dialog.borrow().clone().expect("opened");
+    d.window.present();
+    pump_for(400);
+    let cells = |w: &gtk4::Widget| -> Vec<gtk4::Widget> {
+        let mut v = Vec::new();
+        let mut c = w.first_child();
+        while let Some(x) = c {
+            c = x.next_sibling();
+            v.push(x);
+        }
+        v
+    };
+    let edges = |row: &gtk4::Widget| -> Vec<(f32, f32)> {
+        cells(row)
+            .iter()
+            .map(|c| {
+                let b = c.compute_bounds(&d.window).expect("bounds");
+                (b.x(), b.x() + b.width())
+            })
+            .collect()
+    };
+    let head_row = d.head.row_at_index(0).unwrap().child().unwrap();
+    let head = edges(&head_row);
+    assert_eq!(head.len(), 5, "{head:?}");
+    let mut n = 0;
+    while let Some(r) = d.table.row_at_index(n) {
+        let row = edges(&r.child().unwrap());
+        assert_eq!(row.len(), 5);
+        for (i, ((hl, hr), (rl, rr))) in head.iter().zip(&row).enumerate() {
+            assert!(
+                (hr - rr).abs() < 0.5 && (hl - rl).abs() < 0.5,
+                "row {n} column {i}: header {hl}..{hr} vs row {rl}..{rr}"
+            );
+        }
+        n += 1;
+    }
+    assert_eq!(n, 3, "all three artists are rows");
+    // the numeric columns read against their right edge, the others against their left
+    for (i, w) in cells(&head_row).iter().enumerate() {
+        let label = w.downcast_ref::<gtk4::Label>().unwrap();
+        let want = if hatate_gtk::pawchive_dialog::RIGHT_ALIGNED[i] {
+            1.0
+        } else {
+            0.0
+        };
+        assert_eq!(label.xalign(), want, "header column {i}");
+    }
+    f.close();
+}
+
+/// DAN-2398 P3-1: the file-name box of the Delete from Hydrus question starts at its top-left and
+/// is indented like the tag box; centred it left a blank first line.
+fn message_detail_box_starts_at_its_top_left_and_is_indented(_app: &adw::Application) {
+    use gtk4::prelude::*;
+    let (scroller, lines) = hatate_gtk::dialogs::detail_box("a.png\nb.png");
+    assert_eq!(
+        lines.yalign(),
+        0.0,
+        "the first line sits at the top of the box"
+    );
+    assert_eq!(lines.xalign(), 0.0);
+    assert!(
+        lines.margin_start() >= 8 && lines.margin_end() >= 8,
+        "indented like the tag box"
+    );
+    assert!(lines.is_selectable() && scroller.has_css_class("field"));
+}
+
+fn pawchive_index_window_adds_by_link_searches_by_name_indexes_and_removes(app: &adw::Application) {
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let d =
+        f.w.s
+            .pawchive_dialog
+            .borrow()
+            .clone()
+            .expect("the window opened");
+    assert_eq!(
+        d.window.title().unwrap(),
+        "Pawchive Index - 0 artist(s), 0 image(s) searchable"
+    );
+    d.query
+        .set_text("https://pawchive.pw/fanbox/user/42/post/9");
+    d.find_or_add();
+    assert_eq!(
+        d.status_text(),
+        "Added 42 (fanbox) - click Index selected to index them."
+    );
+    assert_eq!(d.row_texts()[0], ["42", "fanbox", "0", "", "not yet"]);
+    assert_eq!(
+        d.selected_creators(),
+        [("fanbox".to_owned(), "42".to_owned())]
+    );
+    d.query.set_text("https://pawchive.pw/fanbox/user/42");
+    d.find_or_add();
+    assert_eq!(d.status_text(), "That artist is already in the list.");
+
+    d.query.set_text("tek");
+    d.find_or_add();
+    assert!(!d.find_button.is_sensitive(), "the search is under way");
+    assert!(pump_until(10_000, || d.find_button.is_sensitive()));
+    assert_eq!(
+        d.found_labels(),
+        [
+            "Tekuho  (fanbox)  -  1,900 favourites",
+            "TEKU  (patreon)  -  50 favourites"
+        ]
+    );
+    assert_eq!(d.status_text(), "2 artist(s) found - tick the ones to add.");
+    d.tick_found(&[0]);
+    d.add_checked();
+    assert_eq!(
+        d.status_text(),
+        "Added 1 artist(s) - click Index selected to index them."
+    );
+    assert_eq!(d.row_texts().len(), 2);
+    assert_eq!(
+        d.selected_creators(),
+        [("fanbox".to_owned(), "2".to_owned())]
+    );
+
+    d.start_indexing(true);
+    assert!(d.stop_button.is_sensitive() && !d.index_all_button.is_sensitive());
+    assert!(pump_until(20_000, || !d.stop_button.is_sensitive()));
+    assert!(d.index_all_button.is_sensitive());
+    assert!(
+        d.status_text().starts_with("2: 0 image(s), 0 new"),
+        "{}",
+        d.status_text()
+    );
+    assert!(
+        server
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("GET /api/v1/fanbox/user/2/posts")),
+        "{:?}",
+        server.calls()
+    );
+
+    // Remove: Cancel is the default, so an unscripted box removes nothing.
+    d.select_rows(&[0]);
+    d.remove_selected();
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Remove artists");
+    assert_eq!(shown.default, Response::Cancel);
+    assert_eq!(d.row_texts().len(), 2);
+    f.script.push(Answer::Msg(Response::Remove));
+    d.remove_selected();
+    assert_eq!(d.row_texts().len(), 1);
+    assert_eq!(d.status_text(), "Removed 1 artist(s).");
+    d.window.close();
+    assert!(f.w.s.pawchive_dialog.borrow().is_none());
+    f.close();
+}
+
+/// One window at a time, and the artist search (a slow download) leaves the loop turning.
+fn pawchive_index_window_is_one_window_and_the_search_does_not_block_the_loop(
+    app: &adw::Application,
+) {
+    let server =
+        common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::from_millis(900)));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let first = f.w.s.pawchive_dialog.borrow().clone().unwrap();
+    f.w.action_pawchive_index();
+    assert!(Rc::ptr_eq(
+        &first,
+        f.w.s.pawchive_dialog.borrow().as_ref().unwrap()
+    ));
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    first.query.set_text("tek");
+    first.find_or_add();
+    pump_for(250);
+    let before = ticks.get();
+    pump_for(200);
+    assert!(
+        ticks.get() >= before + 4,
+        "the main loop kept turning: {before} -> {}",
+        ticks.get()
+    );
+    assert!(
+        !first.find_button.is_sensitive(),
+        "still waiting on pawchive"
+    );
+    assert!(pump_until(10_000, || first.find_button.is_sensitive()));
+    tick.remove();
+    // The main window closing takes the Index window with it.
+    f.w.close_pawchive_dialog();
+    assert!(f.w.s.pawchive_dialog.borrow().is_none());
+    f.close();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Hydrus thumbnails (6.g, DAN-2220, DAN-2116 item 3)
+// ---------------------------------------------------------------------------------------------
+
+/// With a key and `thumbnail_source = "hydrus"`, a file Hydrus holds is drawn from Hydrus's own
+/// thumbnail (its file on disk is unreadable here, so a picture proves where it came from), a file
+/// it does not hold from disk, and a thumbnail that will not decode falls back to disk.
+fn hydrus_thumbnails_come_from_hydrus_for_files_it_holds_and_from_disk_for_the_rest(
+    app: &adw::Application,
+) {
+    use common::hydrus::{Reply, json_reply};
+    use hatate_core::thumb::ThumbState;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    let broken_thumbnail = Arc::new(AtomicBool::new(false));
+    let broken = broken_thumbnail.clone();
+    let server =
+        common::hydrus::Hydrus::http(move |q| match q.target.split('?').next().unwrap_or("") {
+            "/get_files/file_metadata" => json_reply(json!({"metadata": [
+                {"hash": HELD_HASH, "file_id": 1, "is_local": true,
+                 "is_trashed": false, "is_deleted": false}]})),
+            "/get_files/thumbnail" if broken.load(Ordering::SeqCst) => {
+                Reply::ok(b"not a picture".to_vec())
+            }
+            "/get_files/thumbnail" => Reply::ok(common::search::PNG.to_vec()),
+            _ => json_reply(json!({})),
+        });
+    let mut seed = review_seed(dir.path());
+    // Row 0: held by Hydrus, and its own file cannot be read.
+    std::fs::write(&seed[0].path, b"garbage").unwrap();
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    // Row 1: Hydrus does not hold it; it has a hash all the same.
+    seed[1].hydrus_hash = Some(NEW_HASH.to_owned());
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            tweak: Some(Box::new({
+                let inner = hydrus_tweak(&server.url, true);
+                move |s| {
+                    inner(s);
+                    s.thumbnail_source = "hydrus".to_owned();
+                }
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let ids = row_ids(&f);
+    f.w.start_thumbnail_generation(&ids, true);
+    assert!(pump_until(10_000, || f.w.s.thumbs.in_flight() == 0));
+    let view = &f.w.s.queue_view;
+    assert_eq!(view.thumb_state(ids[0]), ThumbState::Loaded, "from Hydrus");
+    assert_eq!(view.thumb_state(ids[1]), ThumbState::Loaded, "from disk");
+    assert_eq!(view.thumb_state(ids[2]), ThumbState::Loaded, "from disk");
+    let calls = server.calls();
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|c| *c == "GET /get_files/thumbnail")
+            .count(),
+        1,
+        "only the held file is fetched: {calls:?}"
+    );
+    assert_eq!(
+        calls
+            .iter()
+            .filter(|c| *c == "GET /get_files/file_metadata")
+            .count(),
+        1,
+        "one check for the whole pass"
+    );
+    f.close();
+
+    // A thumbnail that does not decode falls back to the file, which here is unreadable too.
+    broken_thumbnail.store(true, Ordering::SeqCst);
+    let mut seed = review_seed(dir.path());
+    std::fs::write(&seed[0].path, b"garbage").unwrap();
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    let ids = row_ids(&f);
+    f.w.start_thumbnail_generation(&ids[..1], true);
+    assert!(pump_until(10_000, || f.w.s.thumbs.in_flight() == 0));
+    assert_eq!(f.w.s.queue_view.thumb_state(ids[0]), ThumbState::Failed);
+    f.close();
+}
+
+/// `TestHydrusThumbnailPath` and `test_hydrus_source_without_an_access_key_falls_back_to_local`:
+/// whatever Hydrus cannot supply, the row's own file is drawn. With no access key Hydrus is not
+/// asked at all; an empty thumbnail and one that does not decode are asked for, then the file is
+/// read (its picture is readable here, so `Loaded` is the file's).
+fn hydrus_thumbnails_fall_back_to_the_file_when_hydrus_cannot_supply_one(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use hatate_core::thumb::ThumbState;
+    use serde_json::json;
+    use std::sync::atomic::{AtomicU8, Ordering};
+    let dir = tempfile::tempdir().unwrap();
+    // 0: an empty thumbnail; 1: bytes that are not a picture.
+    let mode = Arc::new(AtomicU8::new(0));
+    let served = mode.clone();
+    let server =
+        common::hydrus::Hydrus::http(move |q| match q.target.split('?').next().unwrap_or("") {
+            "/get_files/file_metadata" => json_reply(json!({"metadata": [
+                {"hash": HELD_HASH, "file_id": 1, "is_local": true,
+                 "is_trashed": false, "is_deleted": false}]})),
+            "/get_files/thumbnail" if served.load(Ordering::SeqCst) == 0 => Reply::ok(Vec::new()),
+            "/get_files/thumbnail" => Reply::ok(b"not an image".to_vec()),
+            _ => json_reply(json!({})),
+        });
+    let pass = |key: bool| {
+        let mut seed = review_seed(dir.path());
+        seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+        let f = Fx::new(
+            app,
+            Opts {
+                seed,
+                tweak: Some(Box::new({
+                    let inner = hydrus_tweak(&server.url, key);
+                    move |s| {
+                        inner(s);
+                        s.thumbnail_source = "hydrus".to_owned();
+                    }
+                })),
+                missing: Some(Arc::new(|_, _| HashSet::new())),
+                ..Opts::default()
+            },
+        );
+        let ids = row_ids(&f);
+        f.w.start_thumbnail_generation(&ids[..1], true);
+        assert!(pump_until(10_000, || f.w.s.thumbs.in_flight() == 0));
+        let state = f.w.s.queue_view.thumb_state(ids[0]);
+        f.close();
+        state
+    };
+    // No access key: the source is the disk, and Hydrus hears nothing.
+    assert_eq!(pass(false), ThumbState::Loaded);
+    assert!(server.calls().is_empty(), "{:?}", server.calls());
+    // An empty thumbnail, then one that does not decode: each was asked for, each fell back.
+    for (m, what) in [(0, "empty"), (1, "undecodable")] {
+        mode.store(m, Ordering::SeqCst);
+        let before = server
+            .calls()
+            .iter()
+            .filter(|c| *c == "GET /get_files/thumbnail")
+            .count();
+        assert_eq!(pass(true), ThumbState::Loaded, "{what} thumbnail");
+        let after = server
+            .calls()
+            .iter()
+            .filter(|c| *c == "GET /get_files/thumbnail")
+            .count();
+        assert_eq!(after, before + 1, "{what}: Hydrus was asked first");
+    }
+}
+
+/// `TestHydrusMenu.test_*_triggers_the_real_handler` (the two Send entries and Re-check, through
+/// the menu's own actions) and `TestShowInHydrus.test_h_*` (the `H` key's handler, through the
+/// guard the key goes through).
+fn hydrus_menu_entries_and_the_h_key_reach_their_handlers(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let mut seed = review_seed(dir.path());
+    seed[0].hydrus_hash = Some(HELD_HASH.to_owned());
+    let f = hydrus_fx(app, &server.url, true, seed);
+    f.w.s.queue_view.select_ids(&[]);
+    f.activate("send-to-hydrus");
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Information,
+            "Send to Hydrus",
+            "Select at least one row."
+        )
+    );
+    f.activate("import-url-to-hydrus");
+    let d = f.script.last_shown();
+    assert_eq!(
+        (d.kind, d.title.as_str(), d.text.as_str()),
+        (
+            Kind::Information,
+            "Send URL to Hydrus's Importer",
+            "Select at least one row."
+        )
+    );
+    f.activate("reconcile");
+    assert_eq!(
+        f.say(),
+        "Nothing is waiting on Hydrus - every sent file is confirmed"
+    );
+    // `H` with nothing selected says so and asks Hydrus nothing.
+    f.w.guarded_review_action("show_in_hydrus");
+    assert_eq!(f.say(), "Show in Hydrus: select an image first");
+    assert!(server.calls().is_empty(), "{:?}", server.calls());
+    // `H` on a row shows that row's file.
+    f.w.s.queue_view.select_row(0);
+    f.w.guarded_review_action("show_in_hydrus");
+    assert!(pump_until(10_000, || f.say() == "Showing 1 file(s) in Hydrus"));
+    let page = server
+        .recorded()
+        .into_iter()
+        .find(|q| q.target.starts_with("/manage_pages/new_page"))
+        .expect("a page was opened");
+    let body = String::from_utf8_lossy(&page.body).into_owned();
+    assert!(body.contains(HELD_HASH), "the row's own file: {body}");
+    f.close();
+}
+
+/// `test_sending_the_current_image_away_keeps_your_place` and
+/// `test_sending_the_last_row_away_lands_on_the_new_last_row`, through the Send itself with
+/// Remove after import on: the selection lands on the row that followed, or the new last row.
+fn sending_the_row_you_are_on_away_keeps_your_place(app: &adw::Application) {
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(accepting_hydrus("present"));
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: review_seed(dir.path()),
+            tweak: Some(Box::new({
+                let inner = hydrus_tweak(&server.url, true);
+                move |s| {
+                    inner(s);
+                    s.remove_after_import = true;
+                }
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let ids = row_ids(&f);
+    let view = &f.w.s.queue_view;
+    view.select_row(1);
+    f.w.action_send_to_hydrus(&ids[1..2]);
+    assert!(pump_until(10_000, || f.len() == ids.len() - 1));
+    assert_eq!(view.selected_ids(), vec![ids[2]], "the row that followed");
+    // The last row goes: the new last row is selected.
+    view.select_row(1);
+    f.w.action_send_to_hydrus(&ids[2..3]);
+    assert!(pump_until(10_000, || f.len() == ids.len() - 2));
+    assert_eq!(view.selected_ids(), vec![ids[0]], "the new last row");
+    f.close();
+}
+
+/// Real Tab presses from the window's first stop until the button labelled `last` has focus.
+/// Every press has to move focus: a container that is not itself a stop but swallows the key
+/// leaves it on the widget before (the Search Hydrus and Remove selected traps of 8872a2f), which
+/// `is_focusable()` pins cannot see. Returns the stops in order, `None` off an X server that can
+/// not inject keys (a failure under `CI`).
+fn tab_to_button(
+    keys: &mut common::xtest::Xtest,
+    win: &gtk4::Window,
+    last: &str,
+) -> Vec<gtk4::Widget> {
+    use common::xtest::Key;
+    let focus = || gtk4::prelude::GtkWindowExt::focus(win);
+    let named = |w: &Option<gtk4::Widget>| match w {
+        Some(w) => format!("{} {:?}", w.type_().name(), w.tooltip_text()),
+        None => "nothing".to_owned(),
+    };
+    let mut stops: Vec<gtk4::Widget> = focus().into_iter().collect();
+    for press in 1..=30 {
+        keys.tap(Key::Tab, &[]).expect("inject");
+        pump_for(250);
+        let now = focus();
+        assert!(
+            now.is_some() && now.as_ref() != stops.last(),
+            "Tab {press} stays on {}; the walk so far: {:?}",
+            named(&now),
+            stops
+                .iter()
+                .map(|w| named(&Some(w.clone())))
+                .collect::<Vec<_>>()
+        );
+        let now = now.unwrap();
+        stops.push(now.clone());
+        if now
+            .downcast_ref::<gtk4::Button>()
+            .and_then(|b| b.label())
+            .is_some_and(|l| l == last)
+        {
+            return stops;
+        }
+    }
+    panic!(
+        "Tab never reached {last}: {:?}",
+        stops
+            .iter()
+            .map(|w| named(&Some(w.clone())))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// Close every other window and put the pointer and keyboard focus on `win`.
+fn only(keys: &mut common::xtest::Xtest, win: &gtk4::Window) {
+    for w in gtk4::Window::list_toplevels() {
+        if w != *win.upcast_ref::<gtk4::Widget>() {
+            if let Ok(w) = w.downcast::<gtk4::Window>() {
+                w.destroy();
+            }
+        }
+    }
+    pump_for(400);
+    keys.focus_window_at(4, 4).expect("focus the dialog");
+    pump_for(300);
+}
+
+/// The labels of the buttons among `stops`, in the order Tab met them.
+fn button_stops(stops: &[gtk4::Widget]) -> Vec<String> {
+    stops
+        .iter()
+        .filter_map(|w| w.downcast_ref::<gtk4::Button>()?.label())
+        .map(|l| l.to_string())
+        .collect()
+}
+
+/// Query Hydrus and the Pawchive index window, walked with real Tab presses (XTEST) in the states
+/// that regressed in 8872a2f: an empty results list or index (a non-focusable container with a
+/// non-focusable child used to swallow Tab, so Cancel / Close were out of reach), and the same
+/// windows holding rows.
+fn tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use common::xtest::Xtest;
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("tab_walk: skipped ({why})");
+            return;
+        }
+    };
+    let server = common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+        "/get_files/search_files" => json_reply(json!({"file_ids": [1, 2]})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": NEW_HASH, "file_id": 1, "mime": "image/png", "width": 4, "height": 3, "tags": {}},
+            {"hash": "bb".repeat(32), "file_id": 2, "mime": "image/png", "width": 4, "height": 3, "tags": {}},
+        ]})),
+        "/get_files/file" => Reply::ok(common::search::PNG.to_vec()),
+        _ => json_reply(json!({})),
+    });
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    f.w.action_query_hydrus();
+    let d = f.w.s.hydrus_query_dialog.borrow().clone().unwrap();
+    d.window.present();
+    pump_for(300);
+    only(&mut keys, &d.window);
+    // the tag box has focus when the window opens
+    let first = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        first
+            .as_ref()
+            .is_some_and(|w| w.is_ancestor(&d.tags) || *w == d.tags),
+        "the tag box is the first stop: {first:?}"
+    );
+    // no search run: Search Hydrus, then Cancel, with nothing in between to hold the key
+    let stops = tab_to_button(&mut keys, &d.window, "Cancel");
+    assert_eq!(
+        button_stops(&stops),
+        ["Search Hydrus", "Cancel"],
+        "{stops:?}"
+    );
+    d.set_tags_text("solo");
+    d.search();
+    assert!(pump_until(10_000, || d.labels().len() == 2));
+    d.select_results(&[0]);
+    pump_for(200);
+    only(&mut keys, &d.window);
+    gtk4::prelude::GtkWindowExt::set_focus(&d.window, Some(&d.tags));
+    pump_for(200);
+    // results: the rows are stops, then Cancel, then Import selected
+    let stops = tab_to_button(&mut keys, &d.window, "Import selected");
+    assert_eq!(
+        button_stops(&stops),
+        ["Search Hydrus", "Cancel", "Import selected"],
+        "{stops:?}"
+    );
+    assert!(
+        stops.iter().any(|w| w.css_name() == "row"),
+        "Tab reaches a result row: {stops:?}"
+    );
+    f.close();
+
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let d = f.w.s.pawchive_dialog.borrow().clone().unwrap();
+    d.window.present();
+    pump_for(300);
+    only(&mut keys, &d.window);
+    // an empty index opens on the name/link entry, and Tab goes on to Close
+    let first = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        first
+            .as_ref()
+            .is_some_and(|w| w.is_ancestor(&d.query) || *w == d.query),
+        "the name/link entry is the first stop: {first:?}"
+    );
+    let stops = tab_to_button(&mut keys, &d.window, "Close");
+    let buttons = button_stops(&stops);
+    assert_eq!(
+        buttons.last().map(String::as_str),
+        Some("Close"),
+        "{buttons:?}"
+    );
+    // nothing to act on: Index selected, Index / refresh all and Remove selected are insensitive
+    // (DAN-2398 P3-3), so they are not Tab stops (this was the walk's assertion that Remove
+    // selected was reached; changed on purpose with the sensitivity)
+    assert_eq!(
+        buttons,
+        ["Find / Add", "Add artists from my matches", "Close"],
+        "{buttons:?}"
+    );
+    assert!(!d.index_selected_button.is_sensitive());
+    assert!(!d.index_all_button.is_sensitive());
+    assert!(!d.remove_button.is_sensitive());
+    // and Close wraps to the entry rather than to nothing
+    use common::xtest::Key;
+    keys.tap(Key::Tab, &[]).expect("inject");
+    pump_for(250);
+    let wrapped = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        wrapped
+            .as_ref()
+            .is_some_and(|w| w.is_ancestor(&d.query) || *w == d.query),
+        "Tab from Close wraps to the entry: {wrapped:?}"
+    );
+    d.query
+        .set_text("https://pawchive.pw/fanbox/user/42/post/9");
+    d.find_or_add();
+    pump_for(500);
+    only(&mut keys, &d.window);
+    gtk4::prelude::GtkWindowExt::set_focus(&d.window, Some(&d.query));
+    pump_for(200);
+    // one artist, selected: the three list buttons are live, the table row joins the walk and
+    // Close is still reachable
+    assert!(d.index_selected_button.is_sensitive());
+    assert!(d.index_all_button.is_sensitive());
+    assert!(d.remove_button.is_sensitive());
+    let stops = tab_to_button(&mut keys, &d.window, "Close");
+    assert!(
+        button_stops(&stops).contains(&"Remove selected".to_owned()),
+        "Tab reaches Remove selected: {stops:?}"
+    );
+    keys.tap(Key::Tab, &[]).expect("inject");
+    pump_for(250);
+    let wrapped = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        wrapped.as_ref().is_some_and(|w| w.css_name() == "row"),
+        "Tab from Close wraps to the artist row: {wrapped:?}"
+    );
+    // reopened with an artist in the index, the window still opens on the entry, not the table
+    d.window.close();
+    pump_for(300);
+    f.w.action_pawchive_index();
+    let d = f.w.s.pawchive_dialog.borrow().clone().unwrap();
+    d.window.present();
+    pump_for(300);
+    only(&mut keys, &d.window);
+    assert!(d.table.row_at_index(0).is_some(), "the artist is listed");
+    let first = gtk4::prelude::GtkWindowExt::focus(&d.window);
+    assert!(
+        first
+            .as_ref()
+            .is_some_and(|w| w.is_ancestor(&d.query) || *w == d.query),
+        "the name/link entry is the first stop with an artist indexed: {first:?}"
     );
     f.close();
 }

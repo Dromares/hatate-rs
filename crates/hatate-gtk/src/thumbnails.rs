@@ -8,9 +8,13 @@
 //! range nobody has decoded or is decoding are decoded. With lazy thumbnails off, every row is
 //! asked for when the list changes, with the progress strip following the pass.
 //!
-//! **Cut:** `thumbnail_source = "hydrus"` (the default) fetches the picture from Hydrus when it
-//! has the file. The Rust Hydrus client has no `get_thumbnail` yet, so every source other than
-//! `"off"` decodes the file on disk, which is what Python does without an access key.
+//! **Hydrus thumbnails (6.g, DAN-2116 item 3):** `thumbnail_source = "hydrus"` (the default) with
+//! an access key set asks Hydrus which of a pass's hashes it holds (256 at a time, because
+//! `/get_files/thumbnail` never 404s), fetches Hydrus's own thumbnail for those and decodes the
+//! bytes; a file Hydrus does not hold, a fetch that fails and a thumbnail that does not decode
+//! fall back to the file on disk, as Python does. Without a key the source is the disk, as in
+//! Python. The fetch is `HydrusClient::fetch_thumbnail`, whose failures are typed; the window
+//! only logs them, as Python does (`workers/thumbnail_worker.py`).
 
 use crate::window::MainWindow;
 use crate::worker::{Event, Slot};
@@ -18,13 +22,19 @@ use gtk4::prelude::*;
 use gtk4::{gdk, glib};
 use hatate_core::queue::EntryId;
 use hatate_core::thumb::decode_px;
-use hatate_core::thumb_decode::{ThumbPixels, decode_thumbnail};
+use hatate_core::thumb_decode::{ThumbPixels, decode_bytes, decode_thumbnail};
 use hatate_core::viewport::{entries_needing_thumbnails, visible_range_with_buffer};
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 
 /// `THUMB_VIEWPORT_BUFFER_ROWS`: rows decoded beyond each edge of what is on screen.
 pub const THUMB_VIEWPORT_BUFFER_ROWS: i64 = 15;
+
+/// One row to decode: its id, its path, and the hash Hydrus knows it by.
+pub type ThumbItem = (EntryId, String, Option<String>);
+
+/// How many hashes are checked against Hydrus per request (`HASH_CHECK_BATCH`).
+pub const HASH_CHECK_BATCH: usize = 256;
 
 /// What the scheduler keeps between passes (`_thumbs_in_flight`, `thumbnail_worker`,
 /// `_thumbnails_quiet`).
@@ -33,13 +43,61 @@ pub struct Scheduler {
     worker: Slot,
     in_flight: RefCell<HashSet<EntryId>>,
     /// Work asked for while a pass was running; started when it finishes.
-    backlog: RefCell<Vec<(EntryId, String)>>,
+    backlog: RefCell<Vec<ThumbItem>>,
     /// Rows drawn since the last viewport pass.
     drawn: RefCell<Vec<EntryId>>,
     pass_queued: Cell<bool>,
     quiet: Cell<bool>,
     done: Cell<usize>,
     total: Cell<usize>,
+}
+
+/// `_known_to_hydrus`: which of a pass's hashes Hydrus holds, asked in batches. A failed check
+/// ends the asking (the rest decode from disk).
+fn known_to_hydrus(
+    client: &hatate_core::hydrus_client::HydrusClient,
+    handle: &tokio::runtime::Handle,
+    items: &[ThumbItem],
+    stop: &std::sync::atomic::AtomicBool,
+) -> HashSet<String> {
+    known_in_batches(items, stop, |batch| {
+        handle
+            .block_on(client.filter_known_hashes(batch))
+            .map_err(|e| e.detail())
+    })
+}
+
+/// The batching of `_known_to_hydrus` over any way of asking: rows with no hash are not asked
+/// about, no hashes means no call, [`HASH_CHECK_BATCH`] at a time, a stop request abandons the
+/// batches left, and a failed batch ends the asking but keeps what was answered before it.
+fn known_in_batches(
+    items: &[ThumbItem],
+    stop: &std::sync::atomic::AtomicBool,
+    mut ask: impl FnMut(&[String]) -> Result<std::collections::BTreeSet<String>, String>,
+) -> HashSet<String> {
+    let hashes: Vec<String> = items
+        .iter()
+        .filter_map(|(_, _, h)| h.clone().filter(|h| !h.is_empty()))
+        .collect();
+    let mut known = HashSet::new();
+    for batch in hashes.chunks(HASH_CHECK_BATCH) {
+        if stop.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        match ask(batch) {
+            Ok(found) => known.extend(found),
+            Err(detail) => {
+                tracing::warn!("Could not check hashes against Hydrus: {detail}");
+                break;
+            }
+        }
+    }
+    tracing::info!(
+        "Hydrus already has {}/{} file(s) in this batch",
+        known.len(),
+        hashes.len()
+    );
+    known
 }
 
 impl Scheduler {
@@ -138,12 +196,16 @@ impl MainWindow {
             return;
         }
         let t = &self.s.thumbs;
-        let items: Vec<(EntryId, String)> = {
+        let items: Vec<ThumbItem> = {
             let queue = self.s.queue.borrow();
             let mut in_flight = t.in_flight.borrow_mut();
             ids.iter()
                 .filter(|id| in_flight.insert(**id))
-                .filter_map(|id| queue.entry(*id).map(|e| (*id, e.path.clone())))
+                .filter_map(|id| {
+                    queue
+                        .entry(*id)
+                        .map(|e| (*id, e.path.clone(), e.hydrus_hash.clone()))
+                })
                 .collect()
         };
         if items.is_empty() {
@@ -156,7 +218,7 @@ impl MainWindow {
         self.run_thumbnail_pass(items, quiet);
     }
 
-    fn run_thumbnail_pass(&self, items: Vec<(EntryId, String)>, quiet: bool) {
+    fn run_thumbnail_pass(&self, items: Vec<ThumbItem>, quiet: bool) {
         let t = &self.s.thumbs;
         t.quiet.set(quiet);
         t.done.set(0);
@@ -165,14 +227,44 @@ impl MainWindow {
             self.s.shell.progress_bar.set_fraction(0.0);
         }
         let limit = decode_px();
+        // The client is built here, from the settings of this moment; none without a key or when
+        // the source is the disk.
+        let hydrus = {
+            let settings = self.s.settings.lock().unwrap();
+            (settings.thumbnail_source == "hydrus" && settings.hydrus.is_configured())
+                .then(|| hatate_core::hydrus_client::HydrusClient::new(&settings.hydrus).ok())
+                .flatten()
+        };
+        let handle = self.s.workers.handle();
         let w = self.downgrade();
         let job = self.s.workers.run(
             move |ctx| {
-                for (id, path) in items {
+                let known: HashSet<String> = match (&hydrus, &handle) {
+                    (Some(client), Some(handle)) => {
+                        known_to_hydrus(client, handle, &items, ctx.stop_flag())
+                    }
+                    _ => HashSet::new(),
+                };
+                for (id, path, hash) in items {
                     if ctx.stopped() {
                         break;
                     }
-                    ctx.report((id, decode_thumbnail(&path, limit)));
+                    let from_hydrus = match (&hydrus, &handle, hash.filter(|h| known.contains(h))) {
+                        (Some(client), Some(handle), Some(hash)) => {
+                            match handle.block_on(client.fetch_thumbnail(&hash)) {
+                                Ok(bytes) => decode_bytes(&bytes, limit),
+                                Err(e) => {
+                                    tracing::debug!(
+                                        "Hydrus thumbnail fetch failed: {}",
+                                        e.detail()
+                                    );
+                                    None
+                                }
+                            }
+                        }
+                        _ => None,
+                    };
+                    ctx.report((id, from_hydrus.or_else(|| decode_thumbnail(&path, limit))));
                 }
             },
             move |event: Event<(EntryId, Option<ThumbPixels>), ()>| {
@@ -217,7 +309,7 @@ impl MainWindow {
     fn on_thumbnails_finished(&self) {
         let t = &self.s.thumbs;
         let quiet = t.quiet.get();
-        let next: Vec<(EntryId, String)> = t.backlog.borrow_mut().drain(..).collect();
+        let next: Vec<ThumbItem> = t.backlog.borrow_mut().drain(..).collect();
         if !next.is_empty() {
             self.run_thumbnail_pass(next, quiet);
             return;
@@ -246,5 +338,105 @@ impl MainWindow {
             .filter(|id| !self.s.queue_view.thumb_known(*id))
             .collect();
         self.start_thumbnail_generation(&wanted, false);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// `n` rows, each with its own 64-character hash.
+    fn hashed(n: usize) -> Vec<ThumbItem> {
+        (0..n)
+            .map(|i| {
+                (
+                    EntryId(i as u64),
+                    format!("/{i}.png"),
+                    Some(format!("{i:064x}")),
+                )
+            })
+            .collect()
+    }
+
+    fn everything(batch: &[String]) -> Result<BTreeSet<String>, String> {
+        Ok(batch.iter().cloned().collect())
+    }
+
+    /// `test_no_hashes_means_no_call_is_made_at_all`
+    #[test]
+    fn no_hashes_means_no_call_is_made_at_all() {
+        let mut calls = 0;
+        let rows = vec![
+            (EntryId(1), "/x.png".to_owned(), None),
+            (EntryId(2), "/y.png".to_owned(), Some(String::new())),
+        ];
+        let known = known_in_batches(&rows, &AtomicBool::new(false), |_| {
+            calls += 1;
+            Ok(BTreeSet::new())
+        });
+        assert!(known.is_empty());
+        assert_eq!(calls, 0);
+    }
+
+    /// `test_hashes_are_asked_for_in_batches`
+    #[test]
+    fn hashes_are_asked_for_in_batches() {
+        assert_eq!(HASH_CHECK_BATCH, 256, "Python's batch size");
+        let rows = hashed(HASH_CHECK_BATCH + 5);
+        let mut sizes = Vec::new();
+        let known = known_in_batches(&rows, &AtomicBool::new(false), |b| {
+            sizes.push(b.len());
+            everything(b)
+        });
+        assert_eq!(known.len(), HASH_CHECK_BATCH + 5);
+        assert_eq!(sizes, [HASH_CHECK_BATCH, 5]);
+    }
+
+    /// `test_files_with_no_hash_are_not_asked_about`
+    #[test]
+    fn files_with_no_hash_are_not_asked_about() {
+        let rows = vec![
+            (EntryId(1), "/a.png".to_owned(), Some("a".repeat(64))),
+            (EntryId(2), "/b.png".to_owned(), None),
+        ];
+        let mut asked = Vec::new();
+        known_in_batches(&rows, &AtomicBool::new(false), |b| {
+            asked.push(b.to_vec());
+            everything(b)
+        });
+        assert_eq!(asked, [vec!["a".repeat(64)]]);
+    }
+
+    /// `test_a_hydrus_error_stops_asking_and_keeps_what_was_answered`
+    #[test]
+    fn a_hydrus_error_stops_asking_and_keeps_what_was_answered() {
+        let rows = hashed(HASH_CHECK_BATCH * 2 + 5);
+        let mut calls = 0;
+        let known = known_in_batches(&rows, &AtomicBool::new(false), |b| {
+            calls += 1;
+            if calls == 1 {
+                everything(b)
+            } else {
+                Err("connection refused".to_owned())
+            }
+        });
+        assert_eq!(known.len(), HASH_CHECK_BATCH);
+        assert_eq!(calls, 2);
+    }
+
+    /// `test_a_stop_request_abandons_the_remaining_batches`
+    #[test]
+    fn a_stop_request_abandons_the_remaining_batches() {
+        let rows = hashed(HASH_CHECK_BATCH * 2);
+        let stop = AtomicBool::new(false);
+        let mut calls = 0;
+        known_in_batches(&rows, &stop, |b| {
+            calls += 1;
+            stop.store(true, Ordering::Relaxed);
+            everything(b)
+        });
+        assert_eq!(calls, 1);
     }
 }

@@ -208,7 +208,7 @@ impl MainWindow {
     }
 
     /// The ids of `ids` that are still in the list, in the order given (`_live_entries`).
-    fn live_ids(&self, ids: &[EntryId]) -> Vec<EntryId> {
+    pub(crate) fn live_ids(&self, ids: &[EntryId]) -> Vec<EntryId> {
         let q = self.s.queue.borrow();
         ids.iter()
             .copied()

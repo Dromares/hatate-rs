@@ -358,3 +358,38 @@ pub async fn switch_to_importable_match(
 pub fn removes_row(settings: &Settings, result: &ImportResult) -> bool {
     result.success && result.confirmed != Some(false) && settings.remove_after_import
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `TestMainWindowSignalHandlers.test_auto_import_handler` feeds `_on_auto_imported` the three
+    /// results below; what it decides about the list is this: only a success Hydrus has not
+    /// reported as unconfirmed leaves the list, and only with Remove after import on.
+    #[test]
+    fn only_a_success_hydrus_did_not_leave_unconfirmed_drops_the_row_and_only_when_asked() {
+        let ok = ImportResult {
+            success: true,
+            ..ImportResult::default()
+        };
+        let unconfirmed = ImportResult {
+            success: true,
+            confirmed: Some(false),
+            ..ImportResult::default()
+        };
+        let failed = ImportResult {
+            error: Some("nope".to_owned()),
+            ..ImportResult::default()
+        };
+        let home: std::ffi::OsString = "/nonexistent-home".into();
+        let paths =
+            crate::paths::Paths::from_lookup(|k| (k == "HOME").then(|| home.clone())).unwrap();
+        let mut settings = Settings::with_defaults(&paths);
+        settings.remove_after_import = true;
+        assert!(removes_row(&settings, &ok));
+        assert!(!removes_row(&settings, &unconfirmed));
+        assert!(!removes_row(&settings, &failed));
+        settings.remove_after_import = false;
+        assert!(!removes_row(&settings, &ok));
+    }
+}

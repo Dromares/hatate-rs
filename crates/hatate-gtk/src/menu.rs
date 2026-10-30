@@ -83,16 +83,15 @@ pub fn all_site_options() -> Vec<String> {
 /// The menubar, in Python's order: Files, Hydrus, Sites, Settings, Help.
 pub fn menus() -> Vec<Menu> {
     use Owner::{Later, Shell};
-    // DEFERRED(6.g): Query Hydrus, Re-check Queued Imports, Pawchive Index, the two Send items.
     // DEFERRED(6.h): Preferences.
     let files = Menu {
         title: "_Files",
         entries: vec![
             item("Add Files\u{2026}", "add-files", Shell),
             item("Add Folder\u{2026}", "add-folder", Shell),
-            item("Query Hydrus\u{2026}", "query-hydrus", Later("6.g")),
-            item("Re-check Queued Imports", "reconcile", Later("6.g")),
-            item("Pawchive Index\u{2026}", "pawchive-index", Later("6.g")),
+            item("Query Hydrus\u{2026}", "query-hydrus", Shell),
+            item("Re-check Queued Imports", "reconcile", Shell),
+            item("Pawchive Index\u{2026}", "pawchive-index", Shell),
             Entry::Separator,
             keyed(
                 "Save Session As\u{2026}",
@@ -116,16 +115,16 @@ pub fn menus() -> Vec<Menu> {
             item(
                 "Send File + URL + Tags to Hydrus (upload)",
                 "send-to-hydrus",
-                Later("6.g"),
+                Shell,
             ),
             item(
                 "Send URL to Hydrus's URL Importer\u{2026}",
                 "import-url-to-hydrus",
-                Later("6.g"),
+                Shell,
             ),
             Entry::Separator,
             // The same action the Files menu holds: one action, two homes.
-            item("Re-check Queued Imports", "reconcile", Later("6.g")),
+            item("Re-check Queued Imports", "reconcile", Shell),
         ],
     };
     let mut sites_entries = vec![
@@ -424,6 +423,23 @@ mod tests {
         );
     }
 
+    /// `test_both_menus_share_one_recheck_action`: the Files and Hydrus entries name the one
+    /// action, so one handler and one enabled state serve both.
+    #[test]
+    fn the_files_and_hydrus_menus_hold_the_one_recheck_action() {
+        let action_of = |menu: &Menu| {
+            menu.entries.iter().find_map(|e| match e {
+                Entry::Item { label, action, .. } if *label == "Re-check Queued Imports" => {
+                    Some(*action)
+                }
+                _ => None,
+            })
+        };
+        let all = menus();
+        assert_eq!(action_of(&all[0]), Some("reconcile"));
+        assert_eq!(action_of(&all[1]), Some("reconcile"));
+    }
+
     #[test]
     fn the_same_action_in_two_menus_is_registered_once() {
         let names: Vec<_> = actions().iter().map(|(n, _)| *n).collect();
@@ -434,10 +450,17 @@ mod tests {
     fn every_deferred_action_names_a_ticket() {
         let d = deferred();
         assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
-        for want in ["query-hydrus", "preferences"] {
-            assert!(d.iter().any(|(n, _)| *n == want), "{want} not deferred");
-        }
+        // 6.g wired Query Hydrus, Pawchive Index, Re-check Queued Imports and the two Send items.
+        assert!(
+            d.iter().any(|(n, _)| *n == "preferences"),
+            "preferences not deferred"
+        );
         for working in [
+            "query-hydrus",
+            "pawchive-index",
+            "reconcile",
+            "send-to-hydrus",
+            "import-url-to-hydrus",
             "add-files",
             "add-folder",
             "save-session-as",

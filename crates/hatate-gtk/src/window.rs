@@ -91,6 +91,9 @@ pub struct Env {
     pub monotonic: Rc<dyn Fn() -> f64>,
     /// Parser Health's live check (`core/parser_probe.py`); none in the shipped window.
     pub probe: Option<Arc<dyn crate::parser_health::ProbeRunner>>,
+    /// The Pawchive crawler the Index window uses; none builds the real one on first use. Its
+    /// hosts are fixed by its constructor, so a test points it at a local server.
+    pub pawchive: Option<Arc<hatate_core::pawchive_index::PawchiveCrawler>>,
 }
 
 impl Env {
@@ -109,6 +112,7 @@ impl Env {
             search: None,
             monotonic: Rc::new(system_monotonic),
             probe: None,
+            pawchive: None,
         }
     }
 }
@@ -228,6 +232,26 @@ pub struct State {
     pub diff_worker: Slot,
     /// The compare dialog, while it is open.
     pub compare_open: RefCell<Option<Rc<crate::compare_dialog::CompareDialog>>>,
+    /// `self.hydrus_lookup_worker`, `self.hydrus_reconcile_worker`, `self.hydrus_import_poll_worker`
+    /// and the one slot the synchronous send loops share (Python ran those on the GUI thread).
+    pub hydrus_lookup_worker: Slot,
+    pub hydrus_reconcile_worker: Slot,
+    pub hydrus_import_poll_worker: Slot,
+    pub hydrus_batch_worker: Slot,
+    /// The Query Hydrus dialog's search and import, and the dialog while it is open.
+    pub hydrus_query_worker: Slot,
+    /// `self.pawchive_index_worker`, the artist search, and the one Pawchive Index window
+    /// (`self._pawchive_index_dialog`).
+    pub pawchive_index_worker: Slot,
+    pub pawchive_find_worker: Slot,
+    pub pawchive_dialog: RefCell<Option<Rc<crate::pawchive_dialog::PawchiveIndexDialog>>>,
+    /// The crawler a test gave the window; the shipped one builds the real Pawchive.
+    pub pawchive_override: Option<Arc<hatate_core::pawchive_index::PawchiveCrawler>>,
+    pub hydrus_query_dialog: RefCell<Option<Rc<crate::hydrus_query::HydrusQueryDialog>>>,
+    /// `self._reconcile_was_quiet`.
+    pub reconcile_was_quiet: Cell<bool>,
+    /// `self._pending_poll_confirmed`, `_unconfirmed` and `_warnings`.
+    pub poll_pending: RefCell<crate::hydrus_ops::PollPending>,
     /// The review keys' controllers, to take down when the bindings change.
     pub review_controllers: RefCell<Vec<(gtk::Widget, gtk::ShortcutController)>>,
 }
@@ -466,6 +490,18 @@ impl MainWindow {
             comparison_worker: Slot::new(),
             diff_worker: Slot::new(),
             compare_open: RefCell::new(None),
+            hydrus_lookup_worker: Slot::new(),
+            hydrus_reconcile_worker: Slot::new(),
+            hydrus_import_poll_worker: Slot::new(),
+            hydrus_batch_worker: Slot::new(),
+            hydrus_query_worker: Slot::new(),
+            pawchive_index_worker: Slot::new(),
+            pawchive_find_worker: Slot::new(),
+            pawchive_dialog: RefCell::new(None),
+            pawchive_override: env.pawchive.take(),
+            hydrus_query_dialog: RefCell::new(None),
+            reconcile_was_quiet: Cell::new(false),
+            poll_pending: RefCell::new(Default::default()),
             review_controllers: RefCell::new(Vec::new()),
         });
         let window = MainWindow {
@@ -721,6 +757,13 @@ impl MainWindow {
                 "export-results" => w.action_export_results(None),
                 "write-tag-files" => w.action_write_tag_files(None),
                 "clear-search-cache" => w.action_clear_search_cache(),
+                "reconcile" => w.action_reconcile_with_hydrus(),
+                "query-hydrus" => w.action_query_hydrus(),
+                "pawchive-index" => w.action_pawchive_index(),
+                "send-to-hydrus" => w.action_send_to_hydrus(&w.s.queue_view.selected_ids()),
+                "import-url-to-hydrus" => {
+                    w.action_import_url_to_hydrus(&w.s.queue_view.selected_ids())
+                }
                 "quit" => w.win.close(),
                 other => tracing::warn!("no handler for action {other}"),
             }
@@ -839,7 +882,7 @@ fn build_drop_zone() -> gtk::Overlay {
     add_files.set_action_name(Some("win.add-files"));
     let add_folder = widgets::pill_button("Add folder\u{2026}", false, true);
     add_folder.set_action_name(Some("win.add-folder"));
-    // DEFERRED(6.g): Query Hydrus. The button follows the (disabled) action.
+    // Query Hydrus (6.g): the button follows the action.
     let query = widgets::pill_button("Query Hydrus\u{2026}", false, true);
     query.set_action_name(Some("win.query-hydrus"));
     for b in [&add_files, &add_folder, &query] {

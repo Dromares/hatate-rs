@@ -6,7 +6,7 @@ use hatate_core::model::{Tag, TagSource};
 use hatate_core::pycompat::strip;
 
 /// `str.splitlines()`: the line boundaries Python knows, not only `\n`.
-fn splitlines(text: &str) -> Vec<&str> {
+pub(crate) fn splitlines(text: &str) -> Vec<&str> {
     let mut lines = Vec::new();
     let mut start = 0;
     let mut chars = text.char_indices().peekable();
