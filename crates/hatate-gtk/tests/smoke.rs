@@ -319,6 +319,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_header_titles_are_not_clipped_at_the_minimum_window_size,
     ),
     (
+        "queue_status_and_file_cells_fit_and_sent_is_in_view_at_both_window_sizes",
+        queue_status_and_file_cells_fit_and_sent_is_in_view_at_both_window_sizes,
+    ),
+    (
         "clear_search_cache_label_carries_the_cache_size",
         clear_search_cache_label_carries_the_cache_size,
     ),
@@ -4005,6 +4009,128 @@ fn queue_header_titles_are_not_clipped_at_the_minimum_window_size(app: &adw::App
         }
         assert_eq!(seen, Column::ALL.len());
         f.close();
+    }
+}
+
+/// DAN-2319 F1 and F5: at the default (1090 x 790) and the minimum (1000 x 780) window sizes the
+/// Status chip is drawn whole (`Unsearched`, `Not found` were cut to `Unsearc...`, `Not fou...`),
+/// a File name that does not fit is cut in the middle, and the `SENT` column lies inside the
+/// viewport at 1000.
+fn queue_status_and_file_cells_fit_and_sent_is_in_view_at_both_window_sizes(
+    app: &adw::Application,
+) {
+    use gtk4::pango::EllipsizeMode;
+    use hatate_core::table_cells::Column;
+    for (width, height) in [(1090, 790), (1000, 780)] {
+        for scheme in ["dark", "light"] {
+            let mut seed = seeded(MatchStatus::ALL.len(), MatchStatus::NotSearched);
+            for (i, e) in seed.iter_mut().enumerate() {
+                e.status = MatchStatus::ALL[i];
+                e.path = format!("/lib/synthetic-{i:04}-a-long-file-name-that-cannot-fit.png");
+            }
+            let s = scheme.to_owned();
+            let f = Fx::new(
+                app,
+                Opts {
+                    seed,
+                    missing: Some(Arc::new(|_, _| HashSet::new())),
+                    tweak: Some(Box::new(move |c| c.theme = s.clone())),
+                    ..Opts::default()
+                },
+            );
+            f.w.win.set_default_size(width, height);
+            // A mapped window does not grow to a new default size; the request does.
+            // (The window's content is 10 px smaller than the frame the shots are named after.)
+            f.w.win.set_size_request(width + 10, height + 10);
+            pump_for(400);
+            let mut labels = Vec::new();
+            all_labels(f.w.s.queue_view.view.upcast_ref(), &mut labels);
+            println!(
+                "FIT {width}x{height} {scheme} window={}x{} widths={:?}",
+                f.w.win.width(),
+                f.w.win.height(),
+                f.w.s
+                    .queue_view
+                    .header_sections()
+                    .iter()
+                    .map(|s| s.width)
+                    .collect::<Vec<_>>()
+            );
+            let mut chips = 0;
+            let mut chip_clipped = false;
+            let mut file_modes = Vec::new();
+            for label in labels.iter().filter(|l| l.is_mapped() && l.width() > 0) {
+                let text = label.text();
+                let is_chip = [
+                    "Good",
+                    "Review",
+                    "Not found",
+                    "Error",
+                    "Searching",
+                    "Unsearched",
+                ]
+                .iter()
+                .any(|t| text.ends_with(t) && text.len() > t.len());
+                if is_chip {
+                    chips += 1;
+                    println!(
+                        "FIT {width}x{height} {scheme} chip {text:?} width={} natural={} ellipsized={}",
+                        label.width(),
+                        label.measure(gtk4::Orientation::Horizontal, -1).1,
+                        label.layout().is_ellipsized()
+                    );
+                    chip_clipped |= label.layout().is_ellipsized();
+                }
+                if text.starts_with("synthetic-") {
+                    file_modes.push((text.to_string(), label.ellipsize()));
+                }
+            }
+            assert_eq!(
+                chips,
+                MatchStatus::ALL.len(),
+                "{scheme}: every Status chip drawn"
+            );
+            assert!(
+                !chip_clipped,
+                "{width}x{height} {scheme}: a Status chip is ellipsized"
+            );
+            assert!(!file_modes.is_empty(), "{scheme}: File cells drawn");
+            for (text, mode) in &file_modes {
+                assert_eq!(
+                    *mode,
+                    EllipsizeMode::Middle,
+                    "{width}x{height} {scheme}: File {text:?} must ellipsize in the middle"
+                );
+            }
+            // The title of SENT sits inside the viewport (the scrolled window), not past its edge.
+            let scroller = f.w.s.queue_view.scroller.clone();
+            let sent = labels
+                .iter()
+                .find(|l| l.text() == Column::Sent.title() && l.is_mapped())
+                .unwrap_or_else(|| panic!("{scheme}: no drawn SENT title"));
+            let b = sent.compute_bounds(&scroller).expect("bounds");
+            println!(
+                "FIT {width}x{height} {scheme} SENT x={:.1}..{:.1} viewport={}",
+                b.x(),
+                b.x() + b.width(),
+                scroller.width()
+            );
+            assert!(
+                b.x() + b.width() <= scroller.width() as f32 + 0.5,
+                "{width}x{height} {scheme}: SENT is off-screen"
+            );
+            // And the whole column, not only its title: Thumb to Sent end inside the viewport.
+            let through_sent: i32 = f.w.s.queue_view.header_sections()[..=Column::Sent.index()]
+                .iter()
+                .map(|s| s.width)
+                .sum();
+            println!("FIT {width}x{height} {scheme} through_sent={through_sent}");
+            assert!(
+                through_sent <= scroller.width(),
+                "{width}x{height} {scheme}: the SENT column ends at {through_sent}, past the viewport"
+            );
+            f.close();
+        }
     }
 }
 

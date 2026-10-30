@@ -408,10 +408,20 @@ impl WipeView {
             return;
         };
         // `on_accent`, the one ink token that is the same fixed white in both schemes: the line is
-        // drawn over a photograph of unknown brightness, not over the app's own chrome.
-        let line = |alpha: f64| cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
-        cr.set_line_width(2.0);
+        // drawn over a photograph of unknown brightness, not over the app's own chrome. A dark
+        // halo under it keeps it above 3:1 where nothing is drawn but the page: a white line was
+        // 1.17:1 on the light page in the no-match state (DAN-2379 F-divider, DAN-2319).
         let (top, bottom) = (target.y.max(0.0), target.bottom().min(h));
+        let line = |x: f64, alpha: f64| {
+            cr.move_to(x, top);
+            cr.line_to(x, bottom);
+            cr.set_line_width(4.0);
+            cr.set_source_rgba(0.0, 0.0, 0.0, 0.6 * alpha);
+            let _ = cr.stroke_preserve();
+            cr.set_line_width(2.0);
+            cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
+            let _ = cr.stroke();
+        };
 
         if s.geom.showing_differences() {
             let half = target.w / 2.0;
@@ -446,18 +456,11 @@ impl WipeView {
                 }
             }
             if bottom > top {
-                line(1.0);
                 for pane in &panes {
-                    let x = pane.x + pane.w * s.position;
-                    cr.move_to(x, top);
-                    cr.line_to(x, bottom);
-                    let _ = cr.stroke();
+                    line(pane.x + pane.w * s.position, 1.0);
                 }
                 // And a divider between the two, so they read as two pictures.
-                line(140.0 / 255.0);
-                cr.move_to(target.x + half, top);
-                cr.line_to(target.x + half, bottom);
-                let _ = cr.stroke();
+                line(target.x + half, 140.0 / 255.0);
             }
             return;
         }
@@ -486,10 +489,7 @@ impl WipeView {
             self.centred_text(area, cr, right_clip, MATCH_MISSING);
         }
         if bottom > top {
-            line(1.0);
-            cr.move_to(split_x, top);
-            cr.line_to(split_x, bottom);
-            let _ = cr.stroke();
+            line(split_x, 1.0);
         }
     }
 }

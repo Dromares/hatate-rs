@@ -420,8 +420,9 @@ textview.log, textview.log text { background: @sunken; color: @ink; font-family:
 .queue-frame { background: @raised; border: 1px solid @ink_18; }
 .queue { background: @raised; color: @ink; }
 .queue > header { background: @raised; border-bottom: 1px solid @ink_28; }
-.queue > header > button { border-radius: 0; background: transparent; color: @ink_65; padding: 0 %space_3%px;
-  min-height: 28px; font-family: %mono%; font-size: %micro%px; font-weight: 700; letter-spacing: 0.1em;
+.queue > header > button { border-radius: 0; background: transparent; color: @ink_65;
+  padding: 0 %space_1%px 0 %space_3%px; min-height: 28px; font-family: %mono%; font-size: %micro%px;
+  font-weight: 700; letter-spacing: 0.1em;
   text-transform: uppercase; }
 .queue > header > button:hover { background: @ink_10; color: @ink; }
 .queue > header > button label { opacity: 1; color: @ink_65; }
