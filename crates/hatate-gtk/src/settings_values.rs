@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn a_double_spin_rounds_to_its_decimals_then_bounds() {
-        assert_eq!(qt_double(2.71828, 0.0, 10.0, 2), 2.72);
+        assert_eq!(qt_double(1.23456, 0.0, 10.0, 2), 1.23);
         assert_eq!(qt_double(0.005, 0.0, 10.0, 2), 0.01);
         assert_eq!(qt_double(3.0, 5.0, 600.0, 2), 5.0);
         assert_eq!(qt_double(1000.0, 5.0, 300.0, 2), 300.0);
