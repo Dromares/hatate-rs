@@ -178,3 +178,63 @@ compared line by line, timestamps set aside.
 Before the fix of D-F the same seed gave 80 differences in 5 cases (`remove_row`) and 230 in 30 (`toggle_reviewed`); the
 re-run of the 6 differing cases after the fix gave 0. Set aside and counted (D-D, D-E): the `Server` header, `serverInfo.version`,
 and the library words of a refused Hydrus connection.
+
+## 6. Minimum size, shots and contrast
+
+Hosted `ci` run 41039450112 at `169f87c587bd0baa519ec5eda332294e87691fe3` (GTK 4.14 / libadwaita 1.5), artifact `shots`: every number below is read
+from that artifact, not from the author's host (GTK 4.24). The shot set is unchanged by the later commits of this PR (they touch this doc and
+`examples/shot.rs`'s `settings-tab-<n>` walk, which writes no PNG that is measured here); the final head's run is cited in the PR comment.
+
+**Minimum size** (DAN-2356): the stated minimum is 560 x 440 (`settings_dialog::MIN_WIDTH/MIN_HEIGHT`). The fit test
+`smoke::settings_window_keeps_its_stated_minimum` (`smoke.rs:7199`) walks every tab the window has, including 7 (Shortcuts) and 8 (MCP),
+with and without a Find query. No fix to the pages' size was needed in this PR, so there is no red run to show for it: the PNG header of each
+shot below is the test. Read from the header of every file (`worktrees/DAN-2222-tools/mk6.py`):
+
+| State | Default 940 x 660 (dark, light) | At the stated minimum 560 x 440 (dark, light), PNG header |
+|---|---|---|
+| Shortcuts tab, defaults | `settings-7-dark.png` `settings-7-light.png`: 940 x 660, 940 x 660 | `settings-7-min-dark.png` `settings-7-min-light.png`: 560 x 440, 560 x 440 |
+| Shortcuts, recorder waiting for its key | `settings-shortcuts-record-dark.png` `settings-shortcuts-record-light.png`: 940 x 660, 940 x 660 | `settings-shortcuts-record-min-dark.png` `settings-shortcuts-record-min-light.png`: 560 x 440, 560 x 440 |
+| Shortcuts, two actions on one key (conflict line) | `settings-shortcuts-conflict-dark.png` `settings-shortcuts-conflict-light.png`: 940 x 660, 940 x 660 | `settings-shortcuts-conflict-min-dark.png` `settings-shortcuts-conflict-min-light.png`: 560 x 440, 560 x 440 |
+| MCP tab, server off (Stopped) | `settings-8-dark.png` `settings-8-light.png`: 940 x 660, 940 x 660 | `settings-8-min-dark.png` `settings-8-min-light.png`: 560 x 440, 560 x 440 |
+| MCP, server listening | `settings-mcp-running-dark.png` `settings-mcp-running-light.png`: 940 x 660, 940 x 660 | `settings-mcp-running-min-dark.png` `settings-mcp-running-min-light.png`: 560 x 440, 560 x 440 |
+| MCP, port held (Can't start) | `settings-mcp-held-dark.png` `settings-mcp-held-light.png`: 940 x 660, 940 x 660 | `settings-mcp-held-min-dark.png` `settings-mcp-held-min-light.png`: 560 x 440, 560 x 440 |
+| MCP, Recent tool calls with synthetic rows (All) | `settings-mcp-audit-dark.png` `settings-mcp-audit-light.png`: 940 x 660, 940 x 660 | `settings-mcp-audit-min-dark.png` `settings-mcp-audit-min-light.png`: 560 x 440, 560 x 440 |
+| Focus ring on the server box | `settings-focus-mcp-dark.png` `settings-focus-mcp-light.png`: 940 x 660, 940 x 660 | (no minimum-size shot: the ring is shown at the default size) |
+| Focus ring on the first key button | `settings-focus-shortcut-dark.png` `settings-focus-shortcut-light.png`: 940 x 660, 940 x 660 | (no minimum-size shot: the ring is shown at the default size) |
+
+0 of 7 minimum-size rows differ from 560 x 440 (14 headers, dark and light).
+
+**Focus rings** (non-text 3:1 floor; `worktrees/DAN-2222-tools/ring.py`: the pixels that changed against the same page's unfocused shot,
+inside the control's box; baseline `settings-7` for the first key button and `settings-mcp-running` for the server box):
+
+| Control | scheme | ring px | bg px | ratio (3:1 floor) | region in the shot (x0,y0,x1,y1) |
+|---|---|---|---|---|---|
+| first key button | dark | #cdc4ba | #0d0d0d | 11.29 pass | (556, 244, 726, 316) |
+| first key button | light | #211d17 | #e8e1d2 | 12.88 pass | (556, 244, 726, 316) |
+| server box | dark | #cdc4ba | #0d0d0d | 11.29 pass | (40, 150, 260, 190) |
+| server box | light | #211d17 | #e8e1d2 | 12.88 pass | (40, 150, 260, 190) |
+
+The recorder's own state (`settings-shortcuts-record`) is a separate shot: the button under recording shows the "Press a key..." word, measured in
+the contrast table below.
+
+**Contrast** (extreme-pixel method, `worktrees/DAN-2222-tools/measure.py`, over the 32 Settings shots of this PR's states (7 states and 2 focus states, both schemes, the 7 at both sizes), the label boxes listed in each `.rects`; the full table is `worktrees/DAN-2222-measure.md`, not committed): 764 rows,
+764 pass the 4.5:1 text floor, 0 disabled rows, **0 BELOW**. Lowest passing rows: dark 5.24 (`a setting's name - "quota", ...`, the Find
+placeholder, `#88827c` on `#090909`), light 5.09 (the same placeholder, `#595348` on `#ddd2bd`); on the 6.i pages themselves the lowest is the
+tab strip's unselected tab names: dark 5.26 `#8a847e` on `#0d0d0d`, light 5.50 `#5c574f` on `#e8e1d2`.
+
+**Tab order** (`examples/shot.rs` state `settings-tab-7` and `settings-tab-8`, Tab walked from the top of the window; the walk is
+toolkit-ordering only, taken on the author's host, log `worktrees/DAN-2222-tabwalk.log`; no hosted run prints it). From the notebook, which
+holds the first stop (its tab strip), Tab goes:
+
+- **Shortcuts** (tab 7): each action's key button then its "Leave ... with no key at all" clear button, 16 actions in the table's order
+  (J, K, N, Shift+N, ], [, C, O, H, Return, U, D, F5, R, Space, Del); then Reset all to defaults, Cancel, OK; then the Find box; then the
+  notebook again. Nothing is skipped and nothing takes a stop twice.
+- **MCP** (tab 8): Enable the MCP server, two entries (the port and the token), Copy token, Generate new token, Dry run, the three tier boxes
+  (Hydrus, re-search, remove and reset), the Actions and All calls toggles, the live-refresh toggle, the audit folder button, the audit
+  filter, the table, Cancel, OK, then Find. The status lines and labels are not stops.
+
+**Not judgeable from a shot** (pinned by text, not by pixels): the "Got it" enable summary and the "Shortcut conflict" warning are libadwaita
+windows of their own, which the Settings window's snapshot does not hold (as for the Lens warning in 6.h). They are pinned by
+`smoke.rs:7603` (`settings_mcp_enable_summary_fires_on_a_real_change_only`: the summary fires on a real change only and lists the tiers ticked in the dialog)
+and `smoke.rs:7855` (title "Shortcut conflict", kind Warning, both action names in the text, the dialog stays open). A shot of those
+toplevels is not part of this PR; the design read is asked to judge the box's words from those pins and `dialogs.rs:292`.

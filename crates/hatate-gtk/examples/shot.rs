@@ -722,6 +722,29 @@ fn prepare_settings(window: &MainWindow, state: &str) {
                 .expect("prev_row")
                 .start_recording();
         }
+        // `tab-<n>`: Tab walked from the top of that tab of the window, one `TAB` line per stop
+        // (the verdict's Tab order for the Shortcuts and MCP tabs, 6.i).
+        f if f.starts_with("tab-") => {
+            let n: u32 = f["tab-".len()..].parse().expect("tab-<n>");
+            d.tabs.set_current_page(Some(n));
+            d.window.set_focus_visible(true);
+            let win = d.window.clone();
+            glib::idle_add_local_once(move || {
+                let mut seen: Vec<String> = Vec::new();
+                for i in 0..60 {
+                    win.child_focus(gtk4::DirectionType::TabForward);
+                    let Some(f) = GtkWindowExt::focus(&win) else {
+                        break;
+                    };
+                    let what = describe(&f);
+                    if seen.first() == Some(&what) && i > 0 {
+                        break;
+                    }
+                    println!("TAB {i} {what}");
+                    seen.push(what);
+                }
+            });
+        }
         f if f.starts_with("focus-") => {
             d.window.set_focus_visible(true);
             let target: Option<gtk4::Widget> = match &f["focus-".len()..] {
