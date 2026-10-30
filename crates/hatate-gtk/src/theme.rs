@@ -570,6 +570,13 @@ mod tests {
                 rule(".pick-list > row {").contains("border-bottom: 1px solid @ink_18"),
                 "{scheme:?}: pick-list rows have no divider"
             );
+            let off = rule("window.pick-window button.pill.primary:disabled {");
+            assert!(
+                off.contains("background: transparent")
+                    && off.contains("border-color: @ink_46")
+                    && off.contains("opacity: 1"),
+                "{scheme:?}: a disabled primary is not Stop's hollow dim look (DAN-2398 P3-2): {off}"
+            );
         }
     }
 

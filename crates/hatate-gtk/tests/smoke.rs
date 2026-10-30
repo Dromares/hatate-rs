@@ -359,6 +359,10 @@ const SCENARIOS: &[Scenario] = &[
         pawchive_artist_columns_share_one_edge_in_the_header_and_every_row,
     ),
     (
+        "message_detail_box_starts_at_its_top_left_and_is_indented",
+        message_detail_box_starts_at_its_top_left_and_is_indented,
+    ),
+    (
         "hydrus_requests_leave_the_main_loop_running_while_the_server_stalls",
         hydrus_requests_leave_the_main_loop_running_while_the_server_stalls,
     ),
@@ -6378,10 +6382,32 @@ fn pawchive_artist_columns_share_one_edge_in_the_header_and_every_row(app: &adw:
     // the numeric columns read against their right edge, the others against their left
     for (i, w) in cells(&head_row).iter().enumerate() {
         let label = w.downcast_ref::<gtk4::Label>().unwrap();
-        let want = if hatate_gtk::pawchive_dialog::RIGHT_ALIGNED[i] { 1.0 } else { 0.0 };
+        let want = if hatate_gtk::pawchive_dialog::RIGHT_ALIGNED[i] {
+            1.0
+        } else {
+            0.0
+        };
         assert_eq!(label.xalign(), want, "header column {i}");
     }
     f.close();
+}
+
+/// DAN-2398 P3-1: the file-name box of the Delete from Hydrus question starts at its top-left and
+/// is indented like the tag box; centred it left a blank first line.
+fn message_detail_box_starts_at_its_top_left_and_is_indented(_app: &adw::Application) {
+    use gtk4::prelude::*;
+    let (scroller, lines) = hatate_gtk::dialogs::detail_box("a.png\nb.png");
+    assert_eq!(
+        lines.yalign(),
+        0.0,
+        "the first line sits at the top of the box"
+    );
+    assert_eq!(lines.xalign(), 0.0);
+    assert!(
+        lines.margin_start() >= 8 && lines.margin_end() >= 8,
+        "indented like the tag box"
+    );
+    assert!(lines.is_selectable() && scroller.has_css_class("field"));
 }
 
 fn pawchive_index_window_adds_by_link_searches_by_name_indexes_and_removes(app: &adw::Application) {

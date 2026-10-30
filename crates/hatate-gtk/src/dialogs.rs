@@ -256,24 +256,7 @@ impl Prompter for AdwPrompter {
         let dialog = adw::AlertDialog::new(Some(title), Some(text));
         if !detail.is_empty() {
             // `setDetailedText`: the lines sit in a scrolling, selectable field under the text.
-            let lines = gtk::Label::new(Some(detail));
-            lines.set_selectable(true);
-            lines.set_wrap(true);
-            lines.set_xalign(0.0);
-            // from the top-left of the box, indented like the text in the Query Hydrus tag box
-            // (centred, a short list left a blank first line, DAN-2398 P3-1)
-            lines.set_yalign(0.0);
-            lines.set_margin_start(8);
-            lines.set_margin_end(8);
-            lines.set_margin_top(4);
-            lines.set_margin_bottom(4);
-            lines.add_css_class("monospace");
-            let scroller = gtk::ScrolledWindow::new();
-            scroller.set_child(Some(&lines));
-            scroller.set_min_content_height(96);
-            scroller.set_max_content_height(220);
-            scroller.set_propagate_natural_height(true);
-            scroller.add_css_class("field");
+            let (scroller, _) = detail_box(detail);
             dialog.set_extra_child(Some(&scroller));
         }
         match buttons {
@@ -557,4 +540,27 @@ mod tests {
             assert_eq!(default_response(kind, Buttons::Ok), Response::Ok);
         }
     }
+}
+
+/// The detail field of a message box: the lines in a scrolling, selectable, monospace label. They
+/// start at the top-left of the box and are indented like the text in the Query Hydrus tag box
+/// (centred, a short list left a blank first line, DAN-2398 P3-1).
+pub fn detail_box(detail: &str) -> (gtk::ScrolledWindow, gtk::Label) {
+    let lines = gtk::Label::new(Some(detail));
+    lines.set_selectable(true);
+    lines.set_wrap(true);
+    lines.set_xalign(0.0);
+    lines.set_yalign(0.0);
+    lines.set_margin_start(8);
+    lines.set_margin_end(8);
+    lines.set_margin_top(4);
+    lines.set_margin_bottom(4);
+    lines.add_css_class("monospace");
+    let scroller = gtk::ScrolledWindow::new();
+    scroller.set_child(Some(&lines));
+    scroller.set_min_content_height(96);
+    scroller.set_max_content_height(220);
+    scroller.set_propagate_natural_height(true);
+    scroller.add_css_class("field");
+    (scroller, lines)
 }
