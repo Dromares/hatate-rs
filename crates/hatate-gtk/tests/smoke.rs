@@ -5808,7 +5808,7 @@ fn hydrus_show_opens_a_page_and_explains_a_refusal(app: &adw::Application) {
             "/manage_pages/new_page" => Reply::new(403, "no"),
             _ => json_reply(json!({})),
         });
-    let f = hydrus_fx(app, &refusing.url, true, seed);
+    let f = hydrus_fx(app, &refusing.url, true, seed.clone());
     let ids = row_ids(&f);
     f.w.show_rows_in_hydrus(&[ids[0]]);
     assert!(pump_until(10_000, || f.script.count_shown() > 0));
@@ -5822,6 +5822,35 @@ fn hydrus_show_opens_a_page_and_explains_a_refusal(app: &adw::Application) {
             "Hydrus refused this because the access key lacks the \"manage pages\" permission."
         ),
         "{}",
+        d.text
+    );
+    f.close();
+
+    // Any other failure (D-B): the headline is the prefix and `user_message()`, which says what
+    // to do and carries none of what the server wrote; Python wrote `str(exc)` there.
+    let failing =
+        common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+            "/get_files/file_metadata" => json_reply(json!({"metadata": [
+                {"hash": HELD_HASH, "file_id": 1, "is_local": true,
+                 "is_trashed": false, "is_deleted": false}]})),
+            "/manage_pages/new_page" => Reply::new(500, "scripted-boom-text"),
+            _ => json_reply(json!({})),
+        });
+    let f = hydrus_fx(app, &failing.url, true, seed);
+    let ids = row_ids(&f);
+    f.w.show_rows_in_hydrus(&[ids[0]]);
+    assert!(pump_until(10_000, || f.script.count_shown() > 0));
+    let d = f.script.last_shown();
+    assert!(
+        d.text.starts_with(
+            "Hydrus could not open the page: Hydrus answered with an error (HTTP 500)."
+        ),
+        "{}",
+        d.text
+    );
+    assert!(
+        !d.text.contains("scripted-boom-text"),
+        "the headline carries what the server wrote: {}",
         d.text
     );
     f.close();
