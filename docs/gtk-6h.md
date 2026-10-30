@@ -205,7 +205,8 @@ focus has moved to OK):
 | control | scheme | ring | around | ratio | cluster box | px |
 |---|---|---|---|---|---|---|
 | find | dark | #cdc4ba | #0d0d0d | 11.29 | (61, 14, 922, 58) | 5398 |
-| tab | dark | #cdc4ba | #0d0d0d | 11.29 | (18, 70, 922, 586) | 4200 |
+| tab, notebook ring | dark | #cdc4ba | #0d0d0d | 11.29 | (18, 70, 922, 586) | 4200 |
+| tab, own ring | dark | #cdc4ba | #141414 | 10.70 | (49, 69, 149, 107) | 504 |
 | ok | dark | #0d0d0d | #cdc4ba | 11.29 | (851, 598, 916, 640) | 412 |
 | cancel | dark | #cdc4ba | #0d0d0d | 11.29 | (739, 598, 835, 640) | 536 |
 | check | dark | #cdc4ba | #0d0d0d | 11.29 | (41, 252, 899, 290) | 3824 |
@@ -213,13 +214,24 @@ focus has moved to OK):
 | combo | dark | #cdc4ba | #0d0d0d | 11.29 | (309, 360, 899, 398) | 2496 |
 | entry | dark | #cdc4ba | #090909 | 11.57 | (207, 120, 899, 164) | 10343 |
 | find | light | #211d17 | #e8e1d2 | 12.88 | (61, 14, 922, 58) | 5398 |
-| tab | light | #211d17 | #e8e1d2 | 12.88 | (18, 70, 922, 586) | 4200 |
+| tab, notebook ring | light | #211d17 | #e8e1d2 | 12.88 | (18, 70, 922, 586) | 4200 |
+| tab, own ring | light | #211d17 | #f2ede1 | 14.35 | (49, 69, 149, 107) | 504 |
 | ok | light | #f6f1e6 | #211d17 | 14.88 | (851, 598, 916, 640) | 412 |
 | cancel | light | #211d17 | #e8e1d2 | 12.88 | (739, 598, 835, 640) | 536 |
 | check | light | #211d17 | #e8e1d2 | 12.88 | (41, 252, 899, 290) | 3824 |
 | spin | light | #211d17 | #e8e1d2 | 12.88 | (287, 178, 473, 222) | 2464 |
 | combo | light | #211d17 | #e8e1d2 | 12.88 | (309, 360, 899, 398) | 2496 |
 | entry | light | #211d17 | #ddd2bd | 11.20 | (207, 120, 899, 164) | 10343 |
+
+The `tab` focus state holds two rings (DAN-2415, the design read on DAN-2414): the notebook-wide one, whose cluster box is the outer
+(18, 70, 922, 586), and the selected tab's own, which libadwaita draws from `notebook:focus-visible > header > tabs > tab:checked`
+in its accent blue. Until `910f429` that second ring was stock blue (dark #466180, 2.88 against the tab fill #141414 and 3.04
+against the strip #0d0d0d; light #87aedc, 1.97 against #f2ede1 and 1.77 against the strip #e8e1d2: below 3:1 in light, off the
+palette in both). The `tab, own ring` rows are measured from the pixels inside the tab box only (the General label rect padded by the
+tab's 9px 20px: x 49 to 149, y 69 to 107, so the notebook ring is outside it) in the hosted shots of `910f429` (run 41019849510),
+by `worktrees/DAN-2221-tools/tabring.py`: the changed pixels against `settings-0-<scheme>`, 504 of them, 0 stock blue. The ring against the
+strip outside the box is 11.29 dark and 12.88 light. The same script on the hosted shots of `6b1b871` returns the blue values above.
+The pin is `theme.rs:663` (the rule is the `@ink` outline; reverting the rule turns it red).
 
 The OK button is the default button and is filled with the stamp colour, so its ring is drawn inside the fill: the table
 gives the ring against the fill it sits on, not against the page.
