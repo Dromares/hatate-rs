@@ -6861,7 +6861,7 @@ fn tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers(app: &adw::A
     gtk4::prelude::GtkWindowExt::set_focus(&d.window, Some(&d.query));
     pump_for(200);
     // one artist indexed: the table row joins the walk and Close is still reachable
-    let stops = tab_to_button(&mut keys, &d.window, "Close");
+    tab_to_button(&mut keys, &d.window, "Close");
     keys.tap(Key::Tab, &[]).expect("inject");
     pump_for(250);
     let wrapped = gtk4::prelude::GtkWindowExt::focus(&d.window);
