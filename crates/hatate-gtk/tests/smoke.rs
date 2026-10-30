@@ -438,6 +438,22 @@ const SCENARIOS: &[Scenario] = &[
         "mcp_tool_calls_change_the_list_and_the_table_follows",
         mcp_tool_calls_change_the_list_and_the_table_follows,
     ),
+    (
+        "settings_mcp_page_states_the_server_and_follows_the_boxes",
+        settings_mcp_page_states_the_server_and_follows_the_boxes,
+    ),
+    (
+        "settings_mcp_enable_summary_fires_on_a_real_change_only",
+        settings_mcp_enable_summary_fires_on_a_real_change_only,
+    ),
+    (
+        "settings_mcp_token_buttons_restart_and_ok_rebind_the_server",
+        settings_mcp_token_buttons_restart_and_ok_rebind_the_server,
+    ),
+    (
+        "settings_mcp_audit_table_follows_the_log_newest_first",
+        settings_mcp_audit_table_follows_the_log_newest_first,
+    ),
 ];
 
 fn main() {
@@ -7491,5 +7507,277 @@ fn mcp_tool_calls_change_the_list_and_the_table_follows(app: &adw::Application) 
     assert_eq!(removed["row"], 0, "{removed}");
     assert_eq!(f.len(), 1);
     assert_eq!(f.w.s.queue_view.total_count(), 1);
+    f.close();
+}
+
+fn open_settings(f: &Fx) -> Rc<hatate_gtk::settings_dialog::SettingsDialog> {
+    f.w.activate_action("preferences");
+    f.w.s
+        .settings_dialog
+        .borrow()
+        .clone()
+        .expect("the dialog is open")
+}
+
+/// The Connection card says what the server is doing, the Dry run sentence flips with its box, the
+/// Hydrus marker is the sent glyph, and the destructive hint is drawn at the top of the ink ramp.
+fn settings_mcp_page_states_the_server_and_follows_the_boxes(app: &adw::Application) {
+    use hatate_gtk::settings_values::Value;
+    // off: Stopped, no Restart button
+    let f = fx(app);
+    let d = open_settings(&f);
+    assert_eq!(d.live_text("mcp_connection_primary"), "Stopped.");
+    assert!(!d.control_visible("mcp_restart"));
+    assert_eq!(d.live_text("mcp_live_marker"), "\u{25cf}");
+    assert_eq!(d.live_text("mcp_token_hint"), "");
+    assert!(d.live_has_class("mcp_destructive_hint", "ink-100"));
+    assert!(
+        d.live_text("mcp_destructive_hint")
+            .starts_with("Throws away work")
+    );
+    // Dry run: the sentence and its weight flip with the box
+    assert!(
+        d.live_text("mcp_dry_run_hint")
+            .starts_with("Dry run is off.")
+    );
+    assert!(d.live_has_class("mcp_dry_run_hint", "ink-100"));
+    d.set_value("mcp_dry_run", &Value::Bool(true));
+    assert!(
+        d.live_text("mcp_dry_run_hint")
+            .starts_with("Dry run is on.")
+    );
+    assert!(d.live_has_class("mcp_dry_run_hint", "ink-65"));
+    assert!(!d.live_has_class("mcp_dry_run_hint", "ink-100"));
+    // ticking the server box states the server as it is: enabled, but nothing has started it
+    d.set_value("mcp_enabled", &Value::Bool(true));
+    assert!(d.control_visible("mcp_restart"));
+    f.w.s.settings_dialog.borrow_mut().take();
+    d.click_cancel();
+    f.close();
+
+    // running: Listening on the port
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, Vec::new());
+    let d = open_settings(&f);
+    assert_eq!(
+        d.live_text("mcp_connection_primary"),
+        format!("Listening on 127.0.0.1:{port}.")
+    );
+    assert_eq!(
+        d.live_text("mcp_connection_remedy"),
+        "A client with the token below can connect now."
+    );
+    assert!(d.live_has_class("mcp_connection_primary", "ink-65"));
+    // the token field is always masked
+    assert!(!d.entry_visible("mcp_token"));
+    assert_eq!(d.text_of("mcp_token"), mcp::TOKEN);
+    d.click_cancel();
+    f.close();
+}
+
+/// The enable summary: not on opening a saved enabled state, once for each real change to on, and
+/// it lists exactly the tiers ticked in the dialog.
+fn settings_mcp_enable_summary_fires_on_a_real_change_only(app: &adw::Application) {
+    use hatate_gtk::settings_values::Value;
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, Vec::new());
+    f.script.reset();
+    let d = open_settings(&f);
+    assert_eq!(
+        f.script.count_shown(),
+        0,
+        "opening on a saved enabled state shows nothing"
+    );
+    // off then on: once
+    d.set_value("mcp_enabled", &Value::Bool(false));
+    assert_eq!(f.script.count_shown(), 0);
+    d.set_value("mcp_enabled", &Value::Bool(true));
+    assert_eq!(f.script.count_shown(), 1);
+    let shown = f.script.last_shown();
+    assert_eq!(shown.kind, Kind::Information);
+    assert_eq!(shown.title, "Enabling the MCP server");
+    assert_eq!(shown.buttons, Buttons::GotIt);
+    assert_eq!(shown.default, Response::Ok);
+    // Hydrus writes are on by default: that bullet is listed, the other two are not
+    assert!(
+        shown
+            .text
+            .contains("Send files and tags to your live Hydrus library")
+    );
+    assert!(!shown.text.contains("Re-search a stuck entry"));
+    assert!(!shown.text.contains("Remove rows and reset results"));
+    assert!(
+        shown
+            .text
+            .starts_with("Starting now, a connected AI with the token below can:\n\n")
+    );
+    assert!(
+        shown
+            .text
+            .ends_with("this off in the groups above, any time.")
+    );
+    // every combination of the three boxes lists exactly the ticked ones
+    for (h, r, x) in [
+        (false, false, false),
+        (true, true, true),
+        (false, true, false),
+        (false, false, true),
+    ] {
+        d.set_value("mcp_enabled", &Value::Bool(false));
+        d.set_value("mcp_allow_hydrus_writes", &Value::Bool(h));
+        d.set_value("mcp_allow_research", &Value::Bool(r));
+        d.set_value("mcp_allow_destructive", &Value::Bool(x));
+        f.script.reset();
+        d.set_value("mcp_enabled", &Value::Bool(true));
+        let text = f.script.last_shown().text;
+        assert_eq!(text.contains("live Hydrus library"), h, "{text}");
+        assert_eq!(text.contains("Re-search a stuck entry"), r, "{text}");
+        assert_eq!(text.contains("Remove rows and reset results"), x, "{text}");
+    }
+    d.click_cancel();
+    f.close();
+}
+
+/// Generate puts a fresh 43-character token in the masked field and on the clipboard, with a note
+/// that a hand edit clears; Restart re-binds with what is typed and does not save it; OK saves the
+/// page byte-for-byte as Python would and re-binds the server only when enabled, port or token
+/// changed.
+fn settings_mcp_token_buttons_restart_and_ok_rebind_the_server(app: &adw::Application) {
+    use hatate_gtk::settings_values::Value;
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, Vec::new());
+    let d = open_settings(&f);
+
+    d.press("mcp_generate_token");
+    let token = d.text_of("mcp_token");
+    assert_eq!(token.len(), 43);
+    assert_ne!(token, mcp::TOKEN);
+    assert_eq!(d.copied.borrow().as_deref(), Some(token.as_str()));
+    assert_eq!(
+        d.live_text("mcp_token_hint"),
+        "New token generated and copied to clipboard."
+    );
+    d.press("mcp_copy_token");
+    assert_eq!(d.copied.borrow().as_deref(), Some(token.as_str()));
+    assert!(!d.entry_visible("mcp_token"), "still masked after generate");
+    // a hand edit clears the note
+    d.type_into("mcp_token", &format!("{token}x"));
+    assert_eq!(d.live_text("mcp_token_hint"), "");
+
+    // Restart binds the typed port, and leaves the saved settings alone
+    let other = mcp::free_port();
+    d.set_value("mcp_port", &Value::Num(f64::from(other)));
+    d.type_into("mcp_token", "another-synthetic-token");
+    d.press("mcp_restart");
+    assert!(f.w.mcp_report().running);
+    assert_eq!(
+        d.live_text("mcp_connection_primary"),
+        format!("Listening on 127.0.0.1:{other}.")
+    );
+    assert!(
+        !mcp::Client::new(port).listening(),
+        "the old port was released"
+    );
+    assert!(mcp::Client::new(other).listening());
+    assert_eq!(f.w.s.settings.lock().unwrap().mcp.port, i64::from(port));
+    assert_eq!(
+        f.w.s.settings.lock().unwrap().mcp.token.expose(),
+        mcp::TOKEN
+    );
+
+    // OK: saves the page and, the port and token having changed, re-binds on the saved values
+    d.set_value("mcp_dry_run", &Value::Bool(true));
+    d.set_value("mcp_allow_research", &Value::Bool(true));
+    d.click_ok();
+    let saved = f.w.s.settings.lock().unwrap().mcp.clone();
+    assert_eq!(saved.port, i64::from(other));
+    assert_eq!(saved.token.expose(), "another-synthetic-token");
+    assert!(saved.dry_run && saved.allow_research && saved.enabled);
+    assert!(saved.allow_hydrus_writes && !saved.allow_destructive);
+    assert_eq!(saved.audit_log_max_bytes, 5_000_000);
+    let on_disk = std::fs::read_to_string(f.paths.config_file()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&on_disk).unwrap();
+    assert_eq!(json["mcp"]["port"], i64::from(other));
+    assert_eq!(json["mcp"]["dry_run"], true);
+    let mut client = mcp::Client::new(other);
+    assert!(client.listening());
+    // the new token is the one the server wants
+    let ok = client.post_with(
+        "another-synthetic-token",
+        &serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}),
+    );
+    assert_eq!(ok.status, 200);
+
+    // a save that changes none of enabled, port, token does not drop a connected client
+    let sessions_before = client
+        .post_with(
+            "another-synthetic-token",
+            &serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
+        )
+        .status;
+    let d = open_settings(&f);
+    d.set_value("mcp_allow_destructive", &Value::Bool(true));
+    d.click_ok();
+    assert!(f.w.s.settings.lock().unwrap().mcp.allow_destructive);
+    assert_eq!(
+        sessions_before, 400,
+        "no session id yet, so the server refuses (and is up)"
+    );
+    assert!(client.listening());
+
+    // switching it off stops the server
+    let d = open_settings(&f);
+    d.set_value("mcp_enabled", &Value::Bool(false));
+    d.click_ok();
+    assert!(pump_until(5_000, || !mcp::Client::new(other).listening()));
+    f.close();
+}
+
+/// The Recent tool calls table: newest first, Actions hides reads, the audit log of a real call
+/// shows up, and a log mid-write is not an error.
+fn settings_mcp_audit_table_follows_the_log_newest_first(app: &adw::Application) {
+    let port = mcp::free_port();
+    let f = mcp_fx(app, port, mcp::TOKEN, seeded(3, MatchStatus::Good));
+    let mut client = mcp::Client::new(port);
+    client.payload("list_queue", serde_json::json!({}));
+    client.payload(
+        "toggle_reviewed",
+        serde_json::json!({"row": 2, "reviewed": true}),
+    );
+    client.payload(
+        "select_candidate",
+        serde_json::json!({"row": 1, "candidate_index": 0}),
+    );
+    let d = open_settings(&f);
+    d.audit.refresh();
+    let rows = d.audit.rows();
+    // Actions (the default) hides the read
+    let tools: Vec<&str> = rows.iter().map(|r| r.tool.as_str()).collect();
+    assert_eq!(tools, ["select_candidate", "toggle_reviewed"], "{rows:?}");
+    assert_eq!(rows[1].outcome, "Allowed \u{2014} marked reviewed");
+    assert_eq!(rows[1].target, "#2");
+    assert_eq!(rows[1].tier, "Reversible");
+    d.audit.all.set_active(true);
+    let tools: Vec<String> = d.audit.rows().iter().map(|r| r.tool.clone()).collect();
+    assert_eq!(tools, ["select_candidate", "toggle_reviewed", "list_queue"]);
+    // the log being written while the table reads it
+    let log = f.paths.mcp_audit_log();
+    let mut text = std::fs::read_to_string(&log).unwrap();
+    text.push_str("{\"timestamp\": \"2020-01-02T03:04:05Z\", \"tool\": \"send_up");
+    std::fs::write(&log, text).unwrap();
+    d.audit.refresh();
+    assert_eq!(d.audit.rows().len(), 3);
+    // the timer only runs while the MCP tab is on show and the follow button is down
+    assert!(!d.audit.following());
+    d.show_tab(hatate_gtk::settings_dialog::SettingsDialog::mcp_tab_index());
+    assert!(d.audit.following());
+    d.audit.follow.set_active(false);
+    assert!(!d.audit.following());
+    d.audit.follow.set_active(true);
+    assert!(d.audit.following());
+    d.show_tab(0);
+    assert!(!d.audit.following());
+    d.click_cancel();
     f.close();
 }

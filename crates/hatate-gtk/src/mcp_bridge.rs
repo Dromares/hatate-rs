@@ -265,6 +265,10 @@ impl MainWindow {
     /// `self._mcp_server.restart(settings)`: re-binds with these settings, which are not
     /// necessarily the saved ones (the Restart button uses what is typed).
     pub fn restart_mcp(&self, settings: &McpSettings) -> bool {
+        // switching it off with nothing running builds nothing
+        if !settings.enabled && self.s.mcp.controller.borrow().is_none() {
+            return false;
+        }
         if !self.ensure_mcp_controller() {
             return false;
         }
