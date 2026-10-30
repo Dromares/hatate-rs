@@ -9130,8 +9130,219 @@ const SCENARIOS_6H2: &[Scenario] = &[
         "review_shortcuts_dialog_lists_every_action_with_its_key",
         review_shortcuts_dialog_lists_every_action_with_its_key,
     ),
+    (
+        "settings_transport_differential_driver",
+        settings_transport_differential_driver,
+    ),
 ];
 
 fn scenario_count() -> usize {
     SCENARIOS.len() + SCENARIOS_6H2.len()
+}
+
+// -- Phase 6.h-2 transport differential, Rust half (DAN-2460) ---------------------------------------
+
+/// The site hosts every Test can reach (the parsers' own, found by running Python at `76c85c4`;
+/// `example.org` because Python's Test Sankaku asks any URL, it has no site check).
+const DIFF_SITE_HOSTS: &[&str] = &[
+    "e621.net",
+    "www.deviantart.com",
+    "fav.me",
+    "anime-pictures.net",
+    "www.anime-pictures.net",
+    "api.anime-pictures.net",
+    "chan.sankakucomplex.com",
+    "www.sankakucomplex.com",
+    "sankakuapi.com",
+    "www.pixiv.net",
+    "example.org",
+];
+
+/// The driver of the Settings Test transport differential. Test-only, and inert unless
+/// `HATATE_DIFF_SETTINGS` (JSONL scenarios) is set: it writes one JSON trace per scenario to
+/// `HATATE_DIFF_OUT`, in the shape `py_driver.py` (outside the repo, `worktrees/DAN-2448-tools`)
+/// writes for Python's `SettingsDialog`, and `cmp.py` compares the two.
+fn settings_transport_differential_driver(app: &adw::Application) {
+    let Some(input) = std::env::var_os("HATATE_DIFF_SETTINGS") else {
+        return;
+    };
+    let out = std::env::var("HATATE_DIFF_OUT").expect("HATATE_DIFF_OUT");
+    let mut lines = String::new();
+    for line in std::fs::read_to_string(input).expect("scenarios").lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let spec: serde_json::Value = serde_json::from_str(line).expect("scenario line");
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| settings_diff_one(app, &spec)));
+        let row = match result {
+            Ok(trace) => serde_json::json!({"id": spec["id"], "side": "rs", "trace": trace}),
+            Err(e) => {
+                let why = e
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+                    .unwrap_or_default();
+                serde_json::json!({"id": spec["id"], "side": "rs", "error": why})
+            }
+        };
+        lines.push_str(&row.to_string());
+        lines.push('\n');
+    }
+    std::fs::write(out, lines).expect("out file");
+}
+
+fn settings_diff_one(app: &adw::Application, spec: &serde_json::Value) -> serde_json::Value {
+    use common::hydrus::{Hydrus, Recorded, Reply};
+    use serde_json::{Value, json};
+    let button = spec["button"].as_str().expect("button");
+    let hydrus = button.starts_with("hydrus");
+    let script = spec["server"].clone();
+    let handler = move |q: &Recorded| -> Reply {
+        if script["mode"] == "abort" {
+            return Reply::aborted();
+        }
+        let path = q.target.split('?').next().unwrap_or("");
+        let r = script["routes"].get(path).unwrap_or(&script);
+        let code = r["code"].as_u64().unwrap_or(200) as u16;
+        let body = match &r["body"] {
+            Value::String(t) => t.clone(),
+            Value::Null => String::new(),
+            other => other.to_string(),
+        };
+        Reply::new(code, body).header(
+            "Content-Type",
+            r["ctype"].as_str().unwrap_or("application/json"),
+        )
+    };
+    let badtls = spec["server"]["mode"] == "badtls";
+    let (f, server) = if hydrus {
+        // the window's net layer does not trust the throw-away CA, as for any Hydrus on a self-signed certificate
+        let server = Hydrus::https(handler);
+        (Fx::new_with(app, Opts::default(), |_| {}), server)
+    } else {
+        // a certificate for another name: the handshake must fail on the host name
+        let cert: &'static [&'static str] = if badtls {
+            &["wrong.invalid"]
+        } else {
+            DIFF_SITE_HOSTS
+        };
+        let server = Hydrus::https_for(cert, handler);
+        let (ca, addr) = (server.ca_der.clone().unwrap(), server.addr());
+        let f = Fx::new_with(
+            app,
+            Opts {
+                tweak: Some(offline()),
+                ..Opts::default()
+            },
+            move |env| {
+                // a host not scripted here fails instead of reaching the real site
+                let mut net = hatate_core::net::NetConfig::default()
+                    .with_root_certificate_der(ca)
+                    .with_only_scripted_hosts();
+                for n in DIFF_SITE_HOSTS {
+                    net = net.with_host_override(n, addr);
+                }
+                let paths = env.paths.clone();
+                let (backend, _) = common::search::Scripted::with_net(&paths, net);
+                env.search = Some(backend);
+            },
+        );
+        (f, server)
+    };
+    let d = open_settings(&f);
+    for (k, v) in spec["fields"].as_object().into_iter().flatten() {
+        d.type_into(k, v.as_str().unwrap_or(""));
+    }
+    if hydrus {
+        d.type_into("hydrus_url", &server.url);
+        d.type_into("hydrus_key", common::hydrus::KEY);
+        d.set_value(
+            "hydrus_verify_ssl",
+            &hatate_gtk::settings_values::Value::Bool(spec["verify_ssl"].as_bool().unwrap_or(true)),
+        );
+        d.type_into(
+            "hydrus_service_key",
+            spec["typed_service"].as_str().unwrap_or(""),
+        );
+    }
+    let (id, label) = match button {
+        "e621" => ("button.test_e621_login", "e621_test_result"),
+        "deviantart" => ("button.test_deviantart", "deviantart_test_result"),
+        "animepictures" => ("button.test_anime_pictures", "animepictures_test_result"),
+        "sankaku" => ("button.test_sankaku", "sankaku_test_result"),
+        "pixiv" => ("button.test_pixiv", "pixiv_test_result"),
+        "hydrus_test" => ("button.test_connection", "hydrus_test_result"),
+        "hydrus_fetch" => ("button.fetch_from_hydrus", "hydrus_test_result"),
+        other => panic!("button {other}"),
+    };
+    if let Some(a) = spec.get("answer") {
+        f.script.push(Answer::Text(a.as_str().map(str::to_owned)));
+    }
+    d.press(id);
+    assert!(
+        pump_until(30_000, || d.button_sensitive(id)),
+        "{id} never came back"
+    );
+    // the fetch shows its answer in a box or in the list, never in the label
+    pump_for(100);
+    let requests: Vec<Value> = server
+        .recorded()
+        .iter()
+        .map(|q| {
+            let mut h = serde_json::Map::new();
+            for (k, v) in &q.headers {
+                h.insert(k.clone(), json!(v));
+            }
+            let body: String = q.body.iter().map(|b| *b as char).collect();
+            json!({"method": q.method, "target": q.target, "headers": h, "body": body})
+        })
+        .collect();
+    let prompts: Vec<Value> = f
+        .script
+        .asked
+        .borrow()
+        .iter()
+        .filter_map(|a| match a {
+            Asked::GetText {
+                title,
+                label,
+                preset,
+            } => Some(json!({"title": title, "label": label, "text": preset})),
+            _ => None,
+        })
+        .collect();
+    let msgs: Vec<Value> = f
+        .script
+        .shown
+        .borrow()
+        .iter()
+        .map(|s| {
+            let kind = match s.kind {
+                Kind::Warning => "warning",
+                Kind::Information => "information",
+                _ => "other",
+            };
+            json!({"kind": kind, "title": s.title, "text": s.text})
+        })
+        .collect();
+    let mut trace = json!({
+        "prompts": prompts,
+        "msgs": msgs,
+        "label": d.live_text(label),
+        "requests": requests,
+    });
+    if button == "hydrus_fetch" {
+        let (labels, keys) = d.service_list();
+        trace["services"] = json!(
+            labels
+                .iter()
+                .zip(keys.iter())
+                .map(|(l, k)| json!([l, k]))
+                .collect::<Vec<_>>()
+        );
+        trace["service_text"] = json!(d.text_of("hydrus_service_key"));
+    }
+    d.click_cancel();
+    f.close();
+    trace
 }
