@@ -674,10 +674,7 @@ impl SettingsDialog {
     pub fn entry_visible(&self, id: &str) -> bool {
         self.forms
             .iter()
-            .find_map(|f| {
-                f.entry_of(id)
-                    .map(|e| gtk4::prelude::EntryExt::is_visible(e))
-            })
+            .find_map(|f| f.entry_of(id).map(gtk4::prelude::EntryExt::is_visible))
             .unwrap_or(true)
     }
 
