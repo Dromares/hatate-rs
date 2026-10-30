@@ -223,7 +223,8 @@ fn stated_minimum(state: &str) -> Option<(i32, i32)> {
         ))
     } else if state.starts_with("parser-health") {
         // Python only calls `resize(760, 460)` (`gtk-6e.md` section 3 calls it the minimum): the dialog's
-        // own size, which the shot must be, so the fit column checks it. GTK is not asked to enforce it.
+        // own size, which the shot must be, so the fit column checks it. The dialog also states it as
+        // its floor (`parser_health::MIN_WIDTH`/`MIN_HEIGHT`, DAN-2472 item 7).
         Some((760, 460))
     } else if state.starts_with("logs") || state.contains("compare") {
         None

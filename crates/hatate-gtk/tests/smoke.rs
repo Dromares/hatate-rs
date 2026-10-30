@@ -9795,25 +9795,25 @@ fn parser_health_keeps_its_floor_scrolls_with_a_persistent_bar_and_is_one_tab_st
     };
     dialog.window.present();
     only(&mut keys, &dialog.window);
+    let mut cells = Vec::new();
+    all_labels(dialog.grid.upcast_ref(), &mut cells);
+    assert!(cells.len() >= 13 * 3, "{} cells", cells.len());
+    assert!(
+        cells.iter().all(|l| !l.is_focusable()),
+        "a site name or a column title can take focus"
+    );
     let first = gtk4::prelude::GtkWindowExt::focus(&dialog.window).expect("a first focus");
     let mut stops = vec![first.type_().name().to_owned()];
-    for _ in 0..8 {
+    // Every press lands on Close again: the list holds no stop, and swallows none (a focusable
+    // scroller around cells that are not stops leaves the focus on nothing, DAN-2399).
+    for press in 1..=3 {
         keys.tap(Key::Tab, &[]).expect("inject");
         pump_for(250);
-        let Some(at) = gtk4::prelude::GtkWindowExt::focus(&dialog.window) else {
-            continue;
-        };
-        let name = at.type_().name().to_owned();
-        if name == stops[0] {
-            break;
-        }
-        stops.push(name);
+        let at = gtk4::prelude::GtkWindowExt::focus(&dialog.window)
+            .unwrap_or_else(|| panic!("Tab {press} left the focus on nothing: {stops:?}"));
+        stops.push(at.type_().name().to_owned());
     }
-    assert!(
-        stops.iter().all(|n| n != "GtkLabel"),
-        "a site name is a Tab stop: {stops:?}"
-    );
-    assert_eq!(stops, ["GtkButton"], "Close is the only stop");
+    assert_eq!(stops, ["GtkButton"; 4], "Close is the only stop");
 
     // The rows below the fold are reached with the keys the dialog gives the list: the last site is
     // outside the view at rest, inside it after End, and out again after Home.
