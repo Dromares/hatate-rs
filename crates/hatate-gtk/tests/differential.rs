@@ -313,6 +313,8 @@ fn do_step(
             settings_step(w, step)
         }
         "s_set" | "s_find" | "s_jump" | "s_tab" | "s_ok" | "s_cancel" => settings_step(w, step),
+        // 6.i: the MCP page's buttons (no Browse answer to script) and the Shortcuts page's
+        "m_press" | "m_clear" | "m_reset" | "hold_port" | "release_port" => mcp_step(w, step),
         "autosave" => w.autosave_now(),
         "delete_files" => {
             for p in strs("paths") {
@@ -940,6 +942,9 @@ fn digest(
     if ctx.kind.borrow().as_str() == "settings" {
         digest["settings"] = settings_digest(w, paths);
     }
+    if ctx.kind.borrow().as_str() == "mcp" {
+        digest["mcp"] = mcp_digest(w, paths);
+    }
     if let Some(h) = ctx.hydrus.borrow().as_ref() {
         digest["hydrus"] = h.log();
         digest["errors"] = json!(
@@ -1219,4 +1224,77 @@ fn settings_digest(w: &MainWindow, paths: &Paths) -> Value {
         }
     };
     json!({"config_text": config_text, "dialog": dialog})
+}
+
+thread_local! {
+    /// Ports the scenario holds with a listener of its own (the Python driver does the same).
+    static HELD: RefCell<Vec<std::net::TcpListener>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The 6.i steps: the MCP page's buttons, the Shortcuts page's Clear and Reset all, and a port
+/// the scenario holds so that the server cannot bind it.
+fn mcp_step(w: &MainWindow, step: &Value) {
+    let op = step["op"].as_str().unwrap();
+    match op {
+        "hold_port" => {
+            let port = step["port"].as_u64().unwrap() as u16;
+            let l = std::net::TcpListener::bind(("127.0.0.1", port)).expect("hold the port");
+            HELD.with(|h| h.borrow_mut().push(l));
+            return;
+        }
+        "release_port" => {
+            HELD.with(|h| h.borrow_mut().clear());
+            return;
+        }
+        _ => {}
+    }
+    let d =
+        w.s.settings_dialog
+            .borrow()
+            .clone()
+            .expect("the Settings dialog is open");
+    match op {
+        "m_press" => d.press(step["id"].as_str().unwrap()),
+        "m_clear" => d
+            .shortcuts
+            .edit(step["id"].as_str().unwrap())
+            .expect("an action")
+            .set(""),
+        "m_reset" => d.shortcuts.reset.emit_clicked(),
+        other => panic!("{other}"),
+    }
+}
+
+/// The open dialog's MCP and Shortcuts state as the Python driver reads it: the values of those
+/// two pages, the Connection card, the hints, the conflict line, and the server's own state.
+/// `config.json` as bytes.
+fn mcp_digest(w: &MainWindow, paths: &Paths) -> Value {
+    let config_text = std::fs::read_to_string(paths.config_file()).ok();
+    let report = w.mcp_report();
+    let dialog = match w.s.settings_dialog.borrow().clone() {
+        None => Value::Null,
+        Some(d) => {
+            let values: BTreeMap<String, Value> = d
+                .values()
+                .0
+                .iter()
+                .filter(|(k, _)| k.starts_with("mcp_") || k.starts_with("shortcut."))
+                .map(|(k, v)| (k.clone(), encode_value(v)))
+                .collect();
+            json!({
+                "tab": d.current_tab(),
+                "values": values,
+                "primary": d.live_text("mcp_connection_primary"),
+                "remedy": d.live_text("mcp_connection_remedy"),
+                "token_hint": d.live_text("mcp_token_hint"),
+                "dry_run_hint": d.live_text("mcp_dry_run_hint"),
+                "conflict": d.shortcuts.conflict.text().to_string(),
+            })
+        }
+    };
+    json!({
+        "config_text": config_text,
+        "dialog": dialog,
+        "server_running": report.running,
+    })
 }
