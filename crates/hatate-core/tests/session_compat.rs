@@ -835,6 +835,32 @@ fn rule8_clear_empties_the_database_and_removes_the_legacy_file() {
     assert!(!w.clear().unwrap(), "nothing left to clear");
 }
 
+/// DAN-2223: `tests/test_nothing_survived.py::TestSavedSessionAge::test_age_is_read_from_the_store_mtime`,
+/// with the same numbers: a store last written three days ago is three days old (within a minute),
+/// and when both stores exist the newer one decides.
+#[test]
+fn saved_session_age_is_the_stores_mtime() {
+    let sb = Sandbox::new();
+    let now = SystemTime::now();
+    let db = sb.paths.session_db();
+    fs::create_dir_all(db.parent().unwrap()).unwrap();
+    let stamp = |p: &Path, ago: u64| {
+        let f = File::options().write(true).create(true).open(p).unwrap();
+        f.set_modified(now - Duration::from_secs(ago)).unwrap();
+    };
+    stamp(&db, 3 * 86400);
+    let now_s = now
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    let age = store(&sb).saved_session_age_seconds(now_s).unwrap();
+    assert!((age - 3.0 * 86400.0).abs() < 60.0, "{age}");
+    // The older `session.json` does not drag the age back.
+    stamp(&sb.paths.session_json(), 10 * 86400);
+    let age = store(&sb).saved_session_age_seconds(now_s).unwrap();
+    assert!((age - 3.0 * 86400.0).abs() < 60.0, "{age}");
+}
+
 #[test]
 fn rule8_nothing_saved_is_an_empty_list_and_says_so() {
     let sb = Sandbox::new();

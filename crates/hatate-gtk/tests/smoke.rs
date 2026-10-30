@@ -980,10 +980,19 @@ fn nothing_survived_page_content(app: &adw::Application) {
     );
     // The three actions, in order, uppercase mono; only the first is the primary.
     let buttons = [&p.new_search, &p.crash_log, &p.add_files];
-    let labels: Vec<_> = buttons
-        .iter()
-        .map(|b| b.label().unwrap().to_string())
-        .collect();
+    // In the order the tree lays them out, not the order the struct names them.
+    fn buttons_in_order(w: &gtk4::Widget, out: &mut Vec<String>) {
+        if let Some(b) = w.downcast_ref::<gtk4::Button>() {
+            out.push(b.label().unwrap_or_default().to_string());
+        }
+        let mut c = w.first_child();
+        while let Some(child) = c {
+            buttons_in_order(&child, out);
+            c = child.next_sibling();
+        }
+    }
+    let mut labels = Vec::new();
+    buttons_in_order(&root, &mut labels);
     assert_eq!(
         labels,
         ["Start new search", "View crash log", "Add files\u{2026}"]
