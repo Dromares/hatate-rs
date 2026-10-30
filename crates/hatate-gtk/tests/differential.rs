@@ -349,6 +349,9 @@ fn do_step(
                 .iter()
                 .filter_map(|r| ids.get(r.as_u64().unwrap() as usize).copied())
                 .collect();
+            // The Python driver clears the selection first, so even an unchanged set fires its selection
+            // handler again; GTK says nothing for an identical set, so clear here too.
+            w.s.queue_view.select_ids(&[]);
             w.s.queue_view.select_ids(&pick);
         }
         "select_status" => {
