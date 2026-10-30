@@ -121,7 +121,7 @@ reaches the network path), the https case and the stalled-server case.
 
 | Python | Ported as |
 |---|---|
-| `_hairline` (:29) | the `.field` / `.rule` styling in `theme.rs` (6.c); no function |
+| `_hairline` (:29) | the `field` CSS class on the table and the results (`pawchive_dialog.rs:193`, `:226`); no function |
 | `PawchiveIndexDialog` (:38), `__init__` (:41) | `pawchive_dialog::PawchiveIndexDialog::build` |
 | `_populate` (:144) | `populate` (+ `row_cells`, `window_title`) |
 | `_selected_creators` (:165), `_select_creators` (:169) | `selected_creators`, `select_creators` |
@@ -136,10 +136,10 @@ reaches the network path), the https case and the stalled-server case.
 
 | Python | Ported as |
 |---|---|
-| `HydrusTagLookupWorker` (`hydrus_lookup_worker.py:15`) | the worker bridge job in `lookup_existing_hydrus_tags` over `HydrusClient` |
-| `HydrusReconcileWorker` (`hydrus_reconcile_worker.py:16`) | the job in `start_hydrus_reconcile` over `hydrus_import::reconcile` |
-| `HydrusImportPollWorker` (`hydrus_import_poll_worker.py:21`) | `start_import_poll` over the merged `hydrus_import_url` poll |
-| `PawchiveIndexWorker` (`pawchive_index_worker.py:19`), `PawchiveFindWorker` (:54) | the jobs in `start_indexing` and `find_or_add` over `PawchiveCrawler` |
+| `HydrusTagLookupWorker` (`hydrus_lookup_worker.py:15`) | the worker bridge job in `lookup_existing_hydrus_tags` over `hydrus_tag_lookup::run_tag_lookup` |
+| `HydrusReconcileWorker` (`hydrus_reconcile_worker.py:16`) | the job in `start_hydrus_reconcile` over `hydrus_reconcile::run_reconcile` |
+| `HydrusImportPollWorker` (`hydrus_import_poll_worker.py:21`) | `start_import_poll` over `hydrus_import_poll::run_import_poll` |
+| `PawchiveIndexWorker` (`pawchive_index_worker.py:19`), `PawchiveFindWorker` (:54) | the jobs in `start_indexing` and `find_or_add` over `pawchive_index::run_index_jobs` and `find_creators_for_ui` |
 | `ThumbnailWorker._known_to_hydrus` (`thumbnail_worker.py:48`), `_thumbnail_source` (:45) | `thumbnails::known_to_hydrus` and the Hydrus branch of the decode job |
 
 ## 7. Python test map
