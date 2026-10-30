@@ -108,6 +108,11 @@ impl McpBridge {
             .as_ref()
             .is_some_and(McpServerController::running)
     }
+
+    /// Whether a controller has been built, listening or not (a test's view of the lazy build).
+    pub fn built(&self) -> bool {
+        self.controller.borrow().is_some()
+    }
 }
 
 impl MainWindow {

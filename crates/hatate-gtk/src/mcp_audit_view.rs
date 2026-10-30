@@ -855,4 +855,11 @@ mod tests {
         assert!(!card.primary.contains("latin-1") && !card.primary.contains("position"));
         assert_eq!(card.state, Connection::Failed);
     }
+
+    // `_MCP_AUDIT_DISPLAY_LIMIT = 200` (`gui/settings_dialog.py:44`): the cap test above is written in
+    // terms of the constant, so the number itself is pinned here
+    #[test]
+    fn the_display_limit_is_pythons_two_hundred() {
+        assert_eq!(DISPLAY_LIMIT, 200);
+    }
 }

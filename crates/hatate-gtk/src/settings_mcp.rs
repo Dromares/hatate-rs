@@ -297,7 +297,9 @@ pub struct AuditCard {
     /// The heading, the spin box's two labels and the path caption: the labels the Find box can
     /// name.
     pub labels: Vec<gtk::Label>,
-    grid: gtk::Grid,
+    /// The table's scroller and its grid, for a test that measures the columns.
+    pub scroll: gtk::ScrolledWindow,
+    pub grid: gtk::Grid,
     path: PathBuf,
     now: Rc<dyn Fn() -> i64>,
     timer: RefCell<Option<glib::SourceId>>,
@@ -400,6 +402,7 @@ impl AuditCard {
             max_mb: spin,
             caption,
             labels: vec![heading, keep, before, writing],
+            scroll,
             grid,
             path,
             now,
