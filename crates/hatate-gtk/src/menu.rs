@@ -83,7 +83,7 @@ pub fn all_site_options() -> Vec<String> {
 /// The menubar, in Python's order: Files, Hydrus, Sites, Settings, Help.
 pub fn menus() -> Vec<Menu> {
     use Owner::Shell;
-    // DEFERRED(6.h): Preferences.
+    // Preferences opens the Settings window (6.h): its entry below is Owner::Shell.
     let files = Menu {
         title: "_Files",
         entries: vec![

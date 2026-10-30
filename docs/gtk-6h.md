@@ -117,6 +117,20 @@ is the line that makes the row's claim.
 | `test_mcp_settings_tab.py:179` `TestConnectionStates.test_state_5_port_busy` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here) |
 | `test_mcp_settings_tab.py:186` `TestConnectionStates.test_state_6_honest_fallback_shows_open_log_button` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here) |
 | `test_mcp_settings_tab.py:197` `TestRestartServer.test_restart_uses_the_typed_port_and_token_not_the_saved_ones` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here) |
+| `test_mcp_settings_tab.py:226` `TestAuditOutcomeFormatting.test_refused_call` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:232` `TestAuditOutcomeFormatting.test_dry_run` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:239` `TestAuditOutcomeFormatting.test_successful_hydrus_send_gets_the_trailing_glyph` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:247` `TestAuditOutcomeFormatting.test_refused_hydrus_send_has_no_glyph` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:252` `TestAuditOutcomeFormatting.test_select_candidate` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:258` `TestAuditOutcomeFormatting.test_toggle_reviewed` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:264` `TestAuditOutcomeFormatting.test_remove_row_and_reset_result` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:276` `TestTargetCell.test_row_and_candidate` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:279` `TestTargetCell.test_row_only` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:282` `TestTargetCell.test_no_row_is_an_em_dash` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:287` `TestTimeCell.test_a_past_date_shows_the_month_and_day` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:290` `TestTimeCell.test_an_unparseable_timestamp_is_shown_verbatim_not_raised` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:305` `TestReadAuditLog.test_missing_file_is_empty_not_an_error` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
+| `test_mcp_settings_tab.py:308` `TestReadAuditLog.test_a_truncated_final_line_is_dropped_not_fatal` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here; module-level MCP helpers of `settings_dialog.py`) |
 | `test_mcp_settings_tab.py:341` `TestAuditTableFiltering.test_actions_filter_hides_reads_by_default` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here) |
 | `test_mcp_settings_tab.py:347` `TestAuditTableFiltering.test_all_calls_filter_shows_everything` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here) |
 | `test_mcp_settings_tab.py:352` `TestAuditTableFiltering.test_newest_first` | 6.i (Shortcuts and MCP pages; the tabs are placeholders here) |
@@ -130,15 +144,15 @@ is the line that makes the row's claim.
 | `test_sent_tag_filter.py:306` `TestTheDialogCopy.test_the_two_meanings_are_worded_separately` | **not asserted.** The two labels are in `settings_spec.rs`, generated from the Python dialog; no Rust test reads them |
 | `test_sent_tag_filter.py:323` `TestTheDialogCopy.test_the_switch_round_trips_through_apply_to_settings` | the action differential (`tests/differential.rs` `settings_step`, ops `s_open s_set s_find s_jump s_tab s_press s_ok s_cancel`): the switch set, OK, `config.json` bytes |
 | `test_sent_tag_filter.py:339` `TestTheDialogCopy.test_an_unchecked_switch_shows_as_unchecked` | the action differential (`tests/differential.rs` `settings_step`, ops `s_open s_set s_find s_jump s_tab s_press s_ok s_cancel`): the control value after open, from a config with the switch off |
-| `test_settings_search.py:31` `TestMatching.test_words_match_in_any_order` | `crates/hatate-core/src/settings_search.rs:184` |
-| `test_settings_search.py:38` `TestMatching.test_the_tab_name_counts_as_part_of_the_name` | `crates/hatate-core/src/settings_search.rs:191` |
-| `test_settings_search.py:45` `TestMatching.test_an_empty_query_matches_nothing` | `crates/hatate-core/src/settings_search.rs:197` |
-| `test_settings_search.py:52` `TestMatching.test_shorter_names_come_first` | `crates/hatate-core/src/settings_search.rs:204` |
-| `test_settings_search.py:56` `TestMatching.test_matching_ignores_case` | `crates/hatate-core/src/settings_search.rs:197` (case folded) |
+| `test_settings_search.py:31` `TestMatching.test_words_match_in_any_order` | `crates/hatate-core/src/settings_search.rs:185` ("quota pause" finds "Pause searching when the daily quota runs out": the words are in the reverse order; `:186` adds a third word, in a third order) |
+| `test_settings_search.py:38` `TestMatching.test_the_tab_name_counts_as_part_of_the_name` | `crates/hatate-core/src/settings_search.rs:192` |
+| `test_settings_search.py:45` `TestMatching.test_an_empty_query_matches_nothing` | `crates/hatate-core/src/settings_search.rs:198` |
+| `test_settings_search.py:52` `TestMatching.test_shorter_names_come_first` | `crates/hatate-core/src/settings_search.rs:193` ("shorter names first") and `:218` (equal lengths sort by name) |
+| `test_settings_search.py:56` `TestMatching.test_matching_ignores_case` | `crates/hatate-core/src/settings_search.rs:200` (case folded) |
 | `test_settings_search.py:74` `TestHighlightReentrancy.test_a_second_highlight_inside_the_revert_window_still_restores` | `crates/hatate-gtk/tests/smoke.rs:7219` (the first call's revert leaves the second call's mark) and `:7224`; red with the token check dropped (`worktrees/DAN-2221-revert.log` R1) |
 | `test_settings_search.py:110` `TestIndexingTheRealDialog.test_it_finds_a_useful_number_of_settings` | the action differential (`tests/differential.rs` `settings_step`, ops `s_open s_set s_find s_jump s_tab s_press s_ok s_cancel`): `s_find` result lists of the real dialog against Python's |
-| `test_settings_search.py:114` `TestIndexingTheRealDialog.test_every_tab_is_reachable_by_its_own_name` | `crates/hatate-core/src/settings_search.rs:148` (each tab, then each name once) |
-| `test_settings_search.py:126` `TestIndexingTheRealDialog.test_explanations_are_not_indexed_as_names` | `crates/hatate-core/src/settings_search.rs:127` (`name_of` drops long labels and fragments) |
+| `test_settings_search.py:114` `TestIndexingTheRealDialog.test_every_tab_is_reachable_by_its_own_name` | `crates/hatate-core/src/settings_search.rs:167` (each tab, then each name once) |
+| `test_settings_search.py:126` `TestIndexingTheRealDialog.test_explanations_are_not_indexed_as_names` | `crates/hatate-core/src/settings_search.rs:139` (`name_of` drops long labels; `:134` fragments) |
 | `test_settings_search.py:133` `TestIndexingTheRealDialog.test_a_known_setting_is_findable` | `crates/hatate-gtk/tests/smoke.rs:7235` (`quota pause`), `crates/hatate-gtk/tests/smoke.rs:7247` (`hydrus key`) |
 | `test_type_voice.py:507` `TestBareWidgets.test_settings_dialog_helper_buttons_keep_sentence_case` | **not asserted.** Every button's text is in `settings_spec.rs`, generated from the Python dialog; no Rust test reads its case |
 
