@@ -248,6 +248,9 @@ dropdown.candidate-picker > button:hover { border-color: @ink_58; }
 .tag-list, .tag-list > row { background: transparent; color: @ink; }
 .tag-list > row { border-bottom: 1px solid @ink_18; min-height: 0; padding: 6px %space_4%px; }
 .tag-list > row:selected { background: @stamp_bg; color: @stamp_fg; }
+.pick-list, .pick-list > row { background: transparent; color: @ink; }
+.pick-list > row:selected { background: @stamp_bg; color: @stamp_fg; }
+.pick-list > row:selected label { color: @stamp_fg; }
 .tag-row { font-family: %mono%; font-size: 13px; color: @ink; }
 .review-switch button { padding: 4px 6px; }
 .review-rail button.pill { padding: 5px %space_2%px; }

@@ -131,6 +131,7 @@ impl HydrusQueryDialog {
         column.append(&search_button);
         let results = gtk::ListBox::new();
         results.set_selection_mode(gtk::SelectionMode::Multiple);
+        results.add_css_class("pick-list");
         let results_scroll = gtk::ScrolledWindow::new();
         results_scroll.set_child(Some(&results));
         // A row wraps rather than clips, so the "[already in list]" tail shows at the minimum size.

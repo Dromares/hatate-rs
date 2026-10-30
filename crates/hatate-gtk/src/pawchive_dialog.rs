@@ -186,6 +186,7 @@ impl PawchiveIndexDialog {
         column.append(&head);
         let table = gtk::ListBox::new();
         table.set_selection_mode(gtk::SelectionMode::Multiple);
+        table.add_css_class("pick-list");
         let table_scroll = gtk::ScrolledWindow::new();
         table_scroll.set_child(Some(&table));
         table_scroll.set_vexpand(true);
