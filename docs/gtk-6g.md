@@ -16,7 +16,8 @@ modules and are not changed):
   session restore), Send to Hydrus, Import URL to Hydrus with its confirmation poll, Download and Send, Show in Hydrus
   with its explanation of a refusal, and Delete from Hydrus. Every action is gated on `is_configured` as in Python, runs
   off the main thread over copies of the rows, and is wired to the Files/Hydrus menu, the Queue context menu, the Review
-  page's three buttons and their shortcuts.
+  page's three buttons and their shortcuts. (`run_review_action` had no arm for the `H` key, Show in Hydrus, until the DAN-2396
+  fixup: it logged "No handler" and did nothing. `smoke::hydrus_menu_entries_and_the_h_key_reach_their_handlers` pins it.)
 - `hydrus_query.rs`: the Query Hydrus window and `action_query_hydrus`, including the empty-state button 6.c left
   disabled.
 - `pawchive_dialog.rs`: the Pawchive Index window and `action_pawchive_index` (non-modal, one window, closes with the main
@@ -224,14 +225,26 @@ hover wash (owner: Oderisi's design read and the board's live check).
 
 ## 7. Python test map
 
-An `ast` walk over every `tests/test_*.py` at `76c85c4` (`worktrees/DAN-2220-tools/scan6g.py`, run outside the repo)
-finds **92** tests that touch a symbol this ticket ports: every definition of `gui/hydrus_query_dialog.py` and
-`gui/pawchive_index_dialog.py`, the sixteen `gui/main_window.py` methods of the method map, and the five worker classes.
-It follows `setUp`, `setUpClass`, class helpers (`self.<m>()`) and module helpers transitively. Seven more hits were the
-`_hairline` helper's name in other modules' paint tests (`test_app_chrome`, `test_flat_surfaces`, `test_ghost_kanji`);
-they never call the Pawchive helper and are not rows. `test_hydrus_query_dialog.py` reaches the dialog through a mixin the
-walk does not follow, so its other 16 tests are added by hand: **108 rows, 0 unmapped** (`mk7.py` fails on a test with no
-disposition).
+Two scans, both in `worktrees/DAN-2220-tools/` and run outside the repo. Section 7 has **0 unmapped by each**.
+
+1. **Symbols** (`scan6g.py`): an `ast` walk over every `tests/test_*.py` at `76c85c4` finds **92** tests that touch a
+   symbol this ticket ports: every definition of `gui/hydrus_query_dialog.py` and `gui/pawchive_index_dialog.py`, the
+   sixteen `gui/main_window.py` methods of the method map, and the five worker classes. It follows `setUp`,
+   `setUpClass`, class helpers (`self.<m>()`) and module helpers transitively. Seven more hits were the `_hairline`
+   helper's name in other modules' paint tests (`test_app_chrome`, `test_flat_surfaces`, `test_ghost_kanji`); they never
+   call the Pawchive helper and are not rows. `test_hydrus_query_dialog.py` reaches the dialog through a mixin the walk
+   does not follow, so its other 16 tests are added by hand: **108 rows**.
+2. **Other docs** (`scan_docs.py REPO`, `--all` lists every name): every row of every `docs/*.md` other than this file
+   whose disposition says `6.g` and names a `test_...` must find that name in this section. Earlier tickets handed 6.g
+   tests by name that the symbol walk cannot reach, because they test a menu, a key, a thumbnail pass or the batch's
+   staging through names the walk does not list. It found **37**: `gtk-6e.md` (3), `gtk-6f.md` (2), `gtk-shell.md` (17)
+   and `queue-view.md` (15). They are rows below: **145 rows** in all.
+
+The rows that say "goes red" were reverted and run (twelve changes, all red, `worktrees/DAN-2396-revert.log`).
+
+`mk7b.py ORACLE REPO` builds the section from both scans and fails on a test with no disposition. 6.j re-runs
+`scan_docs.py REPO` and expects `0`; a later ticket that hands 6.g a test in a docs row adds it to this section or the
+count is not zero.
 
 `smoke.rs` is `crates/hatate-gtk/tests/smoke.rs`; `hydrus_query::tests::` is a unit test of `hydrus_query.rs`. A row cites
 the assertion (`file:line`) that makes its claim. **not asserted** names a Python assertion no Rust test makes, with where
@@ -240,10 +253,11 @@ steps, 0 differing); a row that leans on it names what in the scripted server or
 (`worktrees/DAN-2220-tools/gen_h.py`). It does not cover Download and Send, a refused connection, a filtered queue or the
 two windows.
 
-#### `tests/test_gui_smoke.py` (61)
+#### `tests/test_gui_smoke.py` (80)
 
 | Line | Test | Disposition |
 |---|---|---|
+| 328 | `TestMainWindowSignalHandlers.test_auto_import_handler` | `auto_import.rs:389`, `:390`, `:391` and `:393`: what `_on_auto_imported` decides for the three results Python feeds it: a success leaves the list when Remove after import is on, an unconfirmed one and a failure stay, and with the setting off nothing leaves. **not asserted:** the window handler `search_run.rs` `on_auto_imported` itself (6.e) is not called by a window test; Python's test only checks that it does not raise |
 | 1001 | `TestTableContextMenu.test_a_removal_while_the_menu_is_open_does_not_shift_the_action` | n/a here: the test is 6.d's row-menu identity (`docs/queue-view.md`); `HydrusImportPollWorker` appears only as a patched fixture |
 | 1508 | `TestWorkerCallbacksDuringClose.test_hydrus_import_poll_finished_is_a_no_op_while_closing` | **not asserted:** the guard is `hydrus_ops.rs:804` (`closing` returns before touching the rows, DAN-128); no scenario closes the window mid-poll |
 | 1734 | `TestDeleteFromHydrus.test_confirmed_delete_removes_only_what_hydrus_confirmed` | `smoke.rs:5756`, `smoke.rs:5757`, `smoke.rs:5769`: the rows leave the list, the delete endpoint is reached, the status line says one file; the differential adds the stubborn-file and mixed-state cases (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides) |
@@ -280,6 +294,9 @@ two windows.
 | 3167 | `TestDownloadAndSendToHydrus.test_only_successful_rows_are_removed` | **not asserted:** as above |
 | 3178 | `TestDownloadAndSendToHydrus.test_the_downloaded_files_are_cleaned_up` | **not asserted:** as above; the staging directory is a `tempfile::TempDir`, which removes itself on drop |
 | 3200 | `TestDownloadAndSendToHydrus.test_cleanup_happens_even_when_every_download_fails` | **not asserted:** as above (the `TempDir` drop covers it by construction) |
+| 3278 | `TestAutoImportStagingIsCleanedUp.test_the_staging_directory_is_removed_after_a_batch` | n/a here: core. `batch_auto_import.rs:928` (one directory while the run is on) and `:936` (listing empty after it), mapped in `docs/batch.md:114` |
+| 3285 | `TestAutoImportStagingIsCleanedUp.test_it_is_removed_even_when_the_batch_is_stopped` | n/a here: core. `batch_auto_import.rs:997`, mapped in `docs/batch.md:114` |
+| 3305 | `TestAutoImportStagingIsCleanedUp.test_it_is_removed_even_when_the_run_raises` | n/a here: core. `batch_auto_import.rs:1021` (a worker that dies midway), mapped in `docs/batch.md:114` |
 | 3570 | `TestFilteredRowsAreNeverActedOnByAccident.test_sending_to_hydrus_only_sends_visible_rows` | **not asserted** in a window test: the selection passed to the action is the visible one (6.d's filter row, `docs/queue-view.md`); the differential has no filter |
 | 4103 | `TestHydrusReconcileAction.test_nothing_waiting_never_contacts_hydrus` | `smoke.rs:5871` says nothing waits (after a confirm). **not asserted:** that the server saw no request on that second call |
 | 4113 | `TestHydrusReconcileAction.test_a_queued_entry_is_confirmed_when_hydrus_has_it` | `smoke.rs:5868`, `smoke.rs:5869`: `confirmed 1 of 1`, the row's `hydrus_import_confirmed` |
@@ -288,8 +305,19 @@ two windows.
 | 4147 | `TestHydrusReconcileAction.test_the_action_says_so_when_there_is_nothing_to_do` | `smoke.rs:5871`: `Nothing is waiting on Hydrus - every sent file is confirmed` |
 | 4152 | `TestHydrusReconcileAction.test_the_quiet_pass_stays_silent_when_nothing_changed` | **not asserted** in a window test; the quiet pass runs after the session restore in every differential case (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides) |
 | 4165 | `TestHydrusReconcileAction.test_the_quiet_pass_speaks_up_when_it_changed_something` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
+| 5249 | `TestReviewShortcuts.test_sending_the_current_image_away_keeps_your_place` | `smoke.rs:6560`: a real Send with Remove after import on, from the row you are on, leaves the row that followed selected. The removal rule is 6.d's (`smoke.rs:3310`). **not asserted:** the J and K presses Python makes after it (6.f's `next_row`/`prev_row`) |
+| 5268 | `TestReviewShortcuts.test_sending_the_last_row_away_lands_on_the_new_last_row` | `smoke.rs:6565`: the same Send from the last row leaves the new last row selected |
 | 5276 | `TestReviewShortcuts.test_a_hydrus_confirmation_removing_your_row_moves_you_on` | n/a here: Review's current-row hand-over after a removal is 6.f (`docs/gtk-6f.md`); the removal itself is `hydrus_ops::remove_entries` |
 | 5293 | `TestReviewShortcuts.test_a_hydrus_confirmation_elsewhere_leaves_you_where_you_are` | n/a here: as above |
+| 5926 | `TestHydrusMenu.test_the_hydrus_menu_exists` | `menu.rs:363`-`menu.rs:365`: the menu titles are `_Files`, `_Hydrus`, `Si_tes`, `_Settings`, `_Help` |
+| 5929 | `TestHydrusMenu.test_it_offers_the_three_documented_actions` | `menu.rs:367`: the Hydrus menu's labels are the two Send entries and Re-check Queued Imports, with one separator (a separator is not an action) |
+| 5938 | `TestHydrusMenu.test_the_files_menu_still_has_its_recheck_entry` | `menu.rs:337`: the Files menu's labels still hold `Re-check Queued Imports` |
+| 5945 | `TestHydrusMenu.test_both_menus_share_one_recheck_action` | `menu.rs:439`, `menu.rs:440`: both entries carry the action `reconcile`; `menu.rs:446`: it is registered once. Changing the Hydrus entry's action name goes red |
+| 5955 | `TestHydrusMenu.test_the_recheck_tooltip_comes_from_the_one_constant` | n/a here: menu items carry no tooltips (`GMenu` has none), difference D4 of `docs/gtk-shell.md` |
+| 5962 | `TestHydrusMenu.test_hydrus_is_not_buried_behind_help` | `menu.rs:363`-`menu.rs:365`: `_Hydrus` is the second title and `_Help` the last, ahead of `_Settings` |
+| 5972 | `TestHydrusMenu.test_send_upload_triggers_the_real_handler` | `smoke.rs:6493-6500`: activating `send-to-hydrus` with nothing selected shows `Send to Hydrus` / `Select at least one row.`. Replacing the action's arm in `window.rs` with `{}` goes red |
+| 5980 | `TestHydrusMenu.test_send_url_triggers_the_real_handler` | `smoke.rs:6503-6510`: activating `import-url-to-hydrus` shows `Send URL to Hydrus's Importer` / `Select at least one row.` |
+| 5989 | `TestHydrusMenu.test_recheck_triggers_the_real_handler` | `smoke.rs:6512-6515`: activating `reconcile` says `Nothing is waiting on Hydrus - every sent file is confirmed` |
 | 6378 | `TestShowInHydrus.test_it_shows_the_selected_files` | `smoke.rs:5794`, `smoke.rs:5795`, `smoke.rs:5796`: `Showing 1 file(s) in Hydrus` and the `new_page` call |
 | 6388 | `TestShowInHydrus.test_one_file_gets_its_own_name_on_the_page` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides (the `new_page` body is in the request log) |
 | 6394 | `TestShowInHydrus.test_files_hydrus_does_not_have_are_left_out_and_counted` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
@@ -300,6 +328,10 @@ two windows.
 | 6445 | `TestShowInHydrus.test_a_404_says_the_client_is_too_old` | **not asserted** in a window test; the 404 text is `hydrus_ops::show_failure_text`; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides for the 403 and 500 replies |
 | 6454 | `TestShowInHydrus.test_any_other_failure_is_reported_not_raised` | `smoke.rs:5844`, `smoke.rs:5850`: a 500 gives the headline `Hydrus could not open the page: Hydrus answered with an error (HTTP 500).` without the server's words (D-B), and nothing raises |
 | 6462 | `TestShowInHydrus.test_an_unreachable_hydrus_is_reported` | **not asserted:** a refused connection; the stalled-server scenario is `smoke.rs:5901` |
+| 6472 | `TestShowInHydrus.test_the_menu_offers_it_and_wires_it` | `table_menu.rs:664`: the entry reads `Show 3 selected images in Hydrus` for three rows (the count form of Python's `Show 2 selected images`); `table_menu.rs:644`: enabled when a selected row has a hash; `queue_menu.rs:80` and `queue_menu.rs:198`: the entry has a handler |
+| 6489 | `TestShowInHydrus.test_h_shows_the_selection` | `smoke.rs:6530`: `guarded_review_action("show_in_hydrus")` on a selected row opens the page with that row's hash. This path had no handler for the `H` key before this fixup; removing the arm goes red |
+| 6504 | `TestShowInHydrus.test_h_with_nothing_selected_says_so_rather_than_acting` | `smoke.rs:6518`: `Show in Hydrus: select an image first`, and the next line asserts the server was asked nothing |
+| 6518 | `TestShowInHydrus.test_the_menu_greys_it_out_when_no_row_has_a_hash` | `table_menu.rs:687`: `Show 3 selected images in Hydrus` is among the disabled entries when no selected row has a hash |
 | 6652 | `TestPawchiveIndexWindow.test_a_pasted_link_adds_its_artist` | `smoke.rs:6200`, `smoke.rs:6204`, `smoke.rs:6211`: the status line, the row `["42", "fanbox", "0", "", "not yet"]`, and the duplicate message |
 | 6658 | `TestPawchiveIndexWindow.test_artists_with_pawchive_matches_can_be_added_in_one_go` | **not asserted:** `add_from_matches` (the `Add artists from my matches` button) has no scenario; the button is live and its enabled state is read in the shots |
 | 6663 | `TestPawchiveIndexWindow.test_removing_asks_first_and_defaults_to_no` | `smoke.rs:6259`, `smoke.rs:6260`, `smoke.rs:6261`, `smoke.rs:6264`, `smoke.rs:6265`: `Remove artists`, default Cancel, the two rows stay until the answer, then `Removed 1 artist(s).` |
@@ -313,10 +345,11 @@ two windows.
 | 37 | `TestHydrusImportPollWorkerStop.test_stop_cancels_inflight_futures` | n/a here: the worker body is the merged `hatate_core::hydrus_import_poll::run_import_poll`, mapped in `docs/hydrus-import-url.md` |
 | 73 | `TestHydrusImportPollWorkerStop.test_stop_before_submit_emits_finished` | n/a here: the worker body is the merged `hatate_core::hydrus_import_poll::run_import_poll`, mapped in `docs/hydrus-import-url.md` |
 
-#### `tests/test_hydrus_provenance_note.py` (3)
+#### `tests/test_hydrus_provenance_note.py` (4)
 
 | Line | Test | Disposition |
 |---|---|---|
+| 580 | `TestAutoImportWiring.test_nothing_is_confirmed_or_noted_when_every_setting_is_off` | n/a here: core; the window hands its settings to the run unchanged. `batch_auto_import.rs:570`, `:571`: with every setting off the import is not confirmed (`confirmed == None`), and `:628`: no note is written for an unconfirmed import (`docs/batch.md:122`) |
 | 634 | `TestBatchPollWorkerWiring.test_the_note_is_written_and_no_warning_is_carried` | n/a here: core (`docs/hydrus-import.md`, `docs/hydrus-import-url.md`) |
 | 643 | `TestBatchPollWorkerWiring.test_entry_resolved_carries_the_note_warning` | n/a here: core, as above |
 | 652 | `TestBatchPollWorkerWiring.test_nothing_is_written_when_the_setting_is_off` | n/a here: core, as above |
@@ -350,10 +383,37 @@ two windows.
 | 323 | `TestImport.test_every_file_failing_still_closes_the_dialog_with_no_entries` | **not asserted:** as above |
 | 331 | `TestImport.test_the_download_directory_is_a_throwaway_temp_dir` | **not asserted:** the directory is a `tempfile::TempDir` (`Cargo.toml` moves `tempfile` to a normal dependency) |
 
-#### `tests/test_url_importer_duplicate_relationships.py` (7)
+#### `tests/test_search_quality.py` (1)
 
 | Line | Test | Disposition |
 |---|---|---|
+| 4256 | `TestSendUrlFallsBackToHatatesDownload.test_auto_import_downloads_when_no_match_hydrus_can_take` | n/a here: core. `batch_auto_import.rs:760`, `:767`: the download succeeds and one `add_file` goes out; the window runs it through `batch/run.rs` |
+
+#### `tests/test_thumbnail_worker.py` (15)
+
+| Line | Test | Disposition |
+|---|---|---|
+| 106 | `TestThumbnailSource.test_source_defaults_to_local_when_there_are_no_settings` | n/a here: `Settings` always exists, so there is no "no settings" branch; the source defaults to `"hydrus"` (`config/model.rs:242`, Python's own settings default) and is read at the start of every pass (`thumbnails.rs:234`) |
+| 110 | `TestThumbnailSource.test_source_is_read_from_settings` | `smoke.rs:6378`: with `thumbnail_source = "hydrus"` in the settings the held file is drawn from Hydrus (its own file is unreadable); `smoke.rs:3439` for `"off"` (no row decodes) |
+| 128 | `TestThumbnailSource.test_hydrus_source_without_an_access_key_falls_back_to_local` | `smoke.rs:6461`, `smoke.rs:6462`: source `"hydrus"` with no access key draws the file from disk (`Loaded`) and the server heard nothing. Reverting `thumbnails.rs:234` (`is_configured()` dropped) goes red |
+| 217 | `TestDecodeFromBytes.test_bytes_are_scaled_down_to_the_requested_size` | `thumb_decode.rs:263`: `decode_bytes(.., 300)` of a 3000 x 100 picture is 300 x 10; the Hydrus bytes go through it (`thumbnails.rs:255`) |
+| 225 | `TestDecodeFromBytes.test_bytes_already_small_enough_are_not_rescaled` | `thumb_decode.rs:261`: `decode_bytes` with a limit above the picture keeps its 3000 x 100; `thumb_decode.rs:152` for the file path (50 x 30 left as it is) |
+| 232 | `TestDecodeFromBytes.test_unrecognisable_bytes_yield_None` | `thumb_decode.rs:264`: HTML bytes decode to `None` |
+| 240 | `TestKnownToHydrus.test_no_hashes_means_no_call_is_made_at_all` | `thumbnails.rs:380`: rows with no hash (`None`, and the empty string) make no request |
+| 247 | `TestKnownToHydrus.test_hashes_are_asked_for_in_batches` | `thumbnails.rs:393`: 261 hashes are asked as batches of 256 and 5. Reverting the batch size to 257 goes red |
+| 265 | `TestKnownToHydrus.test_files_with_no_hash_are_not_asked_about` | `thumbnails.rs:408`: only the row with a hash is in the request |
+| 275 | `TestKnownToHydrus.test_a_hydrus_error_stops_asking_and_keeps_what_was_answered` | `thumbnails.rs:424`, `thumbnails.rs:425`: the first batch's 256 answers are kept, the second batch fails, and a third is never asked. Reverting the `break` goes red |
+| 299 | `TestKnownToHydrus.test_a_stop_request_abandons_the_remaining_batches` | `thumbnails.rs:439`: a stop raised during the first batch leaves one call of two. Reverting the stop check goes red |
+| 334 | `TestHydrusThumbnailPath.test_a_known_hash_is_served_from_hydrus_without_reading_the_file` | `smoke.rs:6378`: the held row's own file is unreadable (`garbage`), so its picture can only be Hydrus's; `smoke.rs:6382-6389` count one thumbnail fetch |
+| 350 | `TestHydrusThumbnailPath.test_a_hash_hydrus_does_not_know_is_decoded_from_disk` | `smoke.rs:6379`, `smoke.rs:6380`: the two rows Hydrus does not hold are drawn from their files; `smoke.rs:6382-6389`: no thumbnail request for them (one fetch, for the held row) |
+| 361 | `TestHydrusThumbnailPath.test_an_empty_hydrus_thumbnail_falls_back_to_the_file` | `smoke.rs:6471`, `smoke.rs:6477`: with the thumbnail endpoint answering an empty body the row is `Loaded` from its file, and Hydrus was asked first. Reverting the `or_else` fallback goes red |
+| 372 | `TestHydrusThumbnailPath.test_an_undecodable_hydrus_thumbnail_falls_back_to_the_file` | `smoke.rs:6471`, `smoke.rs:6477`: the same with bytes that are not a picture (`mode 1`); `smoke.rs:6409` for the case where the file is unreadable too (`Failed`) |
+
+#### `tests/test_url_importer_duplicate_relationships.py` (8)
+
+| Line | Test | Disposition |
+|---|---|---|
+| 433 | `TestAutoImportWiring.test_nothing_is_confirmed_or_related_when_both_settings_are_off` | n/a here: core. `batch_auto_import.rs:570`, `:571` (`docs/batch.md:121`) |
 | 491 | `TestBatchPollWorkerWiring.test_the_relationship_is_recorded_and_no_warning_is_carried` | n/a here: core (`docs/hydrus-import-url.md`); the window's side is `PollEvents::entry_resolved` carrying the warning, compared in the differential's Import URL steps |
 | 502 | `TestBatchPollWorkerWiring.test_entry_resolved_carries_the_warning` | n/a here: core (`docs/hydrus-import-url.md`); the window's side is `PollEvents::entry_resolved` carrying the warning, compared in the differential's Import URL steps |
 | 511 | `TestBatchPollWorkerWiring.test_the_relationship_is_paired_before_the_hash_is_emitted` | n/a here: core (`docs/hydrus-import-url.md`); the window's side is `PollEvents::entry_resolved` carrying the warning, compared in the differential's Import URL steps |
