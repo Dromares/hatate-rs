@@ -347,6 +347,10 @@ const SCENARIOS: &[Scenario] = &[
         pawchive_and_query_windows_keep_their_stated_minimum,
     ),
     (
+        "query_and_pawchive_windows_follow_the_design_read",
+        query_and_pawchive_windows_follow_the_design_read,
+    ),
+    (
         "hydrus_requests_leave_the_main_loop_running_while_the_server_stalls",
         hydrus_requests_leave_the_main_loop_running_while_the_server_stalls,
     ),
@@ -6133,6 +6137,95 @@ fn pawchive_and_query_windows_keep_their_stated_minimum(app: &adw::Application) 
     assert!(
         w <= PW && h <= PH,
         "the Pawchive Index window is {w}x{h}; its stated minimum is {PW}x{PH}"
+    );
+    f.close();
+}
+
+/// DAN-2395 (F1, F2, F5, Tab order): the two windows carry the pick-window class that the theme's
+/// well and border rules key on, Import selected acts only on a selection, an empty list and the
+/// status label are not Tab stops, and the Pawchive entry takes the page's `field` look.
+fn query_and_pawchive_windows_follow_the_design_read(app: &adw::Application) {
+    use common::hydrus::{Reply, json_reply};
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| match q.target.split('?').next().unwrap_or("") {
+        "/get_files/search_files" => json_reply(json!({"file_ids": [1]})),
+        "/get_files/file_metadata" => json_reply(json!({"metadata": [
+            {"hash": NEW_HASH, "file_id": 1, "mime": "image/png", "width": 4, "height": 3,
+             "tags": {}},
+        ]})),
+        "/get_files/file" => Reply::ok(common::search::PNG.to_vec()),
+        _ => json_reply(json!({})),
+    });
+    let f = hydrus_fx(app, &server.url, true, review_seed(dir.path()));
+    f.w.action_query_hydrus();
+    let d =
+        f.w.s
+            .hydrus_query_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog opened");
+    assert!(d.window.has_css_class("pick-window"));
+    assert!(
+        !d.import_button.is_sensitive(),
+        "Import selected promises nothing while there is nothing to import"
+    );
+    assert!(
+        !d.results.is_focusable(),
+        "an empty results list is not a Tab stop"
+    );
+    assert!(!d.results.parent().unwrap().is_focusable());
+    d.set_tags_text("solo");
+    d.search();
+    assert!(pump_until(10_000, || d.labels().len() == 1));
+    pump_for(100);
+    assert!(
+        !d.import_button.is_sensitive(),
+        "results with no row selected do not enable Import"
+    );
+    assert!(d.results.is_focusable(), "a list with rows takes focus");
+    d.select_results(&[0]);
+    assert!(d.import_button.is_sensitive());
+    d.select_results(&[]);
+    assert!(!d.import_button.is_sensitive());
+    f.close();
+
+    let server = common::hydrus::Hydrus::https(scripted_pawchive(std::time::Duration::ZERO));
+    let f = pawchive_fx(app, &server, Vec::new());
+    f.w.action_pawchive_index();
+    let d =
+        f.w.s
+            .pawchive_dialog
+            .borrow()
+            .clone()
+            .expect("the window opened");
+    assert!(d.window.has_css_class("pick-window"));
+    assert!(
+        d.query.has_css_class("field"),
+        "the entry takes the page's field look, whose placeholder is 4.5:1"
+    );
+    assert!(
+        !d.status.is_focusable(),
+        "the status label is not a Tab stop"
+    );
+    assert!(
+        !d.table.is_focusable(),
+        "the empty artist table is not a Tab stop"
+    );
+    assert!(!d.table.parent().unwrap().is_focusable());
+    assert_eq!(
+        d.none_yet.text(),
+        "No artists indexed yet. Add one below.",
+        "an empty index says so inside the list"
+    );
+    assert!(d.none_yet.parent().is_some(), "and the line is in the list");
+    d.query
+        .set_text("https://pawchive.pw/fanbox/user/42/post/9");
+    d.find_or_add();
+    assert!(d.table.is_focusable(), "an index with artists takes focus");
+    assert!(
+        d.none_yet.parent().is_some(),
+        "the placeholder survives a refresh of the rows"
     );
     f.close();
 }

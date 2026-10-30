@@ -108,6 +108,7 @@ impl HydrusQueryDialog {
             .default_height(520)
             .build();
         window.set_size_request(MIN_WIDTH, MIN_HEIGHT);
+        window.add_css_class("pick-window");
         let column = gtk::Box::new(gtk::Orientation::Vertical, widgets::PAGE_SPACING);
         let (l, t, r, b) = widgets::PAGE_MARGINS;
         column.set_margin_start(l);
@@ -139,6 +140,9 @@ impl HydrusQueryDialog {
         results_scroll.set_vexpand(true);
         results_scroll.set_min_content_height(120);
         results_scroll.add_css_class("field");
+        // the list takes focus itself; an empty one is not a stop (see `refresh_import`)
+        results_scroll.set_focusable(false);
+        results.set_focusable(false);
         column.append(&results_scroll);
         let row = gtk::Box::new(gtk::Orientation::Horizontal, widgets::BUTTON_ROW_SPACING);
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -149,6 +153,7 @@ impl HydrusQueryDialog {
         row.append(&cancel_button);
         row.append(&import_button);
         column.append(&row);
+        import_button.set_sensitive(false);
         window.set_child(Some(&column));
         gtk::prelude::GtkWindowExt::set_focus(&window, Some(&tags));
 
@@ -167,6 +172,14 @@ impl HydrusQueryDialog {
         {
             let w = window.clone();
             cancel_button.connect_clicked(move |_| w.close());
+        }
+        {
+            let d = Rc::downgrade(&dialog);
+            dialog.results.connect_selected_rows_changed(move |_| {
+                if let Some(d) = d.upgrade() {
+                    d.refresh_import();
+                }
+            });
         }
         for (button, import) in [(&search_button, false), (&import_button, true)] {
             let d = Rc::downgrade(&dialog);
@@ -224,7 +237,16 @@ impl HydrusQueryDialog {
     fn set_busy(&self, busy: bool) {
         self.busy.set(busy);
         self.search_button.set_sensitive(!busy);
-        self.import_button.set_sensitive(!busy);
+        self.refresh_import();
+    }
+
+    /// Import selected acts only on a selection: insensitive (and so out of the Tab order) while
+    /// nothing is selected or a search or import is running. An empty list is not a Tab stop.
+    fn refresh_import(&self) {
+        let any = !self.results.selected_rows().is_empty();
+        self.import_button.set_sensitive(any && !self.busy.get());
+        self.results
+            .set_focusable(self.results.first_child().is_some());
     }
 
     /// `_do_search`.
@@ -302,6 +324,7 @@ impl HydrusQueryDialog {
         }
         let none = metadata.is_empty();
         *self.metadata.borrow_mut() = metadata;
+        self.refresh_import();
         if none {
             tracing::info!("Query Hydrus: no files matched");
             dialogs::information(&*prompter, TITLE, "No files matched those tags.");

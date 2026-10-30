@@ -249,6 +249,7 @@ dropdown.candidate-picker > button:hover { border-color: @ink_58; }
 .tag-list > row { border-bottom: 1px solid @ink_18; min-height: 0; padding: 6px %space_4%px; }
 .tag-list > row:selected { background: @stamp_bg; color: @stamp_fg; }
 .pick-list, .pick-list > row { background: transparent; color: @ink; }
+.pick-list > row { border-bottom: 1px solid @ink_18; min-height: 0; }
 .pick-list > row:selected { background: @stamp_bg; color: @stamp_fg; }
 .pick-list > row:selected label { color: @stamp_fg; }
 .tag-row { font-family: %mono%; font-size: 13px; color: @ink; }
@@ -347,6 +348,13 @@ dialog.alert separator { background: @ink_18; min-width: 1px; min-height: 1px; }
    the light sheet, DAN-2219) */
 dialog.alert scrolledwindow.field { border: 1px solid @ink_46; }
 dialog.alert textview, dialog.alert textview text { background: @sunken; color: @ink; }
+/* the Query Hydrus and Pawchive Index windows are not alert dialogs, so the rules above never reached them:
+   their tag box and lists were stock libadwaita (a white view, and a list with no edge at all, DAN-2395).
+   Same sunken well, border on the @ink_58 tier (@ink_46 is 2.75:1 on the light page, under the 3:1
+   non-text floor), and a border that goes to ink when the field holds focus */
+window.pick-window scrolledwindow.field { border: 1px solid @ink_58; }
+window.pick-window scrolledwindow.field:focus-within { border-color: @ink; }
+window.pick-window textview, window.pick-window textview text { background: @sunken; color: @ink; }
 dialog.alert check { background: transparent; color: @stamp_fg; border: 1px solid @ink_46; border-radius: 0;
   box-shadow: none; }
 dialog.alert check:checked { background: @stamp_bg; border-color: @stamp_bg; color: @stamp_fg; }
@@ -513,6 +521,39 @@ mod tests {
                     "undefined colour @{name} in {scheme:?}"
                 );
             }
+        }
+    }
+
+    /// DAN-2395 (design read, F2/F6): the Query Hydrus and Pawchive windows are not `dialog.alert`, so
+    /// their tag box and lists need their own well, an @ink_58 border (@ink_46 is 2.75:1 on the
+    /// light page) that goes to ink on focus, and a hairline between list rows.
+    #[test]
+    fn pick_windows_get_the_well_the_border_and_row_dividers() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let css = css(scheme);
+            let rule = |start: &str| {
+                css.lines()
+                    .find(|l| l.starts_with(start))
+                    .unwrap_or_else(|| panic!("{scheme:?}: no rule starting {start}"))
+                    .to_owned()
+            };
+            assert!(
+                rule("window.pick-window textview,").contains("background: @sunken"),
+                "{scheme:?}: the tag box is not the sunken well"
+            );
+            assert!(
+                rule("window.pick-window scrolledwindow.field {").contains("@ink_58"),
+                "{scheme:?}: the list border is not on the @ink_58 tier"
+            );
+            assert!(
+                rule("window.pick-window scrolledwindow.field:focus-within")
+                    .contains("border-color: @ink"),
+                "{scheme:?}: a focused field does not show it"
+            );
+            assert!(
+                rule(".pick-list > row {").contains("border-bottom: 1px solid @ink_18"),
+                "{scheme:?}: pick-list rows have no divider"
+            );
         }
     }
 

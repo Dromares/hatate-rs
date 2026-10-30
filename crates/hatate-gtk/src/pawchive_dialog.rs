@@ -125,6 +125,7 @@ pub fn found_label(c: &serde_json::Value) -> String {
 pub struct PawchiveIndexDialog {
     pub window: gtk::Window,
     pub table: gtk::ListBox,
+    pub none_yet: gtk::Label,
     pub query: gtk::Entry,
     pub find_button: gtk::Button,
     pub from_matches_button: gtk::Button,
@@ -153,6 +154,7 @@ impl PawchiveIndexDialog {
             .default_height(560)
             .build();
         window.set_size_request(MIN_WIDTH, MIN_HEIGHT);
+        window.add_css_class("pick-window");
         let column = gtk::Box::new(gtk::Orientation::Vertical, widgets::PAGE_SPACING);
         let (l, t, r, b) = widgets::PAGE_MARGINS;
         column.set_margin_start(l);
@@ -192,12 +194,22 @@ impl PawchiveIndexDialog {
         table_scroll.set_vexpand(true);
         table_scroll.set_min_content_height(140);
         table_scroll.add_css_class("field");
+        // the list takes focus itself; an empty one holds nothing to focus (see `populate`)
+        table_scroll.set_focusable(false);
+        let none_yet = widgets::hint("No artists indexed yet. Add one below.");
+        none_yet.set_margin_top(12);
+        none_yet.set_margin_bottom(12);
+        none_yet.set_margin_start(12);
+        table.set_placeholder(Some(&none_yet));
         column.append(&table_scroll);
 
         column.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
         let add_row = gtk::Box::new(gtk::Orientation::Horizontal, widgets::BUTTON_ROW_SPACING);
         let query = gtk::Entry::new();
         query.set_placeholder_text(Some("Artist name, or a pawchive link"));
+        // the page's own entry look (transparent, hairline border, the filter bar's placeholder
+        // colour), not a stock libadwaita well
+        query.add_css_class("field");
         query.set_hexpand(true);
         add_row.append(&query);
         let find_button = widgets::pill_button("Find / Add", false, false);
@@ -225,6 +237,7 @@ impl PawchiveIndexDialog {
         results_scroll.set_propagate_natural_height(true);
         results_scroll.set_visible(false);
         results_scroll.add_css_class("field");
+        results_scroll.set_focusable(false);
         column.append(&results_scroll);
         let add_checked_button = widgets::pill_button("Add the ticked artists", false, false);
         add_checked_button.set_halign(gtk::Align::Start);
@@ -260,6 +273,8 @@ impl PawchiveIndexDialog {
         status.set_wrap(true);
         status.set_xalign(0.0);
         status.set_selectable(true);
+        // selectable by mouse, but a label tells nothing by being focused: not a Tab stop
+        status.set_focusable(false);
         column.append(&status);
         let close_row = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -269,11 +284,14 @@ impl PawchiveIndexDialog {
         close_row.append(&close);
         column.append(&close_row);
         window.set_child(Some(&column));
+        // the first stop on an empty index is the name/link entry, never an empty table
+        gtk::prelude::GtkWindowExt::set_focus(&window, Some(&query));
 
         let paths = &main.s.paths;
         let dialog = Rc::new(PawchiveIndexDialog {
             window: window.clone(),
             table,
+            none_yet,
             query: query.clone(),
             find_button: find_button.clone(),
             from_matches_button: from_matches_button.clone(),
@@ -374,8 +392,9 @@ impl PawchiveIndexDialog {
                 Vec::new()
             }
         };
-        while let Some(child) = self.table.first_child() {
-            self.table.remove(&child);
+        // rows only: the empty-list placeholder is a child of the list too, and stays
+        while let Some(row) = self.table.row_at_index(0) {
+            self.table.remove(&row);
         }
         for c in &creators {
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
@@ -388,6 +407,7 @@ impl PawchiveIndexDialog {
             self.table.append(&row);
         }
         self.window.set_title(Some(&window_title(&creators)));
+        self.table.set_focusable(!creators.is_empty());
         *self.creators.borrow_mut() = creators;
     }
 
