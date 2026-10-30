@@ -9205,8 +9205,16 @@ fn settings_diff_one(app: &adw::Application, spec: &serde_json::Value) -> serde_
         if script["mode"] == "abort" {
             return Reply::aborted();
         }
-        let path = q.target.split('?').next().unwrap_or("");
-        let r = script["routes"].get(path).unwrap_or(&script);
+        // Python's test server (http.server) folds a leading `//` into `/` before it routes; so does this
+        let path = format!(
+            "/{}",
+            q.target
+                .split('?')
+                .next()
+                .unwrap_or("")
+                .trim_start_matches('/')
+        );
+        let r = script["routes"].get(&path).unwrap_or(&script);
         let code = r["code"].as_u64().unwrap_or(200) as u16;
         let body = match &r["body"] {
             Value::String(t) => t.clone(),
@@ -9258,7 +9266,13 @@ fn settings_diff_one(app: &adw::Application, spec: &serde_json::Value) -> serde_
         d.type_into(k, v.as_str().unwrap_or(""));
     }
     if hydrus {
-        d.type_into("hydrus_url", &server.url);
+        d.type_into(
+            "hydrus_url",
+            &spec["url_fmt"]
+                .as_str()
+                .unwrap_or("{u}")
+                .replace("{u}", &server.url),
+        );
         d.type_into("hydrus_key", common::hydrus::KEY);
         d.set_value(
             "hydrus_verify_ssl",
