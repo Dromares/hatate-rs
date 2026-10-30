@@ -170,8 +170,8 @@ measure, the least first:
 
 The other two Activity shots (`activity-min-*`) give the same figures to within the antialiasing (the full rows are in
 the table). Pinned by `theme::tests::the_engine_chips_are_text_and_clear_four_and_a_half` (the CSS rules and the tokens'
-contrast, both schemes). Rows below the fold of the Parser Health list (the `twitter` and `xbooru` rows, which are not
-drawn in the shot) are unmeasured; the visible rows and the caption pass. The disabled "Clear Search Cache…" button, the
+contrast, both schemes). Rows below the fold of the Parser Health list were unmeasured here; since DAN-2472 the list scrolls with a
+persistent bar and `parser-health-bottom-*` shows them (`phase6-contrast.md` section 5). The disabled "Clear Search Cache…" button, the
 gear and the disabled live-check button are exempt as disabled controls (the table says so row by row).
 
 **Tab order**, from `shots/tab-order.txt` (the shot tool's `tab`, `tab-failed`, `tab-activity` states): the queue
