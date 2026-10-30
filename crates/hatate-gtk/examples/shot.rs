@@ -311,6 +311,254 @@ fn run_all() -> glib::ExitCode {
     }
 }
 
+/// The window's pixels as `(width, height, BGRA premultiplied)`.
+fn pixels_of(
+    win: &gtk4::Window,
+    renderer: &gtk4::gsk::Renderer,
+) -> Option<(usize, usize, Vec<u8>)> {
+    let tex = texture_of(win.upcast_ref(), renderer)?;
+    let (w, h) = (tex.width() as usize, tex.height() as usize);
+    let mut buf = vec![0u8; w * h * 4];
+    tex.download(&mut buf, w * 4);
+    Some((w, h, buf))
+}
+
+/// What the Tab walk has seen so far.
+#[derive(Default)]
+struct TabWalk {
+    i: usize,
+    plain: Option<(usize, usize, Vec<u8>)>,
+    seen: Vec<String>,
+    stops: Vec<gtk4::Widget>,
+    without: usize,
+}
+
+/// `shot ... --tabs`: Tab walked from the top of `win`, one `TABSTOP` line per stop (DAN-2424 line 7).
+/// For each stop the window is drawn twice, once with the focus taken away and once with the stop focused
+/// and the ring showing, and the pixels inside the stop's bounds (plus 6 px) are compared: a stop where
+/// nothing changes has no visible indicator (`indicator=NO`). A crop of the stop with its ring is written
+/// next to the shot as `<out stem>-tab<i>.png`, so the table can name the file that shows each stop.
+/// The walk is a timer, two ticks per stop, because a focus change reaches the style only when the frame
+/// clock runs, and it does not run inside the tick that started the walk.
+fn start_tab_walk(
+    win: gtk4::Window,
+    renderer: gtk4::gsk::Renderer,
+    out: std::path::PathBuf,
+    app: Option<gtk4::Application>,
+) {
+    win.set_focus_visible(true);
+    let st = std::rc::Rc::new(std::cell::RefCell::new(TabWalk::default()));
+    glib::timeout_add_local(std::time::Duration::from_millis(150), move || {
+        let mut st = st.borrow_mut();
+        let finish = |st: &TabWalk| {
+            println!(
+                "TABWALK stops={} without_indicator={}",
+                st.seen.len(),
+                st.without
+            );
+            if let Some(a) = &app {
+                a.quit();
+            }
+            glib::ControlFlow::Break
+        };
+        if st.plain.is_none() {
+            // phase A: the focus is taken away; the next tick draws the window without a ring
+            if st.i >= 80 {
+                return finish(&st);
+            }
+            GtkWindowExt::set_focus(&win, gtk4::Widget::NONE);
+            st.plain = Some((0, 0, Vec::new()));
+            return glib::ControlFlow::Continue;
+        }
+        if st.plain.as_ref().is_some_and(|p| p.2.is_empty()) {
+            // phase B: record the plain window, then move the focus on from the last stop
+            st.plain = pixels_of(&win, &renderer);
+            if st.plain.is_none() {
+                return finish(&st);
+            }
+            if let Some(prev) = st.stops.last() {
+                prev.grab_focus();
+            }
+            // A headless pointer that moves turns the ring off (GTK drops `focus-visible` on pointer
+            // input); a person tabbing has just used the keyboard, so it is on.
+            win.set_focus_visible(true);
+            win.child_focus(gtk4::DirectionType::TabForward);
+            win.set_focus_visible(true);
+            return glib::ControlFlow::Continue;
+        }
+        // phase C: the stop is focused and has been drawn
+        let Some(f) = GtkWindowExt::focus(&win) else {
+            return finish(&st);
+        };
+        let what = describe(&f).replace(['\n', '|'], " ");
+        let i = st.i;
+        if st.seen.first() == Some(&what) && i > 0 {
+            return finish(&st);
+        }
+        let (w, h, plain) = st.plain.take().unwrap();
+        let Some((_, _, ringed)) = pixels_of(&win, &renderer) else {
+            return finish(&st);
+        };
+        let b = f
+            .compute_bounds(&win)
+            .unwrap_or_else(|| gtk4::graphene::Rect::new(0.0, 0.0, 0.0, 0.0));
+        let clamp = |v: f32, hi: usize| (v as i32).clamp(0, hi as i32) as usize;
+        let (x0, y0) = (clamp(b.x() - 6.0, w), clamp(b.y() - 6.0, h));
+        let (x1, y1) = (
+            clamp(b.x() + b.width() + 6.0, w),
+            clamp(b.y() + b.height() + 6.0, h),
+        );
+        let mut diff = 0usize;
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let o = (y * w + x) * 4;
+                if (0..4).any(|c| plain[o + c].abs_diff(ringed[o + c]) > 8) {
+                    diff += 1;
+                }
+            }
+        }
+        let crop = out.with_file_name(format!(
+            "{}-tab{i}.png",
+            out.file_stem().and_then(|s| s.to_str()).unwrap_or("shot")
+        ));
+        if x1 > x0 && y1 > y0 {
+            let mut c = Vec::with_capacity((x1 - x0) * (y1 - y0) * 4);
+            for y in y0..y1 {
+                c.extend_from_slice(&ringed[(y * w + x0) * 4..(y * w + x1) * 4]);
+            }
+            gdk::MemoryTexture::new(
+                (x1 - x0) as i32,
+                (y1 - y0) as i32,
+                gdk::MemoryFormat::B8g8r8a8Premultiplied,
+                &glib::Bytes::from_owned(c),
+                (x1 - x0) * 4,
+            )
+            .save_to_png(&crop)
+            .expect("crop");
+        }
+        if diff == 0 {
+            st.without += 1;
+        }
+        println!(
+            "TABSTOP {i} {what} | bounds {},{} {}x{} | diffpx {diff} | indicator={} | {}",
+            b.x() as i32,
+            b.y() as i32,
+            b.width() as i32,
+            b.height() as i32,
+            if diff > 0 { "yes" } else { "NO" },
+            crop.file_name().and_then(|s| s.to_str()).unwrap_or("-"),
+        );
+        st.stops.push(f);
+        st.seen.push(what);
+        st.i += 1;
+        glib::ControlFlow::Continue
+    });
+}
+
+/// The surfaces whose Tab order the exit check lists (`shot --tabs`): every window and page, in the
+/// states that put controls on them.
+const TAB_STATES: &[&str] = &[
+    "empty",
+    "rows",
+    "queue-selected",
+    "queue-filter",
+    "crashed",
+    "survived",
+    "quota",
+    "failed",
+    "activity",
+    "logs",
+    "parser-health",
+    "review",
+    "review-nomatch",
+    "review-picker",
+    "review-wipe",
+    "review-differences",
+    "review-compare",
+    "hydrus-empty",
+    "hydrus-query",
+    "hydrus-query-results",
+    "pawchive-artists",
+    "settings-0",
+    "settings-1",
+    "settings-2",
+    "settings-3",
+    "settings-4",
+    "settings-5",
+    "settings-6",
+    "settings-7",
+    "settings-8",
+    "settings-mcp-running",
+    "settings-shortcuts-conflict",
+];
+
+/// `shot --tabs OUTDIR [--only a,b]`: the Tab walk of every surface in `TAB_STATES`, dark and light, a child
+/// process each. Writes `OUTDIR/tabs.tsv` (state, scheme, stop, widget, bounds, changed pixels, indicator,
+/// the crop that shows the stop) and the crops. Exit code 1 if a walk failed or a stop shows no indicator.
+fn run_tabs() -> glib::ExitCode {
+    let mut args = std::env::args().skip(2);
+    let dir = std::path::PathBuf::from(args.next().expect("OUTDIR"));
+    let only: Option<Vec<String>> = match (args.next().as_deref(), args.next()) {
+        (Some("--only"), Some(list)) => Some(list.split(',').map(str::to_owned).collect()),
+        _ => None,
+    };
+    std::fs::create_dir_all(&dir).expect("OUTDIR");
+    let exe = std::env::current_exe().expect("this binary");
+    let mut tsv = String::from("state\tscheme\tstop\twidget\tbounds\tdiffpx\tindicator\tcrop\n");
+    let (mut stops, mut without, mut failed) = (0, 0, 0);
+    for &state in TAB_STATES {
+        if only.as_ref().is_some_and(|o| !o.iter().any(|s| s == state)) {
+            continue;
+        }
+        for scheme in ["dark", "light"] {
+            let out = dir.join(format!("{state}-{scheme}.png"));
+            let run = std::process::Command::new(&exe)
+                .arg(&out)
+                .args([scheme, "1100x800", state, "--tabs"])
+                .output();
+            let text = run
+                .as_ref()
+                .map(|r| String::from_utf8_lossy(&r.stdout).into_owned())
+                .unwrap_or_default();
+            if !run.as_ref().is_ok_and(|r| r.status.success()) || !text.contains("TABWALK") {
+                failed += 1;
+                eprintln!("FAILED tab walk {state}-{scheme}");
+                continue;
+            }
+            for l in text.lines().filter(|l| l.starts_with("TABSTOP ")) {
+                let parts: Vec<&str> = l["TABSTOP ".len()..].split(" | ").collect();
+                if parts.len() != 5 {
+                    failed += 1;
+                    eprintln!("FAILED tab walk {state}-{scheme}: malformed line {l:?}");
+                    continue;
+                }
+                let (i, widget) = parts[0].split_once(' ').unwrap_or((parts[0], ""));
+                let ind = parts[3].trim_start_matches("indicator=");
+                stops += 1;
+                if ind != "yes" {
+                    without += 1;
+                }
+                tsv.push_str(&format!(
+                    "{state}\t{scheme}\t{i}\t{widget}\t{}\t{}\t{ind}\t{}\n",
+                    parts[1].trim_start_matches("bounds "),
+                    parts[2].trim_start_matches("diffpx "),
+                    parts[4]
+                ));
+            }
+        }
+    }
+    std::fs::write(dir.join("tabs.tsv"), &tsv).expect("tabs.tsv");
+    println!(
+        "TABS {stops} stops, {without} without an indicator, {failed} walks failed, {}",
+        dir.join("tabs.tsv").display()
+    );
+    if failed == 0 && without == 0 {
+        glib::ExitCode::SUCCESS
+    } else {
+        glib::ExitCode::FAILURE
+    }
+}
+
 /// Every state `shot` renders: the table, the two scroll measurements and the `tab*` walks.
 fn known_state(s: &str) -> bool {
     SHOT_SET.iter().any(|&(n, _)| n == s)
@@ -322,11 +570,15 @@ fn main() -> glib::ExitCode {
     if std::env::args().nth(1).as_deref() == Some("--all") {
         return run_all();
     }
+    if std::env::args().nth(1).as_deref() == Some("--tabs") {
+        return run_tabs();
+    }
     let mut args = std::env::args().skip(1);
     let out = std::path::PathBuf::from(args.next().expect("OUT.png"));
     let scheme = args.next().unwrap_or_else(|| "dark".into());
     let size = args.next();
     let state = args.next().unwrap_or_else(|| "empty".into());
+    let tabs = args.next().as_deref() == Some("--tabs");
     // Python's `render_states.py` fails loudly on a name it does not know and writes nothing
     // (`test_unknown_state_fails_loudly_and_writes_nothing`); a typo here used to render the
     // default window and exit 0 (DAN-2223).
@@ -619,6 +871,11 @@ fn main() -> glib::ExitCode {
             let tex = texture_of(win.upcast_ref(), &renderer).expect("snapshot");
             tex.save_to_png(&out).expect("png");
             println!("SHOT {} {}x{}", out.display(), win.width(), win.height());
+            if tabs {
+                // The walk quits the application when it is done; the popover shots below are not taken.
+                start_tab_walk(win.clone(), renderer.clone(), out.clone(), main_app.clone());
+                return glib::ControlFlow::Break;
+            }
             // Where every label is, for the measuring script (`<shot>.rects`, tab separated:
             // x y w h state text); the contrast table is computed from the pixels under each box.
             let mut rects = String::new();
