@@ -10,6 +10,7 @@
 //! The six Test buttons and Fetch from Hydrus are network code and 6.h-2's; the buttons are built
 //! and insensitive until then.
 
+use crate::dialogs::{Buttons, Kind};
 use crate::settings_form::{Control, Form};
 use crate::settings_node::Node;
 use crate::settings_spec::PAGES;
@@ -20,6 +21,7 @@ use gtk4 as gtk;
 use gtk4::glib;
 use gtk4::prelude::*;
 use hatate_core::config::Settings;
+use hatate_core::lens_browser::deps::{BrowserEnv, check_dependencies};
 use hatate_core::settings_search::{self, SettingEntry};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -54,6 +56,8 @@ pub struct SettingsDialog {
     listed: RefCell<Vec<Option<(usize, gtk::Widget)>>>,
     /// `_deviantart_cookies_snapshot`.
     da_snapshot: String,
+    /// What the Lens check reads of the process (`PATH`, `HOME`): a test gives it its own.
+    pub lens_env: RefCell<BrowserEnv>,
     highlights: Rc<RefCell<HashMap<usize, u64>>>,
     next_token: Cell<u64>,
     main: MainWindow,
@@ -79,19 +83,30 @@ impl SettingsDialog {
         tabs.set_vexpand(true);
         let mut forms = Vec::new();
         let mut scrolls = Vec::new();
-        let mut index_pages = Vec::new();
         for (name, page) in PAGES {
             let form = Form::build(page);
             form.write(&initial);
             let scroll = scrollable(&form.root);
             tabs.append_page(&scroll, Some(&gtk::Label::new(Some(name))));
-            index_pages.push((
-                *name,
-                scroll.clone().upcast::<gtk::Widget>(),
-                form.named.clone(),
-            ));
             scrolls.push(scroll);
             forms.push(form);
+        }
+        // `_update_engine_pipeline()` runs once at the end of the Engine page's build, so the line
+        // is there before the Find box indexes the page
+        if let Some(live) = forms.iter().find_map(|f| f.live("engine_pipeline")) {
+            let mut all = Values::default();
+            for f in &forms {
+                all.0.extend(f.read().0);
+            }
+            live.set_text(&settings_values::pipeline_text(&settings, &all));
+        }
+        let mut index_pages = Vec::new();
+        for (i, form) in forms.iter().enumerate() {
+            index_pages.push((
+                PAGES[i].0,
+                scrolls[i].clone().upcast::<gtk::Widget>(),
+                form.names(),
+            ));
         }
         for name in LATER_TABS {
             let note = widgets::hint(&format!(
@@ -165,11 +180,13 @@ impl SettingsDialog {
             index,
             listed: RefCell::new(Vec::new()),
             da_snapshot: settings.deviantart_cookies.expose().to_owned(),
+            lens_env: RefCell::new(BrowserEnv::from_process()),
             highlights: Rc::new(RefCell::new(HashMap::new())),
             next_token: Cell::new(0),
             main: main.clone(),
         });
         dialog.insensitive_network_buttons();
+        dialog.wire_controls();
         {
             let w = window.clone();
             cancel_button.connect_clicked(move |_| w.close());
@@ -226,6 +243,90 @@ impl SettingsDialog {
         dialog
     }
 
+    /// The handlers `__init__` connects: the pipeline line, the Lens warning, Browse.
+    fn wire_controls(self: &Rc<Self>) {
+        for id in settings_values::PIPELINE_CONTROLS {
+            for form in &self.forms {
+                let d = Rc::downgrade(self);
+                form.on_change(id, move || {
+                    if let Some(d) = d.upgrade() {
+                        d.update_pipeline();
+                    }
+                });
+            }
+        }
+        for form in &self.forms {
+            if let Some(lens) = form.check("enable_google_lens") {
+                let d = Rc::downgrade(self);
+                lens.connect_toggled(move |c| {
+                    if let Some(d) = d.upgrade() {
+                        d.warn_if_lens_cannot_run(c.is_active());
+                    }
+                });
+            }
+            if let (Some(browse), Some(path)) =
+                (form.button("button.browse"), form.entry_of("log_path"))
+            {
+                let d = Rc::downgrade(self);
+                let path = path.clone();
+                browse.connect_clicked(move |_| {
+                    let Some(d) = d.upgrade() else { return };
+                    let path = path.clone();
+                    d.main.s.prompter.save_file(
+                        "Choose log file",
+                        &path.text(),
+                        "",
+                        Box::new(move |picked| {
+                            if let Some(p) = picked {
+                                path.set_text(&p.to_string_lossy());
+                            }
+                        }),
+                    );
+                });
+            }
+        }
+    }
+
+    /// `_update_engine_pipeline`.
+    fn update_pipeline(&self) {
+        let Some(live) = self.forms.iter().find_map(|f| f.live("engine_pipeline")) else {
+            return;
+        };
+        let base = self.main.s.settings.lock().unwrap().clone();
+        live.set_text(&settings_values::pipeline_text(&base, &self.values()));
+    }
+
+    /// `_warn_if_lens_cannot_run`: an early warning, not a veto; the box stays ticked.
+    fn warn_if_lens_cannot_run(&self, enabled: bool) {
+        if !enabled {
+            return;
+        }
+        let env = self.lens_env.borrow().clone();
+        let status = check_dependencies(&env);
+        if status.missing.is_none() {
+            return;
+        }
+        tracing::info!(
+            "Google Lens was enabled but {:?} is not installed",
+            status.missing
+        );
+        let why = if env.appimage {
+            "the browser bundled with this AppImage could not be found."
+        } else {
+            "no Chromium-based browser could be found."
+        };
+        self.main.s.prompter.message_detailed(
+            Kind::Warning,
+            "Google Lens is not installed yet",
+            &format!(
+                "Google Lens is on, but it cannot run yet: {why}\n\nSearches will carry on with the other engines and Lens will be skipped until this is fixed."
+            ),
+            &status.message,
+            Buttons::Ok,
+            Box::new(|_| {}),
+        );
+    }
+
     /// The Test buttons and Fetch from Hydrus (`_test_*`, `_fetch_tag_services`): network code, 6.h-2's.
     fn insensitive_network_buttons(&self) {
         for form in &self.forms {
@@ -264,6 +365,31 @@ impl SettingsDialog {
     /// The control with `id`, wherever it is.
     pub fn control(&self, id: &str) -> Option<&Control> {
         self.forms.iter().find_map(|f| f.controls.get(id))
+    }
+
+    /// A live label's text (the pipeline line, a Test answer).
+    pub fn live_text(&self, id: &str) -> String {
+        self.forms
+            .iter()
+            .find_map(|f| f.live(id))
+            .map(|l| l.text().to_string())
+            .unwrap_or_default()
+    }
+
+    /// A line edit's text.
+    pub fn text_of(&self, id: &str) -> String {
+        self.forms
+            .iter()
+            .find_map(|f| f.entry_of(id))
+            .map(|e| e.text().to_string())
+            .unwrap_or_default()
+    }
+
+    /// Clicks the button `id`. Test driver and tests only.
+    pub fn press(&self, id: &str) {
+        if let Some(b) = self.forms.iter().find_map(|f| f.button(id)) {
+            b.emit_clicked();
+        }
     }
 
     /// `QTabWidget.tabText`, in order.

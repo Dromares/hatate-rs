@@ -86,8 +86,13 @@ pub enum Node {
         text: &'static str,
         tip: &'static str,
     },
-    /// The empty `QLabel` a Test button writes its answer into.
-    Result { id: &'static str, wrap: bool },
+    /// A `QLabel` the dialog writes into as it runs: the pipeline sentence, and the answer a Test
+    /// button gives.
+    Live {
+        id: &'static str,
+        wrap: bool,
+        hint: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -132,7 +137,7 @@ impl Node {
             | Node::Multiline { id, .. }
             | Node::Checks { id, .. }
             | Node::Button { id, .. }
-            | Node::Result { id, .. } => Some(id),
+            | Node::Live { id, .. } => Some(id),
             _ => None,
         }
     }

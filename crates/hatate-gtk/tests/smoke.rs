@@ -32,6 +32,10 @@ type Scenario = (&'static str, fn(&adw::Application));
 
 const SCENARIOS: &[Scenario] = &[
     (
+        "settings_engine_line_lens_warning_and_browse_follow_python",
+        settings_engine_line_lens_warning_and_browse_follow_python,
+    ),
+    (
         "settings_dialog_opens_on_the_stored_values_and_ok_saves_what_python_would",
         settings_dialog_opens_on_the_stored_values_and_ok_saves_what_python_would,
     ),
@@ -7153,6 +7157,65 @@ fn settings_find_box_lists_jumps_and_marks_for_two_seconds(app: &adw::Applicatio
     assert_eq!(d.current_tab(), 0);
     d.jump_to_setting(0);
     assert_eq!(d.current_tab(), 4, "the Hydrus tab");
+    d.click_cancel();
+    f.close();
+}
+
+fn settings_engine_line_lens_warning_and_browse_follow_python(app: &adw::Application) {
+    use hatate_core::lens_browser::deps::BrowserEnv;
+    use hatate_gtk::settings_values::Value;
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    let line = |d: &hatate_gtk::settings_dialog::SettingsDialog| d.live_text("engine_pipeline");
+    let before = line(&d);
+    assert!(!before.is_empty());
+    d.set_value("enable_tracemoe", &Value::Bool(true));
+    let after = line(&d);
+    assert_ne!(after, before, "the line restates when an engine is ticked");
+    d.set_value("enable_tracemoe", &Value::Bool(false));
+    assert_eq!(line(&d), before);
+
+    // Lens ticked with no browser: a warning, and the box stays ticked
+    let empty = tempfile::tempdir().unwrap();
+    *d.lens_env.borrow_mut() = BrowserEnv {
+        home: Some(empty.path().to_path_buf()),
+        path: Some(empty.path().into()),
+        ..BrowserEnv::default()
+    };
+    f.script.reset();
+    d.set_value("enable_google_lens", &Value::Bool(true));
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Google Lens is not installed yet");
+    assert!(
+        shown
+            .text
+            .starts_with("Google Lens is on, but it cannot run yet: ")
+    );
+    assert!(
+        shown
+            .text
+            .ends_with("Lens will be skipped until this is fixed.")
+    );
+    assert!(!shown.detail.is_empty());
+    assert_eq!(d.values().0["enable_google_lens"], Value::Bool(true));
+    // switching it off, or on again with nothing changed, asks nothing more of the first
+    f.script.reset();
+    d.set_value("enable_google_lens", &Value::Bool(false));
+    assert_eq!(f.script.count_shown(), 0);
+
+    // Browse: the chooser opens on the current path, and the answer fills the field
+    let chosen = f.dir.path().join("log.txt");
+    f.script.push(Answer::Path(Some(chosen.clone())));
+    d.press("button.browse");
+    assert_eq!(d.text_of("log_path"), chosen.to_string_lossy());
+    f.script.push(Answer::Path(None));
+    d.press("button.browse");
+    assert_eq!(
+        d.text_of("log_path"),
+        chosen.to_string_lossy(),
+        "Cancel leaves it"
+    );
     d.click_cancel();
     f.close();
 }

@@ -852,8 +852,8 @@ Left at "off", nothing changes: any result at all still ends the search."#,
                             wrap: false,
                             hint: false,
                         }),
-                        field: Node::Label {
-                            text: r#"IQDB → SauceNAO → Pawchive index → ascii2d"#,
+                        field: Node::Live {
+                            id: r#"engine_pipeline"#,
                             wrap: true,
                             hint: true,
                         },
@@ -1443,9 +1443,10 @@ Needs the "Edit File Notes" permission on your Hydrus access key (services → r
                     text: r#"Test connection"#,
                     tip: r#""#,
                 }),
-                field: Node::Result {
+                field: Node::Live {
                     id: r#"hydrus_test_result"#,
                     wrap: false,
+                    hint: false,
                 },
             },
         ]),
@@ -1615,9 +1616,10 @@ This lets the app see works that require login and R-18 content, which Pixiv hid
                     text: r#"Test Pixiv…"#,
                     tip: r#"Runs the real parser against a Pixiv artwork URL you provide and reports exactly what came back - HTTP status, whether the page data was found, and how many tags and image URLs were extracted. Uses the cookie currently typed above, so you can check a new one before saving."#,
                 }),
-                field: Node::Result {
+                field: Node::Live {
                     id: r#"pixiv_test_result"#,
                     wrap: true,
+                    hint: false,
                 },
             },
             Row {
@@ -1660,9 +1662,10 @@ A WRONG key is worse than none: e621 answers 401 to every request carrying one, 
 
 Worth doing before a run: a WRONG key is worse than none, because e621 answers 401 to every request carrying it - including ones that would have worked anonymously."#,
                 }),
-                field: Node::Result {
+                field: Node::Live {
                     id: r#"e621_test_result"#,
                     wrap: true,
+                    hint: false,
                 },
             },
             Row {
@@ -1695,9 +1698,10 @@ Treat it like a password: it grants access to your account and is stored in plai
                     text: r#"Test Sankaku…"#,
                     tip: r#"Fetches a Sankaku post URL you provide using the cookies typed above and reports whether it came back as a real post or as the blank "no such post" page."#,
                 }),
-                field: Node::Result {
+                field: Node::Live {
                     id: r#"sankaku_test_result"#,
                     wrap: true,
+                    hint: false,
                 },
             },
             Row {
@@ -1731,9 +1735,10 @@ Treat it like a password: it grants access to your account and is stored in plai
                     text: r#"Test Anime-Pictures…"#,
                     tip: r#"Fetches a post through the real API path using the cookies typed above and reports exactly what came back - whether it was readable, how many tags and what dimensions were found, or that it is still account-only."#,
                 }),
-                field: Node::Result {
+                field: Node::Live {
                     id: r#"animepictures_test_result"#,
                     wrap: true,
+                    hint: false,
                 },
             },
             Row {
@@ -1769,9 +1774,10 @@ Treat it like a password: it grants access to your account and is stored in plai
                     text: r#"Test DeviantArt…"#,
                     tip: r#"Fetches a deviation through the real parser path using the cookies typed above and reports what came back - the artist, and whether the picture arrived properly or is still the blurred logged-out copy."#,
                 }),
-                field: Node::Result {
+                field: Node::Live {
                     id: r#"deviantart_test_result"#,
                     wrap: true,
+                    hint: false,
                 },
             },
         ]),

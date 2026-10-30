@@ -32,7 +32,7 @@ pub enum Control {
         items: Vec<&'static str>,
     },
     Button(gtk::Button),
-    Result(gtk::Label),
+    Live(gtk::Label),
 }
 
 /// One built page.
@@ -41,7 +41,7 @@ pub struct Form {
     pub controls: BTreeMap<&'static str, Control>,
     /// What the Find box can name, in tree order: the text of every label, check box and group
     /// title (`settings_search.index_tabs` walks `QLabel`, `QCheckBox`, `QRadioButton`, `QGroupBox`).
-    pub named: Vec<(String, gtk::Widget)>,
+    pub named: Vec<(Option<String>, gtk::Widget)>,
 }
 
 impl Form {
@@ -62,7 +62,7 @@ impl Form {
     }
 
     fn name(&mut self, text: &str, w: &impl IsA<gtk::Widget>) {
-        self.named.push((text.to_owned(), w.clone().upcast()));
+        self.named.push((Some(text.to_owned()), w.clone().upcast()));
     }
 
     fn node(&mut self, n: &Node) -> gtk::Widget {
@@ -250,14 +250,18 @@ impl Form {
                 self.controls.insert(id, Control::Button(b.clone()));
                 b.upcast()
             }
-            Node::Result { id, wrap } => {
+            Node::Live { id, wrap, hint } => {
                 let l = gtk::Label::new(None);
                 l.set_xalign(0.0);
+                if hint {
+                    l.add_css_class("hint");
+                }
                 l.set_wrap(wrap);
                 if wrap {
                     l.set_max_width_chars(60);
                 }
-                self.controls.insert(id, Control::Result(l.clone()));
+                self.named.push((None, l.clone().upcast()));
+                self.controls.insert(id, Control::Live(l.clone()));
                 l.upcast()
             }
         }
@@ -356,7 +360,7 @@ impl Form {
                         .map(|(_, n)| (*n).to_owned())
                         .collect(),
                 ),
-                Control::Button(_) | Control::Result(_) => continue,
+                Control::Button(_) | Control::Live(_) => continue,
             };
             out.set(id, v);
         }
@@ -403,4 +407,69 @@ fn spin_button(
         Some(number.parse::<f64>().map_err(|_| ()))
     });
     spin
+}
+
+impl Form {
+    /// The Find box's names: fixed texts as built, a live label's as it reads now.
+    pub fn names(&self) -> Vec<(String, gtk::Widget)> {
+        self.named
+            .iter()
+            .map(|(fixed, w)| {
+                let text = match fixed {
+                    Some(t) => t.clone(),
+                    None => w
+                        .downcast_ref::<gtk::Label>()
+                        .map(|l| l.text().to_string())
+                        .unwrap_or_default(),
+                };
+                (text, w.clone())
+            })
+            .collect()
+    }
+
+    pub fn live(&self, id: &str) -> Option<&gtk::Label> {
+        match self.controls.get(id) {
+            Some(Control::Live(l)) => Some(l),
+            _ => None,
+        }
+    }
+
+    /// Runs `f` whenever the control `id` changes by hand or by `write`.
+    pub fn on_change(&self, id: &str, f: impl Fn() + Clone + 'static) {
+        match self.controls.get(id) {
+            Some(Control::Check(c)) => {
+                c.connect_toggled(move |_| f());
+            }
+            Some(Control::Num { spin, .. }) => {
+                spin.connect_value_changed(move |_| f());
+            }
+            Some(Control::Choice { drop, .. }) => {
+                drop.connect_selected_notify(move |_| f());
+            }
+            _ => {}
+        }
+    }
+
+    pub fn button(&self, id: &str) -> Option<&gtk::Button> {
+        match self.controls.get(id) {
+            Some(Control::Button(b)) => Some(b),
+            _ => None,
+        }
+    }
+
+    pub fn entry_of(&self, id: &str) -> Option<&gtk::Entry> {
+        match self.controls.get(id) {
+            Some(Control::Text(e)) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl Form {
+    pub fn check(&self, id: &str) -> Option<&gtk::CheckButton> {
+        match self.controls.get(id) {
+            Some(Control::Check(c)) => Some(c),
+            _ => None,
+        }
+    }
 }

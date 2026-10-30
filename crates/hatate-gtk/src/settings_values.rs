@@ -508,3 +508,40 @@ pub fn apply(v: &Values, da_snapshot: &str, s: &mut Settings) {
     s.write_hydrus_provenance_note = v.b("write_hydrus_provenance_note");
     s.hydrus_provenance_note_name = strip(v.t("hydrus_provenance_note_name")).to_owned();
 }
+
+/// The controls whose change restates the Engine page's "Current pipeline" line
+/// (`_update_engine_pipeline`'s widget list).
+pub const PIPELINE_CONTROLS: &[&str] = &[
+    "primary_engine",
+    "secondary_engine_mode",
+    "fallback_below_similarity",
+    "extras_only_as_fallback",
+    "enable_ascii2d",
+    "enable_tracemoe",
+    "enable_iqdb3d",
+    "enable_google_images",
+    "enable_google_lens",
+    "enable_yandex",
+    "enable_pawchive",
+    "enable_pawchive_index",
+];
+
+/// `_update_engine_pipeline`: the sentence for the engine controls as they read now. Python
+/// built it on a fresh `Settings()`; `pipeline_summary` reads only these twelve fields, so `base`
+/// stands in for it.
+pub fn pipeline_text(base: &Settings, v: &Values) -> String {
+    let mut t = base.clone();
+    t.primary_engine = v.t("primary_engine").to_owned();
+    t.secondary_engine_mode = v.t("secondary_engine_mode").to_owned();
+    t.fallback_below_similarity = v.n("fallback_below_similarity");
+    t.extras_only_as_fallback = v.b("extras_only_as_fallback");
+    t.enable_ascii2d = v.b("enable_ascii2d");
+    t.enable_tracemoe = v.b("enable_tracemoe");
+    t.enable_iqdb3d = v.b("enable_iqdb3d");
+    t.enable_google_images = v.b("enable_google_images");
+    t.enable_google_lens = v.b("enable_google_lens");
+    t.enable_yandex = v.b("enable_yandex");
+    t.enable_pawchive = v.b("enable_pawchive");
+    t.enable_pawchive_index = v.b("enable_pawchive_index");
+    hatate_core::engine_ids::pipeline_summary(&t)
+}
