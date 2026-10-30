@@ -9149,7 +9149,7 @@ fn review_shortcuts_dialog_lists_every_action_with_its_key(app: &adw::Applicatio
     let next = hatate_core::shortcuts::action("next_row").unwrap().label;
     let compare = hatate_core::shortcuts::action("compare").unwrap().label;
     assert_eq!(find(&format!("{next}:")), "N");
-    assert_eq!(find(&format!("{compare}:")), sd::UNBOUND);
+    assert_eq!(find(&format!("{compare}:")), "(unbound)");
     dialog.click_close();
     f.close();
 }

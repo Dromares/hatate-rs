@@ -261,5 +261,46 @@ Unit tests: `crates/hatate-gtk/src/settings_tests.rs` (`a_url_on_the_wrong_site_
 `crates/hatate-core/src/net/site.rs` `cookie_paste_warnings_say_what_python_says`, `a_string_with_no_cookie_in_it_has_no_warnings`, `the_advice_names_the_site_it_is_for`.
 
 **The Review Shortcuts dialog** (`smoke.rs:9084`): the button is sensitive with Python's tooltip (`:9089`, `:9090`), the title is `Review Keyboard Shortcuts` (`:9102`),
-one row per review action in order (`:9104`), each `label:` with its key or `(unbound)` (`:9109`, `:9110`), the one button is Close and it is the default (`:9119`, `:9120`),
-and a binding changed in Settings shows on the next opening (`:9151`, `:9152`).
+each row's `label:` and its key (`:9109`, `:9110`), `(unbound)` for none (`:9152`), the one button is Close and it is the default (`:9119`, `:9120`),
+and a binding changed in Settings shows on the next opening (`:9151`).
+
+## 8. Revert and red
+
+Every assertion this doc cites as pinning a row was made to fail by editing the shipped line it checks, the named test was run and went red on a test failure (not on a compile error), and the line was restored (`worktrees/DAN-2448-tools/revert.py`, log `worktrees/DAN-2448-revert.log`: each mutation, the verdict and the first failing assertion). **34 of 34 went red.** Two mutations of the first pass did not, and are the findings of the exercise: `smoke.rs:9002` (a 600 ms sleep on the main thread before the request was posted did not lower the tick count, because the timer catches up; a sleep queued on the loop during the pump did, and is the row below) and `smoke.rs:9152` (the test compared the key text with `sd::UNBOUND`, the very constant under test, so changing it stayed green; the assertion now compares with the literal `(unbound)`). `smoke.rs:8754` (nothing was sent for a half-filled pair) is in the same scenario as `:8743` and only fails after it; no single edit turns it red without also failing `:8743`, so it is not separately pinned.
+
+| Assertion (the line the row cites) | Source edited | Mutation | Test |
+|---|---|---|---|
+| smoke.rs:8743 (e621 half-filled text) | `settings_tests.rs` | `"No {missing} entered. Both halves` to `"Missing {missing}. Both halves` | `settings_e621_test_sends_python_request_and_says_what_python_says` |
+| smoke.rs:8867 (typed credentials in the Basic header) | `site.rs` | `base64(format!("{user}:{key}").as_bytes())` to `base64(format!("{key}:{user}").as_bytes())` | `settings_e621_test_sends_the_typed_credentials_not_the_saved_ones` |
+| smoke.rs:8784 (the app's own User-Agent) | `site.rs` | `header(&mut h, USER_AGENT_HEADER, USER_AGENT);` to `header(&mut h, USER_AGENT_HEADER, BROWSER_USER_AGENT);` | `settings_e621_test_sends_python_request_and_says_what_python_says` |
+| smoke.rs:8770 (accepted text) | `settings_tests.rs` | `"e621 accepted the credentials for {user}.` to `"e621 accepted the login for {user}.` | `settings_e621_test_sends_python_request_and_says_what_python_says` |
+| smoke.rs:8805 (401 text) | `settings_tests.rs` | `"e621 rejected the username or API key (401).` to `"e621 refused the username or API key (401).` | `settings_e621_test_sends_python_request_and_says_what_python_says` |
+| smoke.rs:8805 (418 text) | `settings_tests.rs` | `which is neither an accept nor a rejection.` to `which is not a verdict.` | `settings_e621_test_sends_python_request_and_says_what_python_says` |
+| smoke.rs:8810 (network error text) | `settings_tests.rs` | `"Couldn't reach e621. That is a network problem` to `"Could not reach e621. That is a network problem` | `settings_e621_test_sends_python_request_and_says_what_python_says` |
+| smoke.rs:8824 (no OS text in the network error) | `settings_tests.rs` | `See Help > View Logs for the specific reason.".to_owned()` to `See Help > View Logs for the specific reason. os error".to_o` | `settings_e621_test_sends_python_request_and_says_what_python_says` |
+| smoke.rs:8944 (the DeviantArt prompt preset) | `settings_tests.rs` | `"https://www.deviantart.com/",` to `"https://www.deviantart.com/x",` | `settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages` |
+| smoke.rs:8962 (404 gone text) | `settings_tests.rs` | `"That deviation is gone (HTTP 404)` to `"That deviation is missing (HTTP 404)` | `settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages` |
+| smoke.rs:8972 (no HTTP status in the page error) | `settings_tests.rs` | `"Could not fetch it: the site did not answer as expected.` to `"HTTP 500 Could not fetch it: the site did not answer as exp` | `settings_page_tests_ask_first_and_report_gone_failed_and_empty_pages` |
+| smoke.rs:9000 (button out while the request is out) | `settings_dialog.rs` | `if let Some(b) = &button {             b.set_sensitive(false` to `let engine = backend.engine.clone();` | `settings_tests_wait_on_a_stalled_server_without_blocking_the_window` |
+| smoke.rs:9002 (main loop keeps ticking) | `settings_dialog.rs` | `let engine = backend.engine.clone();         let handle = se` to `let engine = backend.engine.clone();         gtk::glib::idle` | `settings_tests_wait_on_a_stalled_server_without_blocking_the_window` |
+| smoke.rs:9043 (Hydrus Failed prefix) | `settings_tests.rs` | `format!("Failed: {}", e.user_message())` to `format!("Error: {}", e.user_message())` | `settings_hydrus_test_and_fetch_follow_python` |
+| smoke.rs:9057 (Connected mark) | `settings_tests.rs` | `Ok(true) => "Connected \u{2713}".into()` to `Ok(true) => "Connected".into()` | `settings_hydrus_test_and_fetch_follow_python` |
+| smoke.rs:9069 (service label) | `settings_tests.rs` | `format!("{name}  ({head}\u{2026})")` to `format!("{name} ({head})")` | `settings_hydrus_test_and_fetch_follow_python` |
+| smoke.rs:9102 (dialog title) | `shortcuts_dialog.rs` | `pub const TITLE: &str = "Review Keyboard Shortcuts";` to `pub const TITLE: &str = "Keyboard Shortcuts";` | `review_shortcuts_dialog_lists_every_action_with_its_key` |
+| smoke.rs:9110 (each row's key text) | `shortcuts_dialog.rs` | `(format!("{}:", a.label), shown.to_owned())` to `(format!("{}:", a.label), shown.to_uppercase())` | `review_shortcuts_dialog_lists_every_action_with_its_key` |
+| smoke.rs:9120 (Close is the default) | `shortcuts_dialog.rs` | `window.set_default_widget(Some(&close_button));` to `(line removed)` | `review_shortcuts_dialog_lists_every_action_with_its_key` |
+| smoke.rs:9152 (unbound) | `shortcuts_dialog.rs` | `pub const UNBOUND: &str = "(unbound)";` to `pub const UNBOUND: &str = "unbound";` | `review_shortcuts_dialog_lists_every_action_with_its_key` |
+| site.rs:595 (truncated flag) | `site.rs` | `let truncated = \|value: &str\| TRUNCATION_HINTS.iter().any(\|h` to `let truncated = \|_value: &str\| false;` | `cookie_paste_warnings_say` |
+| site.rs:590 (no session cookie) | `site.rs` | `if session.is_empty() {         warnings.push(format!(      ` to `if false {         warnings.push(format!(             "No se` | `cookie_paste_warnings_say` |
+| site.rs:591 (short session) | `site.rs` | `if len < SUSPICIOUSLY_SHORT_SESSION_CHARS && !truncated(valu` to `if false && len < SUSPICIOUSLY_SHORT_SESSION_CHARS && !trunc` | `cookie_paste_warnings_say` |
+| site.rs:600 (a long session value is clean) | `site.rs` | `if len < SUSPICIOUSLY_SHORT_SESSION_CHARS && !truncated(valu` to `if len < 1000 && !truncated(value) {` | `cookie_paste_warnings_say` |
+| site.rs:616 (no cookie, no warning) | `site.rs` | `if cookies.is_empty() {         return warnings;     }     l` to `let truncated` | `a_string_with_no_cookie` |
+| site.rs:627 (the advice names the site) | `site.rs` | `{session_name}; without it` to `_sankakuchannel_session; without it` | `the_advice_names` |
+| settings_tests.rs:637 (DA blurred text) | `settings_tests.rs` | `but the picture is still the BLURRED logged-out copy.` to `but the picture is still the blurred copy.` | `a_restricted_page` |
+| settings_tests.rs:645 (AP restricted text) | `settings_tests.rs` | `"Still account-only with these cookies. {}"` to `"Still account-only. {}"` | `a_restricted_page` |
+| settings_tests.rs:654 (Pixiv empty page text) | `settings_tests.rs` | `"Page fetched, but no data could be read from it. If this ar` to `"Page fetched, but nothing could be read. If this artwork re` | `a_restricted_page` |
+| smoke.rs:9089 (the Shortcuts button is sensitive) | `review_view.rs` | `widgets::icon_button("\u{2328}", "Show all review keyboard s` to `widgets::icon_button("\u{2328}", "Show all review keyboard s` | `review_shortcuts_dialog_lists_every_action_with_its_key` |
+| smoke.rs:9090 (Python's tooltip) | `review_view.rs` | `"Show all review keyboard shortcuts."` to `"The shortcuts list arrives in a later step."` | `review_shortcuts_dialog_lists_every_action_with_its_key` |
+| smoke.rs:9119 (the one button is Close) | `shortcuts_dialog.rs` | `pub const CLOSE: &str = "Close";` to `pub const CLOSE: &str = "Done";` | `review_shortcuts_dialog_lists_every_action_with_its_key` |
+| smoke.rs:9151 (an override shows) | `shortcuts_dialog.rs` | `.find(\|(k, _)\| k == a.id)` to `.find(\|(k, _)\| k == "nope")` | `review_shortcuts_dialog_lists_every_action_with_its_key` |
+| smoke.rs:9109 (each row's label has its colon) | `shortcuts_dialog.rs` | `(format!("{}:", a.label), shown.to_owned())` to `(format!("{}", a.label), shown.to_owned())` | `review_shortcuts_dialog_lists_every_action_with_its_key` |
