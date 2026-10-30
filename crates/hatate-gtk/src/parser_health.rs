@@ -39,6 +39,12 @@ pub const PROBE_SITES: [&str; 13] = [
 /// What the disabled button says, as DAN-2290 words it.
 pub const NO_LIVE_CHECK: &str = "The live check is not part of this build yet.";
 
+/// The dialog's floor (DAN-2472 item 7): Python calls `resize(760, 460)` and the dialog states it as
+/// its minimum, so the fit test applies to every state of the page. 13 site rows and four columns
+/// do not fit it at rest: the list scrolls (see `build`).
+pub const MIN_WIDTH: i32 = 760;
+pub const MIN_HEIGHT: i32 = 460;
+
 /// The dialog's columns.
 pub const COLUMNS: [&str; 4] = ["Site", "This session", "Live check", "Last problem"];
 
@@ -205,6 +211,7 @@ fn tone_class(t: Tone) -> Option<&'static str> {
 pub struct ParserHealthDialog {
     pub window: gtk::Window,
     pub grid: gtk::Grid,
+    pub scroll: gtk::ScrolledWindow,
     pub progress: gtk::ProgressBar,
     pub status: gtk::Label,
     pub check_button: gtk::Button,
@@ -220,8 +227,10 @@ impl ParserHealthDialog {
             .title("Parser Health")
             .transient_for(&main.win)
             .modal(true)
-            .default_width(760)
-            .default_height(460)
+            .default_width(MIN_WIDTH)
+            .default_height(MIN_HEIGHT)
+            .width_request(MIN_WIDTH)
+            .height_request(MIN_HEIGHT)
             .build();
         let column = gtk::Box::new(gtk::Orientation::Vertical, widgets::PAGE_SPACING);
         let (l, t, r, b) = widgets::PAGE_MARGINS;
@@ -245,6 +254,13 @@ impl ParserHealthDialog {
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_vexpand(true);
         scroll.set_child(Some(&grid));
+        // 13 sites do not fit a 460 px dialog, and a list that clips them with nothing at rest to
+        // say so hides the very row a person came to check (DAN-2472 item 1). The scrollbar is
+        // persistent, as the Queue's is (design gate 2.4): an overlay one is a 2 px line that a
+        // pointer has to find. The list is one Tab stop (the scroller, so the arrow keys scroll it);
+        // its cells are not stops, see `populate`.
+        scroll.set_overlay_scrolling(false);
+        scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
         column.append(&scroll);
 
         let progress = gtk::ProgressBar::new();
@@ -288,6 +304,7 @@ impl ParserHealthDialog {
         let dialog = Rc::new(ParserHealthDialog {
             window: window.clone(),
             grid,
+            scroll,
             progress,
             status,
             check_button: check_button.clone(),
@@ -340,6 +357,9 @@ impl ParserHealthDialog {
                 let l = gtk::Label::new(Some(text));
                 l.set_xalign(0.0);
                 l.set_selectable(true);
+                // Selectable so a site name can be copied, and not a Tab stop: three stops a row
+                // put 39 labels between the heading and Close (DAN-2472 item 1).
+                l.set_focusable(false);
                 if let Some(class) = tone_class(tone) {
                     l.add_css_class(class);
                 }
