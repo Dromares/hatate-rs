@@ -6174,7 +6174,12 @@ fn query_and_pawchive_windows_follow_the_design_read(app: &adw::Application) {
         !d.results.is_focusable(),
         "an empty results list is not a Tab stop"
     );
-    assert!(!d.results.parent().unwrap().is_focusable());
+    assert!(
+        !d.results
+            .ancestor(gtk4::ScrolledWindow::static_type())
+            .unwrap()
+            .is_focusable()
+    );
     d.set_tags_text("solo");
     d.search();
     assert!(pump_until(10_000, || d.labels().len() == 1));
@@ -6212,7 +6217,12 @@ fn query_and_pawchive_windows_follow_the_design_read(app: &adw::Application) {
         !d.table.is_focusable(),
         "the empty artist table is not a Tab stop"
     );
-    assert!(!d.table.parent().unwrap().is_focusable());
+    assert!(
+        !d.table
+            .ancestor(gtk4::ScrolledWindow::static_type())
+            .unwrap()
+            .is_focusable()
+    );
     assert_eq!(
         d.none_yet.text(),
         "No artists indexed yet. Add one below.",
