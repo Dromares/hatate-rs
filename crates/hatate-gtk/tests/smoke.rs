@@ -443,6 +443,10 @@ const SCENARIOS: &[Scenario] = &[
         mcp_research_runs_the_windows_own_search_and_the_tool_goes_on_when_it_ends,
     ),
     (
+        "mcp_send_leaves_the_main_loop_running_while_hydrus_stalls",
+        mcp_send_leaves_the_main_loop_running_while_hydrus_stalls,
+    ),
+    (
         "settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict",
         settings_shortcuts_page_records_clears_resets_and_refuses_a_conflict,
     ),
@@ -7926,5 +7930,54 @@ fn mcp_research_runs_the_windows_own_search_and_the_tool_goes_on_when_it_ends(
     // and the audit says what happened
     let audit = std::fs::read_to_string(f.paths.mcp_audit_log()).unwrap();
     assert!(audit.contains("\"tool\": \"research\"") && audit.contains("\"allowed\": true"));
+    f.close();
+}
+
+/// A `send_upload` tool call against a Hydrus that stalls: the server's thread waits, the main
+/// loop keeps turning, and the row is marked sent when the answer comes.
+fn mcp_send_leaves_the_main_loop_running_while_hydrus_stalls(app: &adw::Application) {
+    use common::hydrus::json_reply;
+    use serde_json::json;
+    let dir = tempfile::tempdir().unwrap();
+    let server = common::hydrus::Hydrus::http(|q| {
+        let r = json_reply(json!({"status": 1, "hash": NEW_HASH, "note": ""}));
+        if q.target.starts_with("/add_files/add_file") {
+            r.delayed(std::time::Duration::from_millis(900))
+        } else {
+            r
+        }
+    });
+    let port = mcp::free_port();
+    let url = server.url.clone();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: review_seed(dir.path()),
+            tweak: Some(Box::new(move |s| {
+                (hydrus_tweak(&url, true))(s);
+                s.mcp.enabled = true;
+                s.mcp.port = i64::from(port);
+                s.mcp.token = mcp::TOKEN.into();
+            })),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let ticks = Rc::new(Cell::new(0u32));
+    let t = ticks.clone();
+    let tick = gtk4::glib::timeout_add_local(std::time::Duration::from_millis(20), move || {
+        t.set(t.get() + 1);
+        gtk4::glib::ControlFlow::Continue
+    });
+    let mut client = mcp::Client::new(port);
+    let answer = client.payload("send_upload", json!({"row": 0}));
+    assert_eq!(answer["success"], true, "{answer}");
+    assert!(
+        ticks.get() >= 10,
+        "the main loop kept turning while the call waited: {} ticks",
+        ticks.get()
+    );
+    assert!(f.w.s.queue.borrow().entry_at(0).unwrap().sent_to_hydrus);
+    tick.remove();
     f.close();
 }
