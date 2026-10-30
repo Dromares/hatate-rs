@@ -173,6 +173,63 @@ pub fn animepictures_cookies(raw: &str) -> Option<Cookies> {
     None
 }
 
+/// A pasted value that carries one of these was cut off by the browser's cookie panel
+/// (`TRUNCATION_HINTS`).
+const TRUNCATION_HINTS: [&str; 2] = ["\u{2026}", "..."];
+
+/// A session cookie shorter than this is probably cut short (`SUSPICIOUSLY_SHORT_SESSION_CHARS`).
+const SUSPICIOUSLY_SHORT_SESSION_CHARS: usize = 100;
+
+/// Problems worth mentioning about a pasted cookie string (`core/site_access.py:203-247`).
+///
+/// `session_name` is the cookie that carries the login for the site being configured, so the
+/// advice names the right one. Advisory only: none of these block anything.
+pub fn cookie_paste_warnings(raw: &str, session_name: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let cookies = parse_cookie_string(raw);
+    if cookies.is_empty() {
+        return warnings;
+    }
+    let truncated = |value: &str| TRUNCATION_HINTS.iter().any(|h| value.contains(h));
+    let items: Vec<(&str, &str)> = cookies
+        .names()
+        .filter_map(|n| cookies.get(n).map(|v| (n, v.expose())))
+        .collect();
+    for (name, value) in &items {
+        if truncated(value) {
+            warnings.push(format!(
+                "{name} looks truncated - its value contains an ellipsis, which is what the \
+                 browser's cookie panel shows when a value is too long to display. \
+                 Right-click the row and use Copy Value instead of selecting the text."
+            ));
+        }
+    }
+    let session: Vec<&(&str, &str)> = items
+        .iter()
+        .filter(|(n, _)| {
+            n.to_lowercase().contains("session") || n.to_lowercase() == session_name.to_lowercase()
+        })
+        .collect();
+    if session.is_empty() {
+        warnings.push(format!(
+            "No session cookie found. The one carrying your login is normally named \
+             {session_name}; without it these are only display preferences and \
+             you'll still be treated as logged out."
+        ));
+    } else {
+        for (name, value) in session {
+            let len = value.chars().count();
+            if len < SUSPICIOUSLY_SHORT_SESSION_CHARS && !truncated(value) {
+                warnings.push(format!(
+                    "{name} is only {len} characters, which is short for a session \
+                     cookie - check the whole value was copied."
+                ));
+            }
+        }
+    }
+    warnings
+}
+
 /// Site-specific auth cookies, when the user configured them
 /// (`core/site_access.py:250-286`). `None`, not an empty jar, when nothing is set.
 ///
@@ -516,5 +573,58 @@ mod tests {
             )
             .is_some()
         );
+    }
+
+    /// `cookie_paste_warnings`, with the texts the Python function gave at `76c85c4` (run on the
+    /// same seven inputs).
+    #[test]
+    fn cookie_paste_warnings_say_what_python_says() {
+        const SANKAKU: &str = "_sankakuchannel_session";
+        const NO_SESSION: &str = "No session cookie found. The one carrying your login is normally named {}; without it these are only display preferences and you'll still be treated as logged out.";
+        const TRUNCATED: &str = "{} looks truncated - its value contains an ellipsis, which is what the browser's cookie panel shows when a value is too long to display. Right-click the row and use Copy Value instead of selecting the text.";
+        const SHORT: &str = "{} is only {} characters, which is short for a session cookie - check the whole value was copied.";
+        let no_session = |name: &str| NO_SESSION.replace("{}", name);
+        let truncated = |name: &str| TRUNCATED.replace("{}", name);
+        let short = |name: &str, n: &str| SHORT.replacen("{}", name, 1).replacen("{}", n, 1);
+        assert!(cookie_paste_warnings("", SANKAKU).is_empty());
+        assert_eq!(cookie_paste_warnings("a=b", SANKAKU), [no_session(SANKAKU)]);
+        assert_eq!(
+            cookie_paste_warnings("auth=abc; auth_secure=xyz", "auth"),
+            [short("auth", "3")]
+        );
+        assert_eq!(
+            cookie_paste_warnings("foo=bar\u{2026}baz; sid_session=short", SANKAKU),
+            [truncated("foo"), short("sid_session", "5")]
+        );
+        let long = format!("{SANKAKU}={}; z=1", "x".repeat(120));
+        assert!(cookie_paste_warnings(&long, SANKAKU).is_empty());
+        let not_a_session = format!("sess={}", "y".repeat(99));
+        assert_eq!(
+            cookie_paste_warnings(&not_a_session, SANKAKU),
+            [no_session(SANKAKU)]
+        );
+        assert_eq!(
+            cookie_paste_warnings("a=1...", "auth"),
+            [truncated("a"), no_session("auth")]
+        );
+    }
+
+    /// `TestCookiePasteWarnings.test_a_string_with_no_parseable_cookies_has_no_warnings`: a string with
+    /// no cookie in it is silent.
+    #[test]
+    fn a_string_with_no_cookie_in_it_has_no_warnings() {
+        assert!(
+            cookie_paste_warnings("not a cookie string at all", "_sankakuchannel_session")
+                .is_empty()
+        );
+    }
+
+    /// `TestAnimePicturesCookiePaste.test_warnings_name_the_right_site_session_cookie`: the advice names
+    /// the site's own session cookie, never Sankaku's.
+    #[test]
+    fn the_advice_names_the_site_it_is_for() {
+        let joined = cookie_paste_warnings("sitelang=en", ANIMEPICTURES_SESSION_COOKIE).join(" ");
+        assert!(joined.contains(ANIMEPICTURES_SESSION_COOKIE));
+        assert!(!joined.to_lowercase().contains("sankaku"));
     }
 }

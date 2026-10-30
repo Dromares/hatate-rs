@@ -29,6 +29,10 @@ pub struct NetConfig {
     /// Set only by a caller constructing the client in code (tests); the binaries have no
     /// setting, flag or environment variable that fills it.
     pub host_overrides: Vec<(String, SocketAddr)>,
+    /// Refuse any request, redirects included, to a host that is neither in `host_overrides` nor
+    /// loopback. A test that scripts a site sets it so a fetch to a host it forgot to script fails
+    /// at once instead of reaching the real one. Like `host_overrides`, only code sets it.
+    pub only_scripted_hosts: bool,
 }
 
 impl Default for NetConfig {
@@ -40,6 +44,7 @@ impl Default for NetConfig {
             max_redirects: MAX_REDIRECTS,
             max_body_bytes: DEFAULT_MAX_BODY_BYTES,
             host_overrides: Vec::new(),
+            only_scripted_hosts: false,
         }
     }
 }
@@ -57,6 +62,12 @@ impl NetConfig {
     /// site would have seen.
     pub fn with_host_override(mut self, host: &str, addr: SocketAddr) -> Self {
         self.host_overrides.push((host.to_ascii_lowercase(), addr));
+        self
+    }
+
+    /// Refuses every host that is not scripted (see [`NetConfig::only_scripted_hosts`]).
+    pub fn with_only_scripted_hosts(mut self) -> Self {
+        self.only_scripted_hosts = true;
         self
     }
 

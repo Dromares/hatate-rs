@@ -171,6 +171,17 @@ fn resolve_location(base: &Url, location: &str) -> Option<Url> {
     Url::parse(&joined).ok()
 }
 
+/// Whether a net layer that only reaches scripted hosts may go to `url`: a host with an override,
+/// or loopback.
+fn scripted_host(cfg: &NetConfig, url: &url::Url) -> bool {
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    host == "localhost"
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+        || cfg.host_overrides.iter().any(|(h, _)| *h == host)
+}
+
 async fn execute(
     client: reqwest::Client,
     cfg: Arc<NetConfig>,
@@ -189,6 +200,13 @@ async fn execute(
     let mut body_headers_dropped = false;
 
     loop {
+        if cfg.only_scripted_hosts && !scripted_host(&cfg, &url) {
+            return Err(NetError::new(
+                ErrorKind::Connect,
+                None,
+                "a host no test scripted was asked for",
+            ));
+        }
         let Some((wait, _)) = slice(req.timeout, deadline_at) else {
             return Err(expired(&url, Expiry::NoTimeLeft(req.deadline)));
         };

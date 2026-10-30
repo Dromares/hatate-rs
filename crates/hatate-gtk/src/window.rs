@@ -249,6 +249,8 @@ pub struct State {
     pub pawchive_override: Option<Arc<hatate_core::pawchive_index::PawchiveCrawler>>,
     pub hydrus_query_dialog: RefCell<Option<Rc<crate::hydrus_query::HydrusQueryDialog>>>,
     pub settings_dialog: RefCell<Option<Rc<crate::settings_dialog::SettingsDialog>>>,
+    /// Review > Shortcuts, while it is open.
+    pub shortcuts_dialog: RefCell<Option<Rc<crate::shortcuts_dialog::ShortcutsDialog>>>,
     /// `self._reconcile_was_quiet`.
     pub reconcile_was_quiet: Cell<bool>,
     /// `self._pending_poll_confirmed`, `_unconfirmed` and `_warnings`.
@@ -505,6 +507,7 @@ impl MainWindow {
             pawchive_override: env.pawchive.take(),
             hydrus_query_dialog: RefCell::new(None),
             settings_dialog: RefCell::new(None),
+            shortcuts_dialog: RefCell::new(None),
             reconcile_was_quiet: Cell::new(false),
             poll_pending: RefCell::new(Default::default()),
             review_controllers: RefCell::new(Vec::new()),

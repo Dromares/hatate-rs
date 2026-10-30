@@ -99,6 +99,12 @@ pub enum Asked {
     AddTags {
         prompt: String,
     },
+    /// `QInputDialog.getText`: the title, the label over the field and the text it opens on.
+    GetText {
+        title: String,
+        label: String,
+        preset: String,
+    },
     /// The Edit match conditions box, with the values it opened on as
     /// `min_tags width_gain height_gain require_larger`.
     MatchConditions {
@@ -170,6 +176,12 @@ pub trait Prompter {
     /// `AddTagsDialog`: a box with `prompt` over a text field, OK and Cancel. `done` runs with
     /// the text on OK, `None` on Cancel. A prompter with no way to ask answers Cancel.
     fn add_tags(&self, _prompt: &str, done: Done<Option<String>>) {
+        done(None);
+    }
+    /// `QInputDialog.getText`: `label` over a one-line field that opens on `preset`, with OK and
+    /// Cancel. `done` runs with the text on OK, `None` on Cancel. A prompter with no way to ask
+    /// answers Cancel.
+    fn get_text(&self, _title: &str, _label: &str, _preset: &str, done: Done<Option<String>>) {
         done(None);
     }
     /// `MatchConditionsDialog`: the four controls over OK and Cancel. `done` runs with the values
@@ -367,6 +379,26 @@ impl Prompter for AdwPrompter {
             }));
         });
         text.grab_focus();
+    }
+
+    fn get_text(&self, title: &str, label: &str, preset: &str, done: Done<Option<String>>) {
+        let dialog = adw::AlertDialog::new(Some(title), Some(label));
+        let entry = gtk::Entry::new();
+        entry.set_text(preset);
+        entry.set_activates_default(true);
+        entry.set_width_chars(36);
+        entry.add_css_class("field");
+        dialog.set_extra_child(Some(&entry));
+        dialog.add_responses(&[("cancel", "Cancel"), ("ok", "OK")]);
+        dialog.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("ok"));
+        dialog.set_close_response("cancel");
+        self.parent.set_focus_visible(true);
+        let field = entry.clone();
+        dialog.choose(Some(&self.parent), gio::Cancellable::NONE, move |answer| {
+            done((answer.as_str() == "ok").then(|| field.text().to_string()));
+        });
+        entry.grab_focus();
     }
 
     fn match_conditions(&self, current: &MatchConditions, done: Done<Option<MatchConditions>>) {

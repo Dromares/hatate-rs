@@ -26,6 +26,7 @@ pub use client::NetClient;
 pub use config::{DEFAULT_MAX_BODY_BYTES, MAX_REDIRECTS, NetConfig, USER_AGENT};
 pub use error::{ErrorKind, NetError};
 pub use gate::{HostGate, MAX_HOST_WAIT};
+pub use http::HeaderMap;
 pub use provider::install_crypto_provider;
 pub use request::{
     Body, BodyProbe, HYDRUS_KEY_HEADER, Method, NetRequest, NetResponse, Part, Redirects, RetryMode,

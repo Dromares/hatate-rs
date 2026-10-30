@@ -303,8 +303,8 @@ impl MainWindow {
             }
         });
         r.matched.root.add_controller(click);
-        // Pop out opens the comparison window (6.f-2). The shortcuts list is not on a ticket yet, and
-        // the Hydrus buttons are 6.g's: present, and insensitive with their reason.
+        // Pop out opens the comparison window (6.f-2). The shortcuts list is `shortcuts_dialog.rs`; the
+        // Hydrus buttons are 6.g's.
         {
             let w = self.downgrade();
             r.pop_out_btn.connect_clicked(move |_| {
@@ -313,9 +313,14 @@ impl MainWindow {
                 }
             });
         }
-        r.shortcuts_btn.set_sensitive(false);
-        r.shortcuts_btn
-            .set_tooltip_text(Some("The shortcuts list arrives in a later step."));
+        {
+            let w = self.downgrade();
+            r.shortcuts_btn.connect_clicked(move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.action_show_shortcuts();
+                }
+            });
+        }
         for (b, id) in [
             (&r.send_btn, "send_upload"),
             (&r.url_btn, "send_url"),

@@ -31,7 +31,7 @@ window's own server on a free local port over plain http with a synthetic token.
 | What | Owner | State here |
 |---|---|---|
 | The MCP tools themselves and the server's wire | 5.d, 5.e (merged) | reused as they are; section 5 drives them through the window |
-| The six Test buttons and Fetch from Hydrus | 6.h-2 | unchanged: built and insensitive |
+| The six Test buttons and Fetch from Hydrus | 6.h-2 | ported by 6.h-2 (`docs/gtk-6h2.md`) |
 | The queue table header keys | 6.d, 6.e | set aside in the comparer, as in 6.g |
 
 ## 2. Differences from Python

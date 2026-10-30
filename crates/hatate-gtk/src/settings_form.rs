@@ -11,7 +11,9 @@ use crate::settings_values::{Value, Values, qt_double, qt_int};
 use crate::widgets;
 use gtk4 as gtk;
 use gtk4::prelude::*;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 pub enum Control {
     Check(gtk::CheckButton),
@@ -42,6 +44,67 @@ pub struct Form {
     /// What the Find box can name, in tree order: the text of every label, check box and group
     /// title (`settings_search.index_tabs` walks `QLabel`, `QCheckBox`, `QRadioButton`, `QGroupBox`).
     pub named: Vec<(Option<String>, gtk::Widget)>,
+    /// The drop-down list of each editable combo (`QComboBox` with `setEditable(True)`).
+    pub combos: BTreeMap<&'static str, Combo>,
+}
+
+/// The list under an editable combo's line edit. It has no items until something fills it in
+/// (`Fetch from Hydrus`), and its arrow is hidden until then.
+pub struct Combo {
+    pub arrow: gtk::MenuButton,
+    pub list: gtk::ListBox,
+    popover: gtk::Popover,
+    /// `itemData` of each row, in order: what picking the row writes into the line edit.
+    keys: Rc<RefCell<Vec<String>>>,
+}
+
+impl Combo {
+    /// `clear()` and `addItem(label, userData=key)` for each: the list now holds `items`.
+    pub fn set_items(&self, items: &[(String, String)]) {
+        while let Some(row) = self.list.row_at_index(0) {
+            self.list.remove(&row);
+        }
+        *self.keys.borrow_mut() = items.iter().map(|(_, k)| k.clone()).collect();
+        for (label, _) in items {
+            let l = gtk::Label::new(Some(label));
+            l.set_xalign(0.0);
+            l.set_margin_top(4);
+            l.set_margin_bottom(4);
+            l.set_margin_start(8);
+            l.set_margin_end(8);
+            self.list.append(&l);
+        }
+        self.arrow.set_visible(!items.is_empty());
+    }
+
+    /// The text of each row.
+    pub fn labels(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut i = 0;
+        while let Some(row) = self.list.row_at_index(i) {
+            if let Some(l) = row.child().and_downcast::<gtk::Label>() {
+                out.push(l.text().to_string());
+            }
+            i += 1;
+        }
+        out
+    }
+
+    /// `itemData` of each row.
+    pub fn keys(&self) -> Vec<String> {
+        self.keys.borrow().clone()
+    }
+
+    /// Picks row `i` the way a click does (`_on_service_selected`).
+    pub fn pick(&self, i: usize) {
+        if let Some(row) = self.list.row_at_index(i as i32) {
+            self.list.emit_by_name::<()>("row-activated", &[&row]);
+        }
+    }
+
+    pub fn popover(&self) -> &gtk::Popover {
+        &self.popover
+    }
 }
 
 impl Form {
@@ -50,6 +113,7 @@ impl Form {
             root: gtk::Box::new(gtk::Orientation::Vertical, 0),
             controls: BTreeMap::new(),
             named: Vec::new(),
+            combos: BTreeMap::new(),
         };
         let (l, t, r, b) = widgets::PAGE_MARGINS;
         form.root.set_margin_start(l);
@@ -200,7 +264,7 @@ impl Form {
                 id,
                 placeholder,
                 tip,
-            } => self.entry(id, false, placeholder, tip),
+            } => self.edit_combo(id, placeholder, tip),
             Node::Text {
                 id,
                 password,
@@ -283,6 +347,57 @@ impl Form {
                 l.upcast()
             }
         }
+    }
+
+    /// An editable combo: the line edit and an arrow that opens the list. Picking a row writes its
+    /// key into the line edit (`_on_service_selected`).
+    fn edit_combo(&mut self, id: &'static str, placeholder: &str, tip: &str) -> gtk::Widget {
+        let entry = self.entry(id, false, placeholder, tip);
+        entry.set_hexpand(true);
+        let line = match self.controls.get(id) {
+            Some(Control::Text(e)) => e.clone(),
+            _ => unreachable!("entry() just inserted it"),
+        };
+        let list = gtk::ListBox::new();
+        list.set_selection_mode(gtk::SelectionMode::None);
+        list.set_activate_on_single_click(true);
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.set_child(Some(&list));
+        scroll.set_propagate_natural_height(true);
+        // wide enough for the longest service name, as Qt's combo popup is, not a list that clips it
+        scroll.set_propagate_natural_width(true);
+        scroll.set_max_content_height(240);
+        scroll.set_min_content_width(260);
+        let popover = gtk::Popover::new();
+        popover.set_child(Some(&scroll));
+        let arrow = gtk::MenuButton::new();
+        arrow.set_icon_name("pan-down-symbolic");
+        arrow.set_popover(Some(&popover));
+        arrow.add_css_class("field");
+        arrow.set_tooltip_text(Some("The tag services Hydrus reported"));
+        arrow.set_visible(false);
+        let keys: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let (k, p) = (keys.clone(), popover.clone());
+        list.connect_row_activated(move |_, row| {
+            let key = k.borrow().get(row.index() as usize).cloned();
+            if let Some(key) = key.filter(|k| !k.is_empty()) {
+                line.set_text(&key);
+            }
+            p.popdown();
+        });
+        let line_box = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        line_box.append(&entry);
+        line_box.append(&arrow);
+        self.combos.insert(
+            id,
+            Combo {
+                arrow,
+                list,
+                popover,
+                keys,
+            },
+        );
+        line_box.upcast()
     }
 
     fn entry(
@@ -475,6 +590,10 @@ impl Form {
             Some(Control::Button(b)) => Some(b),
             _ => None,
         }
+    }
+
+    pub fn combo(&self, id: &str) -> Option<&Combo> {
+        self.combos.get(id)
     }
 
     pub fn entry_of(&self, id: &str) -> Option<&gtk::Entry> {
