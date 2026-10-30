@@ -645,6 +645,22 @@ fn prepare(window: &MainWindow, state: &str) {
     }
 }
 
+/// Scrolls the page that holds `w` to its end once it is laid out.
+fn scroll_to_end(w: &gtk4::Widget) {
+    let mut up = w.parent();
+    while let Some(p) = up {
+        if let Some(sw) = p.downcast_ref::<gtk4::ScrolledWindow>() {
+            let sw = sw.clone();
+            gtk4::glib::idle_add_local_once(move || {
+                let adj = sw.vadjustment();
+                adj.set_value(adj.upper());
+            });
+            return;
+        }
+        up = p.parent();
+    }
+}
+
 /// The 6.h states: the Settings window over a default profile (nothing here reaches a network;
 /// the Test buttons are insensitive). The window is told the size `main` is given: its default
 /// is Python's 940x660, its minimum is its own.
@@ -690,23 +706,14 @@ fn prepare_settings(window: &MainWindow, state: &str) {
             d.audit.all.set_active(true);
             d.audit.refresh();
             // The card is under the fold: the page scrolls to its end once it is laid out.
-            let mut up = d.audit.all.parent();
-            while let Some(p) = up {
-                if let Some(sw) = p.downcast_ref::<gtk4::ScrolledWindow>() {
-                    let sw = sw.clone();
-                    gtk4::glib::idle_add_local_once(move || {
-                        let adj = sw.vadjustment();
-                        adj.set_value(adj.upper());
-                    });
-                    break;
-                }
-                up = p.parent();
-            }
+            scroll_to_end(d.audit.all.upcast_ref());
         }
         "shortcuts-conflict" => {
             d.tabs.set_current_page(Some(7));
             d.shortcuts.edit("prev_row").expect("prev_row").set("J");
             d.shortcuts.refresh_conflicts();
+            // the conflict line sits under the list of actions
+            scroll_to_end(d.shortcuts.conflict.upcast_ref());
         }
         "shortcuts-record" => {
             d.tabs.set_current_page(Some(7));
