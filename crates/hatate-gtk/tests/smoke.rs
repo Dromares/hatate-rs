@@ -6521,11 +6521,13 @@ fn hydrus_menu_entries_and_the_h_key_reach_their_handlers(app: &adw::Application
     f.w.s.queue_view.select_row(0);
     f.w.guarded_review_action("show_in_hydrus");
     assert!(pump_until(10_000, || f.say() == "Showing 1 file(s) in Hydrus"));
-    assert!(
-        server
-            .calls()
-            .contains(&"POST /manage_pages/new_page".to_owned())
-    );
+    let page = server
+        .recorded()
+        .into_iter()
+        .find(|q| q.target.starts_with("/manage_pages/new_page"))
+        .expect("a page was opened");
+    let body = String::from_utf8_lossy(&page.body).into_owned();
+    assert!(body.contains(HELD_HASH), "the row's own file: {body}");
     f.close();
 }
 
