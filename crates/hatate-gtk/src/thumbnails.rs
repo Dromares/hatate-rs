@@ -383,6 +383,7 @@ mod tests {
     /// `test_hashes_are_asked_for_in_batches`
     #[test]
     fn hashes_are_asked_for_in_batches() {
+        assert_eq!(HASH_CHECK_BATCH, 256, "the batch size the Python app asks with");
         let rows = hashed(HASH_CHECK_BATCH + 5);
         let mut sizes = Vec::new();
         let known = known_in_batches(&rows, &AtomicBool::new(false), |b| {
