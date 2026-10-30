@@ -4,7 +4,7 @@ Work in progress Rust rewrite, not yet a replacement for Hatate. This is the doc
 It holds the two maps Phase 6 asks every ticket for (the method map and the Python test map; 6.j checks the union), the
 differential with its documented classes, the on-purpose differences, the measured minimum size and the shot set.
 Python is `Dromares/Hatate-Linux-Redux` at `76c85c4`. Nothing here reaches a network: the Test buttons that would are
-built and insensitive (section 2, D-C).
+built and insensitive here, and ported by 6.h-2 (`docs/gtk-6h2.md`; section 2, D-C).
 
 ## 1. The cut
 
@@ -27,7 +27,7 @@ built and insensitive (section 2, D-C).
 |---|---|---|
 | Shortcuts page and the key-binding editor | 6.i | a tab with a one-line note; its keys are untouched on OK |
 | MCP page | 6.i | the same |
-| The six Test buttons (DeviantArt, AnimePictures, Sankaku, e621, Pixiv, Hydrus) and Fetch from Hydrus | 6.h-2 | built, insensitive, with Python's tooltip: they call the network and need a transport differential over https |
+| The six Test buttons (DeviantArt, AnimePictures, Sankaku, e621, Pixiv, Hydrus) and Fetch from Hydrus | 6.h-2 | ported by 6.h-2 (`docs/gtk-6h2.md`); they were built and insensitive here |
 
 ## 2. Differences from Python
 
@@ -84,13 +84,13 @@ is the line that makes the row's claim.
 | `test_gui_smoke.py:228` `TestDeviantArtCookieReconciliation.test_clearing_the_box_is_an_explicit_logout_not_a_no_op` | `crates/hatate-gtk/src/settings_values.rs:665` (a blank edit writes the empty cookie) |
 | `test_gui_smoke.py:467` `TestEngineAlertsReachTheUser.test_enabling_lens_without_its_dependencies_warns_at_once` | `crates/hatate-gtk/tests/smoke.rs:7280` (title), `:7281-7291` (text start and end, detail non-empty), `:7292` (the box stays ticked); wording differs from Python's on purpose, class L1 |
 | `test_gui_smoke.py:488` `TestEngineAlertsReachTheUser.test_a_working_install_says_nothing` | `crates/hatate-gtk/tests/smoke.rs:7311` (a browser on `PATH`: no box); red with the early return disabled (`worktrees/DAN-2221-revert.log` R3) |
-| `test_gui_smoke.py:1140` `TestE621LoginTest.test_half_filled_credentials_are_refused_before_any_request` | 6.h-2 (the Test buttons are built and insensitive) |
-| `test_gui_smoke.py:1152` `TestE621LoginTest.test_it_sends_the_typed_credentials_not_the_saved_ones` | 6.h-2 (the Test buttons are built and insensitive) |
-| `test_gui_smoke.py:1163` `TestE621LoginTest.test_it_uses_the_apps_own_header_builder` | 6.h-2 (the Test buttons are built and insensitive) |
-| `test_gui_smoke.py:1174` `TestE621LoginTest.test_accepted_credentials_are_reported_as_such` | 6.h-2 (the Test buttons are built and insensitive) |
-| `test_gui_smoke.py:1179` `TestE621LoginTest.test_a_401_is_reported_as_a_rejection_with_what_to_do` | 6.h-2 (the Test buttons are built and insensitive) |
-| `test_gui_smoke.py:1186` `TestE621LoginTest.test_a_network_error_is_not_reported_as_a_rejection` | 6.h-2 (the Test buttons are built and insensitive) |
-| `test_gui_smoke.py:1196` `TestE621LoginTest.test_an_unexpected_status_is_neither_accept_nor_reject` | 6.h-2 (the Test buttons are built and insensitive) |
+| `test_gui_smoke.py:1140` `TestE621LoginTest.test_half_filled_credentials_are_refused_before_any_request` | `docs/gtk-6h2.md` section 4 (ported by 6.h-2) |
+| `test_gui_smoke.py:1152` `TestE621LoginTest.test_it_sends_the_typed_credentials_not_the_saved_ones` | `docs/gtk-6h2.md` section 4 (ported by 6.h-2) |
+| `test_gui_smoke.py:1163` `TestE621LoginTest.test_it_uses_the_apps_own_header_builder` | `docs/gtk-6h2.md` section 4 (ported by 6.h-2) |
+| `test_gui_smoke.py:1174` `TestE621LoginTest.test_accepted_credentials_are_reported_as_such` | `docs/gtk-6h2.md` section 4 (ported by 6.h-2) |
+| `test_gui_smoke.py:1179` `TestE621LoginTest.test_a_401_is_reported_as_a_rejection_with_what_to_do` | `docs/gtk-6h2.md` section 4 (ported by 6.h-2) |
+| `test_gui_smoke.py:1186` `TestE621LoginTest.test_a_network_error_is_not_reported_as_a_rejection` | `docs/gtk-6h2.md` section 4 (ported by 6.h-2) |
+| `test_gui_smoke.py:1196` `TestE621LoginTest.test_an_unexpected_status_is_neither_accept_nor_reject` | `docs/gtk-6h2.md` section 4 (ported by 6.h-2) |
 | `test_gui_smoke.py:2665` `TestPerEngineDelaySettingsRoundTrip.test_untouched_boxes_store_no_override` | the action differential (`tests/differential.rs` `settings_step`, ops `s_open s_set s_find s_jump s_tab s_press s_ok s_cancel`): `engine_delay_*` controls untouched, `config.json` compared as bytes |
 | `test_gui_smoke.py:2670` `TestPerEngineDelaySettingsRoundTrip.test_an_override_survives_a_round_trip` | the action differential (`tests/differential.rs` `settings_step`, ops `s_open s_set s_find s_jump s_tab s_press s_ok s_cancel`): `engine_delay_*` set, OK, reopen |
 | `test_gui_smoke.py:2674` `TestPerEngineDelaySettingsRoundTrip.test_other_engines_are_not_given_zero_overrides` | `crates/hatate-gtk/src/settings_values.rs:643-648` (`iqdb`, both zero, is absent from the saved map) |

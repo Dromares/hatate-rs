@@ -607,10 +607,22 @@ mod tests {
             cookie_paste_warnings("a=1...", "auth"),
             [truncated("a"), no_session("auth")]
         );
-        // a string with no cookie in it is silent (`TestCookiePasteWarnings`)
-        assert!(cookie_paste_warnings("not a cookie string at all", SANKAKU).is_empty());
-        // the advice names the site's own session cookie, never Sankaku's
-        // (`TestAnimePicturesCookiePaste.test_warnings_name_the_right_site_session_cookie`)
+    }
+
+    /// `TestCookiePasteWarnings.test_a_string_with_no_parseable_cookies_has_no_warnings`: a string with
+    /// no cookie in it is silent.
+    #[test]
+    fn a_string_with_no_cookie_in_it_has_no_warnings() {
+        assert!(
+            cookie_paste_warnings("not a cookie string at all", "_sankakuchannel_session")
+                .is_empty()
+        );
+    }
+
+    /// `TestAnimePicturesCookiePaste.test_warnings_name_the_right_site_session_cookie`: the advice names
+    /// the site's own session cookie, never Sankaku's.
+    #[test]
+    fn the_advice_names_the_site_it_is_for() {
         let joined = cookie_paste_warnings("sitelang=en", ANIMEPICTURES_SESSION_COOKIE).join(" ");
         assert!(joined.contains(ANIMEPICTURES_SESSION_COOKIE));
         assert!(!joined.to_lowercase().contains("sankaku"));
