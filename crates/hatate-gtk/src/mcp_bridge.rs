@@ -170,6 +170,20 @@ impl MainWindow {
         {
             self.on_selection_changed();
         }
+        // `_set_rows_reviewed` ends on the status line
+        if let Some(QueueEvent::ReviewedChanged {
+            reviewed,
+            remaining,
+        }) = events
+            .iter()
+            .rev()
+            .find(|e| matches!(e, QueueEvent::ReviewedChanged { .. }))
+        {
+            self.say(&format!(
+                "{} 1 image(s) as reviewed \u{2014} {remaining} still to review",
+                if *reviewed { "Marked" } else { "Unmarked" }
+            ));
+        }
         // `_remove_rows` ends on the status line, after the selection has moved
         if let Some(QueueEvent::Removed(ids)) = events
             .iter()

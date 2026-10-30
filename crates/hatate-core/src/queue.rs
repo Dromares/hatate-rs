@@ -53,6 +53,8 @@ pub enum QueueEvent {
     TableRefreshed,
     /// Rows left the list (`_remove_rows` / `_remove_entries`).
     Removed(Vec<EntryId>),
+    /// `_set_rows_reviewed` changed one row: the verb and the count it puts on the status line.
+    ReviewedChanged { reviewed: bool, remaining: usize },
     /// `_on_selection_changed()`: the preview follows whichever row is current.
     SelectionChanged,
     /// A search started or ended.
@@ -237,6 +239,8 @@ impl QueueModel {
             "{} 1 image(s) as reviewed ({remaining} still to review)",
             if reviewed { "Marked" } else { "Unmarked" }
         );
+        self.events
+            .push(QueueEvent::ReviewedChanged { reviewed, remaining });
     }
 
     /// `_remove_rows` / `_remove_entries`: drops the entries by identity. When the current row is
