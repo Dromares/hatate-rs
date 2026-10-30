@@ -412,16 +412,7 @@ impl WipeView {
         // halo under it keeps it above 3:1 where nothing is drawn but the page: a white line was
         // 1.17:1 on the light page in the no-match state (DAN-2379 F-divider, DAN-2319).
         let (top, bottom) = (target.y.max(0.0), target.bottom().min(h));
-        let line = |x: f64, alpha: f64| {
-            cr.move_to(x, top);
-            cr.line_to(x, bottom);
-            cr.set_line_width(4.0);
-            cr.set_source_rgba(0.0, 0.0, 0.0, 0.6 * alpha);
-            let _ = cr.stroke_preserve();
-            cr.set_line_width(2.0);
-            cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
-            let _ = cr.stroke();
-        };
+        let line = |x: f64, alpha: f64| stroke_split_line(cr, x, top, bottom, alpha);
 
         if s.geom.showing_differences() {
             let half = target.w / 2.0;
@@ -494,8 +485,83 @@ impl WipeView {
     }
 }
 
+/// The wipe line and the divider: a 2 px white line over a 4 px dark halo (0.6 black), both at
+/// `alpha`. The white clears 3:1 on any dark page or picture and the halo clears it on any light
+/// one, so the line never vanishes into the backdrop.
+pub fn stroke_split_line(cr: &cairo::Context, x: f64, top: f64, bottom: f64, alpha: f64) {
+    cr.move_to(x, top);
+    cr.line_to(x, bottom);
+    cr.set_line_width(4.0);
+    cr.set_source_rgba(0.0, 0.0, 0.0, 0.6 * alpha);
+    let _ = cr.stroke_preserve();
+    cr.set_line_width(2.0);
+    cr.set_source_rgba(1.0, 1.0, 1.0, alpha);
+    let _ = cr.stroke();
+}
+
 impl Default for WipeView {
     fn default() -> Self {
         WipeView::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// WCAG relative luminance of an sRGB byte triple.
+    fn luminance(rgb: [u8; 3]) -> f64 {
+        let lin = |c: u8| {
+            let c = f64::from(c) / 255.0;
+            if c <= 0.03928 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * lin(rgb[0]) + 0.7152 * lin(rgb[1]) + 0.0722 * lin(rgb[2])
+    }
+
+    fn contrast(a: [u8; 3], b: [u8; 3]) -> f64 {
+        let (la, lb) = (luminance(a), luminance(b));
+        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+    }
+
+    /// DAN-2319 (DAN-2379 divider): a white line was 1.17:1 on the light page in the no-match
+    /// state. Over each scheme's page the line's darkest and lightest pixels must each stand 3:1
+    /// from the page on at least one side of the line (the halo on light, the white on dark).
+    #[test]
+    fn the_split_line_clears_3_to_1_on_both_pages() {
+        for (scheme, page) in [
+            ("dark", [0x14u8, 0x14, 0x14]),
+            ("light", [0xf2u8, 0xed, 0xe1]),
+        ] {
+            let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, 21, 8).unwrap();
+            {
+                let cr = cairo::Context::new(&surface).unwrap();
+                cr.set_source_rgb(
+                    f64::from(page[0]) / 255.0,
+                    f64::from(page[1]) / 255.0,
+                    f64::from(page[2]) / 255.0,
+                );
+                cr.paint().unwrap();
+                stroke_split_line(&cr, 10.0, 0.0, 8.0, 1.0);
+            }
+            surface.flush();
+            let stride = surface.stride() as usize;
+            let data = surface.data().unwrap();
+            let pixel = |x: usize| {
+                let o = 4 * x + 3 * stride;
+                [data[o + 2], data[o + 1], data[o]] // BGRA
+            };
+            let best = (0..21)
+                .filter(|&x| pixel(x) != page)
+                .map(|x| contrast(pixel(x), page))
+                .fold(0.0, f64::max);
+            assert!(
+                best >= 3.0,
+                "{scheme}: the split line's best pixel is {best:.2}:1 against the page"
+            );
+        }
     }
 }

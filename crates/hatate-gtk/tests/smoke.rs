@@ -327,6 +327,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_scrollbar_is_10_px_wide_and_sent_still_fits_beside_it,
     ),
     (
+        "settings_prose_wraps_to_the_page_and_every_page_keeps_its_bar_at_rest",
+        settings_prose_wraps_to_the_page_and_every_page_keeps_its_bar_at_rest,
+    ),
+    (
         "clear_search_cache_label_carries_the_cache_size",
         clear_search_cache_label_carries_the_cache_size,
     ),
@@ -7732,6 +7736,50 @@ fn open_settings(f: &Fx) -> Rc<hatate_gtk::settings_dialog::SettingsDialog> {
         .borrow()
         .clone()
         .expect("the dialog is open")
+}
+
+/// DAN-2319 (6.h F3, 6.i riders): a paragraph on a Settings page wraps to the page, so at the 560 px
+/// minimum it is read, not scrolled sideways (`general:bik` was cut mid-sentence); and every page's
+/// scroll bar is persistent, because an overlay one is invisible at rest (the MCP page at its
+/// default size gave no sign that more lay below the fold).
+fn settings_prose_wraps_to_the_page_and_every_page_keeps_its_bar_at_rest(app: &adw::Application) {
+    let f = fx(app);
+    let d = open_settings(&f);
+    let mut unwrapped = Vec::new();
+    for (i, name) in d.tab_names().iter().enumerate() {
+        d.tabs.set_current_page(Some(i as u32));
+        pump_for(50);
+        let page = d.tabs.nth_page(Some(i as u32)).expect("page");
+        let scroll = page
+            .downcast_ref::<gtk4::ScrolledWindow>()
+            .unwrap_or_else(|| panic!("{name}: a page is a scrolled window"));
+        assert!(
+            !scroll.is_overlay_scrolling(),
+            "{name}: the page's bar is an overlay"
+        );
+        let mut labels = Vec::new();
+        all_labels(&page, &mut labels);
+        for l in labels {
+            let t = l.text();
+            // A tick's own words, a list's rows, a drop-down's entries and a card's heading are a
+            // control row (they keep the sideways scroll), and a path caption is cut in the middle
+            // on purpose.
+            let in_tick = l.ancestor(gtk4::CheckButton::static_type()).is_some()
+                || l.ancestor(gtk4::ListBoxRow::static_type()).is_some()
+                || l.ancestor(gtk4::DropDown::static_type()).is_some()
+                || l.has_css_class("heading");
+            let cut = l.ellipsize() != gtk4::pango::EllipsizeMode::None;
+            if (t.contains('\n') || t.chars().count() > 48) && !l.wraps() && !in_tick && !cut {
+                unwrapped.push(format!("{name}: {t:?}"));
+            }
+        }
+    }
+    assert!(
+        unwrapped.is_empty(),
+        "paragraphs that do not wrap: {unwrapped:#?}"
+    );
+    d.click_cancel();
+    f.close();
 }
 
 /// The Connection card says what the server is doing, the Dry run sentence flips with its box, the
