@@ -973,4 +973,27 @@ mod tests {
         let c = cell_view(&e, Column::Status);
         assert!(c.italic && !c.bold && c.ink == Some(CellInk::Ink65));
     }
+
+    /// DAN-2472 item 4 (Oderisi's read measured the Booru, Cache and Sent dashes at 3.09:1 and the others
+    /// at 4.33 to 4.75). All seven placeholder cells are the same tier, `ink_65`, which clears 4.5:1
+    /// (DAN-211): the spread is the 1 px dash glyph straddling the pixel grid (a sans dash is split over two
+    /// pixel rows, its peak is #67635f, exactly `ink_45` over the row), not a weaker token. This pins the
+    /// tier of every placeholder, so a cell that drifted to `ink_45` or to none would go red here.
+    #[test]
+    fn every_placeholder_dash_is_on_the_ink_65_tier() {
+        let e = Entry::new("/x/a.png");
+        for column in [
+            Column::Engine,
+            Column::Similarity,
+            Column::SizeDelta,
+            Column::Booru,
+            Column::Cache,
+            Column::Sent,
+            Column::Reviewed,
+        ] {
+            let c = cell_view(&e, column);
+            assert_eq!(c.text, "\u{2014}", "{column:?} is a placeholder here");
+            assert_eq!(c.ink, Some(CellInk::Ink65), "{column:?}");
+        }
+    }
 }
