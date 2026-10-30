@@ -58,7 +58,7 @@ The fit test measures the window's **child** at the stated width, so the window'
 overflow. It was run red by lowering each stated height (400 for Query: `the Query Hydrus window is 333x441; its stated
 minimum is 420x400`; 560 for Pawchive: `671x627 ... 720x560`). The numbers that count are the PNG headers of the hosted shot set (GTK 4.14):
 
-**Hosted `ci` run 40980938092 at `32b026d`, `shots` artifact (GTK 4.14 / libadwaita 1.5), size read from each PNG header:**
+**Hosted `ci` run 40982732901 at `1a44fc9` (all steps success, 00:55:48Z to 01:09:41Z), `shots` artifact (GTK 4.14 / libadwaita 1.5), size read from each PNG header of the 24 `hydrus-*`/`pawchive-*` files (the 12 pairs):**
 
 | state | dark shot | light shot | width x height (dark / light) | stated | ok |
 |---|---|---|---|---|---|
@@ -71,8 +71,8 @@ minimum is 420x400`; 560 for Pawchive: `671x627 ... 720x560`). The numbers that 
 
 **0 of 6 rows differ from the stated minimum.** The Query window's default size is 520 x 520 and the Pawchive window's
 760 x 680 (`hydrus-query-*.png`, `pawchive-*.png`). The Hydrus *search* error box and the Pawchive Remove question are
-`AdwAlertDialog`s over a window that is already at its minimum; they are not shot separately. Numbers for the head that
-is verified are re-read from that head's artifact (the first line of the verify ticket). The fit test was red on the
+`AdwAlertDialog`s over a window that is already at its minimum; they are not shot separately. These numbers were re-read
+from the artifact of the code head `1a44fc9`; commits after it change only this file, so the artifact stays that head's. The fit test was red on the
 host before the stated heights were raised (section 2, D-D).
 
 
@@ -106,37 +106,48 @@ reaches the network path), the https case and the stalled-server case.
 
 ## 5. Shots and contrast
 
-Hosted `ci` run 40980938092 at `32b026d` (`ci` job: fmt, clippy, `cargo test --workspace` and the shot set, success,
-00:38:25Z to 00:54:11Z), artifact `shots`, 312 files; **the head that is verified gets its own run, and these numbers
-are re-read from it.**
+Hosted `ci` run 40982732901 at `1a44fc9` (`ci` job: fmt, clippy, `cargo test --workspace` and the shot set, success,
+00:55:48Z to 01:09:41Z; `test` 00:57:41Z to 01:05:03Z, shot set 01:05:03Z to 01:09:37Z), artifact `shots`, 312 files. The numbers
+below are read from that artifact. Commits after `1a44fc9` change only this file.
 
 **Shots** (dark and light for each): `hydrus-empty`, `hydrus-empty-min`, `hydrus-delete`, `hydrus-delete-min`,
 `hydrus-query`, `hydrus-query-min`, `hydrus-query-results`, `hydrus-query-results-min`, `hydrus-query-focus`,
 `hydrus-query-focus-min`, `pawchive`, `pawchive-min`. Minimum-size headers are in section 3.
 
 **Contrast** (extreme-pixel method, `worktrees/DAN-2220-tools/contrast.py`, a copy of `DAN-2218-tools/contrast.py`, over
-the 24 shots above; the full 264-row table is `worktrees/DAN-2220-contrast.md`, not committed): 252 rows pass the 4.5:1
+the 24 shots above; the full 244-row table is `worktrees/DAN-2220-contrast-c2.md`, not committed): 232 rows pass the 4.5:1
 text floor, 8 are disabled controls (exempt, listed as such), **4 rows FAIL**. The four are one element in four shots:
 the Pawchive artist field's **placeholder** ("Artist name, or a pawchive link"), `#7f7a74` on `#201f1e` **3.87** dark and
 `#726c63` on `#d4cdbf` **3.29** light. It is the shared rule `entry.field text > placeholder { color: @ink_65 }`
 (`theme.rs:207`), the same colour the filter bar's placeholder uses; this ticket does not change it. It is a design
 ruling (raise the token, or accept a placeholder as non-text), not a 6.g port question, and is **open for the design
-read**. Lowest passing row per state: Query Hydrus window `Query Hydrus` heading 11.29 dark / 12.88 light; the selected
-result row 10.28 (toolkit blue, **fixed after this run**: the lists now use the stamp selection, `.pick-list` in
-`theme.rs`); empty page `ETA` column 5.05 dark / 5.20 light; Pawchive `Artist` header 5.26 dark / 5.50 light; Delete box
-`Delete from Hydrus` 10.70 dark / 14.35 light.
+read**. Lowest passing row per state (dark / light): Query Hydrus window (empty, focus and min shots) `Query Hydrus`
+heading 11.29 / 12.88; with results 11.29 / 12.63 (`creator:synthetic artist`); empty page `ETA` column 5.05 / 5.20;
+Pawchive `Artist` header 5.26 / 5.50; Delete box `Delete from Hydrus` 10.70 / 14.35.
 
 **Selection colour (design acceptance 5).** At `32b026d` the Query results list and the Pawchive artist list painted the
-toolkit's selection (`#cce0f8` light, `#23374f` dark) and not the stamp colours the Queue and the tag list use. The
-follow-up commit gives both lists the `pick-list` class (`background: @stamp_bg; color: @stamp_fg` on a selected row),
-as `.queue` and `.tag-list` already do; the shots for the head that is verified carry it.
+toolkit's selection (`#cce0f8` light, `#23374f` dark) and not the stamp colours the Queue and the tag list use.
+`1a44fc9` gives both lists the `pick-list` class (`background: @stamp_bg; color: @stamp_fg` on a selected row), as
+`.queue` and `.tag-list` already do. In the `1a44fc9` results shots no measured row is below 11.29 dark / 12.63 light (the
+`creator:synthetic artist` row above); the table does not say which rows are selected, so the selection colour itself is
+for the design read to judge on the shot.
 
-**Focus ring:** not measured at `32b026d`: the focus shot also held the results list, so the diff against the unfocused
-shot was the whole list. `hydrus-query-focus` is now the empty window with the search button focused, so the ring is the
-pixel diff against `hydrus-query` (re-measured at the verified head).
+**Focus ring (non-text 3:1 floor).** `hydrus-query-focus-min-<scheme>` is the empty window with Search Hydrus focused;
+the pixel diff against `hydrus-query-min-<scheme>` (`worktrees/DAN-2220-tools/focusdiff.py`, log
+`worktrees/DAN-2220-focus-c2.log`) is one cluster, 152 x 42 px at (24, 185), 760 px, the 2 px ring around the button:
+dark `#cdc4ba` over the page `#0d0d0d` **11.29:1**, light `#211d17` over `#e8e1d2` **12.88:1**. A second 20 px cluster at
+x = 22 (1 px wide) is the tag box's text caret, not a ring. Only the Search Hydrus ring is measured; the other focusable
+controls (tag box, results rows, Cancel, Import selected, the Pawchive entry and buttons) take the same theme rule and are
+not shot focused. The same comparison is not shot for the Pawchive window.
 
-**Tab order** was not walked in a live Xvfb session by the author; the verifier is asked to state the order for the
-Query window (tags field, Search Hydrus, results, Cancel, Import selected) and the Pawchive window.
+**Tab order** (walked in a live Xvfb session at `1a44fc9` by the author, temp `HOME`, `Window::child_focus(TabForward)`
+from no focus, a throwaway scenario that is not committed; `worktrees/DAN-2220-tabwalk-c2.log`). Query Hydrus, empty: tag
+box, Search Hydrus, the results scroller (a stop while empty), Cancel, Import selected, then it wraps. Query Hydrus with two
+results: tag box, Search Hydrus, result row 1, result row 2, Cancel, Import selected, wraps. Pawchive Index, empty: the
+artist table's scroller, the name/link entry, Find / Add, Add artists from my matches, Index selected, Index / refresh all,
+Remove selected, the status label, Close, wraps; with one artist the first stop is that artist's row and the rest is the
+same. Each walk follows the top-to-bottom layout. Two things the design read may want a ruling on: the empty results
+scroller and the status label are stops, and Import selected is a stop while nothing is selected.
 
 **Not judgeable from shots:** window chrome, GPU renderer, the real compositor's inactive-selection backdrop, HiDPI,
 hover wash (owner: Oderisi's design read and the board's live check).
