@@ -370,6 +370,37 @@ dialog.alert spinbutton { background: @sunken; color: @ink; border: 1px solid @i
 dialog.alert spinbutton:focus-within { border-color: @ink; box-shadow: none; outline: none; }
 dialog.alert spinbutton > text { background: transparent; color: @ink; box-shadow: none; }
 
+/* ---- the Settings window (DAN-2221). A pick-window, so the sunken well, the field border and the ring
+   above already reach its entries and lists; these are the controls only it holds. The tab strip is
+   gui/theme.py's QTabBar: transparent at rest, the raised sheet when selected, ink on hover. `.found` is
+   QSS `#Found` (stamp fill, 1px 5px) on the label or tick a Find jump has just landed on ---- */
+window.settings-window notebook > header { background: @page; border: none; box-shadow: none; }
+window.settings-window notebook > header > tabs > tab { background: transparent; color: @ink_65; border: none;
+  border-radius: 0; box-shadow: none; padding: 9px 20px; margin: 0 6px 0 0; min-height: 0; min-width: 0; }
+window.settings-window notebook > header > tabs > tab:hover { color: @ink; }
+window.settings-window notebook > header > tabs > tab:checked { background: @raised; color: @ink; }
+window.settings-window notebook > header > tabs > tab label { color: inherit; }
+window.settings-window notebook > stack { background: @page; border: none; }
+window.settings-window check { background: transparent; color: @stamp_fg; border: 1px solid @ink_46;
+  border-radius: 0; box-shadow: none; }
+window.settings-window check:checked { background: @stamp_bg; border-color: @stamp_bg; color: @stamp_fg; }
+window.settings-window spinbutton { background: @sunken; color: @ink; border: 1px solid @ink_58; border-radius: 0;
+  box-shadow: none; }
+window.settings-window spinbutton:focus-within { border-color: @ink; box-shadow: none; outline: 2px solid @ink;
+  outline-offset: 2px; }
+window.settings-window spinbutton > text { background: transparent; color: @ink; box-shadow: none; outline: none; }
+window.settings-window spinbutton > button { background: transparent; color: @ink; border: none; border-radius: 0;
+  box-shadow: none; }
+window.settings-window dropdown > button { background: @sunken; color: @ink; border: 1px solid @ink_58;
+  border-radius: 0; box-shadow: none; padding: %space_1%px %space_3%px; min-height: 0; }
+window.settings-window dropdown > button:hover { border-color: @ink; }
+window.settings-window entry.field { background: @sunken; color: @ink; border: 1px solid @ink_58; border-radius: 0;
+  box-shadow: none; }
+window.settings-window label.found, window.settings-window checkbutton.found {
+  background: @stamp_bg; color: @stamp_fg; padding: 1px 5px; }
+window.settings-window checkbutton.found label { color: @stamp_fg; }
+window.settings-window checkbutton.found check { border-color: @stamp_fg; }
+
 /* ---- the log viewer ---- */
 textview.log, textview.log text { background: @sunken; color: @ink; font-family: %mono%; font-size: 12px; }
 .log-path { font-family: %mono%; font-size: %label%px; color: @ink_65; }
@@ -603,6 +634,41 @@ mod tests {
             assert!(
                 rule("dialog.alert spinbutton:focus-within").contains("box-shadow: none"),
                 "{scheme:?}: the spin button keeps libadwaita's focus edge"
+            );
+        }
+    }
+
+    /// DAN-2221: the Settings window's own controls take the palette, and a Find jump lands on the stamp.
+    #[test]
+    fn the_settings_window_controls_take_the_palette_and_found_is_the_stamp() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let css = css(scheme);
+            let rule = |start: &str| {
+                css.lines()
+                    .find(|l| l.starts_with(start))
+                    .unwrap_or_else(|| panic!("{scheme:?}: no rule starting {start}"))
+                    .to_owned()
+            };
+            assert!(
+                rule("window.settings-window check:checked").contains("background: @stamp_bg"),
+                "{scheme:?}: the tick is not the stamp"
+            );
+            assert!(
+                rule("window.settings-window notebook > header > tabs > tab:checked")
+                    .contains("background: @raised"),
+                "{scheme:?}: the selected tab is not the raised sheet"
+            );
+            assert!(
+                rule("window.settings-window spinbutton:focus-within").contains("box-shadow: none"),
+                "{scheme:?}: the spin button keeps libadwaita's focus edge"
+            );
+            assert!(
+                css.contains("window.settings-window label.found, window.settings-window checkbutton.found {\n  background: @stamp_bg"),
+                "{scheme:?}: .found is not the stamp fill"
+            );
+            assert!(
+                css.contains("padding: 1px 5px;"),
+                "{scheme:?}: .found lost its 1px 5px padding"
             );
         }
     }
