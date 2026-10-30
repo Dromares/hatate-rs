@@ -164,11 +164,11 @@ fn every_row_has_a_rust_home_a_pr_and_names_only_files_that_exist() {
             r.home.len() > 8 && !r.home.contains("TBD") && !r.home.contains("TODO"),
             "{at}: no Rust home"
         );
-        let open = r.home.starts_with("**OPEN**");
         assert!(
-            r.pr.contains('#') || (open && r.pr == "OPEN (DAN-2448)"),
-            "{at}: no PR"
+            !r.home.starts_with("**OPEN**"),
+            "{at}: an OPEN row: the ones 6.j had left were ported by 6.h-2"
         );
+        assert!(r.pr.contains('#'), "{at}: no PR");
         for span in r.home.split('`').skip(1).step_by(2) {
             let head = span.split([' ', ':']).next().unwrap_or("");
             if !head.ends_with(".rs") || head.contains("::") {
@@ -222,39 +222,6 @@ fn the_phase6_rows_of_phase5_coverage_point_at_this_table() {
             "{f}: its row does not point at docs/phase6-coverage.md"
         );
     }
-}
-
-#[test]
-fn every_open_row_is_named_in_section_5_and_nothing_else_is() {
-    let (rows, _) = table();
-    let doc = read("docs/phase6-coverage.md");
-    let five = doc.split("\n## 5. ").nth(1).expect("section 5");
-    let five_1 = five.split("\n### 5.2").next().unwrap();
-    let open: Vec<&Row> = rows
-        .iter()
-        .filter(|r| r.home.starts_with("**OPEN**"))
-        .collect();
-    assert!(
-        !open.is_empty(),
-        "the open items were closed: delete section 5.1 and this test"
-    );
-    for r in &open {
-        let short = r.name.rsplit('.').next().unwrap();
-        assert!(
-            five_1.contains(&format!(":{}` `{short}`", r.line)),
-            "{}:{} {} is OPEN but not named in section 5.1",
-            r.file,
-            r.line,
-            r.name
-        );
-    }
-    let named = five_1.matches("` `_").count();
-    assert_eq!(
-        named,
-        open.len(),
-        "section 5.1 names {named} defs, the table has {} OPEN rows",
-        open.len()
-    );
 }
 
 #[test]
@@ -658,15 +625,7 @@ fn every_candidate_of_the_python_window_has_exactly_one_row_in_section_7_and_a_c
     );
     let ops = read("crates/hatate-gtk/tests/differential.rs");
     let shots = read("crates/hatate-gtk/examples/shot.rs");
-    let classes = [
-        "op",
-        "smoke",
-        "unit",
-        "differential",
-        "open",
-        "n/a",
-        "by design",
-    ];
+    let classes = ["op", "smoke", "unit", "differential", "n/a", "by design"];
     let mut got = Vec::new();
     for r in numbered_rows(&section, 6) {
         let (site, kind) = (r[1].trim_matches('`'), r[2].as_str());
@@ -678,12 +637,6 @@ fn every_candidate_of_the_python_window_has_exactly_one_row_in_section_7_and_a_c
             .unwrap_or_else(|| panic!("{who}: the coverage is not `**class**: reason`"));
         assert!(classes.contains(&class), "{who}: class {class:?}");
         assert!(why.chars().count() >= 20, "{who}: the reason is a stub");
-        if class == "open" {
-            assert!(
-                why.contains("DAN-2448"),
-                "{who}: an open row names its ruling"
-            );
-        }
         if matches!(class, "op" | "smoke" | "unit" | "differential") {
             assert!(
                 !cites(&r[5].replace("). ", ", ")).is_empty() || why.contains("op"),
