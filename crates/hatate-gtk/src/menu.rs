@@ -434,9 +434,10 @@ mod tests {
         let d = deferred();
         assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
         // 6.g wired Query Hydrus, Pawchive Index, Re-check Queued Imports and the two Send items.
-        for want in ["preferences"] {
-            assert!(d.iter().any(|(n, _)| *n == want), "{want} not deferred");
-        }
+        assert!(
+            d.iter().any(|(n, _)| *n == "preferences"),
+            "preferences not deferred"
+        );
         for working in [
             "query-hydrus",
             "pawchive-index",
