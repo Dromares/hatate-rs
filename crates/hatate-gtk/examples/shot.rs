@@ -21,7 +21,7 @@
 //! `review-wipe`, `review-differences`, `review-wipe-nomatch` (only the local picture), `review-error` (the local file is gone; design
 //! gate 2.8), `review-focus-<wslider|wview|zoom|popout>` (a Wipe control focused with the ring showing), `review-compare` and
 //! `review-compare-differences` (the compare window, which is its own surface), `review-compare-nomatch` (its "no match" box) and
-//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The Settings states (6.h) are `settings-<0..8>` (that tab of the Settings window, in Python's order: General to MCP), `settings-find` (a query with results), `settings-find-none` ("Nothing matches that."), `settings-lens` (the Google Lens warning over the Engine page), `settings-found` (a jumped-to setting wearing the stamp) and `settings-focus-<find|tab|ok|cancel|check|spin|combo|entry>` (that control focused with the ring showing). The size `min` is the window's stated minimum.
+//! `review-focus-compare-<slider|diff>`. The Hydrus and Pawchive states (6.g) are `hydrus-delete` (the Delete from Hydrus box, Cancel default), `hydrus-query`, `hydrus-query-results` and `hydrus-query-focus` (the Query Hydrus window, empty with its search button focused, so the ring is the diff against `hydrus-query`; with synthetic results as `hydrus-query-results`), `hydrus-empty` (the empty page with Query Hydrus enabled) and `pawchive` (the Pawchive Index window over an empty index). The Settings states (6.h) are `settings-<0..8>` (that tab of the Settings window, in Python's order: General to MCP), `settings-find` (a query with results), `settings-find-none` ("Nothing matches that."), `settings-lens` (the Google Lens warning over the Engine page), `settings-found` (a jumped-to setting wearing the stamp) and `settings-focus-<find|tab|ok|cancel|check|spin|combo|entry>` (that control focused with the ring showing; `check` and `entry` are on the Hydrus page, `combo` on the Import page, the rest on General). The size `min` is the window's stated minimum.
 
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
@@ -638,7 +638,16 @@ fn prepare_settings(window: &MainWindow, state: &str) {
                         "combo" => "GtkDropDown",
                         _ => "GtkEntry",
                     };
-                    d.tabs.nth_page(Some(0)).and_then(|p| find_type(&p, want))
+                    // The first control of its kind that is on screen: the General page opens
+                    // on spin boxes, the Hydrus page on a check box and its URL entry, the
+                    // Import page on a drop-down.
+                    let tab = match kind {
+                        "check" | "entry" => 4,
+                        "combo" => 2,
+                        _ => 0,
+                    };
+                    d.tabs.set_current_page(Some(tab));
+                    d.tabs.nth_page(Some(tab)).and_then(|p| find_type(&p, want))
                 }
             };
             match target {
