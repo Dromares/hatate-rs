@@ -48,6 +48,10 @@ const SCENARIOS: &[Scenario] = &[
         settings_window_keeps_its_stated_minimum,
     ),
     (
+        "settings_window_asks_its_questions_over_itself",
+        settings_window_asks_its_questions_over_itself,
+    ),
+    (
         "settings_highlight_second_call_inside_the_window_still_restores",
         settings_highlight_second_call_inside_the_window_still_restores,
     ),
@@ -7167,6 +7171,33 @@ fn settings_window_keeps_its_stated_minimum(app: &adw::Application) {
             );
         }
     }
+    d.click_cancel();
+    f.close();
+}
+
+/// DAN-2221: the Settings window is modal, so the Lens warning and the Browse chooser must be
+/// asked over it (Python: `QMessageBox.warning(self, ...)` from inside the dialog), not over the
+/// main window beneath it, where they could not be reached. The production prompter is built over
+/// the main window and must answer `over` with one bound to the Settings window; the shot
+/// `settings-lens-*` (production prompter) shows the box inside the Settings window.
+fn settings_window_asks_its_questions_over_itself(app: &adw::Application) {
+    use hatate_gtk::dialogs::{AdwPrompter, Prompter};
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    let production = AdwPrompter::new(&f.w.win);
+    let main_win: gtk4::Window = f.w.win.clone().upcast();
+    assert_eq!(production.parent_window().as_ref(), Some(&main_win));
+    let over = production
+        .over(&d.window)
+        .expect("the production prompter has windows");
+    assert_eq!(
+        over.parent_window().as_ref(),
+        Some(&d.window),
+        "the box would open over the main window, under the modal Settings window"
+    );
+    // the scripted prompter has no windows: the dialog uses it as it is
+    assert!(d.prompter.parent_window().is_none());
     d.click_cancel();
     f.close();
 }

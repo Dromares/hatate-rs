@@ -10,7 +10,7 @@
 //! The six Test buttons and Fetch from Hydrus are network code and 6.h-2's; the buttons are built
 //! and insensitive until then.
 
-use crate::dialogs::{Buttons, Kind};
+use crate::dialogs::{Buttons, Kind, Prompter};
 use crate::settings_form::{Control, Form};
 use crate::settings_node::Node;
 use crate::settings_spec::PAGES;
@@ -61,6 +61,10 @@ pub struct SettingsDialog {
     highlights: Rc<RefCell<HashMap<usize, u64>>>,
     next_token: Cell<u64>,
     main: MainWindow,
+    /// Asks over this window: it is modal, so a box in the main window beneath it could not be
+    /// reached (Python parents its boxes to the dialog). The scripted prompter has no windows
+    /// and is used as it is.
+    pub prompter: Rc<dyn Prompter>,
 }
 
 impl SettingsDialog {
@@ -184,6 +188,11 @@ impl SettingsDialog {
             highlights: Rc::new(RefCell::new(HashMap::new())),
             next_token: Cell::new(0),
             main: main.clone(),
+            prompter: main
+                .s
+                .prompter
+                .over(&window)
+                .unwrap_or_else(|| main.s.prompter.clone()),
         });
         dialog.insensitive_network_buttons();
         dialog.wire_controls();
@@ -272,7 +281,7 @@ impl SettingsDialog {
                 browse.connect_clicked(move |_| {
                     let Some(d) = d.upgrade() else { return };
                     let path = path.clone();
-                    d.main.s.prompter.save_file(
+                    d.prompter.save_file(
                         "Choose log file",
                         &path.text(),
                         "",
@@ -315,7 +324,7 @@ impl SettingsDialog {
         } else {
             "no Chromium-based browser could be found."
         };
-        self.main.s.prompter.message_detailed(
+        self.prompter.message_detailed(
             Kind::Warning,
             "Google Lens is not installed yet",
             &format!(
