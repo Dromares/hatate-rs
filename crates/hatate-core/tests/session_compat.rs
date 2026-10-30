@@ -845,7 +845,12 @@ fn saved_session_age_is_the_stores_mtime() {
     let db = sb.paths.session_db();
     fs::create_dir_all(db.parent().unwrap()).unwrap();
     let stamp = |p: &Path, ago: u64| {
-        let f = File::options().write(true).create(true).open(p).unwrap();
+        let f = File::options()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(p)
+            .unwrap();
         f.set_modified(now - Duration::from_secs(ago)).unwrap();
     };
     stamp(&db, 3 * 86400);

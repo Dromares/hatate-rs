@@ -760,6 +760,21 @@ mod tests {
         }
     }
 
+    /// DAN-2223: `test_nothing_survived.py::TestVariantShown::test_the_headline_is_serif_36px`:
+    /// the display title is the serif face at `--text-display` (36 px), in both schemes.
+    #[test]
+    fn the_display_title_is_serif_36px() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let sheet = css(scheme);
+            let rule = sheet
+                .lines()
+                .find(|l| l.starts_with(".screen-title, .display-title {"))
+                .expect("the display-title rule");
+            assert!(rule.contains("font-family: 'Source Serif 4'"), "{rule}");
+            assert!(rule.contains("font-size: 36px"), "{rule}");
+        }
+    }
+
     #[test]
     fn the_sheet_follows_the_tokens() {
         let edited = TOKENS_CSS.replacen("--space-5: 24px;", "--space-5: 30px;", 1);
