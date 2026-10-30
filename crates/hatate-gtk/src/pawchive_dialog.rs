@@ -711,7 +711,7 @@ impl PawchiveIndexDialog {
         self.main.s.pawchive_index_worker.replace(job);
     }
 
-    fn set_busy(&self, busy: bool) {
+    pub fn set_busy(&self, busy: bool) {
         self.busy.set(busy);
         for b in [
             &self.index_selected_button,
@@ -731,7 +731,7 @@ impl PawchiveIndexDialog {
     }
 
     /// `_on_progress(text, done, total)`.
-    fn on_progress(&self, text: &str, done: usize, total: usize) {
+    pub fn on_progress(&self, text: &str, done: usize, total: usize) {
         if total > 0 {
             self.progress.set_fraction(done as f64 / total as f64);
             self.status.set_text(&format!(

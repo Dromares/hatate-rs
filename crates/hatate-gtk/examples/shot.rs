@@ -135,7 +135,7 @@ fn main() -> glib::ExitCode {
         "rows" | "dialog" | "dialog-nolabel" | "failed" | "activity" | "parser-health"
         | "tab-failed" | "tab-activity" => save(&rows(12)),
         st if st.starts_with("review") && st != "review-bare" => save(&review_rows(&pics, st)),
-        st if st.starts_with("queue") || st == "hydrus-delete" => save(&queue_rows(
+        st if st.starts_with("queue") || st.starts_with("hydrus-delete") => save(&queue_rows(
             &pics,
             if st.starts_with("queue-5000") {
                 5000
@@ -207,7 +207,7 @@ fn main() -> glib::ExitCode {
                         hatate_gtk::hydrus_query::MIN_HEIGHT,
                     );
                 }
-            } else if state == "pawchive" {
+            } else if state.starts_with("pawchive") {
                 if let Some(d) = window.s.pawchive_dialog.borrow().as_ref() {
                     d.window.set_default_size(
                         hatate_gtk::pawchive_dialog::MIN_WIDTH,
@@ -257,7 +257,7 @@ fn main() -> glib::ExitCode {
                 Some("Parser Health")
             } else if state.starts_with("hydrus-query") {
                 Some("Query Hydrus")
-            } else if state == "pawchive" {
+            } else if state.starts_with("pawchive") {
                 Some("Pawchive Index")
             } else if state.starts_with("review-compare-d")
                 || state.starts_with("review-compare-l")
@@ -303,7 +303,11 @@ fn main() -> glib::ExitCode {
             // dialog's own labels are measured.
             let dialog = if matches!(
                 state.as_str(),
-                "review-addtags" | "review-conditions" | "review-compare-nomatch" | "hydrus-delete"
+                "review-addtags"
+                    | "review-conditions"
+                    | "review-compare-nomatch"
+                    | "hydrus-delete"
+                    | "hydrus-delete-confirm"
             ) {
                 find_type(win.upcast_ref(), "AdwAlertDialog")
             } else {
@@ -363,7 +367,62 @@ fn prepare_hydrus(window: &MainWindow, state: &str) {
             let ids = window.s.queue_view.visible_ids();
             window.delete_rows_from_hydrus(&ids[1..3]);
         }
+        // The destructive confirm itself (Cancel default, Delete in the destructive style), with
+        // the text and detail lines `on_delete_states` builds for 2 deletable + 1 left alone.
+        "hydrus-delete-confirm" => window.s.prompter.message_detailed(
+            hatate_gtk::dialogs::Kind::Warning,
+            "Delete from Hydrus",
+            "Tell Hydrus to delete 2 file(s)?\n\n1 of the selected file(s) aren't in Hydrus and \
+             will be left alone.\n\nHydrus moves them to its trash, so you can still get them \
+             back from Hydrus until the trash is emptied.\n\nThey'll also be taken out of this \
+             list.",
+            "synthetic-0001.png\nsynthetic-0002.png",
+            hatate_gtk::dialogs::Buttons::DeleteCancel,
+            Box::new(|_| {}),
+        ),
         "pawchive" => window.activate_action("pawchive-index"),
+        // Three artists with images, one selected, one being indexed (Stop enabled, the progress
+        // line showing): the populated Pawchive window.
+        "pawchive-artists" => {
+            let index =
+                hatate_core::pawchive_index::PawchiveIndex::new(window.s.paths.pawchive_index_db());
+            for (service, id, name, images, posts) in [
+                ("patreon", "1001", "Synthetic Artist", 1284usize, 96usize),
+                ("fanbox", "2002", "Another Synthetic", 37, 5),
+                ("fanbox", "3003", "Third Synthetic", 0, 0),
+            ] {
+                index.add_creator(service, id, Some(name)).expect("artist");
+                let rows: Vec<_> = (0..images)
+                    .map(|i| hatate_core::pawchive_index::ImageRow {
+                        service: service.to_owned(),
+                        user_id: id.to_owned(),
+                        post_id: format!("p{i}"),
+                        page_index: 0,
+                        sha256: format!("{i:064x}"),
+                        path: format!("/synthetic/{id}/{i}.png"),
+                        title: None,
+                        dhash8: Some(format!("{i:016x}")),
+                        dhash16: Some(format!("{i:064x}")),
+                    })
+                    .collect();
+                index.add_images(&rows).expect("images");
+                if posts > 0 {
+                    index
+                        .finish_creator(service, id, Some(name), posts)
+                        .expect("stamp");
+                }
+            }
+            window.activate_action("pawchive-index");
+            let d = window
+                .s
+                .pawchive_dialog
+                .borrow()
+                .clone()
+                .expect("the Pawchive window is open");
+            d.select_creators(&[("fanbox".to_owned(), "2002".to_owned())]);
+            d.set_busy(true);
+            d.on_progress("Indexing Third Synthetic (fanbox)", 3, 8);
+        }
         _ => {
             window.activate_action("query-hydrus");
             let dialog = window
@@ -403,7 +462,7 @@ fn prepare(window: &MainWindow, state: &str) {
     match state {
         st if st.starts_with("queue") => prepare_queue(window, st),
         st if st.starts_with("review") => prepare_review(window, st),
-        st if st.starts_with("hydrus") || st == "pawchive" => prepare_hydrus(window, st),
+        st if st.starts_with("hydrus") || st.starts_with("pawchive") => prepare_hydrus(window, st),
         "dialog" => window.activate_action("clear-session"),
         // The control for the glyph fragment under the dialog (DAN-2256): the same shot with the
         // Queue page's placeholder label hidden, so any pixel under the dialog's border that

@@ -355,6 +355,9 @@ dialog.alert textview, dialog.alert textview text { background: @sunken; color: 
 window.pick-window scrolledwindow.field { border: 1px solid @ink_58; }
 window.pick-window scrolledwindow.field:focus-within { border-color: @ink; }
 window.pick-window textview, window.pick-window textview text { background: @sunken; color: @ink; }
+window.pick-window entry.field:focus-within { border-color: @ink; outline: 2px solid @ink; outline-offset: 2px; }
+window.pick-window progressbar trough { background: @ink_18; min-height: 4px; border-radius: 0; border: none; }
+window.pick-window progressbar progress { background: @ink; min-height: 4px; border-radius: 0; border: none; }
 dialog.alert check { background: transparent; color: @stamp_fg; border: 1px solid @ink_46; border-radius: 0;
   box-shadow: none; }
 dialog.alert check:checked { background: @stamp_bg; border-color: @stamp_bg; color: @stamp_fg; }
@@ -549,6 +552,15 @@ mod tests {
                 rule("window.pick-window scrolledwindow.field:focus-within")
                     .contains("border-color: @ink"),
                 "{scheme:?}: a focused field does not show it"
+            );
+            assert!(
+                rule("window.pick-window entry.field:focus-within")
+                    .contains("outline: 2px solid @ink"),
+                "{scheme:?}: the Pawchive entry's focus ring is libadwaita's accent blue"
+            );
+            assert!(
+                rule("window.pick-window progressbar progress").contains("background: @ink;"),
+                "{scheme:?}: the Pawchive progress bar is the toolkit's accent blue"
             );
             assert!(
                 rule(".pick-list > row {").contains("border-bottom: 1px solid @ink_18"),
