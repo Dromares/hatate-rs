@@ -443,6 +443,11 @@ impl SettingsDialog {
         // connected after the page is filled in, so opening on a saved enabled state shows no
         // summary: only a change made here does (spec section 10, risk 5)
         for form in &self.forms {
+            // The token box is the widest row of the page at 20 characters, wide enough to push the
+            // whole page past the minimum window (and the Recent tool calls table with it).
+            if let Some(token) = form.entry_of("mcp_token") {
+                token.set_width_chars(8);
+            }
             if let Some(enabled) = form.check("mcp_enabled") {
                 let d = Rc::downgrade(self);
                 enabled.connect_toggled(move |c| {

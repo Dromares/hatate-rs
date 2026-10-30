@@ -360,11 +360,14 @@ impl AuditCard {
         gap.set_hexpand(true);
         controls.append(&gap);
         let keep = gtk::Label::new(Some("Keep up to"));
+        set_weight(&keep, Weight::Ink100);
         controls.append(&keep);
         let spin = crate::settings_form::spin_button(1.0, 500.0, 1.0, 0, "", "");
         spin.set_value(max_mb as f64);
         controls.append(&spin);
         let before = gtk::Label::new(Some("MB before trimming the oldest entries."));
+        set_weight(&before, Weight::Ink100);
+        before.set_ellipsize(gtk::pango::EllipsizeMode::End);
         controls.append(&before);
         root.append(&controls);
 
@@ -375,13 +378,18 @@ impl AuditCard {
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_child(Some(&grid));
         scroll.set_min_content_height(220);
-        scroll.set_hscrollbar_policy(gtk::PolicyType::Automatic);
+        // The table fits the page at the minimum window: Target and Outcome ellipsize (the full text is
+        // in the tooltip), so the column the card exists for is never cut off the side with no cue.
+        scroll.set_hscrollbar_policy(gtk::PolicyType::Never);
         scroll.add_css_class("field");
         root.append(&scroll);
 
         let caption = widgets::muted("");
         root.append(&caption);
         let writing = widgets::muted(&format!("Writing to {}", path.display()));
+        // a path has no break to wrap at: it gives way in the middle, the full text in the tooltip
+        writing.set_ellipsize(gtk::pango::EllipsizeMode::Middle);
+        writing.set_tooltip_text(Some(&writing.text()));
         root.append(&writing);
 
         let card = Rc::new(AuditCard {
@@ -438,10 +446,23 @@ impl AuditCard {
                 if c < 2 {
                     label.add_css_class("mono");
                 }
+                if (1..=3).contains(&c) {
+                    // Tool, Tier and Target give way before Outcome does
+                    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    label.set_tooltip_text(Some(text));
+                }
+                if c == 3 {
+                    label.set_max_width_chars(14);
+                }
                 if c == 4 {
                     label.set_hexpand(true);
+                    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    // at the minimum window the other columns give way first
+                    label.set_width_chars(11);
                     label.set_tooltip_text(Some(&row.tooltip));
                     set_weight(&label, row.weight);
+                } else {
+                    set_weight(&label, Weight::Ink100);
                 }
                 self.grid.attach(&label, c as i32, r, 1, 1);
             }

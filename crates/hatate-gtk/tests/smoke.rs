@@ -7801,6 +7801,25 @@ fn settings_mcp_audit_table_follows_the_log_newest_first(app: &adw::Application)
     assert!(d.audit.following());
     d.show_tab(0);
     assert!(!d.audit.following());
+    // the whole page fits the stated minimum window, so the Outcome column is never cut off the
+    // side: the token box, the path caption and the table's columns give way before the page does
+    let page = d
+        .tabs
+        .nth_page(Some(
+            hatate_gtk::settings_dialog::SettingsDialog::mcp_tab_index() as u32,
+        ))
+        .expect("the MCP page");
+    let content = page
+        .downcast_ref::<gtk4::ScrolledWindow>()
+        .and_then(|sw| sw.child())
+        .and_then(|v| v.first_child())
+        .expect("the page's content");
+    let (min_width, _, _, _) = content.measure(gtk4::Orientation::Horizontal, -1);
+    let room = hatate_gtk::settings_dialog::MIN_WIDTH - 40;
+    assert!(
+        min_width <= room,
+        "the MCP page needs {min_width}px, the minimum window gives {room}"
+    );
     d.click_cancel();
     f.close();
 }
