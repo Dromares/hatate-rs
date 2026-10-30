@@ -82,8 +82,8 @@ pub fn all_site_options() -> Vec<String> {
 
 /// The menubar, in Python's order: Files, Hydrus, Sites, Settings, Help.
 pub fn menus() -> Vec<Menu> {
-    use Owner::{Later, Shell};
-    // DEFERRED(6.h): Preferences.
+    use Owner::Shell;
+    // Preferences opens the Settings window (6.h): its entry below is Owner::Shell.
     let files = Menu {
         title: "_Files",
         entries: vec![
@@ -147,7 +147,7 @@ pub fn menus() -> Vec<Menu> {
     let settings = Menu {
         title: "_Settings",
         entries: vec![
-            item("Preferences\u{2026}", "preferences", Later("6.h")),
+            item("Preferences\u{2026}", "preferences", Shell),
             item("Edit Match Conditions\u{2026}", "edit-conditions", Shell),
             Entry::Separator,
             Entry::Radio {
@@ -450,12 +450,10 @@ mod tests {
     fn every_deferred_action_names_a_ticket() {
         let d = deferred();
         assert!(d.iter().all(|(_, t)| t.starts_with("6.")));
-        // 6.g wired Query Hydrus, Pawchive Index, Re-check Queued Imports and the two Send items.
-        assert!(
-            d.iter().any(|(n, _)| *n == "preferences"),
-            "preferences not deferred"
-        );
+        // 6.g wired Query Hydrus, Pawchive Index, Re-check Queued Imports and the two Send items;
+        // 6.h wired Preferences.
         for working in [
+            "preferences",
             "query-hydrus",
             "pawchive-index",
             "reconcile",

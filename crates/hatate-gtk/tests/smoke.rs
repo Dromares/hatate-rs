@@ -32,6 +32,34 @@ type Scenario = (&'static str, fn(&adw::Application));
 
 const SCENARIOS: &[Scenario] = &[
     (
+        "settings_engine_line_lens_warning_and_browse_follow_python",
+        settings_engine_line_lens_warning_and_browse_follow_python,
+    ),
+    (
+        "settings_dialog_opens_on_the_stored_values_and_ok_saves_what_python_would",
+        settings_dialog_opens_on_the_stored_values_and_ok_saves_what_python_would,
+    ),
+    (
+        "settings_dialog_widgets_hand_back_the_values_they_were_given",
+        settings_dialog_widgets_hand_back_the_values_they_were_given,
+    ),
+    (
+        "settings_window_keeps_its_stated_minimum",
+        settings_window_keeps_its_stated_minimum,
+    ),
+    (
+        "settings_window_asks_its_questions_over_itself",
+        settings_window_asks_its_questions_over_itself,
+    ),
+    (
+        "settings_highlight_second_call_inside_the_window_still_restores",
+        settings_highlight_second_call_inside_the_window_still_restores,
+    ),
+    (
+        "settings_find_box_lists_and_jumps",
+        settings_find_box_lists_and_jumps,
+    ),
+    (
         "review_page_follows_the_selection",
         review_page_follows_the_selection,
     ),
@@ -7011,5 +7039,295 @@ fn tab_walks_the_query_hydrus_and_pawchive_windows_to_their_footers(app: &adw::A
             .is_some_and(|w| w.is_ancestor(&d.query) || *w == d.query),
         "the name/link entry is the first stop with an artist indexed: {first:?}"
     );
+    f.close();
+}
+
+// -- Settings (6.h) ----------------------------------------------------------------------------
+
+fn settings_dialog_opens_on_the_stored_values_and_ok_saves_what_python_would(
+    app: &adw::Application,
+) {
+    use hatate_core::config::Settings;
+    use hatate_gtk::settings_values::{self, Value};
+    let f = fx(app);
+    {
+        let mut s = f.w.s.settings.lock().unwrap();
+        s.delay_min_seconds = 12.5;
+        s.hash_source = "nonsense".into();
+        s.tag_blacklist = vec!["bad_*".into(), "meta:*".into()];
+        s.hydrus.api_url = "http://example.test:1234/".into();
+        s.enabled_tag_sources = vec!["User".into(), "Booru".into(), "Gone".into()];
+    }
+    let before = f.w.s.settings.lock().unwrap().clone();
+    f.w.activate_action("preferences");
+    let d =
+        f.w.s
+            .settings_dialog
+            .borrow()
+            .clone()
+            .expect("the dialog is open");
+    assert_eq!(
+        d.tab_names(),
+        [
+            "General",
+            "Engine",
+            "Import",
+            "SauceNAO",
+            "Hydrus",
+            "Tag Namespaces",
+            "Site Logins",
+            "Shortcuts",
+            "MCP"
+        ]
+    );
+    assert_eq!(
+        d.values(),
+        settings_values::initial(&before),
+        "the controls open on the stored values"
+    );
+    // Cancel changes nothing and stores nothing
+    let cfg = f.paths.config_file();
+    let existed = cfg.exists();
+    d.click_cancel();
+    assert!(f.w.s.settings_dialog.borrow().is_none());
+    assert_eq!(f.w.s.settings.lock().unwrap().clone(), before);
+    assert_eq!(cfg.exists(), existed);
+
+    // OK after one edit: what Python's apply_to_settings would write, normalisation included
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    d.set_value("delay_max", &Value::Num(10.0));
+    d.click_ok();
+    let mut want = before.clone();
+    let mut v = settings_values::initial(&before);
+    v.set("delay_max", Value::Num(10.0));
+    settings_values::apply(&v, before.deviantart_cookies.expose(), &mut want);
+    assert_eq!(
+        want.delay_max_seconds, 12.5,
+        "the max never sits under the min"
+    );
+    assert_eq!(
+        want.hash_source, "hydrus",
+        "an unknown choice saves as the first item"
+    );
+    assert_eq!(want.hydrus.api_url, "http://example.test:1234");
+    assert_eq!(want.enabled_tag_sources, ["User", "Booru"]);
+    assert_eq!(f.w.s.settings.lock().unwrap().clone(), want);
+    assert_eq!(Settings::load(&f.paths).settings, want, "and it is on disk");
+    f.close();
+}
+
+fn settings_dialog_widgets_hand_back_the_values_they_were_given(app: &adw::Application) {
+    use hatate_gtk::settings_values;
+    let f = fx(app);
+    {
+        let mut s = f.w.s.settings.lock().unwrap();
+        // outside the ranges and finer than two decimals: the spin boxes round, then bound
+        s.delay_min_seconds = 3.0;
+        s.delay_max_seconds = 12.3456;
+        s.search_timeout = 1000.0;
+        s.hash_workers = 99;
+        s.autosave_interval_seconds = 1;
+        s.borrow_tags_similarity_slack = 0.005;
+        s.url_import_confirm_interval = 0.25;
+        s.engine_delays.0 = vec![
+            ("iqdb".into(), vec![30.0, 20.0]),
+            ("yandex".into(), vec![0.0, 40.0]),
+        ];
+        s.tag_namespace_remap.0 = vec![
+            ("artist".into(), "creator".into()),
+            ("x".into(), String::new()),
+        ];
+    }
+    let settings = f.w.s.settings.lock().unwrap().clone();
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    assert_eq!(d.values(), settings_values::initial(&settings));
+    d.click_cancel();
+    f.close();
+}
+
+/// DAN-2221: the Settings window, told to be as small as it can, does not need more than the
+/// minimum its code states, on every page and with the Find results list showing. The fit test
+/// measures the window's child at the stated width, so the window's own size request cannot hide
+/// an overflow. On the shot path (hosted `ci`, GTK 4.14) the `settings-*-min` shots carry the same
+/// numbers in their PNG headers.
+fn settings_window_keeps_its_stated_minimum(app: &adw::Application) {
+    use hatate_gtk::settings_dialog::{MIN_HEIGHT, MIN_WIDTH};
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    for (i, name) in d.tab_names().iter().enumerate() {
+        d.tabs.set_current_page(Some(i as u32));
+        pump_for(50);
+        for query in ["", "delay"] {
+            d.find.set_text(query);
+            pump_for(50);
+            let (w, h) = content_need(d.window.upcast_ref(), MIN_WIDTH);
+            println!("OUTER settings {name} find={query:?} content={w}x{h}");
+            assert!(
+                w <= MIN_WIDTH && h <= MIN_HEIGHT,
+                "the Settings window ({name}, find {query:?}) is {w}x{h}; its stated minimum is {MIN_WIDTH}x{MIN_HEIGHT}"
+            );
+        }
+    }
+    d.click_cancel();
+    f.close();
+}
+
+/// DAN-2221: the Settings window is modal, so the Lens warning and the Browse chooser must be
+/// asked over it (Python: `QMessageBox.warning(self, ...)` from inside the dialog), not over the
+/// main window beneath it, where they could not be reached. The production prompter is built over
+/// the main window and must answer `over` with one bound to the Settings window; the shot
+/// `settings-lens-*` (production prompter) shows the box inside the Settings window.
+fn settings_window_asks_its_questions_over_itself(app: &adw::Application) {
+    use hatate_gtk::dialogs::{AdwPrompter, Prompter};
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    let production = AdwPrompter::new(&f.w.win);
+    let main_win: gtk4::Window = f.w.win.clone().upcast();
+    assert_eq!(production.parent_window().as_ref(), Some(&main_win));
+    let over = production
+        .over(&d.window)
+        .expect("the production prompter has windows");
+    assert_eq!(
+        over.parent_window().as_ref(),
+        Some(&d.window),
+        "the box would open over the main window, under the modal Settings window"
+    );
+    // the scripted prompter has no windows: the dialog uses it as it is
+    assert!(d.prompter.parent_window().is_none());
+    d.click_cancel();
+    f.close();
+}
+
+/// `TestHighlightReentrancy`: a double click on a result marks the same widget twice before the
+/// first revert has run. The first revert must not take the mark off the second call's window,
+/// and the mark must be gone once the second window has passed (`HIGHLIGHT_MS`, 2 s).
+fn settings_highlight_second_call_inside_the_window_still_restores(app: &adw::Application) {
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    let w: gtk4::Widget = d.ok_button.clone().upcast();
+    assert!(!w.has_css_class("found"));
+    d.highlight(&w);
+    assert!(w.has_css_class("found"));
+    pump_for(1200);
+    d.highlight(&w);
+    pump_for(1100); // 2.3 s after the first call: its revert has run, the second's is pending
+    assert!(
+        w.has_css_class("found"),
+        "the first call's revert took the second call's mark off"
+    );
+    pump_for(1200); // 2.3 s after the second call
+    assert!(!w.has_css_class("found"), "the mark is restored");
+    d.click_cancel();
+    f.close();
+}
+
+fn settings_find_box_lists_and_jumps(app: &adw::Application) {
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    assert!(!d.results_visible());
+    d.find.set_text("quota pause");
+    assert_eq!(
+        d.result_texts(),
+        ["SauceNAO  \u{203a}  Pause searching when the daily quota runs out"]
+    );
+    assert!(d.results_visible());
+    d.find.set_text("zzzzzz");
+    assert_eq!(d.result_texts(), ["Nothing matches that."]);
+    assert!(d.results_visible() && !d.result_is_activatable(0));
+    d.find.set_text("   ");
+    assert!(d.result_texts().is_empty() && !d.results_visible());
+
+    d.find.set_text("hydrus key");
+    assert_eq!(d.result_texts().len(), 1);
+    assert_eq!(d.current_tab(), 0);
+    d.jump_to_setting(0);
+    assert_eq!(d.current_tab(), 4, "the Hydrus tab");
+    d.click_cancel();
+    f.close();
+}
+
+fn settings_engine_line_lens_warning_and_browse_follow_python(app: &adw::Application) {
+    use hatate_core::lens_browser::deps::BrowserEnv;
+    use hatate_gtk::settings_values::Value;
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    let line = |d: &hatate_gtk::settings_dialog::SettingsDialog| d.live_text("engine_pipeline");
+    let before = line(&d);
+    assert!(!before.is_empty());
+    d.set_value("enable_tracemoe", &Value::Bool(true));
+    let after = line(&d);
+    assert_ne!(after, before, "the line restates when an engine is ticked");
+    d.set_value("enable_tracemoe", &Value::Bool(false));
+    assert_eq!(line(&d), before);
+
+    // Lens ticked with no browser: a warning, and the box stays ticked
+    let empty = tempfile::tempdir().unwrap();
+    *d.lens_env.borrow_mut() = BrowserEnv {
+        home: Some(empty.path().to_path_buf()),
+        path: Some(empty.path().into()),
+        ..BrowserEnv::default()
+    };
+    f.script.reset();
+    d.set_value("enable_google_lens", &Value::Bool(true));
+    let shown = f.script.last_shown();
+    assert_eq!(shown.title, "Google Lens is not installed yet");
+    assert!(
+        shown
+            .text
+            .starts_with("Google Lens is on, but it cannot run yet: ")
+    );
+    assert!(
+        shown
+            .text
+            .ends_with("Lens will be skipped until this is fixed.")
+    );
+    assert!(!shown.detail.is_empty());
+    assert_eq!(d.values().0["enable_google_lens"], Value::Bool(true));
+    // switching it off, or on again with nothing changed, asks nothing more of the first
+    f.script.reset();
+    d.set_value("enable_google_lens", &Value::Bool(false));
+    assert_eq!(f.script.count_shown(), 0);
+    // a working install says nothing (`test_a_working_install_says_nothing`): a browser on PATH
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = tempfile::tempdir().unwrap();
+        let exe = bin.path().join("chromium");
+        std::fs::write(&exe, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        *d.lens_env.borrow_mut() = BrowserEnv {
+            home: Some(empty.path().to_path_buf()),
+            path: Some(bin.path().into()),
+            ..BrowserEnv::default()
+        };
+        f.script.reset();
+        d.set_value("enable_google_lens", &Value::Bool(true));
+        assert_eq!(
+            f.script.count_shown(),
+            0,
+            "a browser is found: nothing to say"
+        );
+        d.set_value("enable_google_lens", &Value::Bool(false));
+    }
+
+    // Browse: the chooser opens on the current path, and the answer fills the field
+    let chosen = f.dir.path().join("log.txt");
+    f.script.push(Answer::Path(Some(chosen.clone())));
+    d.press("button.browse");
+    assert_eq!(d.text_of("log_path"), chosen.to_string_lossy());
+    f.script.push(Answer::Path(None));
+    d.press("button.browse");
+    assert_eq!(
+        d.text_of("log_path"),
+        chosen.to_string_lossy(),
+        "Cancel leaves it"
+    );
+    d.click_cancel();
     f.close();
 }

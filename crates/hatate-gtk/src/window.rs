@@ -248,6 +248,7 @@ pub struct State {
     /// The crawler a test gave the window; the shipped one builds the real Pawchive.
     pub pawchive_override: Option<Arc<hatate_core::pawchive_index::PawchiveCrawler>>,
     pub hydrus_query_dialog: RefCell<Option<Rc<crate::hydrus_query::HydrusQueryDialog>>>,
+    pub settings_dialog: RefCell<Option<Rc<crate::settings_dialog::SettingsDialog>>>,
     /// `self._reconcile_was_quiet`.
     pub reconcile_was_quiet: Cell<bool>,
     /// `self._pending_poll_confirmed`, `_unconfirmed` and `_warnings`.
@@ -500,6 +501,7 @@ impl MainWindow {
             pawchive_dialog: RefCell::new(None),
             pawchive_override: env.pawchive.take(),
             hydrus_query_dialog: RefCell::new(None),
+            settings_dialog: RefCell::new(None),
             reconcile_was_quiet: Cell::new(false),
             poll_pending: RefCell::new(Default::default()),
             review_controllers: RefCell::new(Vec::new()),
@@ -753,6 +755,7 @@ impl MainWindow {
                 "parser-health" => w.action_parser_health(),
                 "open-log" => w.action_open_log(),
                 "edit-conditions" => w.action_edit_conditions(),
+                "preferences" => w.action_open_settings(),
                 "view-logs" => w.action_view_logs(),
                 "export-results" => w.action_export_results(None),
                 "write-tag-files" => w.action_write_tag_files(None),

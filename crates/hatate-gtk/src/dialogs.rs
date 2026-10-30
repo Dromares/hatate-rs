@@ -20,6 +20,7 @@ use hatate_core::config::MatchConditions;
 use libadwaita as adw;
 use libadwaita::prelude::*;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 /// Which of Qt's four icons the box carried; it picks the dialog's heading weight and nothing else.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,6 +107,17 @@ pub type Done<T> = Box<dyn FnOnce(T)>;
 
 /// Everything the window asks the user.
 pub trait Prompter {
+    /// The same questions asked over another window of the app (`QMessageBox.warning(self, ...)`
+    /// from inside a dialog parents the box to that dialog). A modal window must ask over itself:
+    /// a box in the main window under it could not be reached. `None` for a prompter that has no
+    /// windows (the scripted one), which the caller replaces with `self`.
+    fn over(&self, _window: &gtk::Window) -> Option<Rc<dyn Prompter>> {
+        None
+    }
+    /// The window this prompter asks over, if it has one.
+    fn parent_window(&self) -> Option<gtk::Window> {
+        None
+    }
     /// A message box. `done` runs with the pressed button.
     fn message(&self, kind: Kind, title: &str, text: &str, buttons: Buttons, done: Done<Response>);
     /// A message box with `setDetailedText` as well: `text` is `setText` and `setInformativeText`
@@ -240,6 +252,14 @@ impl AdwPrompter {
 }
 
 impl Prompter for AdwPrompter {
+    fn over(&self, window: &gtk::Window) -> Option<Rc<dyn Prompter>> {
+        Some(Rc::new(AdwPrompter::new(window)))
+    }
+
+    fn parent_window(&self) -> Option<gtk::Window> {
+        Some(self.parent.clone())
+    }
+
     fn message(&self, kind: Kind, title: &str, text: &str, buttons: Buttons, done: Done<Response>) {
         self.message_detailed(kind, title, text, "", buttons, done);
     }
