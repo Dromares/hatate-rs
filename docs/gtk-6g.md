@@ -32,18 +32,18 @@ key are 6.h; the full-window sweep is 6.j.
 
 | Id | What differs | Why | Pinned by |
 |---|---|---|---|
-| **D-A** | Delete from Hydrus asks with **Delete / Cancel**, Cancel the default and Escape. Python's box is Yes / No with No the default. | The ticket text ("Delete is destructive, so Cancel is the default") and design gate 2.6. | `smoke::hydrus_delete_defaults_to_cancel_and_only_deletes_after_the_answer` (`smoke.rs:5744`, `d.default == Response::Cancel`; `smoke.rs:5743`, `Buttons::DeleteCancel`) |
-| **D-B** | A failure box's headline is `{prefix}: {user_message()}` and the raw text is in a detail line; Python writes `{prefix}: {str(exc)}`. The prefix is equal in every case. `Entry.error_message` still holds `str(exc)`, byte-compatible. | DAN-2116 item 1: the window shows `user_message()`, `detail()` goes to a detail line. | `smoke::hydrus_show_opens_a_page_and_explains_a_refusal` (`smoke.rs:5852`, the 500 case: the headline is the prefix and `user_message()`; `smoke.rs:5858`, no server words in it) |
-| **D-C** | A second Hydrus request while one is running gets a box ("already under way") instead of queuing behind it on the GUI thread. | Python's send loops ran on the GUI thread; here nothing blocks the loop. | `smoke::hydrus_requests_leave_the_main_loop_running_while_the_server_stalls` (`smoke.rs:5926`, the box text; the window keeps turning at `smoke.rs:5909`-`5912`) |
-| **D-D** | The Query Hydrus window's result rows wrap, and its stated minimum is 420 x 480 (was 420 x 400); the Pawchive Index window states a minimum, 720 x 680 (Python states none). | Gate 2.5: every state fits its stated minimum. | `smoke::pawchive_and_query_windows_keep_their_stated_minimum` (`smoke.rs:6107`, Query; `smoke.rs:6129`, Pawchive) |
+| **D-A** | Delete from Hydrus asks with **Delete / Cancel**, Cancel the default and Escape. Python's box is Yes / No with No the default. | The ticket text ("Delete is destructive, so Cancel is the default") and design gate 2.6. | `smoke::hydrus_delete_defaults_to_cancel_and_only_deletes_after_the_answer` (`smoke.rs:5752`, `d.default == Response::Cancel`; `smoke.rs:5751`, `Buttons::DeleteCancel`) |
+| **D-B** | A failure box's headline is `{prefix}: {user_message()}` and the raw text is in a detail line; Python writes `{prefix}: {str(exc)}`. The prefix is equal in every case. `Entry.error_message` still holds `str(exc)`, byte-compatible. | DAN-2116 item 1: the window shows `user_message()`, `detail()` goes to a detail line. | `smoke::hydrus_show_opens_a_page_and_explains_a_refusal` (`smoke.rs:5860`, the 500 case: the headline is the prefix and `user_message()`; `smoke.rs:5866`, no server words in it) |
+| **D-C** | A second Hydrus request while one is running gets a box ("already under way") instead of queuing behind it on the GUI thread. | Python's send loops ran on the GUI thread; here nothing blocks the loop. | `smoke::hydrus_requests_leave_the_main_loop_running_while_the_server_stalls` (`smoke.rs:5934`, the box text; the window keeps turning at `smoke.rs:5917`-`5912`) |
+| **D-D** | The Query Hydrus window's result rows wrap, and its stated minimum is 420 x 480 (was 420 x 400); the Pawchive Index window states a minimum, 720 x 680 (Python states none). | Gate 2.5: every state fits its stated minimum. | `smoke::pawchive_and_query_windows_keep_their_stated_minimum` (`smoke.rs:6115`, Query; `smoke.rs:6137`, Pawchive) |
 
 Each pinning assertion was **reverted and run red** at the line named, then restored (`worktrees/DAN-2220-revert.log`):
 
 | Row | Line changed | Result |
 |---|---|---|
-| D-A | `dialogs.rs:173`: `DeleteCancel` defaults to `Response::Delete` | `assertion left == right failed: destructive: Cancel is the default` at `smoke.rs:5744` |
-| D-B | `hydrus_ops.rs:158`: `exc.user_message()` becomes `exc.detail()` | `Hydrus could not open the page: Hydrus returned HTTP 500: scripted-boom-text` at `smoke.rs:5852` |
-| D-C | `hydrus_ops.rs:187`: the box text changed | `assertion failed: f.script.last_shown().text.starts_with("A Hydrus request is already under way.")` at `smoke.rs:5926` |
+| D-A | `dialogs.rs:173`: `DeleteCancel` defaults to `Response::Delete` | `assertion left == right failed: destructive: Cancel is the default` at `smoke.rs:5752` |
+| D-B | `hydrus_ops.rs:158`: `exc.user_message()` becomes `exc.detail()` | `Hydrus could not open the page: Hydrus returned HTTP 500: scripted-boom-text` at `smoke.rs:5860` |
+| D-C | `hydrus_ops.rs:187`: the box text changed | `assertion failed: f.script.last_shown().text.starts_with("A Hydrus request is already under way.")` at `smoke.rs:5934` |
 | D-D | `hydrus_query::MIN_HEIGHT` 480 to 400; `pawchive_dialog::MIN_HEIGHT` 680 to 560 | `the Query Hydrus window is 333x441; its stated minimum is 420x400`; `the Pawchive Index window is 671x627; its stated minimum is 720x560` |
 
 ## 3. Minimum size
@@ -169,11 +169,27 @@ label is. `smoke::tab_walks_the_query_hydrus_and_pawchive_windows_to_their_foote
 the way `tab_walks_the_review_page_from_the_header_to_the_footer` does; skipped with a reason off Xvfb, a failure under `CI`) and
 asserts every press moves focus. What it shows, with the stops it asserts: Query Hydrus, empty: tag box (first stop), Search Hydrus,
 Cancel, then back to the tag box. With a search done and a row selected: tag box, Search Hydrus, the rows, Cancel, Import selected.
-Pawchive Index, empty index: the name/link entry (first stop, pinned), Find / Add, Add artists from my matches, Index selected,
-Index / refresh all, Remove selected, Close, then back to the entry. With an artist indexed the entry is still the first stop
+Pawchive Index, empty index: the name/link entry (first stop, pinned), Find / Add, Add artists from my matches, Close, then back
+to the entry (Index selected, Index / refresh all and Remove selected are insensitive until a row exists, or is selected, since
+DAN-2401, so they are not stops; the walk asserts the exact list and the three `is_sensitive` states). With an artist added
+(and selected) the three are live and Tab reaches Remove selected. With an artist indexed the entry is still the first stop
 (pinned on a reopened window; without `set_focus(&window, Some(&query))` the table row is), and the table row comes *after* Close in
 the cycle, because the table sits above the entry in the widget tree: Tab from Close wraps to the row, then the entry. That order is
 what the walk records, not an intended one; a design call on it is Oderisi's. Walk logs: `worktrees/DAN-2399-mutation.log`.
+
+**Design-read re-read fixup (DAN-2398 N1 and P3, DAN-2401, on top of `174a41c`).**
+- **N1, the artist table:** the header and every row use one `gtk::SizeGroup` per column and one alignment per column (`RIGHT_ALIGNED`:
+  Images, Posts, Indexed right-aligned; Artist and Service left), through one `cell()` function, so a row cannot drift with its last
+  cell. The header sits in a one-row list of its own with the same `pick-list` class and a 1 px side margin for the scroller's border, so
+  the header cells share the rows' padding. `smoke::pawchive_artist_columns_share_one_edge_in_the_header_and_every_row` seeds three
+  artists (a 4-digit image count, a blank Posts cell, `not yet`) and measures every cell's allocated left and right edge in window
+  coordinates, header against each row, within half a pixel (the design read asks for 1 px); it also pins the header's `xalign` per column.
+  Red on: no `SizeGroup`; numeric columns left-aligned; the header's 1 px margin removed (`worktrees/DAN-2401-mutation.log`). One line
+  is not pinned: `set_hexpand(i == 0)` (all columns expanding gives the same edges, because the size group equalises them).
+- **P3-1:** `dialogs::detail_box` (the file-name box of the Delete from Hydrus question) starts at its top-left (`yalign` 0, no blank
+  first line) and is indented 8 px (`@space-2`); pinned by `smoke::message_detail_box_starts_at_its_top_left_and_is_indented`.
+  **P3-2:** a disabled primary button in the two windows takes Stop's hollow dim look (`window.pick-window button.pill.primary:disabled`,
+  pinned by `theme::tests::pick_windows_get_the_well_the_border_and_row_dividers`). **P3-3:** see Tab order.
 
 **Design-read fixup (DAN-2395, `8a7eede`..`576db59`).**
 - **F1:** the Pawchive entry takes `field` (placeholder above). **F2:** `window.pick-window` (a class on the Query and Pawchive
@@ -243,7 +259,7 @@ hover wash (owner: Oderisi's design read and the board's live check).
 
 | Python | Ported as |
 |---|---|
-| `_hairline` (:29) | the `field` CSS class on the table and the results (`pawchive_dialog.rs:196`, `:226`); no function |
+| `_hairline` (:29) | the `field` CSS class on the table and the results (`pawchive_dialog.rs:225`, `:226`); no function |
 | `PawchiveIndexDialog` (:38), `__init__` (:41) | `pawchive_dialog::PawchiveIndexDialog::build` |
 | `_populate` (:144) | `populate` (+ `row_cells`, `window_title`) |
 | `_selected_creators` (:165), `_select_creators` (:169) | `selected_creators`, `select_creators` |
@@ -301,37 +317,37 @@ two windows.
 | 328 | `TestMainWindowSignalHandlers.test_auto_import_handler` | `auto_import.rs:389`, `:390`, `:391` and `:393`: what `_on_auto_imported` decides for the three results Python feeds it: a success leaves the list when Remove after import is on, an unconfirmed one and a failure stay, and with the setting off nothing leaves. **not asserted:** the window handler `search_run.rs` `on_auto_imported` itself (6.e) is not called by a window test; Python's test only checks that it does not raise |
 | 1001 | `TestTableContextMenu.test_a_removal_while_the_menu_is_open_does_not_shift_the_action` | n/a here: the test is 6.d's row-menu identity (`docs/queue-view.md`); `HydrusImportPollWorker` appears only as a patched fixture |
 | 1508 | `TestWorkerCallbacksDuringClose.test_hydrus_import_poll_finished_is_a_no_op_while_closing` | **not asserted:** the guard is `hydrus_ops.rs:804` (`closing` returns before touching the rows, DAN-128); no scenario closes the window mid-poll |
-| 1734 | `TestDeleteFromHydrus.test_confirmed_delete_removes_only_what_hydrus_confirmed` | `smoke.rs:5764`, `smoke.rs:5765`, `smoke.rs:5777`: the rows leave the list, the delete endpoint is reached, the status line says one file; the differential adds the stubborn-file and mixed-state cases (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides) |
-| 1747 | `TestDeleteFromHydrus.test_saying_no_deletes_nothing` | `smoke.rs:5757`, `smoke.rs:5758`, `smoke.rs:5759`: Cancel says `Delete cancelled`, the delete flag stays false, all 3 rows stay. Python's No is Cancel here (D-A) |
+| 1734 | `TestDeleteFromHydrus.test_confirmed_delete_removes_only_what_hydrus_confirmed` | `smoke.rs:5772`, `smoke.rs:5773`, `smoke.rs:5785`: the rows leave the list, the delete endpoint is reached, the status line says one file; the differential adds the stubborn-file and mixed-state cases (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides) |
+| 1747 | `TestDeleteFromHydrus.test_saying_no_deletes_nothing` | `smoke.rs:5765`, `smoke.rs:5766`, `smoke.rs:5767`: Cancel says `Delete cancelled`, the delete flag stays false, all 3 rows stay. Python's No is Cancel here (D-A) |
 | 1757 | `TestDeleteFromHydrus.test_a_file_hydrus_still_holds_afterwards_stays_in_the_list` | **not asserted** in a window test; the differential's `stubborn` server (15% of cases, a delete that Hydrus does not honour) is this case, and the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
-| 1768 | `TestDeleteFromHydrus.test_nothing_held_means_nothing_is_asked` | `smoke.rs:5749`, `smoke.rs:5751` asks only about the files Hydrus holds ("1 of the selected file(s) aren't in Hydrus"). **not asserted:** the case where none is held (no box at all); in the differential's delete steps, whose rows carry no hash or a deleted one |
-| 1779 | `TestDeleteFromHydrus.test_without_an_access_key_it_refuses_early` | `smoke.rs:5696`, `smoke.rs:5697`, `smoke.rs:5698`: the Delete box names the missing key, and the server saw no request |
-| 2888 | `TestSendFilesToHydrus.test_nothing_selected_asks_for_a_selection` | `smoke.rs:5671` for Send (`Select at least one row.`); the other actions' empty selection is the same first line of `hydrus_batch_start` |
-| 2895 | `TestSendFilesToHydrus.test_a_missing_access_key_stops_before_sending` | `smoke.rs:5681`, `smoke.rs:5698`: the key box for Send, and no request |
-| 2906 | `TestSendFilesToHydrus.test_the_windows_settings_reach_the_send` | `smoke.rs:5621`, `smoke.rs:5628`: the user's `verify_ssl` and `api_url` reach the client (an https server with the test CA) |
-| 2918 | `TestSendFilesToHydrus.test_each_selected_row_is_sent_once` | `smoke.rs:5604`: two selected rows, two `add_file` posts |
-| 2926 | `TestSendFilesToHydrus.test_an_unselected_row_is_never_sent` | `smoke.rs:5598`: the unselected row is untouched |
-| 2935 | `TestSendFilesToHydrus.test_a_failure_is_reported_and_does_not_stop_the_rest` | `smoke.rs:5651`, `smoke.rs:5654`, `smoke.rs:5656` for the failure box and the count; **not asserted:** that a failure in the middle does not stop the rest. the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides with scripted `add_file` sequences that mix 200, veto and 500 |
+| 1768 | `TestDeleteFromHydrus.test_nothing_held_means_nothing_is_asked` | `smoke.rs:5757`, `smoke.rs:5759` asks only about the files Hydrus holds ("1 of the selected file(s) aren't in Hydrus"). **not asserted:** the case where none is held (no box at all); in the differential's delete steps, whose rows carry no hash or a deleted one |
+| 1779 | `TestDeleteFromHydrus.test_without_an_access_key_it_refuses_early` | `smoke.rs:5704`, `smoke.rs:5705`, `smoke.rs:5706`: the Delete box names the missing key, and the server saw no request |
+| 2888 | `TestSendFilesToHydrus.test_nothing_selected_asks_for_a_selection` | `smoke.rs:5679` for Send (`Select at least one row.`); the other actions' empty selection is the same first line of `hydrus_batch_start` |
+| 2895 | `TestSendFilesToHydrus.test_a_missing_access_key_stops_before_sending` | `smoke.rs:5689`, `smoke.rs:5706`: the key box for Send, and no request |
+| 2906 | `TestSendFilesToHydrus.test_the_windows_settings_reach_the_send` | `smoke.rs:5629`, `smoke.rs:5636`: the user's `verify_ssl` and `api_url` reach the client (an https server with the test CA) |
+| 2918 | `TestSendFilesToHydrus.test_each_selected_row_is_sent_once` | `smoke.rs:5612`: two selected rows, two `add_file` posts |
+| 2926 | `TestSendFilesToHydrus.test_an_unselected_row_is_never_sent` | `smoke.rs:5606`: the unselected row is untouched |
+| 2935 | `TestSendFilesToHydrus.test_a_failure_is_reported_and_does_not_stop_the_rest` | `smoke.rs:5659`, `smoke.rs:5662`, `smoke.rs:5664` for the failure box and the count; **not asserted:** that a failure in the middle does not stop the rest. the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides with scripted `add_file` sequences that mix 200, veto and 500 |
 | 2947 | `TestSendFilesToHydrus.test_a_warning_counts_as_sent_but_is_surfaced` | **not asserted** in a window test; the differential's "previously deleted" (status 3) and veto replies, and the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
-| 2956 | `TestSendFilesToHydrus.test_rows_stay_when_remove_after_import_is_off` | `smoke.rs:5598`: after a send the sent rows stay in the list (the unit setting is off); with it on, the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides (`remove_after_import` is on in 25% of the cases) |
+| 2956 | `TestSendFilesToHydrus.test_rows_stay_when_remove_after_import_is_off` | `smoke.rs:5606`: after a send the sent rows stay in the list (the unit setting is off); with it on, the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides (`remove_after_import` is on in 25% of the cases) |
 | 2963 | `TestSendFilesToHydrus.test_only_successful_rows_are_removed_when_that_is_on` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides (`remove_after_import` on in 25% of the cases) |
 | 2976 | `TestSendFilesToHydrus.test_the_table_matches_the_entries_after_removal` | **not asserted** by a window test; the differential compares every row's text and the row order after each step (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides) |
 | 2999 | `TestSendUrlToHydrusImporter.test_a_file_hatate_downloaded_is_done_and_not_polled` | **not asserted** in a window test; the differential's Import URL steps over rows that carry a hash (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides) |
-| 3016 | `TestSendUrlToHydrusImporter.test_nothing_selected_asks_for_a_selection` | `smoke.rs:5671` for Send (`Select at least one row.`); the other actions' empty selection is the same first line of `hydrus_batch_start` |
-| 3022 | `TestSendUrlToHydrusImporter.test_a_missing_access_key_stops_before_queueing` | `smoke.rs:5690`, `smoke.rs:5698`: the box for Import URL, no request |
+| 3016 | `TestSendUrlToHydrusImporter.test_nothing_selected_asks_for_a_selection` | `smoke.rs:5679` for Send (`Select at least one row.`); the other actions' empty selection is the same first line of `hydrus_batch_start` |
+| 3022 | `TestSendUrlToHydrusImporter.test_a_missing_access_key_stops_before_queueing` | `smoke.rs:5698`, `smoke.rs:5706`: the box for Import URL, no request |
 | 3030 | `TestSendUrlToHydrusImporter.test_each_selected_url_is_queued` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides (the request log has one `add_url` per URL) |
 | 3038 | `TestSendUrlToHydrusImporter.test_an_entry_with_no_url_is_skipped_not_failed` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
-| 3047 | `TestSendUrlToHydrusImporter.test_a_failure_is_surfaced` | for Send: `smoke.rs:5651`, `smoke.rs:5656`. For Import URL and Download and Send **not asserted** in a window test; the differential's failing `add_url` replies (`reply(..., 0.3)`) (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides); Download and Send is not in the differential (its network path) |
+| 3047 | `TestSendUrlToHydrusImporter.test_a_failure_is_surfaced` | for Send: `smoke.rs:5659`, `smoke.rs:5664`. For Import URL and Download and Send **not asserted** in a window test; the differential's failing `add_url` replies (`reply(..., 0.3)`) (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides); Download and Send is not in the differential (its network path) |
 | 3053 | `TestSendUrlToHydrusImporter.test_queued_is_not_treated_as_imported` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
 | 3063 | `TestSendUrlToHydrusImporter.test_removal_waits_for_confirmation_rather_than_removing_at_once` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides (the poll window is pinned to 0.4 s so both sides finish it inside a step) |
 | 3077 | `TestSendUrlToHydrusImporter.test_confirmed_entries_are_removed_unconfirmed_ones_kept` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
 | 3087 | `TestSendUrlToHydrusImporter.test_a_resolved_entry_records_its_hash` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides (`hydrus_hash` is in the `session.db` rows compared) |
 | 3094 | `TestSendUrlToHydrusImporter.test_an_unresolved_entry_is_marked_not_confirmed` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
-| 3129 | `TestDownloadAndSendToHydrus.test_nothing_selected_asks_for_a_selection` | `smoke.rs:5671` for Send (`Select at least one row.`); the other actions' empty selection is the same first line of `hydrus_batch_start` |
-| 3135 | `TestDownloadAndSendToHydrus.test_a_missing_access_key_stops_before_downloading` | `smoke.rs:5692`, `smoke.rs:5698`: the box for Download and Send, and no request |
+| 3129 | `TestDownloadAndSendToHydrus.test_nothing_selected_asks_for_a_selection` | `smoke.rs:5679` for Send (`Select at least one row.`); the other actions' empty selection is the same first line of `hydrus_batch_start` |
+| 3135 | `TestDownloadAndSendToHydrus.test_a_missing_access_key_stops_before_downloading` | `smoke.rs:5700`, `smoke.rs:5706`: the box for Download and Send, and no request |
 | 3146 | `TestDownloadAndSendToHydrus.test_each_selected_row_is_downloaded_and_sent` | **not asserted:** Download and Send reaches the real download path, which the namespace blocks; the core half is `docs/hydrus-import.md` (`download_and_send`) |
 | 3153 | `TestDownloadAndSendToHydrus.test_a_row_with_no_direct_url_is_skipped_not_failed` | **not asserted:** as above |
-| 3161 | `TestDownloadAndSendToHydrus.test_a_failure_is_surfaced` | for Send: `smoke.rs:5651`, `smoke.rs:5656`. For Import URL and Download and Send **not asserted** in a window test; the differential's failing `add_url` replies (`reply(..., 0.3)`) (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides); Download and Send is not in the differential (its network path) |
+| 3161 | `TestDownloadAndSendToHydrus.test_a_failure_is_surfaced` | for Send: `smoke.rs:5659`, `smoke.rs:5664`. For Import URL and Download and Send **not asserted** in a window test; the differential's failing `add_url` replies (`reply(..., 0.3)`) (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides); Download and Send is not in the differential (its network path) |
 | 3167 | `TestDownloadAndSendToHydrus.test_only_successful_rows_are_removed` | **not asserted:** as above |
 | 3178 | `TestDownloadAndSendToHydrus.test_the_downloaded_files_are_cleaned_up` | **not asserted:** as above; the staging directory is a `tempfile::TempDir`, which removes itself on drop |
 | 3200 | `TestDownloadAndSendToHydrus.test_cleanup_happens_even_when_every_download_fails` | **not asserted:** as above (the `TempDir` drop covers it by construction) |
@@ -339,15 +355,15 @@ two windows.
 | 3285 | `TestAutoImportStagingIsCleanedUp.test_it_is_removed_even_when_the_batch_is_stopped` | n/a here: core. `batch_auto_import.rs:997`, mapped in `docs/batch.md:114` |
 | 3305 | `TestAutoImportStagingIsCleanedUp.test_it_is_removed_even_when_the_run_raises` | n/a here: core. `batch_auto_import.rs:1021` (a worker that dies midway), mapped in `docs/batch.md:114` |
 | 3570 | `TestFilteredRowsAreNeverActedOnByAccident.test_sending_to_hydrus_only_sends_visible_rows` | **not asserted** in a window test: the selection passed to the action is the visible one (6.d's filter row, `docs/queue-view.md`); the differential has no filter |
-| 4103 | `TestHydrusReconcileAction.test_nothing_waiting_never_contacts_hydrus` | `smoke.rs:5879` says nothing waits (after a confirm). **not asserted:** that the server saw no request on that second call |
-| 4113 | `TestHydrusReconcileAction.test_a_queued_entry_is_confirmed_when_hydrus_has_it` | `smoke.rs:5876`, `smoke.rs:5877`: `confirmed 1 of 1`, the row's `hydrus_import_confirmed` |
+| 4103 | `TestHydrusReconcileAction.test_nothing_waiting_never_contacts_hydrus` | `smoke.rs:5887` says nothing waits (after a confirm). **not asserted:** that the server saw no request on that second call |
+| 4113 | `TestHydrusReconcileAction.test_a_queued_entry_is_confirmed_when_hydrus_has_it` | `smoke.rs:5884`, `smoke.rs:5885`: `confirmed 1 of 1`, the row's `hydrus_import_confirmed` |
 | 4124 | `TestHydrusReconcileAction.test_an_unknown_file_stays_queued` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides (reconcile steps over `trashed`/`deleted` hashes) |
-| 4135 | `TestHydrusReconcileAction.test_hydrus_being_unreachable_is_not_a_crash` | `smoke.rs:5909`, `smoke.rs:5915`, `smoke.rs:5920`, `smoke.rs:5926`, `smoke.rs:5932` for a stalled server (the loop keeps turning, one request at a time); a refused connection is **not asserted** |
-| 4147 | `TestHydrusReconcileAction.test_the_action_says_so_when_there_is_nothing_to_do` | `smoke.rs:5879`: `Nothing is waiting on Hydrus - every sent file is confirmed` |
+| 4135 | `TestHydrusReconcileAction.test_hydrus_being_unreachable_is_not_a_crash` | `smoke.rs:5917`, `smoke.rs:5923`, `smoke.rs:5928`, `smoke.rs:5934`, `smoke.rs:5940` for a stalled server (the loop keeps turning, one request at a time); a refused connection is **not asserted** |
+| 4147 | `TestHydrusReconcileAction.test_the_action_says_so_when_there_is_nothing_to_do` | `smoke.rs:5887`: `Nothing is waiting on Hydrus - every sent file is confirmed` |
 | 4152 | `TestHydrusReconcileAction.test_the_quiet_pass_stays_silent_when_nothing_changed` | **not asserted** in a window test; the quiet pass runs after the session restore in every differential case (the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides) |
 | 4165 | `TestHydrusReconcileAction.test_the_quiet_pass_speaks_up_when_it_changed_something` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
-| 5249 | `TestReviewShortcuts.test_sending_the_current_image_away_keeps_your_place` | `smoke.rs:6667`: a real Send with Remove after import on, from the row you are on, leaves the row that followed selected. The removal rule is 6.d's (`smoke.rs:3318`). **not asserted:** the J and K presses Python makes after it (6.f's `next_row`/`prev_row`) |
-| 5268 | `TestReviewShortcuts.test_sending_the_last_row_away_lands_on_the_new_last_row` | `smoke.rs:6672`: the same Send from the last row leaves the new last row selected |
+| 5249 | `TestReviewShortcuts.test_sending_the_current_image_away_keeps_your_place` | `smoke.rs:6778`: a real Send with Remove after import on, from the row you are on, leaves the row that followed selected. The removal rule is 6.d's (`smoke.rs:3326`). **not asserted:** the J and K presses Python makes after it (6.f's `next_row`/`prev_row`) |
+| 5268 | `TestReviewShortcuts.test_sending_the_last_row_away_lands_on_the_new_last_row` | `smoke.rs:6783`: the same Send from the last row leaves the new last row selected |
 | 5276 | `TestReviewShortcuts.test_a_hydrus_confirmation_removing_your_row_moves_you_on` | n/a here: Review's current-row hand-over after a removal is 6.f (`docs/gtk-6f.md`); the removal itself is `hydrus_ops::remove_entries` |
 | 5293 | `TestReviewShortcuts.test_a_hydrus_confirmation_elsewhere_leaves_you_where_you_are` | n/a here: as above |
 | 5926 | `TestHydrusMenu.test_the_hydrus_menu_exists` | `menu.rs:363`-`menu.rs:365`: the menu titles are `_Files`, `_Hydrus`, `Si_tes`, `_Settings`, `_Help` |
@@ -356,28 +372,28 @@ two windows.
 | 5945 | `TestHydrusMenu.test_both_menus_share_one_recheck_action` | `menu.rs:439`, `menu.rs:440`: both entries carry the action `reconcile`; `menu.rs:446`: it is registered once. Changing the Hydrus entry's action name goes red |
 | 5955 | `TestHydrusMenu.test_the_recheck_tooltip_comes_from_the_one_constant` | n/a here: menu items carry no tooltips (`GMenu` has none), difference D4 of `docs/gtk-shell.md` |
 | 5962 | `TestHydrusMenu.test_hydrus_is_not_buried_behind_help` | `menu.rs:363`-`menu.rs:365`: `_Hydrus` is the second title and `_Help` the last, ahead of `_Settings` |
-| 5972 | `TestHydrusMenu.test_send_upload_triggers_the_real_handler` | `smoke.rs:6600-6500`: activating `send-to-hydrus` with nothing selected shows `Send to Hydrus` / `Select at least one row.`. Replacing the action's arm in `window.rs` with `{}` goes red |
-| 5980 | `TestHydrusMenu.test_send_url_triggers_the_real_handler` | `smoke.rs:6610-6510`: activating `import-url-to-hydrus` shows `Send URL to Hydrus's Importer` / `Select at least one row.` |
-| 5989 | `TestHydrusMenu.test_recheck_triggers_the_real_handler` | `smoke.rs:6619-6515`: activating `reconcile` says `Nothing is waiting on Hydrus - every sent file is confirmed` |
-| 6378 | `TestShowInHydrus.test_it_shows_the_selected_files` | `smoke.rs:5802`, `smoke.rs:5803`, `smoke.rs:5804`: `Showing 1 file(s) in Hydrus` and the `new_page` call |
+| 5972 | `TestHydrusMenu.test_send_upload_triggers_the_real_handler` | `smoke.rs:6711-6500`: activating `send-to-hydrus` with nothing selected shows `Send to Hydrus` / `Select at least one row.`. Replacing the action's arm in `window.rs` with `{}` goes red |
+| 5980 | `TestHydrusMenu.test_send_url_triggers_the_real_handler` | `smoke.rs:6721-6510`: activating `import-url-to-hydrus` shows `Send URL to Hydrus's Importer` / `Select at least one row.` |
+| 5989 | `TestHydrusMenu.test_recheck_triggers_the_real_handler` | `smoke.rs:6730-6515`: activating `reconcile` says `Nothing is waiting on Hydrus - every sent file is confirmed` |
+| 6378 | `TestShowInHydrus.test_it_shows_the_selected_files` | `smoke.rs:5810`, `smoke.rs:5811`, `smoke.rs:5812`: `Showing 1 file(s) in Hydrus` and the `new_page` call |
 | 6388 | `TestShowInHydrus.test_one_file_gets_its_own_name_on_the_page` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides (the `new_page` body is in the request log) |
 | 6394 | `TestShowInHydrus.test_files_hydrus_does_not_have_are_left_out_and_counted` | **not asserted** in a window test; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides |
-| 6404 | `TestShowInHydrus.test_nothing_in_hydrus_says_so_instead_of_opening_an_empty_page` | `smoke.rs:5793`, `smoke.rs:5795`: the explanation box, and no page opened |
-| 6413 | `TestShowInHydrus.test_rows_with_no_hash_yet_are_explained` | `smoke.rs:5795`, `smoke.rs:5796`: `None of the selected files have a hash yet` |
-| 6423 | `TestShowInHydrus.test_no_access_key_is_reported_before_any_request` | `smoke.rs:5694`, `smoke.rs:5698`: the Show box names the key; no request |
-| 6432 | `TestShowInHydrus.test_a_403_names_the_permission_that_is_missing` | `smoke.rs:5824`, `smoke.rs:5828`, `smoke.rs:5830`: the Warning box says the key lacks the `manage pages` permission. Python's headline carries `str(exc)`; here the headline is `user_message()` (D-B) |
+| 6404 | `TestShowInHydrus.test_nothing_in_hydrus_says_so_instead_of_opening_an_empty_page` | `smoke.rs:5801`, `smoke.rs:5803`: the explanation box, and no page opened |
+| 6413 | `TestShowInHydrus.test_rows_with_no_hash_yet_are_explained` | `smoke.rs:5803`, `smoke.rs:5804`: `None of the selected files have a hash yet` |
+| 6423 | `TestShowInHydrus.test_no_access_key_is_reported_before_any_request` | `smoke.rs:5702`, `smoke.rs:5706`: the Show box names the key; no request |
+| 6432 | `TestShowInHydrus.test_a_403_names_the_permission_that_is_missing` | `smoke.rs:5832`, `smoke.rs:5836`, `smoke.rs:5838`: the Warning box says the key lacks the `manage pages` permission. Python's headline carries `str(exc)`; here the headline is `user_message()` (D-B) |
 | 6445 | `TestShowInHydrus.test_a_404_says_the_client_is_too_old` | **not asserted** in a window test; the 404 text is `hydrus_ops::show_failure_text`; the action differential (seeds 1-4, 160 cases, 0 differing steps) compares it on both sides for the 403 and 500 replies |
-| 6454 | `TestShowInHydrus.test_any_other_failure_is_reported_not_raised` | `smoke.rs:5852`, `smoke.rs:5858`: a 500 gives the headline `Hydrus could not open the page: Hydrus answered with an error (HTTP 500).` without the server's words (D-B), and nothing raises |
-| 6462 | `TestShowInHydrus.test_an_unreachable_hydrus_is_reported` | **not asserted:** a refused connection; the stalled-server scenario is `smoke.rs:5909` |
+| 6454 | `TestShowInHydrus.test_any_other_failure_is_reported_not_raised` | `smoke.rs:5860`, `smoke.rs:5866`: a 500 gives the headline `Hydrus could not open the page: Hydrus answered with an error (HTTP 500).` without the server's words (D-B), and nothing raises |
+| 6462 | `TestShowInHydrus.test_an_unreachable_hydrus_is_reported` | **not asserted:** a refused connection; the stalled-server scenario is `smoke.rs:5917` |
 | 6472 | `TestShowInHydrus.test_the_menu_offers_it_and_wires_it` | `table_menu.rs:664`: the entry reads `Show 3 selected images in Hydrus` for three rows (the count form of Python's `Show 2 selected images`); `table_menu.rs:644`: enabled when a selected row has a hash; `queue_menu.rs:80` and `queue_menu.rs:198`: the entry has a handler |
-| 6489 | `TestShowInHydrus.test_h_shows_the_selection` | `smoke.rs:6637`: `guarded_review_action("show_in_hydrus")` on a selected row opens the page with that row's hash. This path had no handler for the `H` key before this fixup; removing the arm goes red |
-| 6504 | `TestShowInHydrus.test_h_with_nothing_selected_says_so_rather_than_acting` | `smoke.rs:6625`: `Show in Hydrus: select an image first`, and the next line asserts the server was asked nothing |
+| 6489 | `TestShowInHydrus.test_h_shows_the_selection` | `smoke.rs:6748`: `guarded_review_action("show_in_hydrus")` on a selected row opens the page with that row's hash. This path had no handler for the `H` key before this fixup; removing the arm goes red |
+| 6504 | `TestShowInHydrus.test_h_with_nothing_selected_says_so_rather_than_acting` | `smoke.rs:6736`: `Show in Hydrus: select an image first`, and the next line asserts the server was asked nothing |
 | 6518 | `TestShowInHydrus.test_the_menu_greys_it_out_when_no_row_has_a_hash` | `table_menu.rs:687`: `Show 3 selected images in Hydrus` is among the disabled entries when no selected row has a hash |
-| 6652 | `TestPawchiveIndexWindow.test_a_pasted_link_adds_its_artist` | `smoke.rs:6307`, `smoke.rs:6311`, `smoke.rs:6318`: the status line, the row `["42", "fanbox", "0", "", "not yet"]`, and the duplicate message |
+| 6652 | `TestPawchiveIndexWindow.test_a_pasted_link_adds_its_artist` | `smoke.rs:6418`, `smoke.rs:6422`, `smoke.rs:6429`: the status line, the row `["42", "fanbox", "0", "", "not yet"]`, and the duplicate message |
 | 6658 | `TestPawchiveIndexWindow.test_artists_with_pawchive_matches_can_be_added_in_one_go` | **not asserted:** `add_from_matches` (the `Add artists from my matches` button) has no scenario; the button is live and its enabled state is read in the shots |
-| 6663 | `TestPawchiveIndexWindow.test_removing_asks_first_and_defaults_to_no` | `smoke.rs:6366`, `smoke.rs:6367`, `smoke.rs:6368`, `smoke.rs:6371`, `smoke.rs:6372`: `Remove artists`, default Cancel, the two rows stay until the answer, then `Removed 1 artist(s).` |
-| 6677 | `TestPawchiveIndexWindow.test_name_search_results_are_ticked_then_added` | `smoke.rs:6322`, `smoke.rs:6324`, `smoke.rs:6331`, `smoke.rs:6334`, `smoke.rs:6338`: the search disables the button, the two found labels, the status, then the ticked one is added |
-| 6686 | `TestPawchiveIndexWindow.test_the_menu_opens_one_window_and_quitting_closes_it` | `smoke.rs:6388`, `smoke.rs:6416`: one window (`Rc::ptr_eq`), and `pawchive_dialog` is `None` after the main window closes |
+| 6663 | `TestPawchiveIndexWindow.test_removing_asks_first_and_defaults_to_no` | `smoke.rs:6477`, `smoke.rs:6478`, `smoke.rs:6479`, `smoke.rs:6482`, `smoke.rs:6483`: `Remove artists`, default Cancel, the two rows stay until the answer, then `Removed 1 artist(s).` |
+| 6677 | `TestPawchiveIndexWindow.test_name_search_results_are_ticked_then_added` | `smoke.rs:6433`, `smoke.rs:6435`, `smoke.rs:6442`, `smoke.rs:6445`, `smoke.rs:6449`: the search disables the button, the two found labels, the status, then the ticked one is added |
+| 6686 | `TestPawchiveIndexWindow.test_the_menu_opens_one_window_and_quitting_closes_it` | `smoke.rs:6499`, `smoke.rs:6527`: one window (`Rc::ptr_eq`), and `pawchive_dialog` is `None` after the main window closes |
 
 #### `tests/test_hydrus_import_poll_worker.py` (2)
 
@@ -399,25 +415,25 @@ two windows.
 
 | Line | Test | Disposition |
 |---|---|---|
-| 105 | `TestConstruction.test_a_non_empty_existing_set_is_adopted_by_reference` | **not asserted:** the set is built from the queue at open (`hydrus_query.rs:494`); the visible effect (`[already in list]`) is `smoke.rs:5972` |
+| 105 | `TestConstruction.test_a_non_empty_existing_set_is_adopted_by_reference` | **not asserted:** the set is built from the queue at open (`hydrus_query.rs:494`); the visible effect (`[already in list]`) is `smoke.rs:5980` |
 | 115 | `TestConstruction.test_an_empty_existing_set_is_not_adopted` | n/a here: Python's `set()` aliasing; the window builds a fresh set on every open |
-| 128 | `TestConstruction.test_the_client_is_built_from_the_hydrus_settings_it_was_given` | `smoke.rs:6040` (no key: no window) and the search going to the scripted server's URL (`smoke.rs:5966`) |
-| 135 | `TestConstruction.test_several_files_can_be_selected_at_once` | `smoke.rs:5984`: `select_results(&[0, 1])` selects two rows |
+| 128 | `TestConstruction.test_the_client_is_built_from_the_hydrus_settings_it_was_given` | `smoke.rs:6048` (no key: no window) and the search going to the scripted server's URL (`smoke.rs:5974`) |
+| 135 | `TestConstruction.test_several_files_can_be_selected_at_once` | `smoke.rs:5992`: `select_results(&[0, 1])` selects two rows |
 | 144 | `TestSearch.test_one_tag_per_line_is_anded_and_blank_lines_are_dropped` | `hydrus_query::tests::the_query_is_one_tag_per_non_blank_line` (`hydrus_query.rs:585`) |
-| 148 | `TestSearch.test_no_tags_at_all_warns_and_asks_hydrus_nothing` | `smoke.rs:6047`, `smoke.rs:6052`: `Enter at least one tag.` |
-| 156 | `TestSearch.test_each_matching_file_becomes_one_row_carrying_its_details` | `smoke.rs:5968`, `smoke.rs:5972` and `hydrus_query::tests::a_result_line_is_the_twelve_character_hash_then_the_facts` (`hydrus_query.rs:554`) |
-| 170 | `TestSearch.test_a_file_already_in_the_working_list_is_marked_as_such` | `smoke.rs:5972` |
-| 177 | `TestSearch.test_no_matches_says_so_rather_than_leaving_an_empty_list` | `smoke.rs:6051` |
+| 148 | `TestSearch.test_no_tags_at_all_warns_and_asks_hydrus_nothing` | `smoke.rs:6055`, `smoke.rs:6060`: `Enter at least one tag.` |
+| 156 | `TestSearch.test_each_matching_file_becomes_one_row_carrying_its_details` | `smoke.rs:5976`, `smoke.rs:5980` and `hydrus_query::tests::a_result_line_is_the_twelve_character_hash_then_the_facts` (`hydrus_query.rs:554`) |
+| 170 | `TestSearch.test_a_file_already_in_the_working_list_is_marked_as_such` | `smoke.rs:5980` |
+| 177 | `TestSearch.test_no_matches_says_so_rather_than_leaving_an_empty_list` | `smoke.rs:6059` |
 | 184 | `TestSearch.test_a_second_search_replaces_the_first_results_rather_than_appending` | **not asserted:** `on_searched` clears the list first (`hydrus_query.rs:295`); no scenario searches twice |
-| 192 | `TestSearch.test_a_hydrus_failure_is_reported_and_leaves_the_previous_results_alone` | **not asserted:** the search-failure box has no scenario; the stalled search is `smoke.rs:6403-6276` |
+| 192 | `TestSearch.test_a_hydrus_failure_is_reported_and_leaves_the_previous_results_alone` | **not asserted:** the search-failure box has no scenario; the stalled search is `smoke.rs:6514-6276` |
 | 203 | `TestSearch.test_a_metadata_failure_is_reported_too` | **not asserted:** as above |
-| 213 | `TestImport.test_nothing_selected_warns_and_downloads_nothing` | `smoke.rs:5978`, `smoke.rs:5980` |
-| 220 | `TestImport.test_a_selected_file_is_downloaded_and_becomes_an_entry` | `smoke.rs:5995`, `smoke.rs:5996`, `smoke.rs:5997`, `smoke.rs:5998`: one `get_files/file`, the hash, the `<hash>.png` path, the file on disk |
+| 213 | `TestImport.test_nothing_selected_warns_and_downloads_nothing` | `smoke.rs:5986`, `smoke.rs:5988` |
+| 220 | `TestImport.test_a_selected_file_is_downloaded_and_becomes_an_entry` | `smoke.rs:6003`, `smoke.rs:6004`, `smoke.rs:6005`, `smoke.rs:6006`: one `get_files/file`, the hash, the `<hash>.png` path, the file on disk |
 | 238 | `TestImport.test_a_missing_mime_falls_back_to_jpg_rather_than_no_extension` | **not asserted:** the fallback is in `on_imported`; no scenario serves a file with no mime |
-| 246 | `TestImport.test_hydrus_tags_arrive_on_the_entry_marked_as_hydrus_tags` | `smoke.rs:5999`, `smoke.rs:6000`, `smoke.rs:6001`, `smoke.rs:6002`: `solo` and `series:foo`, both `TagSource::Hydrus` |
+| 246 | `TestImport.test_hydrus_tags_arrive_on_the_entry_marked_as_hydrus_tags` | `smoke.rs:6007`, `smoke.rs:6008`, `smoke.rs:6009`, `smoke.rs:6010`: `solo` and `series:foo`, both `TagSource::Hydrus` |
 | 262 | `TestImport.test_a_namespaced_tag_keeps_the_rest_of_its_colons` | `hydrus_query::tests::a_tag_splits_on_its_first_colon_only` (`hydrus_query.rs:573`) |
 | 269 | `TestImport.test_the_namespace_remap_setting_is_applied_to_imported_tags` | **not asserted:** `apply_namespace_remap` is called in `on_imported`; the scenario's settings carry no remap |
-| 277 | `TestImport.test_a_file_already_in_the_working_list_is_skipped_and_not_downloaded` | `smoke.rs:5985`, `smoke.rs:5990`: `1 duplicate(s) ... skipped` and one download for two selected |
+| 277 | `TestImport.test_a_file_already_in_the_working_list_is_skipped_and_not_downloaded` | `smoke.rs:5993`, `smoke.rs:5998`: `1 duplicate(s) ... skipped` and one download for two selected |
 | 286 | `TestImport.test_the_same_file_selected_twice_in_one_go_is_only_imported_once` | **not asserted:** two selected rows with one hash; the dedupe is by hash in `import_selected` |
 | 298 | `TestImport.test_an_imported_hash_is_recorded_so_a_later_query_marks_it` | **not asserted:** a second query after an import |
 | 304 | `TestImport.test_one_failed_download_costs_that_file_and_not_the_selection` | **not asserted:** a failing `get_files/file` |
@@ -435,8 +451,8 @@ two windows.
 | Line | Test | Disposition |
 |---|---|---|
 | 106 | `TestThumbnailSource.test_source_defaults_to_local_when_there_are_no_settings` | n/a here: `Settings` always exists, so there is no "no settings" branch; the source defaults to `"hydrus"` (`config/model.rs:242`, Python's own settings default) and is read at the start of every pass (`thumbnails.rs:234`) |
-| 110 | `TestThumbnailSource.test_source_is_read_from_settings` | `smoke.rs:6485`: with `thumbnail_source = "hydrus"` in the settings the held file is drawn from Hydrus (its own file is unreadable); `smoke.rs:3447` for `"off"` (no row decodes) |
-| 128 | `TestThumbnailSource.test_hydrus_source_without_an_access_key_falls_back_to_local` | `smoke.rs:6568`, `smoke.rs:6569`: source `"hydrus"` with no access key draws the file from disk (`Loaded`) and the server heard nothing. Reverting `thumbnails.rs:234` (`is_configured()` dropped) goes red |
+| 110 | `TestThumbnailSource.test_source_is_read_from_settings` | `smoke.rs:6596`: with `thumbnail_source = "hydrus"` in the settings the held file is drawn from Hydrus (its own file is unreadable); `smoke.rs:3455` for `"off"` (no row decodes) |
+| 128 | `TestThumbnailSource.test_hydrus_source_without_an_access_key_falls_back_to_local` | `smoke.rs:6679`, `smoke.rs:6680`: source `"hydrus"` with no access key draws the file from disk (`Loaded`) and the server heard nothing. Reverting `thumbnails.rs:234` (`is_configured()` dropped) goes red |
 | 217 | `TestDecodeFromBytes.test_bytes_are_scaled_down_to_the_requested_size` | `thumb_decode.rs:263`: `decode_bytes(.., 300)` of a 3000 x 100 picture is 300 x 10; the Hydrus bytes go through it (`thumbnails.rs:255`) |
 | 225 | `TestDecodeFromBytes.test_bytes_already_small_enough_are_not_rescaled` | `thumb_decode.rs:261`: `decode_bytes` with a limit above the picture keeps its 3000 x 100; `thumb_decode.rs:152` for the file path (50 x 30 left as it is) |
 | 232 | `TestDecodeFromBytes.test_unrecognisable_bytes_yield_None` | `thumb_decode.rs:264`: HTML bytes decode to `None` |
@@ -445,10 +461,10 @@ two windows.
 | 265 | `TestKnownToHydrus.test_files_with_no_hash_are_not_asked_about` | `thumbnails.rs:409`: only the row with a hash is in the request |
 | 275 | `TestKnownToHydrus.test_a_hydrus_error_stops_asking_and_keeps_what_was_answered` | `thumbnails.rs:425`, `thumbnails.rs:426`: the first batch's 256 answers are kept, the second batch fails, and a third is never asked. Reverting the `break` goes red |
 | 299 | `TestKnownToHydrus.test_a_stop_request_abandons_the_remaining_batches` | `thumbnails.rs:440`: a stop raised during the first batch leaves one call of two. Reverting the stop check goes red |
-| 334 | `TestHydrusThumbnailPath.test_a_known_hash_is_served_from_hydrus_without_reading_the_file` | `smoke.rs:6485`: the held row's own file is unreadable (`garbage`), so its picture can only be Hydrus's; `smoke.rs:6489-6389` count one thumbnail fetch |
-| 350 | `TestHydrusThumbnailPath.test_a_hash_hydrus_does_not_know_is_decoded_from_disk` | `smoke.rs:6486`, `smoke.rs:6487`: the two rows Hydrus does not hold are drawn from their files; `smoke.rs:6489-6389`: no thumbnail request for them (one fetch, for the held row) |
-| 361 | `TestHydrusThumbnailPath.test_an_empty_hydrus_thumbnail_falls_back_to_the_file` | `smoke.rs:6578`, `smoke.rs:6584`: with the thumbnail endpoint answering an empty body the row is `Loaded` from its file, and Hydrus was asked first. Reverting the `or_else` fallback goes red |
-| 372 | `TestHydrusThumbnailPath.test_an_undecodable_hydrus_thumbnail_falls_back_to_the_file` | `smoke.rs:6578`, `smoke.rs:6584`: the same with bytes that are not a picture (`mode 1`); `smoke.rs:6516` for the case where the file is unreadable too (`Failed`) |
+| 334 | `TestHydrusThumbnailPath.test_a_known_hash_is_served_from_hydrus_without_reading_the_file` | `smoke.rs:6596`: the held row's own file is unreadable (`garbage`), so its picture can only be Hydrus's; `smoke.rs:6600-6389` count one thumbnail fetch |
+| 350 | `TestHydrusThumbnailPath.test_a_hash_hydrus_does_not_know_is_decoded_from_disk` | `smoke.rs:6597`, `smoke.rs:6598`: the two rows Hydrus does not hold are drawn from their files; `smoke.rs:6600-6389`: no thumbnail request for them (one fetch, for the held row) |
+| 361 | `TestHydrusThumbnailPath.test_an_empty_hydrus_thumbnail_falls_back_to_the_file` | `smoke.rs:6689`, `smoke.rs:6695`: with the thumbnail endpoint answering an empty body the row is `Loaded` from its file, and Hydrus was asked first. Reverting the `or_else` fallback goes red |
+| 372 | `TestHydrusThumbnailPath.test_an_undecodable_hydrus_thumbnail_falls_back_to_the_file` | `smoke.rs:6689`, `smoke.rs:6695`: the same with bytes that are not a picture (`mode 1`); `smoke.rs:6627` for the case where the file is unreadable too (`Failed`) |
 
 #### `tests/test_url_importer_duplicate_relationships.py` (8)
 
@@ -467,17 +483,17 @@ two windows.
 
 | Line | Test | Disposition |
 |---|---|---|
-| 416 | `TestPawchiveIndexWorker.test_each_job_is_indexed_in_order_and_reported` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 424 | `TestPawchiveIndexWorker.test_the_index_is_opened_at_the_path_the_worker_was_given` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 431 | `TestPawchiveIndexWorker.test_progress_from_the_crawler_is_forwarded_to_the_gui` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 442 | `TestPawchiveIndexWorker.test_request_stop_is_visible_to_the_crawler_mid_job` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 461 | `TestPawchiveIndexWorker.test_a_stop_before_the_run_starts_indexes_nothing` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 469 | `TestPawchiveIndexWorker.test_a_crash_mid_batch_still_emits_finished_all` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 480 | `TestPawchiveIndexWorker.test_a_crash_after_one_success_keeps_the_result_already_reported` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 494 | `TestPawchiveIndexWorker.test_the_job_list_is_copied_so_the_caller_cannot_mutate_it_mid_run` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 517 | `TestPawchiveFindWorker.test_results_are_emitted_with_no_error` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 523 | `TestPawchiveFindWorker.test_a_failure_is_emitted_as_text_beside_an_empty_list` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
-| 533 | `TestPawchiveFindWorker.test_no_matches_is_an_empty_list_and_still_no_error` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6345-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 416 | `TestPawchiveIndexWorker.test_each_job_is_indexed_in_order_and_reported` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 424 | `TestPawchiveIndexWorker.test_the_index_is_opened_at_the_path_the_worker_was_given` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 431 | `TestPawchiveIndexWorker.test_progress_from_the_crawler_is_forwarded_to_the_gui` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 442 | `TestPawchiveIndexWorker.test_request_stop_is_visible_to_the_crawler_mid_job` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 461 | `TestPawchiveIndexWorker.test_a_stop_before_the_run_starts_indexes_nothing` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 469 | `TestPawchiveIndexWorker.test_a_crash_mid_batch_still_emits_finished_all` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 480 | `TestPawchiveIndexWorker.test_a_crash_after_one_success_keeps_the_result_already_reported` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 494 | `TestPawchiveIndexWorker.test_the_job_list_is_copied_so_the_caller_cannot_mutate_it_mid_run` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 517 | `TestPawchiveFindWorker.test_results_are_emitted_with_no_error` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 523 | `TestPawchiveFindWorker.test_a_failure_is_emitted_as_text_beside_an_empty_list` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
+| 533 | `TestPawchiveFindWorker.test_no_matches_is_an_empty_list_and_still_no_error` | n/a here: core, mapped in `docs/pawchive-index.md:173-174`; the window's side is `smoke.rs:6456-6217` (Stop live while indexing, the crawl requests reach the server) |
 
 ## 8. Status claims
 
