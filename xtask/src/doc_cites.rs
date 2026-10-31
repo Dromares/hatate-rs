@@ -114,14 +114,17 @@ fn from_source(rel: &str, parsed: &Parsed, first: usize) -> Result<(Cite, usize)
     ))
 }
 
+/// A source file at a commit: the path it had there, parsed. `None` when it is not one file.
+type OldSource = Option<(String, Rc<Parsed>)>;
+
 struct Old {
     files: HashMap<String, Vec<String>>,
-    parsed: HashMap<(String, String), Option<(String, Rc<Parsed>)>>,
+    parsed: HashMap<(String, String), OldSource>,
 }
 
 impl Old {
     /// The source of the file `path` names at commit `sha`, with the path it had there.
-    fn source(&mut self, sha: &str, path: &str) -> Option<(String, Rc<Parsed>)> {
+    fn source(&mut self, sha: &str, path: &str) -> OldSource {
         let key = (sha.to_string(), path.to_string());
         if let Some(v) = self.parsed.get(&key) {
             return v.clone();
@@ -131,7 +134,7 @@ impl Old {
         v
     }
 
-    fn load(&mut self, sha: &str, path: &str) -> Option<(String, Rc<Parsed>)> {
+    fn load(&mut self, sha: &str, path: &str) -> OldSource {
         let list = self
             .files
             .entry(sha.to_string())

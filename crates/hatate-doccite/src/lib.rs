@@ -138,16 +138,13 @@ fn code_spans(line: &str) -> Vec<(usize, usize, String)> {
                 break;
             }
         }
-        match close {
-            Some(s) => {
-                let mut c = line[i..s].to_string();
-                if c.len() >= 2 && c.starts_with(' ') && c.ends_with(' ') && c.trim() != "" {
-                    c = c[1..c.len() - 1].to_string();
-                }
-                out.push((open, s + n, c));
-                i = s + n;
+        if let Some(s) = close {
+            let mut c = line[i..s].to_string();
+            if c.len() >= 2 && c.starts_with(' ') && c.ends_with(' ') && c.trim() != "" {
+                c = c[1..c.len() - 1].to_string();
             }
-            None => {}
+            out.push((open, s + n, c));
+            i = s + n;
         }
     }
     out
@@ -486,5 +483,73 @@ mod tests {
             (l[1].path.as_str(), l[1].first, l[1].last),
             ("smoke.rs", 3, 9)
         );
+    }
+
+    /// A scratch repo root holding `crates/x/src/lib.rs` with `src`.
+    fn scratch(tag: &str, src: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("doccite-{tag}-{}", std::process::id()));
+        let dir = root.join("crates/x/src");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("lib.rs"), src).unwrap();
+        root
+    }
+
+    fn cite(name: &str, fragment: &str) -> Cite {
+        Cite {
+            path: "crates/x/src/lib.rs".into(),
+            kind: "fn".into(),
+            name: name.into(),
+            fragment: fragment.into(),
+        }
+    }
+
+    const TWO_FNS: &str = "fn a() {\n    let x = 1;\n}\n\nfn b() {\n    let y = 2;\n}\n";
+
+    #[test]
+    fn a_fragment_inside_its_named_fn_is_good() {
+        let root = scratch("good", TWO_FNS);
+        let t = Tree::new(&root);
+        assert!(t.check(&cite("a", "let x = 1;")).is_ok());
+        assert!(t.check(&cite("b", "let y = 2;")).is_ok());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_fragment_moved_to_a_sibling_fn_is_bad() {
+        // `let x = 1;` now lives in `b`, but the doc still names `a`
+        let root = scratch(
+            "moved",
+            "fn a() {\n    let z = 0;\n}\n\nfn b() {\n    let x = 1;\n}\n",
+        );
+        let err = Tree::new(&root)
+            .check(&cite("a", "let x = 1;"))
+            .unwrap_err();
+        assert!(err.contains("is not inside fn a"), "{err}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_deleted_target_line_is_bad() {
+        let root = scratch("deleted", "fn a() {\n}\n\nfn b() {\n    let y = 2;\n}\n");
+        let err = Tree::new(&root)
+            .check(&cite("a", "let x = 1;"))
+            .unwrap_err();
+        assert!(err.contains("is not inside fn a"), "{err}");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_missing_fn_or_file_is_bad() {
+        let root = scratch("missing", TWO_FNS);
+        let t = Tree::new(&root);
+        assert!(
+            t.check(&cite("gone", "let x = 1;"))
+                .unwrap_err()
+                .contains("has no fn gone")
+        );
+        let mut c = cite("a", "let x = 1;");
+        c.path = "crates/x/src/other.rs".into();
+        assert!(t.check(&c).unwrap_err().contains("no file"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

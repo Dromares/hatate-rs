@@ -328,11 +328,127 @@ fn every_row_of_section_6_says_what_it_is_and_a_pinned_row_cites_a_real_assertio
             "{who}: a pinned row names the mutation that turned it red, and the test"
         );
         let cs = cites(&cite);
-        assert!(!cs.is_empty(), "{who}: a pinned row cites an assertion");
+        assert!(
+            cites_anything(&cite),
+            "{who}: a pinned row cites an assertion"
+        );
         for c in &cs {
             assert_cite_lands_on(&who, &tree, c, false);
         }
+        // a workflow step (`ci.yml`) stays a line: the assertion is on it or up to three lines above
+        for (path, n) in doc_line_refs(&cite) {
+            let src = read(&path);
+            let all: Vec<&str> = src.lines().collect();
+            assert!(
+                n >= 1 && n <= all.len(),
+                "{who}: {path}:{n} is past the end of the file"
+            );
+            let window = &all[n.saturating_sub(4)..n];
+            assert!(
+                path.ends_with(".md")
+                    || window
+                        .iter()
+                        .any(|l| l.contains("assert") || l.contains("no-such-state")),
+                "{who}: {path}:{n} is not in an assertion: {window:?}"
+            );
+        }
     }
+}
+
+/// The text of `doc` from the heading `from` up to the heading `to` (or the end).
+fn between(doc: &str, from: &str, to: &str) -> String {
+    let rest = doc
+        .split(from)
+        .nth(1)
+        .unwrap_or_else(|| panic!("no heading {from:?}"));
+    rest.split(to).next().unwrap().to_string()
+}
+
+/// The rows of a table whose first cell is a number: the cells, split on `" | "`.
+fn numbered_rows(section: &str, cells: usize) -> Vec<Vec<String>> {
+    section
+        .lines()
+        .filter(|l| l.starts_with("| ") && l[2..].starts_with(|c: char| c.is_ascii_digit()))
+        .map(|l| {
+            let c: Vec<String> = l
+                .trim_matches('|')
+                .split(" | ")
+                .map(|x| x.trim().to_string())
+                .collect();
+            assert_eq!(c.len(), cells, "row {l:?} does not have {cells} cells");
+            c
+        })
+        .collect()
+}
+
+/// `file.py:line Class.test` of a row whose test cell is `` `file.py` `Class.test` ``.
+fn test_id(line: &str, cell: &str) -> String {
+    let (file, name) = cell
+        .trim_start_matches('`')
+        .split_once("` `")
+        .unwrap_or_else(|| panic!("bad test cell {cell:?}"));
+    format!("{file}:{line} {}", name.trim_end_matches('`'))
+}
+
+/// The Rust cites in a cell: `file.rs` `fn name` `fragment`, three adjacent code spans (DAN-2485).
+/// A cell is read as a table row would be, so `\|` in a fragment is a `|`.
+fn cites(cell: &str) -> Vec<Cite> {
+    parse_cites(&format!("| {cell}"))
+        .into_iter()
+        .map(|(_, c)| c)
+        .collect()
+}
+
+/// The `file.md:line`, `file.txt:line` and `file.yml:line` references in a cell. Those are references to
+/// another doc's or a workflow's line, not to Rust, and stay line numbers; the gate
+/// (`every_rust_cite_in_docs_names_a_fn_and_a_fragment_inside_it`) covers `file.rs` only.
+fn doc_line_refs(cell: &str) -> Vec<(String, usize)> {
+    cell.split('`')
+        .skip(1)
+        .step_by(2)
+        .filter_map(|t| {
+            let (path, n) = t.rsplit_once(':')?;
+            let ext_ok = [".md", ".txt", ".yml"].iter().any(|e| path.ends_with(e));
+            let path_ok = path
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "./_-".contains(c));
+            (ext_ok && path_ok && n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty())
+                .then(|| (path.to_string(), n.parse().unwrap()))
+        })
+        .collect()
+}
+
+/// True when the cell cites something: a Rust place or a line of another doc.
+fn cites_anything(cell: &str) -> bool {
+    !cites(cell).is_empty() || !doc_line_refs(cell).is_empty()
+}
+
+/// A cite is good (its fragment is inside its named fn of its file) and the line it lands on is an
+/// assertion, or sits in one that opened up to three lines above (a long `assert_eq!` is formatted
+/// over several lines), or, with `or_fn`, is in or just under a `fn` line.
+fn assert_cite_lands_on(who: &str, tree: &Tree, c: &Cite, or_fn: bool) {
+    let hits = tree
+        .hits(c)
+        .unwrap_or_else(|e| panic!("{who}: {} {} {:?}: {e}", c.path, c.name, c.fragment));
+    let src = tree.read(&hits[0].0);
+    let all: Vec<&str> = src.lines().collect();
+    let ok = hits.iter().any(|(_, n)| {
+        let window = &all[n.saturating_sub(4)..*n];
+        window.iter().any(|l| {
+            l.contains("assert")
+                || l.contains("matches!")
+                || l.contains("no-such-state")
+                || (or_fn && (l.contains(" fn ") || l.trim_start().starts_with("fn ")))
+        })
+    });
+    assert!(
+        ok,
+        "{who}: {} {} {:?} is not in an assertion{}",
+        c.path,
+        c.name,
+        c.fragment,
+        if or_fn { " or a fn" } else { "" }
+    );
 }
 
 #[test]
@@ -686,8 +802,13 @@ fn every_rust_cite_in_docs_names_a_fn_and_a_fragment_inside_it() {
         }
     }
     assert!(
+        bad.is_empty(),
+        "{} bad cites:\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
+    assert!(
         checked >= 1500,
         "the docs hold well over 1,500 cites; the scan found {checked}"
     );
-    assert!(bad.is_empty(), "{} bad cites:\n{}", bad.len(), bad.join("\n"));
 }
