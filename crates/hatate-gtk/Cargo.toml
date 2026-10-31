@@ -36,6 +36,8 @@ serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtr
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 
 [dev-dependencies]
+# The docs cite gate (tests/phase6_coverage.rs); test and tooling only.
+hatate-doccite = { path = "../hatate-doccite" }
 tokio = { version = "1", features = ["io-util"] }
 # The scripted Hydrus of the window tests is the core crate's `TestServer` (plain and over TLS with
 # a throw-away CA), so these are core's own dev-dependencies at core's versions.

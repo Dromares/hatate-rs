@@ -188,7 +188,7 @@ Hosted `ci` run 41015591898 at `d5fa53525eed5429a8a94d40142f1bc831bacd97` (GTK 4
 artifact, not from the author's host (GTK 4.24), which reads a different minimum on some surfaces (DAN-2324, DAN-2345).
 
 **Minimum size** (DAN-2356): the stated minimum is 560 x 440 (`settings_dialog::MIN_WIDTH/MIN_HEIGHT`), held by
-`smoke::settings_window_keeps_its_stated_minimum` (`smoke.rs:7151`; red before the sideways scroll, R2). Size read from each PNG
+`smoke::settings_window_keeps_its_stated_minimum` (`crates/hatate-gtk/tests/smoke.rs` `fn settings_window_keeps_its_stated_minimum` `fn settings_window_keeps_its_stated_minimum(app: &adw::Application) {`; red before the sideways scroll, R2). Size read from each PNG
 header of the 13 minimum-size states in both schemes; the fit test went red on the shot path's own number before the fix
 (837 x 209 on the host; the host shot header read 837 x 440), and the shot headers are the test where the host and the
 hosted toolkit differ.

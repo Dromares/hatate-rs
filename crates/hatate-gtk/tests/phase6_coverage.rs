@@ -10,6 +10,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use hatate_doccite::{Cite, Tree, legacy_cites, parse_cites};
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -310,6 +312,7 @@ fn every_python_test_no_earlier_doc_named_has_exactly_one_row_in_section_6() {
 #[test]
 fn every_row_of_section_6_says_what_it_is_and_a_pinned_row_cites_a_real_assertion() {
     let kinds = ["pinned", "not asserted", "judged in the shot set", "n/a"];
+    let tree = Tree::new(&root());
     for (file, line, name, kind, text, cite, red) in section6() {
         let who = format!("{file}.py:{line} {name}");
         assert!(
@@ -324,85 +327,12 @@ fn every_row_of_section_6_says_what_it_is_and_a_pinned_row_cites_a_real_assertio
             red != "-" && red.contains('`'),
             "{who}: a pinned row names the mutation that turned it red, and the test"
         );
-        let cites: Vec<&str> = cite.split(", ").collect();
-        assert!(!cites.is_empty(), "{who}: a pinned row cites an assertion");
-        for c in cites {
-            let (path, n) = c
-                .trim_matches('`')
-                .rsplit_once(':')
-                .unwrap_or_else(|| panic!("{who}: bad citation {c:?}"));
-            let src = read(path);
-            let n: usize = n
-                .parse()
-                .unwrap_or_else(|_| panic!("{who}: bad line in {c:?}"));
-            // The cited line is an assertion, or sits in one that opened up to three lines above
-            // (a long `assert_eq!` is formatted over several lines).
-            let all: Vec<&str> = src.lines().collect();
-            assert!(
-                n >= 1 && n <= all.len(),
-                "{who}: {c} is past the end of the file"
-            );
-            let window = &all[n.saturating_sub(4)..n];
-            assert!(
-                window.iter().any(|l| l.contains("assert")
-                    || l.contains("matches!")
-                    || l.contains("no-such-state")),
-                "{who}: {c} is not in an assertion: {window:?}"
-            );
+        let cs = cites(&cite);
+        assert!(!cs.is_empty(), "{who}: a pinned row cites an assertion");
+        for c in &cs {
+            assert_cite_lands_on(&who, &tree, c, false);
         }
     }
-}
-
-/// The text of `doc` from the heading `from` up to the heading `to` (or the end).
-fn between(doc: &str, from: &str, to: &str) -> String {
-    let rest = doc
-        .split(from)
-        .nth(1)
-        .unwrap_or_else(|| panic!("no heading {from:?}"));
-    rest.split(to).next().unwrap().to_string()
-}
-
-/// The rows of a table whose first cell is a number: the cells, split on `" | "`.
-fn numbered_rows(section: &str, cells: usize) -> Vec<Vec<String>> {
-    section
-        .lines()
-        .filter(|l| l.starts_with("| ") && l[2..].starts_with(|c: char| c.is_ascii_digit()))
-        .map(|l| {
-            let c: Vec<String> = l
-                .trim_matches('|')
-                .split(" | ")
-                .map(|x| x.trim().to_string())
-                .collect();
-            assert_eq!(c.len(), cells, "row {l:?} does not have {cells} cells");
-            c
-        })
-        .collect()
-}
-
-/// `file.py:line Class.test` of a row whose test cell is `` `file.py` `Class.test` ``.
-fn test_id(line: &str, cell: &str) -> String {
-    let (file, name) = cell
-        .trim_start_matches('`')
-        .split_once("` `")
-        .unwrap_or_else(|| panic!("bad test cell {cell:?}"));
-    format!("{file}:{line} {}", name.trim_end_matches('`'))
-}
-
-/// The backticked `path:line` citations in a cell: every `` `file.rs:12` `` (or `.md`, `.txt`) token.
-fn cites(cell: &str) -> Vec<(String, usize)> {
-    cell.split('`')
-        .skip(1)
-        .step_by(2)
-        .filter_map(|t| {
-            let (path, n) = t.rsplit_once(':')?;
-            let ext_ok = [".rs", ".md", ".txt"].iter().any(|e| path.ends_with(e));
-            let path_ok = path
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "./_-".contains(c));
-            (ext_ok && path_ok && n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty())
-                .then(|| (path.to_string(), n.parse().unwrap()))
-        })
-        .collect()
 }
 
 #[test]
@@ -446,6 +376,7 @@ fn every_row_of_section_6_1_says_what_it_is_and_cites_something_that_exists() {
     ];
     let ops = read("crates/hatate-gtk/tests/differential.rs");
     let shots = read("crates/hatate-gtk/examples/shot.rs");
+    let tree = Tree::new(&root());
     for r in numbered_rows(&section, 5) {
         let who = test_id(&r[0], &r[1]);
         let (kind, text) = r[2]
@@ -485,29 +416,19 @@ fn every_row_of_section_6_1_says_what_it_is_and_cites_something_that_exists() {
                 "{who}: a pinned row names the mutation that turned it red, and the test"
             );
             assert!(
-                !cites(&r[3]).is_empty(),
+                cites_anything(&r[3]),
                 "{who}: a pinned row cites an assertion"
             );
         }
         if matches!(kind, "pinned" | "differential" | "mapped elsewhere") {
-            assert!(!cites(&r[3]).is_empty(), "{who}: {kind} row cites nothing");
+            assert!(cites_anything(&r[3]), "{who}: {kind} row cites nothing");
         }
-        for (path, n) in cites(&r[3]) {
-            let src = read(&path);
-            let all: Vec<&str> = src.lines().collect();
-            assert!(
-                n >= 1 && n <= all.len(),
-                "{who}: {path}:{n} is past the end"
-            );
-            let window = &all[n.saturating_sub(4)..n];
-            let ok = path.ends_with(".md")
-                || window.iter().any(|l| {
-                    l.contains("assert") || l.contains(" fn ") || l.trim_start().starts_with("fn ")
-                });
-            assert!(
-                ok,
-                "{who}: {path}:{n} is neither an assertion nor a fn: {window:?}"
-            );
+        for c in cites(&r[3]) {
+            assert_cite_lands_on(&who, &tree, &c, true);
+        }
+        for (path, n) in doc_line_refs(&r[3]) {
+            let all = read(&path).lines().count();
+            assert!(n >= 1 && n <= all, "{who}: {path}:{n} is past the end");
         }
     }
 }
@@ -568,7 +489,7 @@ fn section_6_2_lists_the_gui_tests_outside_the_phase_6_list_exactly() {
 }
 
 /// Every `` `op` op``, shot family (`` `x-*` ``) and `path:line` a cell names exists.
-fn check_cell_refs(who: &str, cell: &str, ops: &str, shots: &str) {
+fn check_cell_refs(who: &str, tree: &Tree, cell: &str, ops: &str, shots: &str) {
     for w in cell.split("` op").collect::<Vec<_>>().windows(2) {
         let op = w[0].rsplit('`').next().unwrap();
         assert!(
@@ -591,21 +512,12 @@ fn check_cell_refs(who: &str, cell: &str, ops: &str, shots: &str) {
             );
         }
     }
-    for (path, n) in cites(cell) {
-        let all: Vec<String> = read(&path).lines().map(str::to_string).collect();
-        assert!(
-            n >= 1 && n <= all.len(),
-            "{who}: {path}:{n} is past the end"
-        );
-        if path.ends_with(".rs") {
-            let window = &all[n.saturating_sub(4)..n];
-            assert!(
-                window.iter().any(|l| l.contains("assert")
-                    || l.contains(" fn ")
-                    || l.trim_start().starts_with("fn ")),
-                "{who}: {path}:{n} is neither an assertion nor a fn"
-            );
-        }
+    for c in cites(cell) {
+        assert_cite_lands_on(who, tree, &c, true);
+    }
+    for (path, n) in doc_line_refs(cell) {
+        let all = read(&path).lines().count();
+        assert!(n >= 1 && n <= all, "{who}: {path}:{n} is past the end");
     }
 }
 
@@ -625,6 +537,7 @@ fn every_candidate_of_the_python_window_has_exactly_one_row_in_section_7_and_a_c
     );
     let ops = read("crates/hatate-gtk/tests/differential.rs");
     let shots = read("crates/hatate-gtk/examples/shot.rs");
+    let tree = Tree::new(&root());
     let classes = ["op", "smoke", "unit", "differential", "n/a", "by design"];
     let mut got = Vec::new();
     for r in numbered_rows(&section, 6) {
@@ -639,15 +552,15 @@ fn every_candidate_of_the_python_window_has_exactly_one_row_in_section_7_and_a_c
         assert!(why.chars().count() >= 20, "{who}: the reason is a stub");
         if matches!(class, "op" | "smoke" | "unit" | "differential") {
             assert!(
-                !cites(&r[5].replace("). ", ", ")).is_empty() || why.contains("op"),
+                cites_anything(&r[5]) || why.contains("op"),
                 "{who}: cites nothing"
             );
         }
-        check_cell_refs(&who, &r[5], &ops, &shots);
+        check_cell_refs(&who, &tree, &r[5], &ops, &shots);
         // the Rust text cell names a place that exists
-        for (path, n) in cites(&r[4]) {
-            let all = read(&path).lines().count();
-            assert!(n >= 1 && n <= all, "{who}: {path}:{n} is past the end");
+        for c in cites(&r[4]) {
+            tree.check(&c)
+                .unwrap_or_else(|e| panic!("{who}: {} {} {:?}: {e}", c.path, c.name, c.fragment));
         }
     }
     got.sort();
@@ -662,6 +575,7 @@ fn every_state_row_of_section_7_1_names_shots_and_a_scenario_that_exist() {
     let section = between(&doc, "\n### 7.1 ", "\n### 7.2 ");
     let ops = read("crates/hatate-gtk/tests/differential.rs");
     let shots = read("crates/hatate-gtk/examples/shot.rs");
+    let tree = Tree::new(&root());
     let rows = numbered_rows(&section, 5);
     assert!(
         rows.len() >= 18,
@@ -670,9 +584,9 @@ fn every_state_row_of_section_7_1_names_shots_and_a_scenario_that_exist() {
     for r in rows {
         let who = format!("7.1 {}", r[0]);
         assert!(r[3].contains("-*`"), "{who}: names no shot family");
-        assert!(!cites(&r[4]).is_empty(), "{who}: names no scenario");
-        check_cell_refs(&who, &r[3], &ops, &shots);
-        check_cell_refs(&who, &r[4], &ops, &shots);
+        assert!(cites_anything(&r[4]), "{who}: names no scenario");
+        check_cell_refs(&who, &tree, &r[3], &ops, &shots);
+        check_cell_refs(&who, &tree, &r[4], &ops, &shots);
     }
 }
 
@@ -740,4 +654,40 @@ fn section_8_lists_every_tab_stop_with_the_shot_that_shows_its_indicator() {
         )),
         "section 8 states a stop and surface count that is not the table's"
     );
+}
+
+/// DAN-2485: a docs cite names a function, never a line. Every `docs/*.md` is scanned.
+#[test]
+fn every_rust_cite_in_docs_names_a_fn_and_a_fragment_inside_it() {
+    let tree = Tree::new(&root());
+    let mut docs: Vec<PathBuf> = std::fs::read_dir(root().join("docs"))
+        .expect("docs/")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "md"))
+        .collect();
+    docs.sort();
+    assert!(docs.len() >= 20, "docs/ holds the phase docs: {docs:?}");
+    let (mut bad, mut checked) = (Vec::new(), 0usize);
+    for doc in docs {
+        let name = doc.file_name().unwrap().to_string_lossy().to_string();
+        let text = std::fs::read_to_string(&doc).unwrap();
+        for l in legacy_cites(&text) {
+            bad.push(format!(
+                "docs/{name}:{}: `{}:{}` is a line cite; write `file.rs` `fn name` `fragment`",
+                l.line, l.path, l.first
+            ));
+        }
+        for (line, c) in parse_cites(&text) {
+            checked += 1;
+            if let Err(e) = tree.check(&c) {
+                bad.push(format!("docs/{name}:{line}: {e}"));
+            }
+        }
+    }
+    assert!(
+        checked >= 1500,
+        "the docs hold well over 1,500 cites; the scan found {checked}"
+    );
+    assert!(bad.is_empty(), "{} bad cites:\n{}", bad.len(), bad.join("\n"));
 }

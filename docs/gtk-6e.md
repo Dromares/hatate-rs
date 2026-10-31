@@ -248,7 +248,7 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 | 3240 | `_check_rows_for_upscaling` | `crates/hatate-gtk/src/checks.rs` `fn check_rows_for_upscaling` `pub fn check_rows_for_upscaling(&self, ids: &[EntryId]) {` `check_rows_for_upscaling` |  |
 | 3260 | `_on_upscale_entry_checked` | `crates/hatate-gtk/src/checks.rs` `fn on_upscale_entry_checked` `fn on_upscale_entry_checked(&self, id: EntryId, checked: Entry, result: &UpscaleCheckResult) {` `on_upscale_entry_checked` |  |
 | 3281 | `_on_upscale_check_finished` | `crates/hatate-gtk/src/checks.rs` `fn on_upscale_check_finished` `fn on_upscale_check_finished(&self, ids: &[EntryId]) {` `on_upscale_check_finished` |  |
-| 3304 | `_launch_search_worker` | `hatate-gtk/src/search_run.rs:587` `launch_search_worker` over `hatate_core::batch::run::search_pending_with` |  |
+| 3304 | `_launch_search_worker` | `crates/hatate-gtk/src/search_run.rs` `fn launch_search_worker` `pub fn launch_search_worker(&self, ids: Vec<EntryId>, opts: LaunchOptions) -> bool {` over `hatate_core::batch::run::search_pending_with` |  |
 
 ### `gui/activity_view.py`
 
