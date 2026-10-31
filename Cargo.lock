@@ -1072,6 +1072,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hatate-apprun"
+version = "0.0.0"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
 name = "hatate-cli"
 version = "0.0.0"
 dependencies = [
