@@ -128,7 +128,7 @@ Two more things were wrong, found in the design read and fixed in the same PR:
    which asserts `layout().is_ellipsized()` is false on the title and both readout words while the readout is beside the
    tools. `smoke::the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip` reads the line under the header
    (words not ellipsized, `▲ 2× larger` chip shown); it goes red when the readout's parts are put back on `ellipsize End`
-   with no `give_way`: `smoke.rs:4423` at `0f8db17` (the `ellipsize()` assertion), `'Similarity' may be cut on the line under the header` (DAN-2366 mutation M-D).
+   with no `give_way`: `crates/hatate-gtk/tests/smoke.rs` `fn the_readout_line_under_the_header_is_not_cut_and_carries_the_size_chip` `"at the stated minimum the readout is on the line under the header"` at `0f8db17` (the `ellipsize()` assertion), `'Similarity' may be cut on the line under the header` (DAN-2366 mutation M-D).
    The scrolled windows are not Tab stops (`give_way` calls `set_focusable(false)`; GTK4 scrolled windows take the focus
    by default, so the first Tab on Review had landed on the static title, DAN-2366). Guard:
    `smoke::no_clipping_wrapper_on_the_review_page_is_a_tab_stop`, with a match selected so the readout's wrapper exists:
@@ -234,47 +234,47 @@ section 6 gives to 6.f.
 
 | Python | Rust |
 |---|---|
-| `gui/main_window.py:1099` `_update_preview` | `crates/hatate-gtk/src/review_ops.rs:352` |
-| `gui/main_window.py:1158` `_populate_candidate_combo` | `crates/hatate-gtk/src/review_ops.rs:497` |
-| `gui/main_window.py:1186` `_sync_candidate_combo_tooltip` | `crates/hatate-gtk/src/review_ops.rs:523` |
-| `gui/main_window.py:1194` `_on_candidate_combo_changed` | `crates/hatate-gtk/src/review_ops.rs:535` |
-| `gui/main_window.py:1207` `_ensure_candidate_loaded` | `crates/hatate-gtk/src/review_ops.rs:566` |
+| `gui/main_window.py:1099` `_update_preview` | `crates/hatate-gtk/src/review_ops.rs` `fn update_preview` `pub fn update_preview(&self, id: Option<EntryId>) {` |
+| `gui/main_window.py:1158` `_populate_candidate_combo` | `crates/hatate-gtk/src/review_ops.rs` `fn populate_candidate_combo` `pub fn populate_candidate_combo(&self, entry: Option<&Entry>) {` |
+| `gui/main_window.py:1186` `_sync_candidate_combo_tooltip` | `crates/hatate-gtk/src/review_ops.rs` `fn sync_candidate_combo_tooltip` `fn sync_candidate_combo_tooltip(&self, entry: Option<&Entry>) {` |
+| `gui/main_window.py:1194` `_on_candidate_combo_changed` | `crates/hatate-gtk/src/review_ops.rs` `fn on_candidate_combo_changed` `fn on_candidate_combo_changed(&self, index: u32) {` |
+| `gui/main_window.py:1207` `_ensure_candidate_loaded` | `crates/hatate-gtk/src/review_ops.rs` `fn ensure_candidate_loaded` `pub fn ensure_candidate_loaded(&self, id: EntryId, index: usize) {` |
 | `gui/main_window.py:1238` `_run_dialog` | `dialogs.rs` `Prompter::match_conditions` (the dialog is an `AlertDialog`; no helper to port) |
-| `gui/main_window.py:1265` `_on_candidate_fetched` | `crates/hatate-gtk/src/review_ops.rs:625` |
-| `gui/main_window.py:1293` `_refresh_tag_list` | `crates/hatate-gtk/src/review_ops.rs:677` |
-| `gui/main_window.py:1314` `_on_edit_tags_toggled` | `crates/hatate-gtk/src/review_ops.rs:734` |
-| `gui/main_window.py:1319` `_on_tag_item_edited` | `crates/hatate-gtk/src/review_ops.rs:746` |
-| `gui/main_window.py:1347` `_show_matched_preview_menu` | `crates/hatate-gtk/src/review_ops.rs:885` |
-| `gui/main_window.py:2170` `_add_tags_to_current` | `crates/hatate-gtk/src/review_ops.rs:832` |
-| `gui/main_window.py:2481` `_review_the_waiting` | `crates/hatate-gtk/src/window.rs:591` |
-| `gui/main_window.py:3037` `_set_rows_reviewed` | `crates/hatate-gtk/src/table_actions.rs:323` |
+| `gui/main_window.py:1265` `_on_candidate_fetched` | `crates/hatate-gtk/src/review_ops.rs` `fn on_candidate_fetched` `fn on_candidate_fetched(&self, id: EntryId, index: usize, fetched: Candidate) {` |
+| `gui/main_window.py:1293` `_refresh_tag_list` | `crates/hatate-gtk/src/review_ops.rs` `fn refresh_tag_list` `pub fn refresh_tag_list(&self, id: Option<EntryId>) {` |
+| `gui/main_window.py:1314` `_on_edit_tags_toggled` | `crates/hatate-gtk/src/review_ops.rs` `fn on_edit_tags_toggled` `fn on_edit_tags_toggled(&self, checked: bool) {` |
+| `gui/main_window.py:1319` `_on_tag_item_edited` | `crates/hatate-gtk/src/review_ops.rs` `fn on_tag_item_edited` `pub fn on_tag_item_edited(&self, row: i32, text: &str) {` |
+| `gui/main_window.py:1347` `_show_matched_preview_menu` | `crates/hatate-gtk/src/review_ops.rs` `fn show_matched_preview_menu` `fn show_matched_preview_menu(&self, x: f64, y: f64) {` |
+| `gui/main_window.py:2170` `_add_tags_to_current` | `crates/hatate-gtk/src/review_ops.rs` `fn add_tags_to_current` `pub fn add_tags_to_current(&self) {` |
+| `gui/main_window.py:2481` `_review_the_waiting` | `crates/hatate-gtk/src/window.rs` `fn review_the_waiting` `pub fn review_the_waiting(&self) {` |
+| `gui/main_window.py:3037` `_set_rows_reviewed` | `crates/hatate-gtk/src/table_actions.rs` `fn set_rows_reviewed` `pub fn set_rows_reviewed(&self, ids: &[EntryId], reviewed: bool) {` |
 | `gui/main_window.py:3224` `_open_compare_dialog` | **6.f-2** (DAN-2340) |
 | `gui/main_window.py:3651` `_sync_preview_to_selection` | `review_ops.rs` `on_selection_changed` / `update_preview` (the mode half is 6.f-2) |
-| `gui/main_window.py:3689` `action_open_matched_url` | `crates/hatate-gtk/src/review_ops.rs:939` |
-| `gui/main_window.py:3693` `action_show_in_queue` | `crates/hatate-gtk/src/review_ops.rs:963` |
+| `gui/main_window.py:3689` `action_open_matched_url` | `crates/hatate-gtk/src/review_ops.rs` `fn action_open_matched_url` `pub fn action_open_matched_url(&self) {` |
+| `gui/main_window.py:3693` `action_show_in_queue` | `crates/hatate-gtk/src/review_ops.rs` `fn action_show_in_queue` `pub fn action_show_in_queue(&self) {` |
 | `gui/main_window.py:3704` `_current_entry` | `review_ops.rs` `current_id` |
-| `gui/main_window.py:3719` `_remove_selected_tags` | `crates/hatate-gtk/src/review_ops.rs:784` |
-| `gui/main_window.py:4099` `action_edit_conditions` | `crates/hatate-gtk/src/review_ops.rs:813` |
+| `gui/main_window.py:3719` `_remove_selected_tags` | `crates/hatate-gtk/src/review_ops.rs` `fn remove_selected_tags` `pub fn remove_selected_tags(&self) {` |
+| `gui/main_window.py:4099` `action_edit_conditions` | `crates/hatate-gtk/src/review_ops.rs` `fn action_edit_conditions` `pub fn action_edit_conditions(&self) {` |
 
 ### `gui/review_view.py`
 
 | Python | Rust |
 |---|---|
-| `gui/review_view.py:93` `_build_review_page` | `crates/hatate-gtk/src/review_ops.rs:229` |
+| `gui/review_view.py:93` `_build_review_page` | `crates/hatate-gtk/src/review_ops.rs` `fn build_review_page` `pub fn build_review_page(` |
 | `gui/review_view.py:136` `_build_comparison_card` | `review_view.rs` `ReviewPage::new` (`compare_col`) |
 | `gui/review_view.py:183` `_build_comparison_readout` | `review_view.rs` `ReviewPage::new` (`readout_root`) |
 | `gui/review_view.py:212` `set_comparison_readout` | `review_view.rs` `ReviewPage::set_readout`, `fit_readout` |
 | `gui/review_view.py:232` `_build_zoom_tools` | **6.f-2** (Wipe's zoom row) |
 | `gui/review_view.py:263` `_build_wipe_slider_row` | **6.f-2** |
 | `gui/review_view.py:292` `_build_pair_view` | `review_view.rs` `ReviewPage::new` (the two frames; Side by side only) |
-| `gui/review_view.py:346` `_set_review_captions` | `crates/hatate-gtk/src/review_ops.rs:447` |
+| `gui/review_view.py:346` `_set_review_captions` | `crates/hatate-gtk/src/review_ops.rs` `fn set_review_captions` `fn set_review_captions(&self, entry: Option<&Entry>) {` |
 | `gui/review_view.py:368` `_build_wipe_view` | **6.f-2** |
 | `gui/review_view.py:394` `_build_decision_card` | `review_view.rs` `ReviewPage::new` (`review-rail`), `Keyed` |
 | `gui/review_view.py:538` `_build_position_strip` | `review_view.rs` `ReviewPage::new` (`hint_slot`) and `review_ops.rs` `refresh_review_strip` |
-| `gui/review_view.py:574` `_run_review_action` | `crates/hatate-gtk/src/review_ops.rs:1197` |
-| `gui/review_view.py:579` `_resolved_shortcuts` | `crates/hatate-gtk/src/review_ops.rs:218` |
-| `gui/review_view.py:583` `_key_for` | `crates/hatate-gtk/src/review_ops.rs:224` |
-| `gui/review_view.py:587` `_hint_bar_groups` | `crates/hatate-gtk/src/review_ops.rs:1056` |
+| `gui/review_view.py:574` `_run_review_action` | `crates/hatate-gtk/src/review_ops.rs` `fn run_review_action` `pub fn run_review_action(&self, action_id: &str) {` |
+| `gui/review_view.py:579` `_resolved_shortcuts` | `crates/hatate-gtk/src/review_ops.rs` `fn resolved_shortcuts` `pub fn resolved_shortcuts(&self) -> OrderedMap<String> {` |
+| `gui/review_view.py:583` `_key_for` | `crates/hatate-gtk/src/review_ops.rs` `fn key_for` `pub fn key_for(&self, action_id: &str) -> String {` |
+| `gui/review_view.py:587` `_hint_bar_groups` | `crates/hatate-gtk/src/review_ops.rs` `fn hint_bar_groups` `pub fn hint_bar_groups(&self, position: &str, left: usize) -> Vec<Vec<Piece>> {` |
 | `gui/review_view.py:619` `_show_shortcuts_dialog` | **not ported** (section 2): the button is insensitive with its tooltip |
 | `gui/review_view.py:667` `_show_comparison_controls` | **6.f-2** (Wipe's chrome) |
 | `gui/review_view.py:675` `_current_review_key` | `review_view.rs` `ReviewPage::current_view` |
@@ -283,27 +283,27 @@ section 6 gives to 6.f.
 | `gui/review_view.py:751` `full_resolution_match` | **6.f-2** |
 | `gui/review_view.py:761` `_apply_wipe_mode` | **6.f-2** |
 | `gui/review_view.py:771` `_show_differences` | **6.f-2** |
-| `gui/review_view.py:804` `_step_review_candidate` | `crates/hatate-gtk/src/review_ops.rs:554` |
-| `gui/review_view.py:810` `_toggle_reviewed_from_review` | `crates/hatate-gtk/src/review_ops.rs:1191` |
+| `gui/review_view.py:804` `_step_review_candidate` | `crates/hatate-gtk/src/review_ops.rs` `fn step_review_candidate` `pub fn step_review_candidate(&self, delta: i32) {` |
+| `gui/review_view.py:810` `_toggle_reviewed_from_review` | `crates/hatate-gtk/src/review_ops.rs` `fn toggle_reviewed_from_review` `pub fn toggle_reviewed_from_review(&self) {` |
 | `gui/review_view.py:816` `_pop_out_comparison` | **6.f-2** (Pop out is insensitive with its tooltip) |
-| `gui/review_view.py:819` `refresh_review` | `crates/hatate-gtk/src/review_ops.rs:978` |
-| `gui/review_view.py:860` `_refresh_review_strip` | `crates/hatate-gtk/src/review_ops.rs:1013` |
-| `gui/review_view.py:878` `_refresh_review_keycaps` | `crates/hatate-gtk/src/review_ops.rs:1036` |
+| `gui/review_view.py:819` `refresh_review` | `crates/hatate-gtk/src/review_ops.rs` `fn refresh_review` `pub fn refresh_review(&self) {` |
+| `gui/review_view.py:860` `_refresh_review_strip` | `crates/hatate-gtk/src/review_ops.rs` `fn refresh_review_strip` `pub fn refresh_review_strip(&self) {` |
+| `gui/review_view.py:878` `_refresh_review_keycaps` | `crates/hatate-gtk/src/review_ops.rs` `fn refresh_review_keycaps` `pub fn refresh_review_keycaps(&self) {` |
 
 ### `gui/review_shortcuts.py`
 
 | Python | Rust |
 |---|---|
-| `gui/review_shortcuts.py:36` `_selected_rows` | `crates/hatate-gtk/src/review_ops.rs:1129` |
+| `gui/review_shortcuts.py:36` `_selected_rows` | `crates/hatate-gtk/src/review_ops.rs` `fn selected_rows` `fn selected_rows(&self) -> Vec<u32> {` |
 | `gui/review_shortcuts.py:40` `_selected_entries` | `review_ops.rs` `selected_rows` |
-| `gui/review_shortcuts.py:51` `_move_selection` | `crates/hatate-gtk/src/review_ops.rs:1108` |
-| `gui/review_shortcuts.py:75` `_move_to_unreviewed` | `crates/hatate-gtk/src/review_ops.rs:1142` |
-| `gui/review_shortcuts.py:99` `_toggle_reviewed` | `crates/hatate-core/src/mcp/handlers.rs:39` |
-| `gui/review_shortcuts.py:110` `_step_candidate` | `crates/hatate-gtk/src/review_ops.rs:1216` |
+| `gui/review_shortcuts.py:51` `_move_selection` | `crates/hatate-gtk/src/review_ops.rs` `fn move_selection` `fn move_selection(&self, delta: i64) {` |
+| `gui/review_shortcuts.py:75` `_move_to_unreviewed` | `crates/hatate-gtk/src/review_ops.rs` `fn move_to_unreviewed` `fn move_to_unreviewed(&self, delta: i64) {` |
+| `gui/review_shortcuts.py:99` `_toggle_reviewed` | `crates/hatate-core/src/mcp/handlers.rs` `trait McpHandlers` `fn toggle_reviewed(&self, row: i64, reviewed: bool) -> HandlerResult;` |
+| `gui/review_shortcuts.py:110` `_step_candidate` | `crates/hatate-gtk/src/review_ops.rs` `fn step_candidate` `fn step_candidate(&self, delta: i32) {` |
 | `gui/review_shortcuts.py:126` `handlers` | `review_ops.rs` `run_review_action` (a `match` on the action id) |
-| `gui/review_shortcuts.py:154` `_guarded` | `crates/hatate-core/src/boorus/fetch.rs:193` |
-| `gui/review_shortcuts.py:168` `run` | `crates/hatate-cli/src/batch_cmd.rs:107` |
-| `gui/review_shortcuts.py:185` `install` | `crates/hatate-gtk/src/menubar_keys.rs:49` |
+| `gui/review_shortcuts.py:154` `_guarded` | `crates/hatate-core/src/boorus/fetch.rs` `fn guarded` `fn guarded<T>(what: &str, url: &str, run: impl FnOnce() -> T) -> Option<T> {` |
+| `gui/review_shortcuts.py:168` `run` | `crates/hatate-cli/src/batch_cmd.rs` `fn run` `pub fn run(opts: BatchOptions) -> i32 {` |
+| `gui/review_shortcuts.py:185` `install` | `crates/hatate-gtk/src/menubar_keys.rs` `fn install` `pub fn install(win: &adw::ApplicationWindow, bar: &gtk::PopoverMenuBar) {` |
 | `gui/review_shortcuts.py:232` `open_matched_url` | `review_ops.rs` `action_open_matched_url` |
 
 ### `gui/add_tags_dialog.py`
@@ -324,20 +324,20 @@ section 6 gives to 6.f.
 
 | Python | Rust |
 |---|---|
-| `gui/preview_text.py:43` `human_size` | `crates/hatate-core/src/preview_text.rs:49` |
-| `gui/preview_text.py:54` `matched_caption` | `crates/hatate-core/src/preview_text.rs:70` |
-| `gui/preview_text.py:74` `no_candidate_text` | `crates/hatate-core/src/preview_text.rs:90` |
-| `gui/preview_text.py:89` `_dimensions` | `crates/hatate-core/src/boorus/eshuushuu.rs:557` |
-| `gui/preview_text.py:93` `local_image_info_text` | `crates/hatate-core/src/preview_text.rs:129` |
-| `gui/preview_text.py:104` `local_frame_meta` | `crates/hatate-core/src/preview_text.rs:140` |
-| `gui/preview_text.py:111` `_local_info_parts` | `crates/hatate-core/src/preview_text.rs:111` |
-| `gui/preview_text.py:129` `matched_frame_label` | `crates/hatate-core/src/preview_text.rs:147` |
-| `gui/preview_text.py:143` `matched_frame_meta` | `crates/hatate-core/src/preview_text.rs:181` |
-| `gui/preview_text.py:160` `matched_image_info_text` | `crates/hatate-core/src/preview_text.rs:190` |
-| `gui/preview_text.py:193` `comparison_banner_text` | `crates/hatate-core/src/preview_text.rs:224` |
-| `gui/preview_text.py:233` `comparison_banner_tier` | `crates/hatate-core/src/preview_text.rs:254` |
+| `gui/preview_text.py:43` `human_size` | `crates/hatate-core/src/preview_text.rs` `fn human_size` `pub fn human_size(num_bytes: Option<i64>) -> Option<String> {` |
+| `gui/preview_text.py:54` `matched_caption` | `crates/hatate-core/src/preview_text.rs` `fn matched_caption` `pub fn matched_caption(entry: &Entry) -> String {` |
+| `gui/preview_text.py:74` `no_candidate_text` | `crates/hatate-core/src/preview_text.rs` `fn no_candidate_text` `pub fn no_candidate_text(entry: &Entry) -> String {` |
+| `gui/preview_text.py:89` `_dimensions` | `crates/hatate-core/src/boorus/eshuushuu.rs` `fn dimensions` `fn dimensions() {` |
+| `gui/preview_text.py:93` `local_image_info_text` | `crates/hatate-core/src/preview_text.rs` `fn local_image_info_text` `pub fn local_image_info_text(path: &str, image_opener: &dyn ImageOpener) -> String {` |
+| `gui/preview_text.py:104` `local_frame_meta` | `crates/hatate-core/src/preview_text.rs` `fn local_frame_meta` `pub fn local_frame_meta(path: &str, image_opener: &dyn ImageOpener) -> String {` |
+| `gui/preview_text.py:111` `_local_info_parts` | `crates/hatate-core/src/preview_text.rs` `fn local_info_parts` `fn local_info_parts(path: &str, opener: &dyn ImageOpener, spaced: bool) -> Vec<String> {` |
+| `gui/preview_text.py:129` `matched_frame_label` | `crates/hatate-core/src/preview_text.rs` `fn matched_frame_label` `pub fn matched_frame_label(entry: &Entry) -> String {` |
+| `gui/preview_text.py:143` `matched_frame_meta` | `crates/hatate-core/src/preview_text.rs` `fn matched_frame_meta` `pub fn matched_frame_meta(candidate: Option<&Candidate>) -> String {` |
+| `gui/preview_text.py:160` `matched_image_info_text` | `crates/hatate-core/src/preview_text.rs` `fn matched_image_info_text` `pub fn matched_image_info_text(candidate: Option<&Candidate>) -> String {` |
+| `gui/preview_text.py:193` `comparison_banner_text` | `crates/hatate-core/src/preview_text.rs` `fn comparison_banner_text` `pub fn comparison_banner_text(entry: &Entry, candidate: Option<&Candidate>) -> String {` |
+| `gui/preview_text.py:233` `comparison_banner_tier` | `crates/hatate-core/src/preview_text.rs` `fn comparison_banner_tier` `pub fn comparison_banner_tier(entry: &Entry, candidate: Option<&Candidate>) -> &'static str {` |
 | `gui/preview_text.py:249` `comparison_banner_colour` | `preview_text.rs` `comparison_banner_tier` (the colour is the CSS class of the tier) |
-| `gui/preview_text.py:271` `comparison_readout` | `crates/hatate-core/src/preview_text.rs:296` |
+| `gui/preview_text.py:271` `comparison_readout` | `crates/hatate-core/src/preview_text.rs` `fn comparison_readout` `pub fn comparison_readout(` |
 
 ### `gui/compare_dialog.py`
 
@@ -462,7 +462,7 @@ makes; `geometry` rows are judged in the shot set and the measured tables, as in
 | 5268 | `ReviewShortcuts.test_sending_the_last_row_away_lands_on_the_new_last_row` | **6.g**: sending to Hydrus. The Send buttons are insensitive in this build; the selection rule after a removal is 6.d's (`smoke::queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row`) |
 | 5276 | `ReviewShortcuts.test_a_hydrus_confirmation_removing_your_row_moves_you_on` | **6.g**: sending to Hydrus. The Send buttons are insensitive in this build; the selection rule after a removal is 6.d's (`smoke::queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row`) |
 | 5293 | `ReviewShortcuts.test_a_hydrus_confirmation_elsewhere_leaves_you_where_you_are` | **6.g**: sending to Hydrus. The Send buttons are insensitive in this build; the selection rule after a removal is 6.d's (`smoke::queue_remove_lands_on_the_next_row_that_survives_and_sort_keeps_the_top_selected_row`) |
-| 5304 | `ReviewShortcuts.test_review_page_buttons_move_between_images` | `smoke::review_page_follows_the_selection` (`smoke.rs:4084`, first row: Previous off; `:4099`, last row: Next off): Previous / Next page buttons are insensitive at the ends and move through `next_row` / `prev_row`; `smoke::review_keys_step_mark_skip_and_open_the_match` |
+| 5304 | `ReviewShortcuts.test_review_page_buttons_move_between_images` | `smoke::review_page_follows_the_selection` (`crates/hatate-gtk/tests/smoke.rs` `fn review_page_follows_the_selection` `assert!(!r.prev_btn.button.is_sensitive() && r.next_btn.button.is_sensitive());`, first row: Previous off; `:4099`, last row: Next off): Previous / Next page buttons are insensitive at the ends and move through `next_row` / `prev_row`; `smoke::review_keys_step_mark_skip_and_open_the_match` |
 | 5319 | `ReviewShortcuts.test_typing_in_the_filter_box_is_not_swallowed` | `smoke::review_keys_step_mark_skip_and_open_the_match`: a text field keeps its characters (the scenario's last block) |
 | 5334 | `ReviewShortcuts.test_j_and_k_step_through_the_list` | `smoke::review_keys_step_mark_skip_and_open_the_match` |
 | 5344 | `ReviewShortcuts.test_stepping_stops_at_the_ends_rather_than_wrapping` | `smoke::review_keys_step_mark_skip_and_open_the_match`: stops at the end rather than wrapping |
@@ -549,7 +549,7 @@ makes; `geometry` rows are judged in the shot set and the measured tables, as in
 | 174 | `KeysInsideTheButtons.test_key_names_read_against_the_surface_they_sit_on` | the contrast table (section 6): cap text against its button, both schemes |
 | 195 | `KeysInsideTheButtons.test_the_mark_label_flip_still_fits_at_the_cards_declared_minimum` | `smoke::review_with_a_match_selected_fits_the_stated_minimum_after_opening_wide`; `Unmark reviewed` is the longer label and the shots at the minimum show both |
 | 214 | `KeysInsideTheButtons.test_rebinding_a_key_changes_the_cap_and_unbinding_hides_it` | 6.h: not asserted (no rebinding path in this build) |
-| 227 | `MatchStepperKeys.test_bracket_keys_follow_their_steppers_and_dim_with_them` | `smoke::review_page_follows_the_selection` (`smoke.rs:4083`, first match) and `smoke::review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop` (`smoke.rs:4292-4293`, last match): the Previous / Next match buttons and their bracket caps (`prev_match_key` / `next_match_key`) dim at the ends; the caps' geometry is the shot set |
+| 227 | `MatchStepperKeys.test_bracket_keys_follow_their_steppers_and_dim_with_them` | `smoke::review_page_follows_the_selection` (`crates/hatate-gtk/tests/smoke.rs` `fn review_page_follows_the_selection` `assert!(!r.prev_match_btn.is_sensitive() && r.next_match_btn.is_sensitive());`, first match) and `smoke::review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop` (`crates/hatate-gtk/tests/smoke.rs` `fn review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop` `assert!(r.prev_match_btn.is_sensitive() && !r.next_match_btn.is_sensitive());`, last match): the Previous / Next match buttons and their bracket caps (`prev_match_key` / `next_match_key`) dim at the ends; the caps' geometry is the shot set |
 | 240 | `MatchStepperKeys.test_a_cap_sits_immediately_after_its_stepper` | geometry, judged in the shot set and the measured tables (section 6), not asserted by a test |
 | 250 | `HintBar.test_default_bar_reads_like_the_mockups` | not asserted: the hint bar's text; judged in the shot set |
 | 260 | `HintBar.test_the_figures_are_strong_and_the_words_are_not` | geometry, judged in the shot set and the measured tables (section 6), not asserted by a test |
@@ -580,7 +580,7 @@ makes; `geometry` rows are judged in the shot set and the measured tables, as in
 |---|---|---|
 | 80 | `ReviewTagRail.test_match_label_sits_in_a_hairline_box_with_the_steppers` | geometry, judged in the shot set and the measured tables (section 6), not asserted by a test |
 | 92 | `ReviewTagRail.test_steppers_are_36px_boxed_triangles_with_the_bracket_keys` | geometry, judged in the shot set and the measured tables (section 6), not asserted by a test |
-| 103 | `ReviewTagRail.test_steppers_walk_the_candidates_and_disable_at_the_ends` | `smoke::review_page_follows_the_selection` (`smoke.rs:4083`): Previous match is insensitive on the first match; `smoke::review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop` (`smoke.rs:4270`, middle: both live; `smoke.rs:4292-4293`, last: Next and its bracket cap insensitive, Previous live) |
+| 103 | `ReviewTagRail.test_steppers_walk_the_candidates_and_disable_at_the_ends` | `smoke::review_page_follows_the_selection` (`crates/hatate-gtk/tests/smoke.rs` `fn review_page_follows_the_selection` `assert!(!r.prev_match_btn.is_sensitive() && r.next_match_btn.is_sensitive());`): Previous match is insensitive on the first match; `smoke::review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop` (`crates/hatate-gtk/tests/smoke.rs` `fn review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop` `assert!(r.prev_match_btn.is_sensitive() && r.next_match_btn.is_sensitive());`, middle: both live; `crates/hatate-gtk/tests/smoke.rs` `fn review_candidate_picker_switches_the_match_and_the_fetch_stays_off_the_main_loop` `assert!(r.prev_match_btn.is_sensitive() && !r.next_match_btn.is_sensitive());`, last: Next and its bracket cap insensitive, Previous live) |
 | 116 | `ReviewTagRail.test_no_candidates_means_no_steppers_and_the_picker_stays_below` | `smoke::review_page_follows_the_selection`: a row with no match reads `No match` and its picker is insensitive |
 | 127 | `ReviewTagRail.test_rows_are_32px_and_at_least_five_full_rows_show_at_1440x900` | not measured at 1440 x 900: the shot set is 1100 x 800 and the minimum (section 6) |
 | 141 | `ReviewTagRail.test_the_marker_is_dimmed_the_tag_is_bright_and_each_row_is_ruled` | the contrast table (section 6): the marker and the tag text |
@@ -607,7 +607,7 @@ makes; `geometry` rows are judged in the shot set and the measured tables, as in
 | 410 | `AddTagsDialog.test_the_target_is_named_in_the_prompt` | `add_tags::tests::the_target_is_named_in_the_prompt` (new in DAN-2347): `add_tags::prompt("7 selected images")` is the whole label; `smoke::review_tag_panel_adds_removes_and_edits_in_place` asserts the label `Prompter::add_tags` is handed for `a.png`. Reverting the `format!` line turns the new test red. The label widget itself is the `AlertDialog` body (geometry, shot set) |
 | 417 | `AddTagsDialog.test_one_tag_per_line` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`; `add_tags::tests::python_line_boundaries_end_a_tag` |
 | 421 | `AddTagsDialog.test_blank_and_whitespace_only_lines_are_dropped` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: the empty line is dropped. not asserted: tab and space-only lines (`strip` runs before the empty filter) and the trailing newline as such (`smoke::review_tag_panel_adds_removes_and_edits_in_place` ends its text with `\n` and adds no empty tag) |
-| 427 | `AddTagsDialog.test_nothing_typed_yields_no_tags` | not asserted: `parse_added_tags("")` is not fed. `splitlines("")` gives no lines, and `add_tags_to_current` returns before touching a queue entry when the list is empty (`review_ops.rs:860`); `smoke::review_tag_panel_adds_removes_and_edits_in_place` asserts the Cancel path adds nothing |
+| 427 | `AddTagsDialog.test_nothing_typed_yields_no_tags` | not asserted: `parse_added_tags("")` is not fed. `splitlines("")` gives no lines, and `add_tags_to_current` returns before touching a queue entry when the list is empty (`crates/hatate-gtk/src/review_ops.rs` `fn add_tags_to_current` `if new_tags.is_empty() {`); `smoke::review_tag_panel_adds_removes_and_edits_in_place` asserts the Cancel path adds nothing |
 | 430 | `AddTagsDialog.test_a_namespace_prefix_is_split_off` | `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`: ` character : reimu ` splits; `smoke::review_tag_panel_adds_removes_and_edits_in_place`: `series : touhou` |
 | 434 | `AddTagsDialog.test_only_the_first_colon_splits` | `add_tags::tests::only_the_first_colon_splits`: `series:a:b` is `(Some("series"), "a:b")`; swapping `split_once` for `rsplit_once` turns it red |
 | 442 | `AddTagsDialog.test_both_halves_are_stripped` | DAN-81. `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped`; `smoke::review_tag_panel_adds_removes_and_edits_in_place`: ` series : touhou ` is `series:touhou`. Reverting `strip(head)` or `strip(name)` turns `add_tags::tests::blank_lines_are_skipped_and_both_halves_are_stripped` red |

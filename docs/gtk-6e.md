@@ -214,56 +214,56 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 | 257 | `_format_finish_time` | `hatate_core::eta::format_finish_time` (6.a), called from `search_run.rs` `finish_time` |  |
 | 388 | `_engine_alert_forwarder` | `hatate-gtk/src/search_run.rs` `launch_search_worker` (the listener posts to the window's inbox; the window drains it while it is alive) |  |
 | 756 | `_build_sites_menu` | `menu.rs` Sites menu table, built from `all_site_options()`; its check items are `install_site_actions` |  |
-| 781 | `_on_site_toggled` | `hatate-gtk/src/search_run.rs:488` `on_site_toggled` |  |
-| 791 | `_set_all_sites` | `hatate-gtk/src/search_run.rs:509` `set_all_sites` |  |
-| 2201 | `action_parser_health` | `hatate-gtk/src/parser_health.rs:546` `action_parser_health` |  |
-| 2217 | `_warn_about_broken_parsers` | `hatate-gtk/src/parser_health.rs:554` `warn_about_broken_parsers` |  |
-| 2264 | `action_toggle_search` | `hatate-gtk/src/search_run.rs:534` `action_toggle_search` |  |
-| 2270 | `action_start_search` | `hatate-gtk/src/search_run.rs:543` `action_start_search` |  |
-| 2282 | `action_stop_search` | `hatate-gtk/src/search_run.rs:574` `action_stop_search` |  |
-| 2289 | `_on_worker_progress` | `hatate-gtk/src/search_run.rs:728` `on_worker_progress` |  |
+| 781 | `_on_site_toggled` | `crates/hatate-gtk/src/search_run.rs` `fn on_site_toggled` `pub fn on_site_toggled(&self, site: &str, checked: bool) {` `on_site_toggled` |  |
+| 791 | `_set_all_sites` | `crates/hatate-gtk/src/search_run.rs` `fn set_all_sites` `pub fn set_all_sites(&self, checked: bool) {` `set_all_sites` |  |
+| 2201 | `action_parser_health` | `crates/hatate-gtk/src/parser_health.rs` `fn action_parser_health` `pub fn action_parser_health(&self) {` `action_parser_health` |  |
+| 2217 | `_warn_about_broken_parsers` | `crates/hatate-gtk/src/parser_health.rs` `fn warn_about_broken_parsers` `pub fn warn_about_broken_parsers(&self) {` `warn_about_broken_parsers` |  |
+| 2264 | `action_toggle_search` | `crates/hatate-gtk/src/search_run.rs` `fn action_toggle_search` `pub fn action_toggle_search(&self) {` `action_toggle_search` |  |
+| 2270 | `action_start_search` | `crates/hatate-gtk/src/search_run.rs` `fn action_start_search` `pub fn action_start_search(&self) {` `action_start_search` |  |
+| 2282 | `action_stop_search` | `crates/hatate-gtk/src/search_run.rs` `fn action_stop_search` `pub fn action_stop_search(&self) {` `action_stop_search` |  |
+| 2289 | `_on_worker_progress` | `crates/hatate-gtk/src/search_run.rs` `fn on_worker_progress` `fn on_worker_progress(&self, done: usize, total: usize) {` `on_worker_progress` |  |
 | 2295 | `_refresh_run_progress_label` | `session_ops.rs` `refresh_run_progress_label` (6.c); its live half is `search_run.rs` `live_eta_text` |  |
 | 2327 | `_idle_run_text` | `session_ops.rs` `idle_run_text` (6.c) |  |
-| 2336 | `_on_worker_waiting` | `hatate-gtk/src/search_run.rs:739` `on_worker_waiting` |  |
-| 2339 | `_on_wait_countdown` | `hatate-gtk/src/search_run.rs:747` `on_wait_countdown` |  |
-| 2347 | `_on_auto_imported` | `hatate-gtk/src/search_run.rs:793` `on_auto_imported` (the row leaves the list when the run imported it; the import itself is `batch/run.rs`, Phase 5). The ticket lists it; `gtk-shell.md` had left it to 6.g |  |
-| 2373 | `_on_worker_image_updated` | `hatate-gtk/src/search_run.rs:763` `on_worker_image_updated` | the row model follows the worker's copy; selection and the preview refresh are `DEFERRED(6.d)` (`search_run.rs:779`) |
-| 2400 | `_refresh_saucenao_quota_label` | `hatate-gtk/src/search_run.rs:851` `refresh_saucenao_quota_label` |  |
-| 2411 | `_render_saucenao_quota_label` | `hatate-gtk/src/search_run.rs:851` (the same function renders) |  |
-| 2417 | `_on_paused_out_of_quota` | `hatate-gtk/src/search_run.rs:821` `on_paused_out_of_quota` |  |
-| 2441 | `_show_quota_banner` | `banners.rs:192` `show_quota_banner` (6.c) |  |
-| 2472 | `_hide_quota_banner` | `banners.rs:229` `hide_quota_banner` (6.c) |  |
-| 2481 | `_review_the_waiting` | the banner's button, built and disabled (`window.rs:611`) | **left to 6.d/6.f**: needs the table's row selection and Review |
-| 2491 | `_resume_without_saucenao` | `hatate-gtk/src/search_run.rs:1064` `resume_without_saucenao` |  |
-| 2507 | `_on_continuing_without_saucenao` | `hatate-gtk/src/search_run.rs:811` `on_continuing_without_saucenao` |  |
-| 2521 | `_on_engine_alert` | `hatate-gtk/src/search_run.rs:1098` `on_engine_alert` | the remedy is in the body (D3) |
-| 2548 | `_on_worker_finished` | `hatate-gtk/src/search_run.rs:861` `on_worker_finished`, `on_run_ended` |  |
-| 3061 | `_research_rows` | `hatate-gtk/src/search_run.rs:957` `research_rows` | 6.d's context menu calls it (`queue_menu.rs:56`, wired here after #67 merged) |
-| 3076 | `_research_rows_with_engine` | `hatate-gtk/src/search_run.rs:986` `research_rows_with_engine` | 6.d's context menu calls it (`queue_menu.rs:57`) |
-| 3100 | `_research_rows_with_opposite_engine` | `hatate-gtk/src/search_run.rs:1012` `research_rows_with_opposite_engine` | 6.d's context menu calls it (`queue_menu.rs:58`) |
-| 3146 | `_check_match_availability` | `hatate-gtk/src/checks.rs:64` `check_match_availability` |  |
-| 3168 | `_on_availability_progress` | `hatate-gtk/src/checks.rs:136` `on_availability_progress` |  |
-| 3172 | `_on_availability_finished` | `hatate-gtk/src/checks.rs:145` `on_availability_finished` |  |
-| 3209 | `_remove_dead_candidates` | `hatate-gtk/src/checks.rs:230` `remove_dead_candidates` |  |
-| 3240 | `_check_rows_for_upscaling` | `hatate-gtk/src/checks.rs:251` `check_rows_for_upscaling` |  |
-| 3260 | `_on_upscale_entry_checked` | `hatate-gtk/src/checks.rs:307` `on_upscale_entry_checked` |  |
-| 3281 | `_on_upscale_check_finished` | `hatate-gtk/src/checks.rs:320` `on_upscale_check_finished` |  |
+| 2336 | `_on_worker_waiting` | `crates/hatate-gtk/src/search_run.rs` `fn on_worker_waiting` `fn on_worker_waiting(&self, seconds: f64) {` `on_worker_waiting` |  |
+| 2339 | `_on_wait_countdown` | `crates/hatate-gtk/src/search_run.rs` `fn on_wait_countdown` `fn on_wait_countdown(&self, label: &str, remaining: f64, _total: f64) {` `on_wait_countdown` |  |
+| 2347 | `_on_auto_imported` | `crates/hatate-gtk/src/search_run.rs` `fn on_auto_imported` `fn on_auto_imported(&self, entry: Entry, result: &ImportResult) {` `on_auto_imported` (the row leaves the list when the run imported it; the import itself is `batch/run.rs`, Phase 5). The ticket lists it; `gtk-shell.md` had left it to 6.g |  |
+| 2373 | `_on_worker_image_updated` | `crates/hatate-gtk/src/search_run.rs` `fn on_worker_image_updated` `fn on_worker_image_updated(&self, index: Option<usize>, entry: Entry) {` `on_worker_image_updated` | the row model follows the worker's copy; selection and the preview refresh are `DEFERRED(6.d)` (`crates/hatate-gtk/src/search_run.rs` `fn on_worker_image_updated` `} else {`) |
+| 2400 | `_refresh_saucenao_quota_label` | `crates/hatate-gtk/src/search_run.rs` `fn refresh_saucenao_quota_label` `pub fn refresh_saucenao_quota_label(&self) {` `refresh_saucenao_quota_label` |  |
+| 2411 | `_render_saucenao_quota_label` | `crates/hatate-gtk/src/search_run.rs` `fn refresh_saucenao_quota_label` `pub fn refresh_saucenao_quota_label(&self) {` (the same function renders) |  |
+| 2417 | `_on_paused_out_of_quota` | `crates/hatate-gtk/src/search_run.rs` `fn on_paused_out_of_quota` `fn on_paused_out_of_quota(&self, searched: i64, remaining: i64) {` `on_paused_out_of_quota` |  |
+| 2441 | `_show_quota_banner` | `crates/hatate-gtk/src/banners.rs` `fn show_quota_banner` `pub fn show_quota_banner(&self, paused_at: f64, remaining: i64, reset_at: Option<f64>) {` `show_quota_banner` (6.c) |  |
+| 2472 | `_hide_quota_banner` | `crates/hatate-gtk/src/banners.rs` `fn hide_quota_banner` `pub fn hide_quota_banner(&self) {` `hide_quota_banner` (6.c) |  |
+| 2481 | `_review_the_waiting` | the banner's button, built and disabled (`crates/hatate-gtk/src/window.rs` `fn set_mode` `if self.s.shell.show_mode(key, &ghost) {`) | **left to 6.d/6.f**: needs the table's row selection and Review |
+| 2491 | `_resume_without_saucenao` | `crates/hatate-gtk/src/search_run.rs` `fn resume_without_saucenao` `pub fn resume_without_saucenao(&self) {` `resume_without_saucenao` |  |
+| 2507 | `_on_continuing_without_saucenao` | `crates/hatate-gtk/src/search_run.rs` `fn on_continuing_without_saucenao` `fn on_continuing_without_saucenao(&self, _searched: i64, remaining: i64) {` `on_continuing_without_saucenao` |  |
+| 2521 | `_on_engine_alert` | `crates/hatate-gtk/src/search_run.rs` `fn on_engine_alert` `fn on_engine_alert(&self, alert: &EngineAlert) {` `on_engine_alert` | the remedy is in the body (D3) |
+| 2548 | `_on_worker_finished` | `crates/hatate-gtk/src/search_run.rs` `fn on_worker_finished` `fn on_worker_finished(&self, ending: &Ending) {` `on_worker_finished`, `on_run_ended` |  |
+| 3061 | `_research_rows` | `crates/hatate-gtk/src/search_run.rs` `fn research_rows` `pub fn research_rows(&self, ids: &[EntryId]) {` `research_rows` | 6.d's context menu calls it (`crates/hatate-gtk/src/queue_menu.rs` `fn run_menu_action` `Action::Research => self.research_rows(ids),`, wired here after #67 merged) |
+| 3076 | `_research_rows_with_engine` | `crates/hatate-gtk/src/search_run.rs` `fn research_rows_with_engine` `pub fn research_rows_with_engine(&self, ids: &[EntryId], engine: &str) {` `research_rows_with_engine` | 6.d's context menu calls it (`crates/hatate-gtk/src/queue_menu.rs` `fn run_menu_action` `Action::ResearchWithEngine(engine) => self.research_rows_with_engine(ids, engine),`) |
+| 3100 | `_research_rows_with_opposite_engine` | `crates/hatate-gtk/src/search_run.rs` `fn research_rows_with_opposite_engine` `pub fn research_rows_with_opposite_engine(&self, ids: &[EntryId]) {` `research_rows_with_opposite_engine` | 6.d's context menu calls it (`crates/hatate-gtk/src/queue_menu.rs` `fn run_menu_action` `Action::ResearchWithOppositeEngine => self.research_rows_with_opposite_engine(ids),`) |
+| 3146 | `_check_match_availability` | `crates/hatate-gtk/src/checks.rs` `fn check_match_availability` `pub fn check_match_availability(&self, id: EntryId) {` `check_match_availability` |  |
+| 3168 | `_on_availability_progress` | `crates/hatate-gtk/src/checks.rs` `fn on_availability_progress` `fn on_availability_progress(&self, done: usize, total: usize) {` `on_availability_progress` |  |
+| 3172 | `_on_availability_finished` | `crates/hatate-gtk/src/checks.rs` `fn on_availability_finished` `pub fn on_availability_finished(&self, id: EntryId, checked_copy: Entry, result: EntryCheck) {` `on_availability_finished` |  |
+| 3209 | `_remove_dead_candidates` | `crates/hatate-gtk/src/checks.rs` `fn remove_dead_candidates` `pub fn remove_dead_candidates(&self, id: EntryId) {` `remove_dead_candidates` |  |
+| 3240 | `_check_rows_for_upscaling` | `crates/hatate-gtk/src/checks.rs` `fn check_rows_for_upscaling` `pub fn check_rows_for_upscaling(&self, ids: &[EntryId]) {` `check_rows_for_upscaling` |  |
+| 3260 | `_on_upscale_entry_checked` | `crates/hatate-gtk/src/checks.rs` `fn on_upscale_entry_checked` `fn on_upscale_entry_checked(&self, id: EntryId, checked: Entry, result: &UpscaleCheckResult) {` `on_upscale_entry_checked` |  |
+| 3281 | `_on_upscale_check_finished` | `crates/hatate-gtk/src/checks.rs` `fn on_upscale_check_finished` `fn on_upscale_check_finished(&self, ids: &[EntryId]) {` `on_upscale_check_finished` |  |
 | 3304 | `_launch_search_worker` | `hatate-gtk/src/search_run.rs:587` `launch_search_worker` over `hatate_core::batch::run::search_pending_with` |  |
 
 ### `gui/activity_view.py`
 
 | Line | Python | Rust | Left to |
 |---|---|---|---|
-| 53 | `_build_activity_page` | `hatate-gtk/src/activity.rs:142` `build` |  |
-| 79 | `_build_engines_card` | `hatate-gtk/src/activity.rs:142` `build` (the chips) |  |
-| 128 | `_engine_state` | `hatate-gtk/src/activity.rs:32` `engine_state` |  |
-| 158 | `refresh_engines` | `hatate-gtk/src/activity.rs:301` `refresh_engines` |  |
-| 199 | `_build_log_card` | `hatate-gtk/src/activity.rs:142` `build` (the log card) |  |
-| 235 | `_tail_log` | `hatate-gtk/src/activity.rs:327` `tail_log` |  |
-| 256 | `_on_follow_toggled` | `hatate-gtk/src/activity.rs:375` `on_follow_toggled` |  |
-| 264 | `_copy_log` | `hatate-gtk/src/activity.rs:388` `copy_log` |  |
-| 267 | `_open_log_folder` | `hatate-gtk/src/activity.rs:394` `open_log_folder` |  |
-| 274 | `set_activity_live` | `hatate-gtk/src/activity.rs:353` `set_activity_live` |  |
+| 53 | `_build_activity_page` | `crates/hatate-gtk/src/activity.rs` `fn build` `pub fn build(log_path: &std::path::Path) -> Rc<ActivityPage> {` `build` |  |
+| 79 | `_build_engines_card` | `crates/hatate-gtk/src/activity.rs` `fn build` `pub fn build(log_path: &std::path::Path) -> Rc<ActivityPage> {` `build` (the chips) |  |
+| 128 | `_engine_state` | `crates/hatate-gtk/src/activity.rs` `fn engine_state` `pub fn engine_state(s: &Settings, engine_id: &str) -> (bool, &'static str) {` `engine_state` |  |
+| 158 | `refresh_engines` | `crates/hatate-gtk/src/activity.rs` `fn refresh_engines` `pub fn refresh_engines(&self) {` `refresh_engines` |  |
+| 199 | `_build_log_card` | `crates/hatate-gtk/src/activity.rs` `fn build` `pub fn build(log_path: &std::path::Path) -> Rc<ActivityPage> {` `build` (the log card) |  |
+| 235 | `_tail_log` | `crates/hatate-gtk/src/activity.rs` `fn tail_log` `pub fn tail_log(&self) {` `tail_log` |  |
+| 256 | `_on_follow_toggled` | `crates/hatate-gtk/src/activity.rs` `fn on_follow_toggled` `fn on_follow_toggled(&self) {` `on_follow_toggled` |  |
+| 264 | `_copy_log` | `crates/hatate-gtk/src/activity.rs` `fn copy_log` `fn copy_log(&self) {` `copy_log` |  |
+| 267 | `_open_log_folder` | `crates/hatate-gtk/src/activity.rs` `fn open_log_folder` `fn open_log_folder(&self) {` `open_log_folder` |  |
+| 274 | `set_activity_live` | `crates/hatate-gtk/src/activity.rs` `fn set_activity_live` `pub fn set_activity_live(&self, live: bool) {` `set_activity_live` |  |
 
 ### `gui/parser_health_dialog.py`
 
@@ -271,12 +271,12 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 |---|---|---|---|
 | 46 | `__init__ (the worker)` | `ProbeRunner` (the seam the live check will use) | **left to Phase 7 per DAN-2290**: no probe ships |
 | 50 | `run (the worker)` | `ProbeRunner::run` | **left to Phase 7 per DAN-2290** |
-| 66 | `__init__ (the dialog)` | `hatate-gtk/src/parser_health.rs:271` `ParserHealthDialog::build` |  |
-| 120 | `_populate` | `hatate-gtk/src/parser_health.rs:386` `populate` |  |
-| 155 | `_start_probe` | `hatate-gtk/src/parser_health.rs:470` (the check button; disabled in this build, DAN-2290) |  |
-| 168 | `_on_progress` | `hatate-gtk/src/parser_health.rs:504` `on_progress` |  |
-| 174 | `_on_done` | `hatate-gtk/src/parser_health.rs:515` `on_done` |  |
-| 198 | `closeEvent` | `hatate-gtk/src/parser_health.rs:470` `start_probe`: the worker's callback holds a weak handle, so a result that arrives after the dialog is gone is dropped |  |
+| 66 | `__init__ (the dialog)` | `crates/hatate-gtk/src/parser_health.rs` `fn build` `fn build(main: &MainWindow, probe: Option<Arc<dyn ProbeRunner>>) -> Rc<ParserHealthDialog> {` `ParserHealthDialog::build` |  |
+| 120 | `_populate` | `crates/hatate-gtk/src/parser_health.rs` `fn populate` `pub fn populate(&self) {` `populate` |  |
+| 155 | `_start_probe` | `crates/hatate-gtk/src/parser_health.rs` `fn start_probe` `fn start_probe(self: &Rc<Self>) {` (the check button; disabled in this build, DAN-2290) |  |
+| 168 | `_on_progress` | `crates/hatate-gtk/src/parser_health.rs` `fn on_progress` `fn on_progress(&self, done: usize, total: usize, site: &str) {` `on_progress` |  |
+| 174 | `_on_done` | `crates/hatate-gtk/src/parser_health.rs` `fn on_done` `fn on_done(&self, results: Vec<ProbeResult>) {` `on_done` |  |
+| 198 | `closeEvent` | `crates/hatate-gtk/src/parser_health.rs` `fn start_probe` `fn start_probe(self: &Rc<Self>) {` `start_probe`: the worker's callback holds a weak handle, so a result that arrives after the dialog is gone is dropped |  |
 
 ### `core/desktop_attention.py`
 
@@ -295,16 +295,16 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 | Line | Python | Rust | Left to |
 |---|---|---|---|
 | 34 | `__init__` | `hatate_core::availability::check_entry_candidates` (arguments) |  |
-| 40 | `stop` | the `ctx.stop_flag()` passed to `check_entry_candidates` (`checks.rs:116`); `retire_checks` stops both checks at close |  |
+| 40 | `stop` | the `ctx.stop_flag()` passed to `check_entry_candidates` (`crates/hatate-gtk/src/checks.rs` `fn check_match_availability` `ctx.stop_flag(),`); `retire_checks` stops both checks at close |  |
 | 43 | `_check_one` | `hatate_core::availability::check_one_candidate` |  |
-| 71 | `run` | `check_entry_candidates`, on the worker bridge (`checks.rs:64`) |  |
+| 71 | `run` | `check_entry_candidates`, on the worker bridge (`crates/hatate-gtk/src/checks.rs` `fn check_match_availability` `pub fn check_match_availability(&self, id: EntryId) {`) |  |
 
 ### `workers/upscale_check_worker.py`
 
 | Line | Python | Rust | Left to |
 |---|---|---|---|
 | 26 | `__init__` | `hatate_core::upscale_detect::check_entries` (arguments) |  |
-| 30 | `run` | `check_entries`, on the worker bridge (`checks.rs:251`) |  |
+| 30 | `run` | `check_entries`, on the worker bridge (`crates/hatate-gtk/src/checks.rs` `fn check_rows_for_upscaling` `pub fn check_rows_for_upscaling(&self, ids: &[EntryId]) {`) |  |
 
 ## 7. Python test map
 
