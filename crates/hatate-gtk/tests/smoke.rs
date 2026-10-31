@@ -9664,6 +9664,10 @@ const SCENARIOS_6J_FOLLOWUP: &[Scenario] = &[
         "message_detail_box_past_its_cap_scrolls_with_a_persistent_bar",
         message_detail_box_past_its_cap_scrolls_with_a_persistent_bar,
     ),
+    (
+        "message_detail_box_does_not_swallow_tab",
+        message_detail_box_does_not_swallow_tab,
+    ),
 ];
 
 /// Every list, in order.
@@ -10074,6 +10078,61 @@ fn message_detail_box_past_its_cap_scrolls_with_a_persistent_bar(app: &adw::Appl
         bar.is_mapped() && bar.width() >= 10,
         "the bar is drawn at rest, {} px",
         bar.width()
+    );
+    adw::prelude::AdwDialogExt::force_close(&dialog);
+    f.close();
+}
+
+/// DAN-2495 (the DAN-2493 FAIL): Tab, with real key presses, in a message box that carries a detail
+/// field. A focusable scroller around the label, which is not a stop, left the focus on nothing and
+/// kept it there (DAN-2399): Tab from OK went nowhere. Wherever the toolkit starts the focus (it differs
+/// by version), no press ends on nothing and OK is met again within 2 presses.
+fn message_detail_box_does_not_swallow_tab(app: &adw::Application) {
+    use common::xtest::{Key, Xtest};
+    let f = fx(app);
+    let (dialog, scroller, _) = open_detail_alert(
+        &f,
+        "Google Lens needs a Chromium-based browser and none was found.",
+    );
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("message_detail_box tab walk: skipped ({why})");
+            adw::prelude::AdwDialogExt::force_close(&dialog);
+            f.close();
+            return;
+        }
+    };
+    let root = scroller.root().and_downcast::<gtk4::Window>().unwrap();
+    root.present();
+    keys.focus_window_at(4, 4).expect("focus the window");
+    pump_for(300);
+    let mut stops = Vec::new();
+    let mut since_ok = 0;
+    for press in 1..=6 {
+        keys.tap(Key::Tab, &[]).expect("inject");
+        pump_for(250);
+        let at = gtk4::prelude::GtkWindowExt::focus(&root)
+            .unwrap_or_else(|| panic!("Tab {press} left the focus on nothing: {stops:?}"));
+        assert!(!at.is::<gtk4::Label>(), "Tab {press} is in the text");
+        stops.push(at.type_().name().to_owned());
+        if at.is::<gtk4::Button>() {
+            since_ok = 0;
+        } else {
+            since_ok += 1;
+        }
+        assert!(
+            since_ok <= 2,
+            "OK is not met again within 2 presses: {stops:?}"
+        );
+    }
+    assert!(
+        stops.iter().any(|s| s == "GtkButton"),
+        "OK is reached: {stops:?}"
     );
     adw::prelude::AdwDialogExt::force_close(&dialog);
     f.close();

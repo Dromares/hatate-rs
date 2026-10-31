@@ -596,6 +596,9 @@ pub fn detail_box(detail: &str) -> (gtk::ScrolledWindow, gtk::Label) {
     scroller.set_child(Some(&lines));
     scroller.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
     scroller.set_overlay_scrolling(false);
+    // A focusable scroller around a label that is not a stop swallows Tab: the focus goes to
+    // nothing and stays there (DAN-2399, DAN-2495). The alert's own body scroller is the stop.
+    scroller.set_can_focus(false);
     scroller.set_min_content_height(96);
     scroller.set_max_content_height(220);
     scroller.set_propagate_natural_height(true);
