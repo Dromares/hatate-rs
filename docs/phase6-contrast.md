@@ -96,7 +96,7 @@ Measured on the hosted-CI shots of head `c0ff4a9` (run 41117309295, GTK 4.14, 35
 - Parser Health is 760 x 460 in every state at the hosted-CI toolkit (`headers.md`, 0 non-FIT). Its list takes no Tab stop (`Close` is the only one); the list scrolls on Up, Down, Page Up, Page Down, Home and End.
 - **Item 8, decided (Cloud, DAN-2458):** the Differences letterbox in light stays the panel colour (`#f2ede1`), not `#1a1a1a`. A black band on a light panel would be the loudest object on screen. The pane itself stays zero chroma (section 1, line 2.2).
 
-Assertions that pin these (each goes red when its line is reverted, `worktrees/DAN-2472-revert.log`): the 760 x 460 floor `tests/smoke.rs:9765`, the persistent bar `tests/smoke.rs:9778`, the non-focusable cells `tests/smoke.rs:9819`, Close the only Tab stop (the scroller is not a stop) `tests/smoke.rs:9831`, the glyph box edge `src/theme.rs:1026`, the popover edge `src/theme.rs:1032`, the picker stamp rows `src/theme.rs:1060` and `:1061`, the dash tier `src/queue_view.rs:996`.
+Assertions that pin these (each goes red when its line is reverted, `worktrees/DAN-2472-revert.log`): the 760 x 460 floor `tests/smoke.rs:9769`, the persistent bar `tests/smoke.rs:9782`, the non-focusable cells `tests/smoke.rs:9823`, Close the only Tab stop (the scroller is not a stop) `tests/smoke.rs:9835`, the glyph box edge `src/theme.rs:1026`, the popover edge `src/theme.rs:1032`, the picker stamp rows `src/theme.rs:1060` and `:1061`, the dash tier `src/queue_view.rs:996`.
 
 ## 6. Parser Health titles and the message box detail field (DAN-2481, PR #85)
 
