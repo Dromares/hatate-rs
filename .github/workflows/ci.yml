@@ -25,6 +25,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev xvfb fontconfig
+      # The Python repo at the commit the port is pinned to, read-only: the presubmit gate walks its
+      # `tests/test_*.py` (`crates/hatate-doccite/tests/presubmit.rs`). Public, so no token is needed.
+      - uses: actions/checkout@v4
+        with:
+          repository: Dromares/Hatate-Linux-Redux
+          ref: 76c85c44fea050e06ae91c77ecc5b40e2f23f986
+          path: py-oracle
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # `HATATE_GTK_SMOKE=1` turns the window scenarios on. With `CI` set (it always is here) a
@@ -35,6 +42,7 @@ jobs:
         env:
           HATATE_GTK_SMOKE: "1"
           HATATE_SMOKE_XVFB: "1"
+          HATATE_PY_ORACLE: ${{ github.workspace }}/py-oracle
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
           NO_AT_BRIDGE: "1"

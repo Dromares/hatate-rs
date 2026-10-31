@@ -38,6 +38,8 @@ struct Body {
 
 #[derive(Default)]
 struct Collect {
+    /// Count the words of string literals as mentions.
+    strings: bool,
     names: BTreeSet<String>,
     self_calls: BTreeSet<String>,
     name_calls: BTreeSet<String>,
@@ -68,7 +70,7 @@ impl Visitor for Collect {
                 self.names.insert(a.attr.to_string());
             }
             Expr::Constant(c) => {
-                if let Constant::Str(s) = &c.value {
+                if let (true, Constant::Str(s)) = (self.strings, &c.value) {
                     words(s, &mut self.names);
                 }
             }
@@ -90,8 +92,11 @@ impl Visitor for Collect {
     }
 }
 
-fn body_of(stmts: &[Stmt], line: usize) -> Body {
-    let mut c = Collect::default();
+fn body_of(stmts: &[Stmt], line: usize, strings: bool) -> Body {
+    let mut c = Collect {
+        strings,
+        ..Collect::default()
+    };
     for s in stmts {
         c.visit_stmt(s.clone());
     }
@@ -119,6 +124,7 @@ pub fn walk_source(
     file: &str,
     src: &str,
     symbols: &BTreeSet<String>,
+    strings: bool,
 ) -> Result<Vec<PyTest>, String> {
     let module = ast::Suite::parse(src, file).map_err(|e| format!("{file}: {e}"))?;
     let mut funcs: BTreeMap<String, Body> = BTreeMap::new();
@@ -128,7 +134,7 @@ pub fn walk_source(
             Stmt::FunctionDef(f) => {
                 funcs.insert(
                     f.name.to_string(),
-                    body_of(&f.body, line_of(src, f.range().start())),
+                    body_of(&f.body, line_of(src, f.range().start()), strings),
                 );
             }
             Stmt::ClassDef(c) => {
@@ -137,7 +143,7 @@ pub fn walk_source(
                     if let Stmt::FunctionDef(f) = m {
                         methods.insert(
                             f.name.to_string(),
-                            body_of(&f.body, line_of(src, f.range().start())),
+                            body_of(&f.body, line_of(src, f.range().start()), strings),
                         );
                     }
                 }
@@ -243,6 +249,15 @@ pub fn walk_source(
 
 /// Every `tests/test_*.py` of the oracle checkout.
 pub fn walk(oracle: &Path, symbols: &BTreeSet<String>) -> Result<Vec<PyTest>, String> {
+    walk_with(oracle, symbols, true)
+}
+
+/// [`walk`], choosing whether the words of string literals count as mentions.
+pub fn walk_with(
+    oracle: &Path,
+    symbols: &BTreeSet<String>,
+    strings: bool,
+) -> Result<Vec<PyTest>, String> {
     let dir = oracle.join("tests");
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
         .map_err(|e| format!("{}: {e}", dir.display()))?
@@ -258,26 +273,45 @@ pub fn walk(oracle: &Path, symbols: &BTreeSet<String>) -> Result<Vec<PyTest>, St
     for p in files {
         let src = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
         let name = p.file_name().unwrap().to_string_lossy().to_string();
-        all.extend(walk_source(&name, &src, symbols)?);
+        all.extend(walk_source(&name, &src, symbols, strings)?);
     }
     Ok(all)
+}
+
+/// Every name defined (function, method, class, anywhere) in the given files of the oracle, unfiltered.
+pub fn defs_in(oracle: &Path, files: &[&str]) -> Result<BTreeSet<String>, String> {
+    let mut out = BTreeSet::new();
+    for f in files {
+        let p = oracle.join(f);
+        let src = std::fs::read_to_string(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let module = ast::Suite::parse(&src, f).map_err(|e| format!("{f}: {e}"))?;
+        let mut d = Defs(BTreeSet::new());
+        for s in module {
+            d.visit_stmt(s);
+        }
+        out.extend(d.0);
+    }
+    Ok(out)
+}
+
+/// Collects the names of `def` and `class` statements.
+struct Defs(BTreeSet<String>);
+
+impl Visitor for Defs {
+    fn visit_stmt_function_def(&mut self, node: ast::StmtFunctionDef) {
+        self.0.insert(node.name.to_string());
+        self.generic_visit_stmt_function_def(node);
+    }
+    fn visit_stmt_class_def(&mut self, node: ast::StmtClassDef) {
+        self.0.insert(node.name.to_string());
+        self.generic_visit_stmt_class_def(node);
+    }
 }
 
 /// The names defined in the oracle's `gui/` (functions, methods, classes, anywhere), minus the ones that are
 /// not specific to it: dunders, a name another top-level directory (`core/`, `workers/`, ...) or `main.py` also defines, and a short stoplist of the generic
 /// names whose hits were noise in every earlier walk (DAN-2348: `install`, `handlers`, `_load`, ...).
 pub fn gui_symbols(oracle: &Path) -> Result<BTreeSet<String>, String> {
-    struct Defs(BTreeSet<String>);
-    impl Visitor for Defs {
-        fn visit_stmt_function_def(&mut self, node: ast::StmtFunctionDef) {
-            self.0.insert(node.name.to_string());
-            self.generic_visit_stmt_function_def(node);
-        }
-        fn visit_stmt_class_def(&mut self, node: ast::StmtClassDef) {
-            self.0.insert(node.name.to_string());
-            self.generic_visit_stmt_class_def(node);
-        }
-    }
     fn defs_of(dir: &Path, recurse: bool, out: &mut BTreeSet<String>) -> Result<(), String> {
         let rd = match std::fs::read_dir(dir) {
             Ok(r) => r,
@@ -369,7 +403,7 @@ pub fn gui_symbols(oracle: &Path) -> Result<BTreeSet<String>, String> {
 /// A name specific enough to mean the GUI when a test mentions it: it has an underscore (`_build_log_card`)
 /// or is CamelCase (`ReviewView`). A bare lowercase word (`data`, `warning`, `filter`) is a word in a
 /// string literal far more often than a call, and made 100+ of the first walk's 206 hits noise.
-fn is_specific(n: &str) -> bool {
+pub fn is_specific(n: &str) -> bool {
     let inner = n.trim_start_matches('_');
     inner.contains('_')
         || (inner.chars().next().is_some_and(|c| c.is_ascii_uppercase())
@@ -426,7 +460,7 @@ def test_free():
             "build_widget",
             "string_symbol",
         ]);
-        let t = walk_source("test_x.py", SRC, &s).unwrap();
+        let t = walk_source("test_x.py", SRC, &s, true).unwrap();
         let by: BTreeMap<_, _> = t.iter().map(|t| (t.id.as_str(), t.hits.clone())).collect();
         // setUp's symbol reaches every test of the class.
         assert_eq!(by["T.test_body"], ["SetupSymbol", "body_symbol"]);
@@ -446,7 +480,7 @@ def test_free():
     #[test]
     fn a_body_only_walk_would_miss_the_helper_hits() {
         let s = syms(&["deep_symbol", "build_widget"]);
-        let t = walk_source("test_x.py", SRC, &s).unwrap();
+        let t = walk_source("test_x.py", SRC, &s, true).unwrap();
         let ids: Vec<_> = t.iter().map(|t| t.id.as_str()).collect();
         assert_eq!(
             ids,
