@@ -12,6 +12,7 @@
 //!
 //! In a markdown table a `|` inside the fragment is written `\|`; [`parse_cites`] undoes that.
 //! Test and tooling code only: no shipped crate depends on this one except as a dev-dependency.
+pub mod pytests;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
