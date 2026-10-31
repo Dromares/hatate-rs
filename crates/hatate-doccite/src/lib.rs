@@ -19,9 +19,12 @@ use std::path::{Path, PathBuf};
 use syn::spanned::Spanned;
 use syn::visit::Visit;
 
-/// One `fn` in a source file: its name and its 1-based inclusive line range.
+/// One named item of a source file: a `fn` with a body, or (for a cite of a line that is no
+/// code of any fn) a `struct`, `enum`, `const`, `static`, `trait` or `type`. Its name and its
+/// 1-based inclusive line range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnSpan {
+    pub kind: &'static str,
     pub name: String,
     pub start: usize,
     pub end: usize,
@@ -30,8 +33,9 @@ pub struct FnSpan {
 struct Collect(Vec<FnSpan>);
 
 impl Collect {
-    fn push(&mut self, name: &syn::Ident, whole: proc_macro2::Span) {
+    fn push(&mut self, kind: &'static str, name: &syn::Ident, whole: proc_macro2::Span) {
         self.0.push(FnSpan {
+            kind,
             name: name.to_string(),
             start: whole.start().line,
             end: whole.end().line,
@@ -41,22 +45,46 @@ impl Collect {
 
 impl<'a> Visit<'a> for Collect {
     fn visit_item_fn(&mut self, f: &'a syn::ItemFn) {
-        self.push(&f.sig.ident, f.span());
+        self.push("fn", &f.sig.ident, f.span());
         syn::visit::visit_item_fn(self, f);
     }
+    fn visit_item_struct(&mut self, i: &'a syn::ItemStruct) {
+        self.push("struct", &i.ident, i.span());
+        syn::visit::visit_item_struct(self, i);
+    }
+    fn visit_item_enum(&mut self, i: &'a syn::ItemEnum) {
+        self.push("enum", &i.ident, i.span());
+        syn::visit::visit_item_enum(self, i);
+    }
+    fn visit_item_const(&mut self, i: &'a syn::ItemConst) {
+        self.push("const", &i.ident, i.span());
+        syn::visit::visit_item_const(self, i);
+    }
+    fn visit_item_static(&mut self, i: &'a syn::ItemStatic) {
+        self.push("static", &i.ident, i.span());
+        syn::visit::visit_item_static(self, i);
+    }
+    fn visit_item_trait(&mut self, i: &'a syn::ItemTrait) {
+        self.push("trait", &i.ident, i.span());
+        syn::visit::visit_item_trait(self, i);
+    }
+    fn visit_item_type(&mut self, i: &'a syn::ItemType) {
+        self.push("type", &i.ident, i.span());
+        syn::visit::visit_item_type(self, i);
+    }
     fn visit_impl_item_fn(&mut self, f: &'a syn::ImplItemFn) {
-        self.push(&f.sig.ident, f.span());
+        self.push("fn", &f.sig.ident, f.span());
         syn::visit::visit_impl_item_fn(self, f);
     }
     fn visit_trait_item_fn(&mut self, f: &'a syn::TraitItemFn) {
         if f.default.is_some() {
-            self.push(&f.sig.ident, f.span());
+            self.push("fn", &f.sig.ident, f.span());
         }
         syn::visit::visit_trait_item_fn(self, f);
     }
 }
 
-/// Every `fn` of `src` that has a body, nested ones included.
+/// Every named item of `src` (see [`FnSpan`]), nested ones included.
 pub fn fn_spans(src: &str) -> Result<Vec<FnSpan>, String> {
     let file = syn::parse_file(src).map_err(|e| format!("does not parse: {e}"))?;
     let mut c = Collect(Vec::new());
@@ -69,7 +97,10 @@ pub fn fn_spans(src: &str) -> Result<Vec<FnSpan>, String> {
 pub struct Cite {
     /// The path as written (`crates/hatate-gtk/tests/smoke.rs`, or a suffix of it).
     pub path: String,
-    /// The fn name, without the `fn `.
+    /// `fn` (the rule), or `struct`, `enum`, `const`, `static`, `trait`, `type` for a line that is
+    /// no code of any fn.
+    pub kind: String,
+    /// The item name, without the kind.
     pub name: String,
     pub fragment: String,
 }
@@ -129,9 +160,15 @@ fn is_rs_path(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || "./_-".contains(c))
 }
 
-fn fn_name(s: &str) -> Option<&str> {
-    let n = s.strip_prefix("fn ")?;
-    (!n.is_empty() && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')).then_some(n)
+const KINDS: [&str; 7] = ["fn", "struct", "enum", "const", "static", "trait", "type"];
+
+/// `(kind, name)` of a span like `fn go` or `struct Row`.
+fn item_name(s: &str) -> Option<(&str, &str)> {
+    let (k, n) = s.split_once(' ')?;
+    (KINDS.contains(&k)
+        && !n.is_empty()
+        && n.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+    .then_some((k, n))
 }
 
 /// The new-form cites of `text`, line by line: three adjacent code spans, one space apart.
@@ -143,7 +180,7 @@ pub fn parse_cites(text: &str) -> Vec<(usize, Cite)> {
         let spans = code_spans(line);
         for w in spans.windows(3) {
             let (a, b, c) = (&w[0], &w[1], &w[2]);
-            if !is_rs_path(&a.2) || fn_name(&b.2).is_none() {
+            if !is_rs_path(&a.2) || item_name(&b.2).is_none() {
                 continue;
             }
             if line[a.1..b.0] != *" " || line[b.1..c.0] != *" " {
@@ -157,7 +194,8 @@ pub fn parse_cites(text: &str) -> Vec<(usize, Cite)> {
                 ln + 1,
                 Cite {
                     path: a.2.clone(),
-                    name: fn_name(&b.2).unwrap().to_string(),
+                    kind: item_name(&b.2).unwrap().0.to_string(),
+                    name: item_name(&b.2).unwrap().1.to_string(),
                     fragment,
                 },
             ));
@@ -237,6 +275,13 @@ pub struct LegacyCite {
 pub struct Tree {
     root: PathBuf,
     files: BTreeSet<String>,
+    parsed: std::cell::RefCell<std::collections::HashMap<String, std::rc::Rc<Parsed>>>,
+}
+
+/// A source file read and parsed once.
+pub struct Parsed {
+    pub src: String,
+    pub spans: Vec<FnSpan>,
 }
 
 impl Tree {
@@ -270,6 +315,7 @@ impl Tree {
         Tree {
             root: root.to_path_buf(),
             files,
+            parsed: Default::default(),
         }
     }
 
@@ -298,6 +344,18 @@ impl Tree {
         }
     }
 
+    /// The file `rel`, read and parsed (once).
+    pub fn parsed(&self, rel: &str) -> Result<std::rc::Rc<Parsed>, String> {
+        if let Some(p) = self.parsed.borrow().get(rel) {
+            return Ok(p.clone());
+        }
+        let src = self.read(rel);
+        let spans = fn_spans(&src).map_err(|e| format!("{rel} {e}"))?;
+        let p = std::rc::Rc::new(Parsed { src, spans });
+        self.parsed.borrow_mut().insert(rel.to_string(), p.clone());
+        Ok(p)
+    }
+
     pub fn read(&self, rel: &str) -> String {
         std::fs::read_to_string(self.root.join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
     }
@@ -305,12 +363,14 @@ impl Tree {
     /// The 1-based lines of `cite`'s fn bodies that contain its fragment. `Err` when the cite is bad.
     pub fn hits(&self, cite: &Cite) -> Result<Vec<(String, usize)>, String> {
         let rel = self.resolve(&cite.path)?;
-        let src = self.read(&rel);
-        let spans = fn_spans(&src).map_err(|e| format!("{rel} {e}"))?;
-        let lines: Vec<&str> = src.lines().collect();
+        let parsed = self.parsed(&rel)?;
+        let (spans, lines) = (&parsed.spans, parsed.src.lines().collect::<Vec<&str>>());
         let mut named = false;
         let mut hits = Vec::new();
-        for s in spans.iter().filter(|s| s.name == cite.name) {
+        for s in spans
+            .iter()
+            .filter(|s| s.name == cite.name && s.kind == cite.kind)
+        {
             named = true;
             for n in s.start..=s.end.min(lines.len()) {
                 if lines[n - 1].contains(&cite.fragment) {
@@ -319,12 +379,12 @@ impl Tree {
             }
         }
         if !named {
-            return Err(format!("{rel} has no fn {}", cite.name));
+            return Err(format!("{rel} has no {} {}", cite.kind, cite.name));
         }
         if hits.is_empty() {
             return Err(format!(
-                "{} is not inside fn {} of {rel}",
-                cite.fragment, cite.name
+                "{} is not inside {} {} of {rel}",
+                cite.fragment, cite.kind, cite.name
             ));
         }
         Ok(hits)
@@ -335,13 +395,15 @@ impl Tree {
         self.hits(cite).map(|_| ())
     }
 
-    /// The fn that contains line `n` of `rel` (the innermost one), if any.
+    /// The item that contains line `n` of `rel` (the innermost one), if any.
     pub fn enclosing_fn(&self, rel: &str, n: usize) -> Result<Option<FnSpan>, String> {
-        let spans = fn_spans(&self.read(rel)).map_err(|e| format!("{rel} {e}"))?;
-        Ok(spans
-            .into_iter()
+        let parsed = self.parsed(rel)?;
+        Ok(parsed
+            .spans
+            .iter()
             .filter(|s| s.start <= n && n <= s.end)
-            .min_by_key(|s| s.end - s.start))
+            .min_by_key(|s| s.end - s.start)
+            .cloned())
     }
 }
 
@@ -364,7 +426,7 @@ pub fn render(cite: &Cite, in_table: bool) -> String {
     format!(
         "{} {} {}",
         span(&cite.path),
-        span(&format!("fn {}", cite.name)),
+        span(&format!("{} {}", cite.kind, cite.name)),
         span(&frag)
     )
 }
@@ -385,6 +447,7 @@ mod tests {
     fn a_pipe_in_a_table_fragment_is_escaped_and_read_back() {
         let cite = Cite {
             path: "a.rs".into(),
+            kind: "fn".into(),
             name: "f".into(),
             fragment: "a | b".into(),
         };
@@ -397,6 +460,7 @@ mod tests {
     fn a_backtick_in_a_fragment_gets_a_longer_delimiter() {
         let cite = Cite {
             path: "a.rs".into(),
+            kind: "fn".into(),
             name: "f".into(),
             fragment: "/// the `x` field".into(),
         };
