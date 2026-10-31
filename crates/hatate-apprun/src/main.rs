@@ -32,6 +32,9 @@ const COMMAND_ARGS: [&str; 7] = [
 /// `the_launcher_and_the_lookup_name_the_same_bundled_path` reads this source to check.
 const BROWSERS: &str = "usr/lib/ms-playwright";
 
+/// The gdk-pixbuf loaders, relative to `$APPDIR` (`xtask appimage` copies them here).
+const PIXBUF_LOADERS: &str = "usr/lib/gdk-pixbuf-2.0/2.10.0/loaders";
+
 /// What to run and in which environment.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Launch {
@@ -130,9 +133,14 @@ pub fn fontconfig_text(appdir: &Path) -> String {
     )
 }
 
-/// One config file per mount under the runtime directory; `None` when it cannot be written, which
-/// leaves the host's own fontconfig in charge.
-fn write_fontconfig(appdir: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+/// Writes `contents` to a file named for this mount under the runtime directory (`ext` tells the
+/// files apart); `None` when it cannot be written.
+fn runtime_file(
+    appdir: &Path,
+    env: &dyn Fn(&str) -> Option<OsString>,
+    ext: &str,
+    contents: &[u8],
+) -> Option<PathBuf> {
     let base = env("XDG_RUNTIME_DIR")
         .filter(|v| !v.is_empty())
         .or_else(|| env("TMPDIR").filter(|v| !v.is_empty()))
@@ -149,14 +157,44 @@ fn write_fontconfig(appdir: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> Op
         .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
             (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
         });
-    let conf = dir.join(format!("{hash:016x}.conf"));
-    let tmp = dir.join(format!("{hash:016x}.conf.{}", std::process::id()));
-    fs::write(&tmp, fontconfig_text(appdir)).ok()?;
-    if fs::rename(&tmp, &conf).is_err() {
+    let path = dir.join(format!("{hash:016x}.{ext}"));
+    let tmp = dir.join(format!("{hash:016x}.{ext}.{}", std::process::id()));
+    fs::write(&tmp, contents).ok()?;
+    if fs::rename(&tmp, &path).is_err() {
         let _ = fs::remove_file(&tmp);
         return None;
     }
-    Some(conf)
+    Some(path)
+}
+
+/// One config file per mount; `None` leaves the host's own fontconfig in charge.
+fn write_fontconfig(appdir: &Path, env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    runtime_file(appdir, env, "conf", fontconfig_text(appdir).as_bytes())
+}
+
+/// The gdk-pixbuf loader cache. The cache lists loaders by absolute path, and the mount path
+/// changes on every run, so the bundled `gdk-pixbuf-query-loaders` writes it at launch. `None`
+/// when the image carries no loaders; GTK then has no SVG loader and its symbolic icons are blank.
+fn write_pixbuf_cache(
+    appdir: &Path,
+    env: &dyn Fn(&str) -> Option<OsString>,
+    set: &BTreeMap<String, OsString>,
+) -> Option<PathBuf> {
+    let query = appdir.join("usr/bin/gdk-pixbuf-query-loaders");
+    let loaders = appdir.join(PIXBUF_LOADERS);
+    if !query.is_file() || !loaders.is_dir() {
+        return None;
+    }
+    let out = Command::new(&query)
+        .env("GDK_PIXBUF_MODULEDIR", &loaders)
+        .env("LD_LIBRARY_PATH", set.get("LD_LIBRARY_PATH")?)
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    if !out.status.success() || out.stdout.is_empty() {
+        return None;
+    }
+    runtime_file(appdir, env, "pixbuf.cache", &out.stdout)
 }
 
 /// `$APPDIR` if the runtime set it, else the directory this binary sits in.
@@ -176,7 +214,16 @@ fn main() {
     };
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let conf = write_fontconfig(&appdir, &env);
-    let launch = plan(&appdir, &args, &env, conf.as_deref());
+    let mut launch = plan(&appdir, &args, &env, conf.as_deref());
+    if let Some(cache) = write_pixbuf_cache(&appdir, &env, &launch.set) {
+        launch
+            .set
+            .insert("GDK_PIXBUF_MODULE_FILE".into(), cache.into());
+        launch.set.insert(
+            "GDK_PIXBUF_MODULEDIR".into(),
+            appdir.join(PIXBUF_LOADERS).into(),
+        );
+    }
     let mut command = Command::new(&launch.program);
     command.args(&launch.args);
     for (name, value) in &launch.set {
