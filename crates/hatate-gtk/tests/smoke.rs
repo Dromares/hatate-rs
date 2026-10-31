@@ -9652,6 +9652,22 @@ const SCENARIOS_6J_FOLLOWUP: &[Scenario] = &[
         "parser_health_reopens_at_the_top_after_being_scrolled_to_the_end",
         parser_health_reopens_at_the_top_after_being_scrolled_to_the_end,
     ),
+    (
+        "parser_health_titles_stay_above_the_scroller_and_over_their_columns",
+        parser_health_titles_stay_above_the_scroller_and_over_their_columns,
+    ),
+    (
+        "message_detail_box_shows_its_last_line_and_takes_no_focus",
+        message_detail_box_shows_its_last_line_and_takes_no_focus,
+    ),
+    (
+        "message_detail_box_past_its_cap_scrolls_with_a_persistent_bar",
+        message_detail_box_past_its_cap_scrolls_with_a_persistent_bar,
+    ),
+    (
+        "message_detail_box_does_not_swallow_tab",
+        message_detail_box_does_not_swallow_tab,
+    ),
 ];
 
 /// Every list, in order.
@@ -9876,5 +9892,248 @@ fn parser_health_reopens_at_the_top_after_being_scrolled_to_the_end(app: &adw::A
     assert!(again.scroll.vscrollbar().is_mapped(), "the bar is drawn");
     assert_eq!(again.window.size_request(), (760, 460));
     again.window.close();
+    f.close();
+}
+
+/// DAN-2481 item 1 (Oderisi's 6.j read, DAN-2475): the column titles lived in the scroller and went
+/// with the first row that scrolled out. They are a sibling of the scroller now, still in view at the
+/// end of the list, and each sits over the cells it names: the same left edge and the same width.
+fn parser_health_titles_stay_above_the_scroller_and_over_their_columns(app: &adw::Application) {
+    let f = fx(app);
+    f.activate("parser-health");
+    let dialog = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    pump_for(300);
+    let scroll: &gtk4::Widget = dialog.scroll.upcast_ref();
+    let header: &gtk4::Widget = dialog.header.upcast_ref();
+    assert!(
+        !header.is_ancestor(scroll) && !scroll.is_ancestor(header),
+        "the titles are outside the scroller, not in it"
+    );
+    assert_eq!(header.parent(), scroll.parent(), "siblings in one column");
+    let column = dialog.window.child().unwrap();
+    let titles = ["Site", "This session", "Last problem"];
+    assert_eq!(dialog.texts()[0], titles);
+
+    // Each title and the first row's cell under it: one left edge, one width.
+    let aligned = |when: &str| {
+        for (c, title) in titles.iter().enumerate() {
+            let t = dialog.header.child_at(c as i32, 0).expect("the title");
+            let cell = dialog.grid.child_at(c as i32, 0).expect("the first row");
+            let (tb, cb) = (
+                t.compute_bounds(&column).expect("title bounds"),
+                cell.compute_bounds(&column).expect("cell bounds"),
+            );
+            assert_eq!(tb.x().round(), cb.x().round(), "{when}: {title} left edge");
+            assert_eq!(
+                tb.width().round(),
+                cb.width().round(),
+                "{when}: {title} width"
+            );
+        }
+    };
+    aligned("at rest");
+
+    // At the end of the list the titles are still drawn, above the sites and inside the dialog.
+    let adj = dialog.scroll.vadjustment();
+    adj.set_value(adj.upper() - adj.page_size());
+    pump_for(150);
+    assert!(adj.value() > 0.0, "scrolled to the end");
+    let last = {
+        let mut labels = Vec::new();
+        all_labels(dialog.grid.upcast_ref(), &mut labels);
+        labels
+            .into_iter()
+            .find(|l| l.text() == "zerochan")
+            .expect("zerochan")
+    };
+    let zb = last.compute_bounds(&column).expect("zerochan bounds");
+    assert!(
+        zb.y() + zb.height() <= column.height() as f32,
+        "zerochan in view"
+    );
+    for c in 0..3 {
+        let t = dialog.header.child_at(c, 0).expect("the title");
+        let tb = t.compute_bounds(&column).expect("title bounds");
+        assert!(
+            t.is_mapped() && tb.height() > 0.0 && tb.y() >= 0.0 && tb.y() + tb.height() <= zb.y(),
+            "title {c} is in view above the last site once the list is scrolled to its end"
+        );
+    }
+    aligned("scrolled to the end");
+    dialog.window.close();
+    f.close();
+}
+
+/// A message box carrying `detail`, open: its dialog, the scroller of its detail field and the label in
+/// it. The dialog is the mapped one; boxes an earlier scenario left open are not it.
+fn open_detail_alert(f: &Fx, detail: &str) -> (adw::Dialog, gtk4::ScrolledWindow, gtk4::Label) {
+    use hatate_gtk::dialogs::{AdwPrompter, Prompter};
+    AdwPrompter::new(&f.w.win).message_detailed(
+        Kind::Warning,
+        "Google Lens is not installed yet",
+        "Google Lens is on, but it cannot run yet: no Chromium-based browser could be found.\n\nSearches will carry on with the other engines and Lens will be skipped until this is fixed.",
+        detail,
+        Buttons::Ok,
+        Box::new(|_| {}),
+    );
+    pump_for(600);
+    let mut found = Vec::new();
+    let mut stack: Vec<gtk4::Widget> = gtk4::Window::list_toplevels()
+        .into_iter()
+        .map(|w| w.upcast())
+        .collect();
+    while let Some(w) = stack.pop() {
+        if let Some(d) = w.downcast_ref::<adw::AlertDialog>() {
+            if d.is_mapped() {
+                found.push(d.clone());
+            }
+        }
+        let mut c = w.first_child();
+        while let Some(x) = c {
+            c = x.next_sibling();
+            stack.push(x);
+        }
+    }
+    let mut ours = None;
+    for dialog in found {
+        let mut stack = vec![dialog.clone().upcast::<gtk4::Widget>()];
+        while let Some(w) = stack.pop() {
+            if let Some(sw) = w.downcast_ref::<gtk4::ScrolledWindow>() {
+                if let Some(label) = sw
+                    .has_css_class("field")
+                    .then(|| sw.child().and_then(|v| v.first_child()))
+                    .flatten()
+                    .and_downcast::<gtk4::Label>()
+                {
+                    ours = Some((dialog.clone().upcast::<adw::Dialog>(), sw.clone(), label));
+                }
+            }
+            let mut c = w.first_child();
+            while let Some(x) = c {
+                c = x.next_sibling();
+                stack.push(x);
+            }
+        }
+    }
+    ours.expect("an open message box with a detail field")
+}
+
+/// DAN-2481 item 2 (Oderisi's M1): the Lens alert's detail field drew 96 px of a 142 px text, so its
+/// last line was cut in half, and its text opened selected. The box is as tall as the text (no
+/// overflow, so no half line), and the label takes no focus, so GTK draws no caret in it.
+fn message_detail_box_shows_its_last_line_and_takes_no_focus(app: &adw::Application) {
+    let f = fx(app);
+    let (dialog, scroller, lines) = open_detail_alert(
+        &f,
+        "Google Lens needs a Chromium-based browser and none was found. Install Chromium or Google \
+         Chrome with your package manager, so that one of `chromium`, `chromium-browser`, \
+         `google-chrome-stable` or `google-chrome` is on your PATH, then restart Hatate.",
+    );
+    let adj = scroller.vadjustment();
+    assert!(
+        adj.upper() <= adj.page_size() + 1.0,
+        "the text is {} px and the box shows {}: a half line is cut",
+        adj.upper(),
+        adj.page_size()
+    );
+    assert!(
+        !lines.is_focusable() && !lines.has_focus(),
+        "a focused selectable label draws a caret"
+    );
+    assert!(
+        lines.selection_bounds().is_none(),
+        "the text opens with nothing selected"
+    );
+    // Where the toolkit puts the first focus differs by version (the CI toolkit gives the window none
+    // until a key is pressed); wherever it is, it is not in the text.
+    let root = scroller.root().and_downcast::<gtk4::Window>().unwrap();
+    if let Some(at) = gtk4::prelude::GtkWindowExt::focus(&root) {
+        assert!(!at.is::<gtk4::Label>(), "the first focus is in the text");
+    }
+    assert!(lines.is_selectable(), "the text can still be copied");
+    adw::prelude::AdwDialogExt::force_close(&dialog);
+    f.close();
+}
+
+/// DAN-2481 item 2, past the cap: a detail longer than the box scrolls, and says so with the
+/// persistent bar (design gate 2.4), not an overlay line a pointer has to find.
+fn message_detail_box_past_its_cap_scrolls_with_a_persistent_bar(app: &adw::Application) {
+    let f = fx(app);
+    let long = (1..=40)
+        .map(|n| format!("synthetic-file-{n:02}.png"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let (dialog, scroller, _) = open_detail_alert(&f, &long);
+    let adj = scroller.vadjustment();
+    assert!(
+        adj.upper() > adj.page_size() + 1.0,
+        "40 lines overflow the box"
+    );
+    assert!(
+        !scroller.is_overlay_scrolling(),
+        "an overlay bar is a 2 px line"
+    );
+    let bar = scroller.vscrollbar();
+    assert!(
+        bar.is_mapped() && bar.width() >= 10,
+        "the bar is drawn at rest, {} px",
+        bar.width()
+    );
+    adw::prelude::AdwDialogExt::force_close(&dialog);
+    f.close();
+}
+
+/// DAN-2495 (the DAN-2493 FAIL): Tab, with real key presses, in a message box that carries a detail
+/// field. A focusable scroller around the label, which is not a stop, left the focus on nothing and
+/// kept it there (DAN-2399): Tab from OK went nowhere. Wherever the toolkit starts the focus (it differs
+/// by version), no press ends on nothing and OK is met again within 2 presses.
+fn message_detail_box_does_not_swallow_tab(app: &adw::Application) {
+    use common::xtest::{Key, Xtest};
+    let f = fx(app);
+    let (dialog, scroller, _) = open_detail_alert(
+        &f,
+        "Google Lens needs a Chromium-based browser and none was found.",
+    );
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("message_detail_box tab walk: skipped ({why})");
+            adw::prelude::AdwDialogExt::force_close(&dialog);
+            f.close();
+            return;
+        }
+    };
+    let root = scroller.root().and_downcast::<gtk4::Window>().unwrap();
+    root.present();
+    keys.focus_window_at(4, 4).expect("focus the window");
+    pump_for(300);
+    let mut stops = Vec::new();
+    let mut since_ok = 0;
+    for press in 1..=6 {
+        keys.tap(Key::Tab, &[]).expect("inject");
+        pump_for(250);
+        let at = gtk4::prelude::GtkWindowExt::focus(&root)
+            .unwrap_or_else(|| panic!("Tab {press} left the focus on nothing: {stops:?}"));
+        assert!(!at.is::<gtk4::Label>(), "Tab {press} is in the text");
+        stops.push(at.type_().name().to_owned());
+        if at.is::<gtk4::Button>() {
+            since_ok = 0;
+        } else {
+            since_ok += 1;
+        }
+        assert!(
+            since_ok <= 2,
+            "OK is not met again within 2 presses: {stops:?}"
+        );
+    }
+    assert!(
+        stops.iter().any(|s| s == "GtkButton"),
+        "OK is reached: {stops:?}"
+    );
+    adw::prelude::AdwDialogExt::force_close(&dialog);
     f.close();
 }

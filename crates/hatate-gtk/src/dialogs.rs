@@ -573,9 +573,17 @@ fn part_name<'a>(name: &'a str, part: &'a str) -> &'a str {
 /// The detail field of a message box: the lines in a scrolling, selectable, monospace label. They
 /// start at the top-left of the box and are indented like the text in the Query Hydrus tag box
 /// (centred, a short list left a blank first line, DAN-2398 P3-1).
+///
+/// The box is as tall as its lines up to 220 px, which needs the scroller not to scroll sideways:
+/// a scroller that may asks for its child's height at the child's natural width, wider than the
+/// box, and so one line short of the wrapped text (DAN-2481: the Lens alert drew 96 px of 142 and
+/// left a half line as the only cue). Past 220 px the bar is persistent, as the Queue's is (design
+/// gate 2.4). The label is not a stop: a focused selectable label shows a caret in read-only text,
+/// and it is selected with the pointer, which does not need the focus.
 pub fn detail_box(detail: &str) -> (gtk::ScrolledWindow, gtk::Label) {
     let lines = gtk::Label::new(Some(detail));
     lines.set_selectable(true);
+    lines.set_focusable(false);
     lines.set_wrap(true);
     lines.set_xalign(0.0);
     lines.set_yalign(0.0);
@@ -586,6 +594,11 @@ pub fn detail_box(detail: &str) -> (gtk::ScrolledWindow, gtk::Label) {
     lines.add_css_class("monospace");
     let scroller = gtk::ScrolledWindow::new();
     scroller.set_child(Some(&lines));
+    scroller.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    scroller.set_overlay_scrolling(false);
+    // A focusable scroller around a label that is not a stop swallows Tab: the focus goes to
+    // nothing and stays there (DAN-2399, DAN-2495). The alert's own body scroller is the stop.
+    scroller.set_can_focus(false);
     scroller.set_min_content_height(96);
     scroller.set_max_content_height(220);
     scroller.set_propagate_natural_height(true);
