@@ -97,3 +97,20 @@ Measured on the hosted-CI shots of head `c0ff4a9` (run 41117309295, GTK 4.14, 35
 - **Item 8, decided (Cloud, DAN-2458):** the Differences letterbox in light stays the panel colour (`#f2ede1`), not `#1a1a1a`. A black band on a light panel would be the loudest object on screen. The pane itself stays zero chroma (section 1, line 2.2).
 
 Assertions that pin these (each goes red when its line is reverted, `worktrees/DAN-2472-revert.log`): the 760 x 460 floor `tests/smoke.rs:9765`, the persistent bar `tests/smoke.rs:9778`, the non-focusable cells `tests/smoke.rs:9819`, Close the only Tab stop (the scroller is not a stop) `tests/smoke.rs:9831`, the glyph box edge `src/theme.rs:1026`, the popover edge `src/theme.rs:1032`, the picker stamp rows `src/theme.rs:1060` and `:1061`, the dash tier `src/queue_view.rs:996`.
+
+## 6. Parser Health titles and the message box detail field (DAN-2481, PR #85)
+
+Two of Oderisi's non-blocking notes on PR #84 (DAN-2475), fixed with no change to a colour or a token. The contrast, Tab and size tables for this head are in the PR #85 comment and the verify verdict (hosted-CI shots, GTK 4.14), not here, so they cannot drift from the shots.
+
+- **Parser Health titles** are a sibling of the scroller (`ParserHealthDialog::header`, above `scroll`), so they stay in view at the end of the list; one `SizeGroup` per column keeps each title over its cells. The dialog's 760 x 460 floor and its one Tab stop (`Close`) are unchanged.
+- **Message box detail field** (`dialogs::detail_box`, the Lens alert's and, being shared, the Delete from Hydrus question's): no sideways scrolling, so its height is the wrapped text's up to 220 px (the Lens text drew 96 px of 142); past that the bar is persistent (design gate 2.4); the label is not a Tab stop (a focused selectable label draws a caret) and opens with nothing selected. It stays selectable with the pointer.
+
+Pins (each went red when its shipped line was reverted, `worktrees/DAN-2481-mutation.log`). Cites name the fn and quote the assertion; there is no line number to drift.
+
+| claim | fn | assertion fragment | reverted line |
+|---|---|---|---|
+| titles outside the scroller | `parser_health_titles_stay_above_the_scroller_and_over_their_columns` | `"the titles are outside the scroller, not in it"` | the header grid moved into the scroller's child |
+| title and cells share a width | same | `"{when}: {title} width"` | `widths[c].add_widget(&h)` in `ParserHealthDialog::populate` removed |
+| last line shown, no half line | `message_detail_box_shows_its_last_line_and_takes_no_focus` | `"a half line is cut"` | `scroller.set_policy(Never, Automatic)` in `detail_box` removed |
+| no caret | same | `"a focused selectable label draws a caret"` | `lines.set_focusable(false)` in `detail_box` removed |
+| persistent bar past the cap | `message_detail_box_past_its_cap_scrolls_with_a_persistent_bar` | `"an overlay bar is a 2 px line"` | `scroller.set_overlay_scrolling(false)` in `detail_box` removed |
