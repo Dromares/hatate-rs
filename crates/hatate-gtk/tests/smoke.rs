@@ -9960,8 +9960,9 @@ fn parser_health_titles_stay_above_the_scroller_and_over_their_columns(app: &adw
     f.close();
 }
 
-/// A message box carrying `detail`, open, and the scroller of its detail field.
-fn open_detail_alert(f: &Fx, detail: &str) -> (gtk4::ScrolledWindow, gtk4::Label) {
+/// A message box carrying `detail`, open: its dialog, the scroller of its detail field and the label in
+/// it. The dialog is the mapped one; boxes an earlier scenario left open are not it.
+fn open_detail_alert(f: &Fx, detail: &str) -> (adw::Dialog, gtk4::ScrolledWindow, gtk4::Label) {
     use hatate_gtk::dialogs::{AdwPrompter, Prompter};
     AdwPrompter::new(&f.w.win).message_detailed(
         Kind::Warning,
@@ -9972,19 +9973,15 @@ fn open_detail_alert(f: &Fx, detail: &str) -> (gtk4::ScrolledWindow, gtk4::Label
         Box::new(|_| {}),
     );
     pump_for(600);
+    let mut found = Vec::new();
     let mut stack: Vec<gtk4::Widget> = gtk4::Window::list_toplevels()
         .into_iter()
         .map(|w| w.upcast())
         .collect();
     while let Some(w) = stack.pop() {
-        if let Some(sw) = w.downcast_ref::<gtk4::ScrolledWindow>() {
-            if sw.has_css_class("field") {
-                let label = sw
-                    .child()
-                    .and_then(|v| v.first_child())
-                    .and_downcast::<gtk4::Label>()
-                    .expect("the detail label");
-                return (sw.clone(), label);
+        if let Some(d) = w.downcast_ref::<adw::AlertDialog>() {
+            if d.is_mapped() {
+                found.push(d.clone());
             }
         }
         let mut c = w.first_child();
@@ -9993,7 +9990,28 @@ fn open_detail_alert(f: &Fx, detail: &str) -> (gtk4::ScrolledWindow, gtk4::Label
             stack.push(x);
         }
     }
-    panic!("no detail field in the open message box");
+    let mut ours = None;
+    for dialog in found {
+        let mut stack = vec![dialog.clone().upcast::<gtk4::Widget>()];
+        while let Some(w) = stack.pop() {
+            if let Some(sw) = w.downcast_ref::<gtk4::ScrolledWindow>() {
+                if let Some(label) = sw
+                    .has_css_class("field")
+                    .then(|| sw.child().and_then(|v| v.first_child()))
+                    .flatten()
+                    .and_downcast::<gtk4::Label>()
+                {
+                    ours = Some((dialog.clone().upcast::<adw::Dialog>(), sw.clone(), label));
+                }
+            }
+            let mut c = w.first_child();
+            while let Some(x) = c {
+                c = x.next_sibling();
+                stack.push(x);
+            }
+        }
+    }
+    ours.expect("an open message box with a detail field")
 }
 
 /// DAN-2481 item 2 (Oderisi's M1): the Lens alert's detail field drew 96 px of a 142 px text, so its
@@ -10001,7 +10019,7 @@ fn open_detail_alert(f: &Fx, detail: &str) -> (gtk4::ScrolledWindow, gtk4::Label
 /// overflow, so no half line), and the label takes no focus, so GTK draws no caret in it.
 fn message_detail_box_shows_its_last_line_and_takes_no_focus(app: &adw::Application) {
     let f = fx(app);
-    let (scroller, lines) = open_detail_alert(
+    let (dialog, scroller, lines) = open_detail_alert(
         &f,
         "Google Lens needs a Chromium-based browser and none was found. Install Chromium or Google \
          Chrome with your package manager, so that one of `chromium`, `chromium-browser`, \
@@ -10029,6 +10047,7 @@ fn message_detail_box_shows_its_last_line_and_takes_no_focus(app: &adw::Applicat
         "the first focus is the OK button, not the text"
     );
     assert!(lines.is_selectable(), "the text can still be copied");
+    adw::prelude::AdwDialogExt::force_close(&dialog);
     f.close();
 }
 
@@ -10040,7 +10059,7 @@ fn message_detail_box_past_its_cap_scrolls_with_a_persistent_bar(app: &adw::Appl
         .map(|n| format!("synthetic-file-{n:02}.png"))
         .collect::<Vec<_>>()
         .join("\n");
-    let (scroller, _) = open_detail_alert(&f, &long);
+    let (dialog, scroller, _) = open_detail_alert(&f, &long);
     let adj = scroller.vadjustment();
     assert!(
         adj.upper() > adj.page_size() + 1.0,
