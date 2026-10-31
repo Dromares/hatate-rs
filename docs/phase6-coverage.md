@@ -322,9 +322,9 @@ Grouped by file, in line order. A row's Rust home is the owning ticket's wording
 | 2148 | `MainWindow.action_query_hydrus` | `hydrus_query::action_query_hydrus` (+ `on_query_hydrus_done`) | #74 | `gtk-6g.md:245` |
 | 2170 | `MainWindow._add_tags_to_current` | `crates/hatate-gtk/src/review_ops.rs:832` | #71 | `gtk-6f.md:248` |
 | 2194 | `MainWindow.action_open_log` | **port**: `session_ops::action_open_log` | #57 (+#60, #61, #62) | `gtk-shell.md:225` |
-| 2201 | `MainWindow.action_parser_health` | `hatate-gtk/src/parser_health.rs:522` `action_parser_health` | #63 | `gtk-6e.md:219` |
+| 2201 | `MainWindow.action_parser_health` | `hatate-gtk/src/parser_health.rs:546` `action_parser_health` | #63 | `gtk-6e.md:219` |
 | 2204 | `MainWindow.action_pawchive_index` | `pawchive_dialog::action_pawchive_index` (+ `close_pawchive_dialog`) | #74 | `gtk-6g.md:246` |
-| 2217 | `MainWindow._warn_about_broken_parsers` | `hatate-gtk/src/parser_health.rs:530` `warn_about_broken_parsers` | #63 | `gtk-6e.md:220` |
+| 2217 | `MainWindow._warn_about_broken_parsers` | `hatate-gtk/src/parser_health.rs:554` `warn_about_broken_parsers` | #63 | `gtk-6e.md:220` |
 | 2233 | `MainWindow.action_view_logs` | **port**: `session_ops::action_view_logs` | #57 (+#60, #61, #62) | `gtk-shell.md:229` |
 | 2236 | `MainWindow._open_crash_log` | **port**: `session_ops::open_crash_log` | #57 (+#60, #61, #62) | `gtk-shell.md:230` |
 | 2242 | `MainWindow._update_clear_cache_action_label` | `table_menu::clear_cache_label`, `window.rs`, `menu.rs`, `table_actions` | #67 | `queue-view.md:174` |
@@ -495,11 +495,11 @@ Grouped by file, in line order. A row's Rust home is the owning ticket's wording
 | 46 | `_ProbeWorker.__init__` | `ProbeRunner` (the seam the live check will use) (left to: **left to Phase 7 per DAN-2290**: no probe ships) | #63 | `gtk-6e.md:272` |
 | 50 | `_ProbeWorker.run` | `ProbeRunner::run` (left to: **left to Phase 7 per DAN-2290**) | #63 | `gtk-6e.md:273` |
 | 66 | `ParserHealthDialog.__init__` | `ProbeRunner` (the seam the live check will use) (left to: **left to Phase 7 per DAN-2290**: no probe ships) | #63 | `gtk-6e.md:272` |
-| 120 | `ParserHealthDialog._populate` | `hatate-gtk/src/parser_health.rs:376` `populate` | #63 | `gtk-6e.md:275` |
-| 155 | `ParserHealthDialog._start_probe` | `hatate-gtk/src/parser_health.rs:446` (the check button; disabled in this build, DAN-2290) | #63 | `gtk-6e.md:276` |
-| 168 | `ParserHealthDialog._on_progress` | `hatate-gtk/src/parser_health.rs:480` `on_progress` | #63 | `gtk-6e.md:277` |
-| 174 | `ParserHealthDialog._on_done` | `hatate-gtk/src/parser_health.rs:491` `on_done` | #63 | `gtk-6e.md:278` |
-| 198 | `ParserHealthDialog.closeEvent` | `hatate-gtk/src/parser_health.rs:446` `start_probe`: the worker's callback holds a weak handle, so a result that arrives after the dialog is gone is dropped | #63 | `gtk-6e.md:279` |
+| 120 | `ParserHealthDialog._populate` | `hatate-gtk/src/parser_health.rs:386` `populate` | #63 | `gtk-6e.md:275` |
+| 155 | `ParserHealthDialog._start_probe` | `hatate-gtk/src/parser_health.rs:470` (the check button; disabled in this build, DAN-2290) | #63 | `gtk-6e.md:276` |
+| 168 | `ParserHealthDialog._on_progress` | `hatate-gtk/src/parser_health.rs:504` `on_progress` | #63 | `gtk-6e.md:277` |
+| 174 | `ParserHealthDialog._on_done` | `hatate-gtk/src/parser_health.rs:515` `on_done` | #63 | `gtk-6e.md:278` |
+| 198 | `ParserHealthDialog.closeEvent` | `hatate-gtk/src/parser_health.rs:470` `start_probe`: the worker's callback holds a weak handle, so a result that arrives after the dialog is gone is dropped | #63 | `gtk-6e.md:279` |
 
 ### `gui/pawchive_index_dialog.py` (17 defs)
 
@@ -1232,7 +1232,7 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 115 | `gui/main_window.py:2150` | message | Query Hydrus / Set your Hydrus access key in Settings first. | `crates/hatate-gtk/src/hydrus_ops.rs:54` (asserted at `crates/hatate-gtk/tests/smoke.rs:6173`) | **smoke**: as above; `hydrus-query-dark.png`/`hydrus-query-light.png`. `crates/hatate-gtk/tests/smoke.rs:6566` |
 | 116 | `gui/main_window.py:2173` | message | Add tags / Select at least one image first. | `crates/hatate-gtk/src/review_ops.rs:854` (asserted at `crates/hatate-gtk/tests/smoke.rs:4740`) | **smoke**: the Review tag panel adds, removes and edits in place; `review-addtags-dark.png`/`review-addtags-light.png`. `crates/hatate-gtk/tests/smoke.rs:4732` |
 | 117 | `gui/main_window.py:2197` | message | Matched URLs Log / The log file doesn't exist yet. | `crates/hatate-gtk/src/session_ops.rs:735` (asserted at `crates/hatate-gtk/tests/smoke.rs:1606`) | **op**: `open_log` op; `logs-dark.png`/`logs-light.png`. `crates/hatate-gtk/tests/smoke.rs:1582` |
-| 118 | `gui/main_window.py:2227` | message | Parser for %s looks broken: %s | `crates/hatate-gtk/src/parser_health.rs:536` | **smoke**: the parser-health dialog and its warning. `crates/hatate-gtk/tests/smoke.rs:2696` |
+| 118 | `gui/main_window.py:2227` | message | Parser for %s looks broken: %s | `crates/hatate-gtk/src/parser_health.rs:560` | **smoke**: the parser-health dialog and its warning. `crates/hatate-gtk/tests/smoke.rs:2696` |
 | 119 | `gui/main_window.py:2272` | message | Search / A search is already running. | `crates/hatate-gtk/src/search_run.rs:545` (asserted at `crates/hatate-gtk/tests/smoke.rs:2091`) | **op**: `start` op starts, refuses a second run and says when nothing is unsearched. `crates/hatate-gtk/tests/smoke.rs:2057` |
 | 120 | `gui/main_window.py:2276` | message | Search / No unsearched images in the list. | `crates/hatate-gtk/src/search_run.rs:562` (asserted at `crates/hatate-gtk/tests/smoke.rs:2070`) | **op**: `start` op starts, refuses a second run and says when nothing is unsearched. `crates/hatate-gtk/tests/smoke.rs:2057` |
 | 121 | `gui/main_window.py:2612` | message | Discarding saved column layout: saved with %s column(s), this build has ... | `crates/hatate-gtk/src/window.rs:304` | **smoke**: the header layout is saved on close and restored, repaired or discarded. `crates/hatate-gtk/tests/smoke.rs:4054` |
