@@ -1117,6 +1117,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hatate-doccite"
+version = "0.0.0"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "hatate-gtk"
 version = "0.0.0"
 dependencies = [
@@ -3322,6 +3330,13 @@ dependencies = [
  "rusticata-macros",
  "thiserror",
  "time",
+]
+
+[[package]]
+name = "xtask"
+version = "0.0.0"
+dependencies = [
+ "hatate-doccite",
 ]
 
 [[package]]

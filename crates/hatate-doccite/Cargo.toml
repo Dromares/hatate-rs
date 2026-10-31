@@ -1,0 +1,16 @@
+[package]
+name = "hatate-doccite"
+description = "The docs/ cite checker: `file.rs` `fn name` `fragment` (test and tooling only, never shipped)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Dev tooling only: the workspace's shipped binaries (hatate-cli, hatate-gtk) depend on this crate
+# only through [dev-dependencies]. syn 2 is MIT OR Apache-2.0, proc-macro2 likewise.
+syn = { version = "2", default-features = false, features = ["full", "parsing", "visit", "printing", "clone-impls"] }
+# `span-locations` gives the line of every token, which is what a fn's extent is made of.
+proc-macro2 = { version = "1", features = ["span-locations"] }
