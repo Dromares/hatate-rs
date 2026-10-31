@@ -10075,5 +10075,6 @@ fn message_detail_box_past_its_cap_scrolls_with_a_persistent_bar(app: &adw::Appl
         "the bar is drawn at rest, {} px",
         bar.width()
     );
+    adw::prelude::AdwDialogExt::force_close(&dialog);
     f.close();
 }
