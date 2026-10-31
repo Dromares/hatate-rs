@@ -198,8 +198,13 @@ pub fn parse_ldd(output: &str) -> Res<Vec<(String, PathBuf)>> {
     for line in output.lines() {
         let line = line.trim();
         let Some((name, rest)) = line.split_once("=>") else {
-            continue; // the loader and `linux-vdso` have no `=>` path
+            continue; // `linux-vdso` and a bare loader path have no `=>` path
         };
+        // The loader is listed by its absolute name (`/lib64/ld-linux-x86-64.so.2 => ...`): it is
+        // the host's, never bundled.
+        if name.trim().starts_with('/') {
+            continue;
+        }
         let rest = rest.trim();
         if rest.starts_with("not found") {
             return Err(format!("ldd: {} not found", name.trim()));
@@ -282,6 +287,12 @@ fn bundle_libs(appdir: &Path, exclude: &BTreeSet<String>) -> Res<Vec<(String, Pa
                 .into_iter()
                 .find(|p| p.exists());
             let Some(found) = found else {
+                // NSS 3.101 dropped the legacy DBM module; the first three are what Chromium
+                // needs to start, so only their absence stops the build.
+                if matches!(*file, "libnssdbm3.so" | "libfreebl3.so") {
+                    eprintln!("note: {file} is not under {} (newer NSS)", dir.display());
+                    continue;
+                }
                 return Err(format!("dlopened {file} not found under {}", dir.display()));
             };
             let real = fs::canonicalize(&found).map_err(|e| e.to_string())?;
@@ -618,6 +629,9 @@ mod tests {
             vec![("libm.so.6".to_owned(), PathBuf::from("/usr/lib/libm.so.6"))]
         );
         assert!(parse_ldd("\tlibfoo.so.1 => not found\n").is_err());
+        // Arch lists the loader with `=>`; it is not a library to bundle.
+        let arch = "\t/lib64/ld-linux-x86-64.so.2 => /usr/lib/ld-linux-x86-64.so.2 (0x3)\n";
+        assert!(parse_ldd(arch).unwrap().is_empty());
     }
 
     #[test]

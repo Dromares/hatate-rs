@@ -9,7 +9,7 @@
 //! the caller's environment alone, so a test covers it without starting anything.
 
 use std::collections::BTreeMap;
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::process::CommandExt;
@@ -247,6 +247,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsStr;
 
     fn none(_: &str) -> Option<OsString> {
         None
