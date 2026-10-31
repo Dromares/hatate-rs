@@ -9652,6 +9652,18 @@ const SCENARIOS_6J_FOLLOWUP: &[Scenario] = &[
         "parser_health_reopens_at_the_top_after_being_scrolled_to_the_end",
         parser_health_reopens_at_the_top_after_being_scrolled_to_the_end,
     ),
+    (
+        "parser_health_titles_stay_above_the_scroller_and_over_their_columns",
+        parser_health_titles_stay_above_the_scroller_and_over_their_columns,
+    ),
+    (
+        "message_detail_box_shows_its_last_line_and_takes_no_focus",
+        message_detail_box_shows_its_last_line_and_takes_no_focus,
+    ),
+    (
+        "message_detail_box_past_its_cap_scrolls_with_a_persistent_bar",
+        message_detail_box_past_its_cap_scrolls_with_a_persistent_bar,
+    ),
 ];
 
 /// Every list, in order.
@@ -9876,5 +9888,173 @@ fn parser_health_reopens_at_the_top_after_being_scrolled_to_the_end(app: &adw::A
     assert!(again.scroll.vscrollbar().is_mapped(), "the bar is drawn");
     assert_eq!(again.window.size_request(), (760, 460));
     again.window.close();
+    f.close();
+}
+
+/// DAN-2481 item 1 (Oderisi's 6.j read, DAN-2475): the column titles lived in the scroller and went
+/// with the first row that scrolled out. They are a sibling of the scroller now, still in view at the
+/// end of the list, and each sits over the cells it names: the same left edge and the same width.
+fn parser_health_titles_stay_above_the_scroller_and_over_their_columns(app: &adw::Application) {
+    let f = fx(app);
+    f.activate("parser-health");
+    let dialog = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    pump_for(300);
+    let scroll: &gtk4::Widget = dialog.scroll.upcast_ref();
+    let header: &gtk4::Widget = dialog.header.upcast_ref();
+    assert!(
+        !header.is_ancestor(scroll) && !scroll.is_ancestor(header),
+        "the titles are outside the scroller, not in it"
+    );
+    assert_eq!(header.parent(), scroll.parent(), "siblings in one column");
+    let column = dialog.window.child().unwrap();
+    let titles = ["Site", "This session", "Last problem"];
+    assert_eq!(dialog.texts()[0], titles);
+
+    // Each title and the first row's cell under it: one left edge, one width.
+    let aligned = |when: &str| {
+        for (c, title) in titles.iter().enumerate() {
+            let t = dialog.header.child_at(c as i32, 0).expect("the title");
+            let cell = dialog.grid.child_at(c as i32, 0).expect("the first row");
+            let (tb, cb) = (
+                t.compute_bounds(&column).expect("title bounds"),
+                cell.compute_bounds(&column).expect("cell bounds"),
+            );
+            assert_eq!(tb.x().round(), cb.x().round(), "{when}: {title} left edge");
+            assert_eq!(
+                tb.width().round(),
+                cb.width().round(),
+                "{when}: {title} width"
+            );
+        }
+    };
+    aligned("at rest");
+
+    // At the end of the list the titles are still drawn, above the sites and inside the dialog.
+    let adj = dialog.scroll.vadjustment();
+    adj.set_value(adj.upper() - adj.page_size());
+    pump_for(150);
+    assert!(adj.value() > 0.0, "scrolled to the end");
+    let last = {
+        let mut labels = Vec::new();
+        all_labels(dialog.grid.upcast_ref(), &mut labels);
+        labels
+            .into_iter()
+            .find(|l| l.text() == "zerochan")
+            .expect("zerochan")
+    };
+    let zb = last.compute_bounds(&column).expect("zerochan bounds");
+    assert!(
+        zb.y() + zb.height() <= column.height() as f32,
+        "zerochan in view"
+    );
+    for c in 0..3 {
+        let t = dialog.header.child_at(c, 0).expect("the title");
+        let tb = t.compute_bounds(&column).expect("title bounds");
+        assert!(
+            t.is_mapped() && tb.height() > 0.0 && tb.y() >= 0.0 && tb.y() + tb.height() <= zb.y(),
+            "title {c} is in view above the last site once the list is scrolled to its end"
+        );
+    }
+    aligned("scrolled to the end");
+    dialog.window.close();
+    f.close();
+}
+
+/// A message box carrying `detail`, open, and the scroller of its detail field.
+fn open_detail_alert(f: &Fx, detail: &str) -> (gtk4::ScrolledWindow, gtk4::Label) {
+    use hatate_gtk::dialogs::{AdwPrompter, Prompter};
+    AdwPrompter::new(&f.w.win).message_detailed(
+        Kind::Warning,
+        "Google Lens is not installed yet",
+        "Google Lens is on, but it cannot run yet: no Chromium-based browser could be found.\n\nSearches will carry on with the other engines and Lens will be skipped until this is fixed.",
+        detail,
+        Buttons::Ok,
+        Box::new(|_| {}),
+    );
+    pump_for(600);
+    let mut stack: Vec<gtk4::Widget> = gtk4::Window::list_toplevels()
+        .into_iter()
+        .map(|w| w.upcast())
+        .collect();
+    while let Some(w) = stack.pop() {
+        if let Some(sw) = w.downcast_ref::<gtk4::ScrolledWindow>() {
+            if sw.has_css_class("field") {
+                let label = sw
+                    .child()
+                    .and_then(|v| v.first_child())
+                    .and_downcast::<gtk4::Label>()
+                    .expect("the detail label");
+                return (sw.clone(), label);
+            }
+        }
+        let mut c = w.first_child();
+        while let Some(x) = c {
+            c = x.next_sibling();
+            stack.push(x);
+        }
+    }
+    panic!("no detail field in the open message box");
+}
+
+/// DAN-2481 item 2 (Oderisi's M1): the Lens alert's detail field drew 96 px of a 142 px text, so its
+/// last line was cut in half, and its text opened selected. The box is as tall as the text (no
+/// overflow, so no half line), and the label takes no focus, so GTK draws no caret in it.
+fn message_detail_box_shows_its_last_line_and_takes_no_focus(app: &adw::Application) {
+    let f = fx(app);
+    let (scroller, lines) = open_detail_alert(
+        &f,
+        "Google Lens needs a Chromium-based browser and none was found. Install Chromium or Google \
+         Chrome with your package manager, so that one of `chromium`, `chromium-browser`, \
+         `google-chrome-stable` or `google-chrome` is on your PATH, then restart Hatate.",
+    );
+    let adj = scroller.vadjustment();
+    assert!(
+        adj.upper() <= adj.page_size() + 1.0,
+        "the text is {} px and the box shows {}: a half line is cut",
+        adj.upper(),
+        adj.page_size()
+    );
+    assert!(
+        !lines.is_focusable() && !lines.has_focus(),
+        "a focused selectable label draws a caret"
+    );
+    assert!(
+        lines.selection_bounds().is_none(),
+        "the text opens with nothing selected"
+    );
+    let root = scroller.root().and_downcast::<gtk4::Window>().unwrap();
+    let at = gtk4::prelude::GtkWindowExt::focus(&root).expect("a first focus");
+    assert!(
+        at.is::<gtk4::Button>(),
+        "the first focus is the OK button, not the text"
+    );
+    assert!(lines.is_selectable(), "the text can still be copied");
+    f.close();
+}
+
+/// DAN-2481 item 2, past the cap: a detail longer than the box scrolls, and says so with the
+/// persistent bar (design gate 2.4), not an overlay line a pointer has to find.
+fn message_detail_box_past_its_cap_scrolls_with_a_persistent_bar(app: &adw::Application) {
+    let f = fx(app);
+    let long = (1..=40)
+        .map(|n| format!("synthetic-file-{n:02}.png"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let (scroller, _) = open_detail_alert(&f, &long);
+    let adj = scroller.vadjustment();
+    assert!(
+        adj.upper() > adj.page_size() + 1.0,
+        "40 lines overflow the box"
+    );
+    assert!(
+        !scroller.is_overlay_scrolling(),
+        "an overlay bar is a 2 px line"
+    );
+    let bar = scroller.vscrollbar();
+    assert!(
+        bar.is_mapped() && bar.width() >= 10,
+        "the bar is drawn at rest, {} px",
+        bar.width()
+    );
     f.close();
 }

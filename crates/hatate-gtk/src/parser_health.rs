@@ -244,12 +244,18 @@ fn scroll_keys(scroll: &gtk::ScrolledWindow) -> gtk::EventControllerKey {
     keys
 }
 
+/// The gap between columns, in the titles and in the rows alike.
+const COLUMN_SPACING: u32 = 24;
+
 /// What one Up or Down press scrolls: about a row.
 const ROW_STEP: f64 = 32.0;
 
 /// The dialog.
 pub struct ParserHealthDialog {
     pub window: gtk::Window,
+    /// The column titles: a sibling of `scroll`, so they stay in view while the sites scroll
+    /// (DAN-2481). Each title shares its column's width with the cells under it (`populate`).
+    pub header: gtk::Grid,
     pub grid: gtk::Grid,
     pub scroll: gtk::ScrolledWindow,
     pub progress: gtk::ProgressBar,
@@ -288,8 +294,11 @@ impl ParserHealthDialog {
         intro.set_wrap(true);
         column.append(&intro);
 
+        let header = gtk::Grid::new();
+        header.set_column_spacing(COLUMN_SPACING);
+        column.append(&header);
         let grid = gtk::Grid::new();
-        grid.set_column_spacing(24);
+        grid.set_column_spacing(COLUMN_SPACING);
         grid.set_row_spacing(6);
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_vexpand(true);
@@ -346,6 +355,7 @@ impl ParserHealthDialog {
 
         let dialog = Rc::new(ParserHealthDialog {
             window: window.clone(),
+            header,
             grid,
             scroll,
             progress,
@@ -379,16 +389,27 @@ impl ParserHealthDialog {
         while let Some(child) = self.grid.first_child() {
             self.grid.remove(&child);
         }
+        while let Some(child) = self.header.first_child() {
+            self.header.remove(&child);
+        }
         // Without a live check there is no "Live check" column: a column of dashes would imply
         // one runs (DAN-2290 condition 1).
         let shown = self.shown_columns();
+        // The titles live in their own grid above the scroller, so two grids lay out a title and
+        // the cells under it. One size group a column gives them the same width, which keeps each
+        // title over the cells it names.
+        let widths: Vec<gtk::SizeGroup> = shown
+            .iter()
+            .map(|_| gtk::SizeGroup::new(gtk::SizeGroupMode::Horizontal))
+            .collect();
         for (c, &col) in shown.iter().enumerate() {
             let h = widgets::section_label(COLUMNS[col]);
             h.set_xalign(0.0);
-            self.grid.attach(&h, c as i32, 0, 1, 1);
+            widths[c].add_widget(&h);
+            self.header.attach(&h, c as i32, 0, 1, 1);
         }
-        for (i, r) in rows.iter().enumerate() {
-            let y = i as i32 + 1;
+        for (y, r) in rows.iter().enumerate() {
+            let y = y as i32;
             let cells = [
                 (&r.site, Tone::Plain),
                 (&r.session, r.session_tone),
@@ -406,6 +427,7 @@ impl ParserHealthDialog {
                 if let Some(class) = tone_class(tone) {
                     l.add_css_class(class);
                 }
+                widths[c].add_widget(&l);
                 self.grid.attach(&l, c as i32, y, 1, 1);
             }
         }
@@ -420,24 +442,26 @@ impl ParserHealthDialog {
         }
     }
 
-    /// Every cell's text, row by row (header first).
+    /// Every cell's text, row by row (the titles first).
     pub fn texts(&self) -> Vec<Vec<String>> {
+        let width = self.shown_columns().len();
         let mut out: Vec<Vec<String>> = Vec::new();
-        let mut y = 0;
-        loop {
-            let mut row = Vec::new();
-            let width = self.shown_columns().len();
-            for x in 0..width as i32 {
-                match self.grid.child_at(x, y).and_downcast::<gtk::Label>() {
-                    Some(l) => row.push(l.text().to_string()),
-                    None => break,
+        for grid in [&self.header, &self.grid] {
+            let mut y = 0;
+            loop {
+                let mut row = Vec::new();
+                for x in 0..width as i32 {
+                    match grid.child_at(x, y).and_downcast::<gtk::Label>() {
+                        Some(l) => row.push(l.text().to_string()),
+                        None => break,
+                    }
                 }
+                if row.len() != width {
+                    break;
+                }
+                out.push(row);
+                y += 1;
             }
-            if row.len() != width {
-                break;
-            }
-            out.push(row);
-            y += 1;
         }
         out
     }
