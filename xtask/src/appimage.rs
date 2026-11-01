@@ -753,7 +753,7 @@ mod tests {
 
     /// `gsettings get` for the title-bar layout through the image's own libgio, with the
     /// environment AppRun builds (`apprun_plan::plan`), a throw-away `HOME` and, when given, a
-    /// different `GIO_MODULE_DIR`. Returns (stdout, stderr); stderr carries GLib's debug lines,
+    /// different `GIO_MODULE_DIR`. Returns (value, log); the log carries GLib's debug lines,
     /// which name the settings backend it picked.
     fn gsettings_layout(appdir: &Path, home: &Path, module_dir: Option<&Path>) -> (String, String) {
         let plan = apprun_plan::plan(appdir, &[], &|_| None, None);
@@ -772,10 +772,18 @@ mod tests {
         let out = cmd
             .output()
             .expect("gsettings (libglib2.0-bin) must be installed");
-        (
-            String::from_utf8_lossy(&out.stdout).trim().to_owned(),
-            String::from_utf8_lossy(&out.stderr).into_owned(),
-        )
+        // GLib's debug lines go to stdout too: the value is the quoted line, the log is the rest.
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let value = all
+            .lines()
+            .find(|l| l.starts_with('\''))
+            .unwrap_or("")
+            .to_owned();
+        (value, all)
     }
 
     /// Pin (b), DAN-2558, run by the CI `appimage` job against the built image:
@@ -851,7 +859,7 @@ mod tests {
 
     fn backend_line(log: &str) -> String {
         log.lines()
-            .find(|l| l.contains("default implementation"))
+            .find(|l| l.contains("gsettings-backend"))
             .unwrap_or("no backend line")
             .trim()
             .to_owned()
