@@ -323,9 +323,12 @@ window.main-window headerbar windowcontrols button image { background: transpare
 window.main-window headerbar windowcontrols button:hover, window.main-window headerbar windowcontrols button:hover image {
   background: @ink_10; }
 window.main-window headerbar windowcontrols button:backdrop { color: @ink_65; }
-/* libadwaita fades an inactive bar's title and buttons to half strength (about 1.7:1 on the page);
-   the label tier is the dimmest this sheet allows text and glyphs */
-window.main-window headerbar:backdrop, window.main-window headerbar:backdrop * { opacity: 1; }
+/* libadwaita fades an inactive bar's title and buttons to half strength with a filter on the bar's
+   `windowhandle` and its child (2.1:1 on the page, measured at CI, libadwaita 1.5, in both schemes); the
+   label tier is the dimmest this sheet allows text and glyphs. `opacity: 1` alone does not lift it, and
+   a `filter: none` on the headerbar's own descendants does not either: the rule has to reach the handle */
+window.main-window windowhandle:backdrop, window.main-window windowhandle:backdrop > * { opacity: 1; filter: none; }
+window.main-window headerbar:backdrop, window.main-window headerbar:backdrop * { opacity: 1; filter: none; }
 window.main-window headerbar *:backdrop { color: @ink_65; opacity: 1; }
 
 /* ---- menubar and status bar ---- */
@@ -663,6 +666,26 @@ mod tests {
                     && off.contains("border-color: @ink_46")
                     && off.contains("opacity: 1"),
                 "{scheme:?}: a disabled primary is not Stop's hollow dim look (DAN-2398 P3-2): {off}"
+            );
+        }
+    }
+
+    /// DAN-2550: an inactive main window's bar keeps the label tier. libadwaita halves the bar's title and
+    /// glyphs with a filter on `windowhandle` (measured 2.1:1 at CI), so the sheet must switch the filter
+    /// off there, not only on the headerbar's descendants.
+    #[test]
+    fn the_inactive_title_bar_is_not_faded_by_the_toolkit() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let css = css(scheme);
+            let line = css
+                .lines()
+                .find(|l| l.starts_with("window.main-window windowhandle:backdrop"))
+                .unwrap_or_else(|| panic!("{scheme:?}: no windowhandle:backdrop rule"));
+            assert!(
+                line.contains("windowhandle:backdrop > *")
+                    && line.contains("filter: none")
+                    && line.contains("opacity: 1"),
+                "{scheme:?}: the fade stays on the inactive bar: {line}"
             );
         }
     }
