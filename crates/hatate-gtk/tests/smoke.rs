@@ -9945,6 +9945,223 @@ const SCENARIOS_6J_FOLLOWUP: &[Scenario] = &[
     ),
 ];
 
+// ---- DAN-2550: window chrome -----------------------------------------------------------------
+
+/// The mapped `GtkWindowControls` under `w`, with the css classes of each button each one holds (`close`, `minimize`, `maximize` from the toolkit's own `titlebutton`s).
+fn window_controls(w: &gtk4::Widget) -> Vec<(gtk4::WindowControls, Vec<String>)> {
+    let mut all = Vec::new();
+    descendants(w, &mut all);
+    all.into_iter()
+        .filter(|c| c.is_mapped())
+        .filter_map(|c| c.downcast::<gtk4::WindowControls>().ok())
+        .map(|c| {
+            let mut kids = Vec::new();
+            descendants(c.upcast_ref(), &mut kids);
+            let classes = kids
+                .iter()
+                .filter(|k| k.is::<gtk4::Button>() && k.is_mapped())
+                .flat_map(|k| k.css_classes())
+                .map(|c| c.to_string())
+                .collect();
+            (c, classes)
+        })
+        .collect()
+}
+
+/// The title bar of a top-level: the header bar (libadwaita's, or GTK's own default one) that holds
+/// the window controls at its end, with the css classes of the buttons those controls show.
+fn title_bar_of(w: &gtk4::Widget) -> Option<(gtk4::Widget, Vec<String>)> {
+    let (ctl, classes) = window_controls(w)
+        .into_iter()
+        .find(|(c, _)| c.side() == gtk4::PackType::End)?;
+    let mut up = ctl.parent();
+    while let Some(p) = up {
+        if p.is::<adw::HeaderBar>() || p.is::<gtk4::HeaderBar>() {
+            return Some((p, classes));
+        }
+        up = p.parent();
+    }
+    None
+}
+
+/// DAN-2550: the main window has a title bar. An `AdwApplicationWindow` draws none of its own and
+/// GTK4 on Wayland draws no server-side frame, so without an `adw::HeaderBar` at the top there is
+/// nothing to drag and no minimize, maximize or close (the v0.2.0 draft, rejected on the board's
+/// desktop). The bar sits above the menubar, the menubar is unchanged beneath it, and the window
+/// controls at the bar's end show a close button under the toolkit's default decoration layout.
+fn main_window_has_a_header_bar_above_the_menubar_with_a_close_button(app: &adw::Application) {
+    for scheme in ["dark", "light"] {
+        let f = Fx::new(
+            app,
+            Opts {
+                tweak: Some(Box::new({
+                    let s = scheme.to_owned();
+                    move |c| c.theme = s.clone()
+                })),
+                ..Opts::default()
+            },
+        );
+        pump_for(300);
+        let win: gtk4::Widget = f.w.win.clone().upcast();
+        let (bar, classes) = title_bar_of(&win).unwrap_or_else(|| {
+            panic!("{scheme}: the main window has no header bar with window controls")
+        });
+        assert!(
+            bar.is::<adw::HeaderBar>(),
+            "{scheme}: the main window's bar is {}, not an adw::HeaderBar",
+            bar.type_().name()
+        );
+        assert!(
+            classes.iter().any(|c| c == "close"),
+            "{scheme}: the window controls show {classes:?}, no close button"
+        );
+        let mut found = Vec::new();
+        find_css_node(&win, "menubar", &mut found);
+        let menubar = found.first().expect("the menubar is on screen");
+        let bar_box = bar.compute_bounds(&win).expect("bar bounds");
+        let menu_box = menubar.compute_bounds(&win).expect("menubar bounds");
+        assert!(
+            bar_box.y() + bar_box.height() <= menu_box.y() + 0.5 && bar_box.height() > 0.0,
+            "{scheme}: the header bar ({:?}) is not above the menubar ({:?})",
+            (bar_box.y(), bar_box.height()),
+            (menu_box.y(), menu_box.height())
+        );
+        // A real, titled bar: the window's title is on it.
+        let mut labels = Vec::new();
+        find_css_node(&bar, "label", &mut labels);
+        assert!(
+            labels.iter().any(|l| l
+                .clone()
+                .downcast::<gtk4::Label>()
+                .is_ok_and(|l| l.text() == hatate_gtk::window::WINDOW_TITLE)),
+            "{scheme}: the header bar does not carry the window title"
+        );
+        println!(
+            "TITLEBAR main {scheme} header_h={} header_w={} menubar_y={} controls={classes:?}",
+            bar_box.height(),
+            bar_box.width(),
+            menu_box.y()
+        );
+        f.close();
+    }
+}
+
+/// DAN-2550 (the table): every top-level window the app opens has a title bar, and the main window,
+/// which cannot get one from the toolkit, builds its own. A plain `gtk::Window` is framed by whoever
+/// owns the screen: the window manager or the compositor when it draws the frame (KWin on Wayland,
+/// any X11 window manager), and GTK's own default header bar otherwise (GNOME and the like). Xvfb
+/// has no window manager, so GTK draws no frame there and the tree has no bar to look at; what a
+/// test can pin on every toolkit is that no window turns the frame off (`decorated`), none replaces
+/// it (`titlebar()` is the default, `None`) and the main window's bar carries a close button. One
+/// line per window: title, kind, resizable, modal, and the bar's own buttons where the tree has one.
+fn every_top_level_window_has_a_title_bar_with_a_close_button(app: &adw::Application) {
+    for w in gtk4::Window::list_toplevels() {
+        if let Ok(w) = w.downcast::<gtk4::Window>() {
+            w.destroy();
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let f = wipe_fx(app, wipe_seed(dir.path()));
+    f.w.set_mode("review");
+    f.w.s.queue_view.select_row(0);
+    let id = f.w.current_id().unwrap();
+    // Query Hydrus opens only with an access key set (a synthetic one; nothing is sent).
+    f.w.s.settings.lock().unwrap().hydrus.access_key =
+        hatate_core::config::Secret::new("synthetic-access-key");
+    for action in [
+        "preferences",
+        "parser-health",
+        "view-logs",
+        "query-hydrus",
+        "pawchive-index",
+    ] {
+        f.w.activate_action(action);
+        pump_for(200);
+    }
+    f.w.action_show_shortcuts();
+    f.w.open_compare_dialog(id);
+    pump_for(600);
+    let wanted = [
+        "Hatate",
+        "Settings",
+        "Parser Health",
+        "Logs",
+        "Query Hydrus",
+        "Pawchive Index",
+        "Review Keyboard Shortcuts",
+        "Compare - a.png",
+    ];
+    let mut seen = Vec::new();
+    for w in gtk4::Window::list_toplevels() {
+        let Ok(win) = w.downcast::<gtk4::Window>() else {
+            continue;
+        };
+        if !win.is_visible() {
+            continue;
+        }
+        let title = win.title().map(|t| t.to_string()).unwrap_or_default();
+        let w: gtk4::Widget = win.clone().upcast();
+        let main = win.is::<adw::ApplicationWindow>();
+        let bar = title_bar_of(&w);
+        println!(
+            "TOPLEVEL {title:?} kind={} bar={} resizable={} modal={} decorated={} controls={:?}",
+            w.type_().name(),
+            bar.as_ref()
+                .map_or("none (frame drawn by the desktop)".to_owned(), |b| b
+                    .0
+                    .type_()
+                    .name()
+                    .to_string()),
+            win.is_resizable(),
+            win.is_modal(),
+            win.is_decorated(),
+            bar.as_ref().map(|b| &b.1)
+        );
+        assert!(win.is_decorated(), "{title:?} turns its decoration off");
+        if main {
+            let (_, classes) = bar.expect("the main window has its own bar");
+            assert!(
+                classes.iter().any(|c| c == "close"),
+                "{title:?}: no close button in {classes:?}"
+            );
+        } else {
+            assert!(
+                win.titlebar().is_none(),
+                "{title:?} replaces the desktop's frame with its own title bar"
+            );
+            assert!(
+                !win.is::<adw::Window>() && !win.is::<adw::Dialog>(),
+                "{title:?} is a libadwaita window, which draws no title bar of its own"
+            );
+            if let Some((_, classes)) = bar {
+                assert!(
+                    classes.iter().any(|c| c == "close"),
+                    "{title:?}: no close button in {classes:?}"
+                );
+            }
+        }
+        seen.push(title);
+    }
+    for t in wanted {
+        assert!(
+            seen.iter().any(|s| s.starts_with(t)),
+            "no top-level titled {t:?} was opened and checked; saw {seen:?}"
+        );
+    }
+    f.close();
+}
+
+const SCENARIOS_2550: &[Scenario] = &[
+    (
+        "main_window_has_a_header_bar_above_the_menubar_with_a_close_button",
+        main_window_has_a_header_bar_above_the_menubar_with_a_close_button,
+    ),
+    (
+        "every_top_level_window_has_a_title_bar_with_a_close_button",
+        every_top_level_window_has_a_title_bar_with_a_close_button,
+    ),
+];
+
 /// Every list, in order.
 fn all_scenarios() -> impl Iterator<Item = &'static (&'static str, fn(&adw::Application))> {
     SCENARIOS
@@ -9952,6 +10169,7 @@ fn all_scenarios() -> impl Iterator<Item = &'static (&'static str, fn(&adw::Appl
         .chain(SCENARIOS_6H2)
         .chain(SCENARIOS_6H2_FIXUP)
         .chain(SCENARIOS_6J_FOLLOWUP)
+        .chain(SCENARIOS_2550)
 }
 
 /// DAN-2467 (6.h-2 R-1): the Hydrus Test's failed line is a sentence, and it wraps to the page. Unwrapped

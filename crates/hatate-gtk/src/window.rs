@@ -445,7 +445,15 @@ impl MainWindow {
         shell.root.root.set_vexpand(true);
         content.append(&shell.root.root);
         content.append(&shell.status_bar);
-        win.set_content(Some(&content));
+        // An `AdwApplicationWindow` draws no title bar of its own and GTK4 on Wayland draws no
+        // server-side frame, so the header bar is what the user drags and what carries minimize,
+        // maximize and close (DAN-2550). Its title is the window's; its buttons follow the
+        // desktop's own layout (no `decoration-layout` is set here); drag, double-click and the
+        // window menu are the header bar's defaults. The menubar stays directly beneath it.
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&adw::HeaderBar::new());
+        toolbar.set_content(Some(&content));
+        win.set_content(Some(&toolbar));
         crate::menubar_keys::install(&win, &menubar);
 
         let (mcp, mcp_wake) = crate::mcp_bridge::McpBridge::new();
