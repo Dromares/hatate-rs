@@ -32,6 +32,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use crate::licenses;
+
 type Res<T> = Result<T, String>;
 
 const TARGET_NAME: &str = "Hatate-x86_64.AppImage";
@@ -371,6 +373,14 @@ fn bundle_gtk_data(appdir: &Path, sources: &mut Vec<(String, PathBuf)>) -> Res<(
         copy_tree(schemas, &to)?;
         // The host compiled these, but a compiled file next to a different set is stale.
         run(Command::new("glib-compile-schemas").arg(&to))?;
+        for entry in fs::read_dir(schemas).map_err(|e| e.to_string())?.flatten() {
+            if entry.path().extension().is_some_and(|e| e == "xml") {
+                sources.push((
+                    entry.file_name().to_string_lossy().into_owned(),
+                    entry.path(),
+                ));
+            }
+        }
     } else {
         return Err("no /usr/share/glib-2.0/schemas on this host".into());
     }
@@ -379,6 +389,7 @@ fn bundle_gtk_data(appdir: &Path, sources: &mut Vec<(String, PathBuf)>) -> Res<(
         let to = appdir.join("usr/share/icons/Adwaita");
         copy_tree(adwaita, &to)?;
         let _ = fs::remove_dir_all(to.join("cursors"));
+        sources.push(("Adwaita icon theme".to_owned(), adwaita.to_owned()));
     } else {
         eprintln!("warning: no Adwaita icon theme on this host; symbolic icons will be blank");
     }
@@ -529,11 +540,16 @@ fn build_inner(args: &[&str]) -> Res<PathBuf> {
         return Err(format!("the Chromium archive has no {}", chrome.display()));
     }
     set_exec(&chrome)?;
+    // The archive carries Google's proprietary Widevine CDM. Nothing in Hatate plays DRM media and
+    // its licence is not one this image can redistribute under MIT-compatible terms, so it stays out.
+    let _ = fs::remove_dir_all(browsers.join("chrome-linux64/WidevineCdm"));
 
     copy_fonts(&repo, &appdir)?;
     let exclude = parse_excludelist(&fs::read_to_string(&excludelist).map_err(|e| e.to_string())?);
     let mut sources = bundle_libs(&appdir, &exclude)?;
     bundle_gtk_data(&appdir, &mut sources)?;
+    let chromium_version = pins["chromium"].get("version").cloned().unwrap_or_default();
+    licenses::write(&repo, &appdir, &sources, &chromium_version)?;
 
     // appimagetool wants the desktop file and the icon at the root.
     let pkg = repo.join("packaging/appimage");

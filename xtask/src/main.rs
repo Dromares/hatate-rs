@@ -8,6 +8,7 @@
 
 mod appimage;
 mod doc_cites;
+mod licenses;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

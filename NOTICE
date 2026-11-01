@@ -1,0 +1,20 @@
+Hatate (hatate-rs): a work-in-progress Rust rewrite of Hatate, not yet a replacement for it.
+
+The application's own code is MIT licensed (LICENSE).
+
+The Hatate AppImage bundles other software. Each component keeps its own licence; the texts are
+in the image under usr/share/licenses/, and usr/share/licenses/INDEX.txt lists every component
+with its version, licence and files:
+
+  - Chromium (Chrome for Testing build, pinned in packaging/appimage/pins.toml): BSD-3-Clause for
+    the Chromium project; the third-party components inside it are listed in the browser's own
+    chrome://credits page. The proprietary Widevine CDM that ships in the archive is removed from
+    the image.
+  - GTK 4, libadwaita, GLib, Pango, Cairo, HarfBuzz and the other shared libraries the window
+    links (mostly LGPL-2.1-or-later): the distribution packages' copyright files, under
+    usr/share/licenses/lib/. LGPL libraries are shipped as separate shared objects in usr/lib/,
+    so they can be replaced.
+  - The Adwaita icon theme (LGPL-3.0 / CC-BY-SA-3.0).
+  - The app's fonts (SIL Open Font License 1.1, texts under usr/share/licenses/fonts/) and DejaVu.
+  - The Rust crates linked into the binaries: each crate's licence files under
+    usr/share/licenses/crates/.
