@@ -60,6 +60,10 @@ const SCENARIOS: &[Scenario] = &[
         settings_pages_fit_their_view_at_the_minimum_size,
     ),
     (
+        "settings_minimum_size_clips_no_spin_text_inset_no_field_and_shrinks_the_drop_down",
+        settings_minimum_size_clips_no_spin_text_inset_no_field_and_shrinks_the_drop_down,
+    ),
+    (
         "settings_window_asks_its_questions_over_itself",
         settings_window_asks_its_questions_over_itself,
     ),
@@ -7827,6 +7831,114 @@ fn settings_pages_fit_their_view_at_the_minimum_size(app: &adw::Application) {
         too_wide.is_empty(),
         "at {MIN_WIDTH}x{MIN_HEIGHT} these pages scroll sideways: {too_wide:?}"
     );
+    d.click_cancel();
+    f.close();
+}
+
+/// Every widget under `w`, `w` excluded.
+fn descendants(w: &gtk4::Widget, out: &mut Vec<gtk4::Widget>) {
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        out.push(child.clone());
+        descendants(&child, out);
+        c = child.next_sibling();
+    }
+}
+
+/// DAN-2517 (7.c design read, GTK 4.14 shots at 560x440): `same as above` lost its last letter in the
+/// General spins, the Tag service entry and `Fetch from Hydrus...` sat 3 px inside the API URL and
+/// Access key entries (the FlowBox's child padding), and the Second engine choice ran under its arrow.
+fn settings_minimum_size_clips_no_spin_text_inset_no_field_and_shrinks_the_drop_down(
+    app: &adw::Application,
+) {
+    use hatate_gtk::settings_dialog::{MIN_HEIGHT, MIN_WIDTH};
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    d.window.set_default_size(MIN_WIDTH, MIN_HEIGHT);
+    pump_for(200);
+    let names = d.tab_names();
+    let page_of = |name: &str| {
+        let i = names.iter().position(|n| n == name).expect(name);
+        d.tabs.set_current_page(Some(i as u32));
+        pump_for(100);
+        d.tabs.nth_page(Some(i as u32)).expect("page")
+    };
+    // 1. a spin showing its special text is wide enough for it
+    let general = page_of("General");
+    let mut all = Vec::new();
+    descendants(&general, &mut all);
+    let special_spins: Vec<_> = all
+        .iter()
+        .filter_map(|w| w.downcast_ref::<gtk4::SpinButton>())
+        .filter(|s| s.text() == "same as above")
+        .collect();
+    assert!(
+        !special_spins.is_empty(),
+        "General has no `same as above` spin"
+    );
+    for s in special_spins {
+        assert!(
+            s.width_chars() >= 14,
+            "`same as above` (13 characters) in a spin {} characters wide",
+            s.width_chars()
+        );
+    }
+    // 2. the Hydrus page's three entries and Fetch share their left and right edges
+    let hydrus = page_of("Hydrus");
+    let mut all = Vec::new();
+    descendants(&hydrus, &mut all);
+    let edge = |w: &gtk4::Widget| {
+        let b = w.compute_bounds(&hydrus).expect("bounds");
+        (b.x().round() as i32, (b.x() + b.width()).round() as i32)
+    };
+    let entries: Vec<_> = all
+        .iter()
+        .filter(|w| w.is::<gtk4::Entry>())
+        .map(edge)
+        .collect();
+    assert!(
+        entries.len() >= 3,
+        "entries on the Hydrus page: {entries:?}"
+    );
+    assert!(
+        entries.iter().all(|e| *e == entries[0]),
+        "the API URL, Access key and Tag service entries differ in left/right edge: {entries:?}"
+    );
+    let fetch = all
+        .iter()
+        .find(|w| {
+            w.downcast_ref::<gtk4::Button>()
+                .and_then(|b| b.label())
+                .is_some_and(|l| l.starts_with("Fetch from Hydrus"))
+        })
+        .expect("Fetch from Hydrus");
+    assert_eq!(
+        edge(fetch).0,
+        entries[0].0,
+        "Fetch from Hydrus is inset from the entries' left edge"
+    );
+    // 3. a drop-down's current choice ends in an ellipsis rather than running under its arrow
+    let engine = page_of("Engine");
+    let mut all = Vec::new();
+    descendants(&engine, &mut all);
+    let drops: Vec<_> = all.iter().filter(|w| w.is::<gtk4::DropDown>()).collect();
+    assert!(!drops.is_empty(), "no drop-down on the Engine page");
+    for drop in drops {
+        let mut inner = Vec::new();
+        descendants(drop, &mut inner);
+        let shown = inner
+            .iter()
+            .filter_map(|w| w.downcast_ref::<gtk4::Label>())
+            .find(|l| l.is_mapped() && !l.text().is_empty())
+            .expect("the drop-down's current choice");
+        assert_eq!(
+            shown.ellipsize(),
+            gtk4::pango::EllipsizeMode::End,
+            "the choice `{}` does not shrink to an ellipsis",
+            shown.text()
+        );
+    }
     d.click_cancel();
     f.close();
 }
