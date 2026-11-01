@@ -91,6 +91,13 @@ pub fn cell_view(entry: &hatate_core::model::Entry, column: Column) -> CellView 
         mono: false,
         tooltip: table_cells::tooltip(entry, column),
     };
+    // The File column cuts a long name in the middle; the tooltip carries all of it (DAN-2501, 7.c M3).
+    if column == Column::File {
+        view.tooltip = Some(match view.tooltip.take() {
+            Some(note) => format!("{text}\n{note}"),
+            None => text.clone(),
+        });
+    }
     match (column, table_cells::chip(entry, column)) {
         (Column::Status, _) => {
             let tier = StatusTier::of(entry);

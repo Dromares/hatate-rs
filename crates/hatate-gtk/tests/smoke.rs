@@ -48,6 +48,10 @@ const SCENARIOS: &[Scenario] = &[
         settings_window_keeps_its_stated_minimum,
     ),
     (
+        "queue_file_cell_carries_the_whole_file_name",
+        queue_file_cell_carries_the_whole_file_name,
+    ),
+    (
         "settings_pages_fit_their_view_at_the_minimum_size",
         settings_pages_fit_their_view_at_the_minimum_size,
     ),
@@ -7688,6 +7692,30 @@ fn settings_window_keeps_its_stated_minimum(app: &adw::Application) {
         }
     }
     d.click_cancel();
+    f.close();
+}
+
+/// DAN-2501 (7.c M3): the Queue's File column cuts a long name in the middle, so the name is in
+/// the cell's tooltip (the pointer). The keyboard's focus is on the row, not the cell: not done.
+fn queue_file_cell_carries_the_whole_file_name(app: &adw::Application) {
+    use hatate_core::table_cells::Column;
+    let long = "a-very-long-file-name-that-the-queue-column-has-to-cut-in-the-middle-0001.jpg";
+    let mut seed = seeded(3, MatchStatus::Good);
+    seed[1].path = format!("/tmp/hatate-dan2501/{long}").into();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.w.win.set_default_size(1100, 800);
+    f.w.win.present();
+    pump_for(500);
+    let view = f.w.s.queue_view.clone();
+    let cell = view.cell(1, Column::File).expect("the File cell");
+    assert_eq!(cell.tooltip.as_deref(), Some(long));
     f.close();
 }
 
