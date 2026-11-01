@@ -18,7 +18,7 @@
 //! Status, the chevron showing), `queue-filter` (a filename filter with the hidden count),
 //! `queue-filter-empty` (a filter that hides every row), `queue-menu` (the row context menu over a
 //! selected row), `queue-remove` (the Remove question), `queue-focus` (the first row focused with
-//! the ring showing) and `queue-focus-selected` (the same row, selected), `queue-5000` (5,000 rows, scrolled into the middle) and `queue-5000-scroll`
+//! the ring showing) and `queue-focus-selected` (the same row, selected), `queue-long` and `queue-long-focus` (7.c M3: row 0 has a very long file name and is selected, so the Details line under the table shows it whole; the second also has the keyboard's ring on the table), `queue-5000` (5,000 rows, scrolled into the middle) and `queue-5000-scroll`
 //! (the same, printing the scroll frame timing). The Review states (6.f) are `review` (a Good row with two
 //! matches and a tag list, Side by side), `review-empty` (nothing selected), `review-nomatch` (a Not found row),
 //! `review-picker` (the candidate picker open), `review-addtags` and `review-conditions` (the two dialogs) and
@@ -47,10 +47,16 @@ const NOW: f64 = 1_792_000_000.0;
 
 /// The Queue's synthetic rows: small real pictures (so the thumbnail column has something to
 /// decode), the six statuses in turn, and a measured similarity on the searched ones.
-fn queue_rows(pics: &std::path::Path, n: usize) -> Vec<Entry> {
+fn queue_rows(pics: &std::path::Path, n: usize, long_first: bool) -> Vec<Entry> {
     (0..n)
         .map(|i| {
-            let path = pics.join(format!("synthetic-{i:04}.png"));
+            // 7.c M3: row 0 carries a file name far wider than the File column (the Details line and
+            // the tooltip show it whole).
+            let path = if long_first && i == 0 {
+                pics.join("synthetic-holiday-photos-2019-summer-trip-to-the-coast-album-three-final-edit-v2.png")
+            } else {
+                pics.join(format!("synthetic-{i:04}.png"))
+            };
             let hue = (i as u8).wrapping_mul(40);
             image::RgbaImage::from_fn(96, 64, |x, y| {
                 image::Rgba([
@@ -181,6 +187,10 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("queue-remove", false),
     ("queue-focus", false),
     ("queue-focus-selected", false),
+    // 7.c M3: a long file name, row 0 selected so the Details line shows it whole; and with the
+    // keyboard's focus ring on the table.
+    ("queue-long", true),
+    ("queue-long-focus", false),
     ("parser-health-kb", true),
     ("settings-lens-box", true),
     // 6.h-2: the five site Tests and the Hydrus Test / Fetch in each state, and the Review Shortcuts dialog.
@@ -744,6 +754,7 @@ fn main() -> glib::ExitCode {
             } else {
                 24
             },
+            st.starts_with("queue-long"),
         )),
         "crashed" => {
             unclean = true;
@@ -2149,6 +2160,13 @@ fn prepare_queue(window: &MainWindow, state: &str) {
         "queue-remove" => {
             view.select_ids(&ids[1..3]);
             window.remove_rows(&ids[1..3]);
+        }
+        "queue-long" | "queue-long-focus" => {
+            view.select_row(0);
+            if state == "queue-long-focus" {
+                window.win.set_focus_visible(true);
+                view.view.grab_focus();
+            }
         }
         "queue-focus" | "queue-focus-selected" => {
             window.win.set_focus_visible(true);

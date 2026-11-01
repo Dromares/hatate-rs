@@ -8,6 +8,12 @@
 //! The environment is worked out by [`plan`], a function of the mount path, the arguments and
 //! the caller's environment alone, so a test covers it without starting anything.
 
+// The panic hook (DAN-2501). `hatate-core` is not a dependency of this crate (the launcher uses only
+// `std`), so the one std-only source file is included instead of linked.
+#[allow(dead_code)] // `arm` and the entry text are for the binaries that open a section
+#[path = "../../hatate-core/src/crash_report.rs"]
+mod crash_report;
+
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
@@ -208,6 +214,9 @@ fn appdir_of(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
 
 fn main() {
     let env = |name: &str| std::env::var_os(name);
+    if let Some(crash_log) = crash_report::crash_log_path(&env) {
+        crash_report::install(crash_log, "AppRun", env!("CARGO_PKG_VERSION"));
+    }
     let Some(appdir) = appdir_of(&env) else {
         eprintln!("AppRun: cannot tell where the AppImage is mounted");
         std::process::exit(1);

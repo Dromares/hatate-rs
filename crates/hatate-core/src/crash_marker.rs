@@ -10,17 +10,32 @@
 //! There is deliberately no `Drop` that marks a clean exit: a panic unwinds through
 //! `Drop`, and calling a crash "clean" is exactly the bug the protocol exists to catch.
 //! The app calls [`RunSession::finish_clean`] explicitly, after the last thing that can
-//! still fail (saving the session, writing settings). `crash.log` (faulthandler output)
-//! is Python's and is not written.
+//! still fail (saving the session, writing settings). A panic is written to `crash.log` by
+//! the hook [`install_panic_hook`] installs (`crash_report`); native signal crashes are not.
 
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 
 use crate::config::pyjson;
+use crate::crash_report;
 use crate::fsutil;
 use crate::paths::Paths;
 use crate::pycompat;
+use crate::version;
+
+/// Installs the panic hook for `binary` over this profile's `crash.log` (`crash_report`), with the
+/// workspace version. Call it first thing in `main`, before anything that can panic.
+pub fn install_panic_hook(paths: &Paths, binary: &'static str) {
+    crash_report::install(paths.crash_log(), binary, version::VERSION);
+}
+
+/// Opens this run's section of `crash.log` (`_install_faulthandler` writes the mark at startup), so
+/// the next launch can tell this run's entries from the one before's. A command that only prints
+/// (`--version`) does not call it.
+pub fn arm_crash_log(paths: &Paths) {
+    crash_report::arm(&paths.crash_log());
+}
 
 /// What startup found, and the handle for the end of the run.
 #[derive(Debug)]

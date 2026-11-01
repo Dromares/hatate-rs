@@ -73,6 +73,12 @@ impl Default for BooruSession {
     }
 }
 
+impl AsRef<BooruSession> for BooruSession {
+    fn as_ref(&self) -> &BooruSession {
+        self
+    }
+}
+
 impl BooruSession {
     pub fn new() -> Self {
         Self::default()

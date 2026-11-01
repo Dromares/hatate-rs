@@ -37,6 +37,17 @@ impl ImageValue {
     /// The dict as `json.dumps(default=str)` prints it when it is not turned into an image:
     /// `bytes` becomes `str(bytes)` (or `null` for `None`), in its place.
     fn as_printed(&self) -> Map<String, Value> {
+        self.with_bytes_as(py_bytes_repr)
+    }
+
+    /// The dict as the audit log records it (DAN-2501, granted difference "audit image dump"):
+    /// `bytes` becomes [`audit_image_text`] instead of `str(bytes)`, so the log holds the
+    /// image's size and hash and not the image.
+    fn as_audited(&self) -> Map<String, Value> {
+        self.with_bytes_as(audit_image_text)
+    }
+
+    fn with_bytes_as(&self, text: fn(&[u8]) -> String) -> Map<String, Value> {
         let mut out = Map::new();
         let mut rest = self.entries.iter();
         for i in 0..=self.entries.len() {
@@ -45,7 +56,7 @@ impl ImageValue {
                     "bytes".to_owned(),
                     self.bytes
                         .as_deref()
-                        .map_or(Value::Null, |b| Value::String(py_bytes_repr(b))),
+                        .map_or(Value::Null, |b| Value::String(text(b))),
                 );
             } else if let Some((k, v)) = rest.next() {
                 out.insert(k.clone(), v.clone());
@@ -53,6 +64,19 @@ impl ImageValue {
         }
         out
     }
+}
+
+/// What the audit log records in place of an image's bytes: `<image: N bytes, sha256 HEX>`.
+/// Python writes `str(bytes)` there, which is the whole image as an escaped literal (hundreds of
+/// kilobytes a call). The size and the hash say which image without keeping it.
+pub fn audit_image_text(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(bytes);
+    let mut hex = String::with_capacity(64);
+    for b in digest {
+        hex.push_str(&format!("{b:02x}"));
+    }
+    format!("<image: {} bytes, sha256 {hex}>", bytes.len())
 }
 
 /// `repr(b)` / `str(b)` of a `bytes` object.
@@ -124,9 +148,9 @@ impl ToolOutput {
         self
     }
 
-    /// The result as `json.dumps(default=str)` prints it into the audit log: an image value is
-    /// printed whole, its `bytes` entry as `str(bytes)`, wherever the key puts it (`outcome` is
-    /// the handler's dict, not the content blocks).
+    /// The result as the audit log records it: an image value is recorded whole, wherever the key
+    /// puts it (`outcome` is the handler's dict, not the content blocks), with its `bytes` entry
+    /// as [`audit_image_text`]. Python writes `str(bytes)` there (DAN-2501 grants the difference).
     pub fn to_audit_json(&self) -> Value {
         let mut map = Map::new();
         for (key, value) in &self.fields {
@@ -134,7 +158,7 @@ impl ToolOutput {
                 key.clone(),
                 match value {
                     ResultValue::Json(v) => v.clone(),
-                    ResultValue::Image(img) => Value::Object(img.as_printed()),
+                    ResultValue::Image(img) => Value::Object(img.as_audited()),
                 },
             );
         }

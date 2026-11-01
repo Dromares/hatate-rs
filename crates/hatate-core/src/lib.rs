@@ -9,6 +9,7 @@ pub mod clock;
 pub mod compare_view;
 pub mod config;
 pub mod crash_marker;
+pub mod crash_report;
 pub mod desktop_attention;
 pub mod engine_alerts;
 pub mod engine_backends;
@@ -41,6 +42,7 @@ pub mod multipage;
 pub mod multipage_resolve;
 pub mod net;
 pub mod parser_health;
+pub mod parser_probe;
 pub mod paths;
 pub mod pawchive_index;
 pub mod preview_text;
@@ -88,6 +90,7 @@ pub mod thumb;
 pub mod thumb_decode;
 pub mod timeutil;
 pub mod upscale_detect;
+pub mod version;
 pub mod viewport;
 
 #[cfg(test)]

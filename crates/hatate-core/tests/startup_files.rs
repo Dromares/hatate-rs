@@ -240,6 +240,16 @@ fn a_run_that_never_finishes_cleanly_is_seen_by_the_next_launch() {
 }
 
 #[test]
+fn closing_cleanly_a_run_that_never_wrote_a_marker_is_not_an_error() {
+    let sb = Sandbox::new();
+    assert!(!sb.paths.crash_running_marker().exists());
+    CrashMarkers::new(&sb.paths)
+        .mark_clean_shutdown(1.0)
+        .unwrap();
+    assert!(!CrashMarkers::new(&sb.paths).check_unclean_shutdown());
+}
+
+#[test]
 fn a_panic_is_not_a_clean_exit() {
     let sb = Sandbox::new();
     let res = panic::catch_unwind(AssertUnwindSafe(|| {

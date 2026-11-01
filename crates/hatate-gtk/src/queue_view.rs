@@ -91,6 +91,13 @@ pub fn cell_view(entry: &hatate_core::model::Entry, column: Column) -> CellView 
         mono: false,
         tooltip: table_cells::tooltip(entry, column),
     };
+    // The File column cuts a long name in the middle; the tooltip carries all of it (DAN-2501, 7.c M3).
+    if column == Column::File {
+        view.tooltip = Some(match view.tooltip.take() {
+            Some(note) => format!("{text}\n{note}"),
+            None => text.clone(),
+        });
+    }
     match (column, table_cells::chip(entry, column)) {
         (Column::Status, _) => {
             let tier = StatusTier::of(entry);
@@ -382,6 +389,8 @@ pub struct QueueView {
     pub root: gtk::Box,
     pub scroller: gtk::ScrolledWindow,
     pub view: gtk::ColumnView,
+    /// The Details line under the table: the selected row's whole file name (DAN-2501, 7.c M3).
+    pub details: gtk::Label,
     store: gio::ListStore,
     selection: gtk::MultiSelection,
     columns: Vec<gtk::ColumnViewColumn>,
@@ -495,13 +504,27 @@ impl QueueView {
         scroller.set_overlay_scrolling(false);
         scroller.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
         scroller.add_css_class("queue-frame");
+        // The File column cuts a long name in the middle; this line shows all of it for the one
+        // selected row, so a keyboard selection reaches it as a pointer's hover does (DAN-2501).
+        // It wraps at the character and never widens the page.
+        let details = gtk::Label::new(None);
+        details.add_css_class("queue-details");
+        details.set_xalign(0.0);
+        details.set_wrap(true);
+        details.set_wrap_mode(pango::WrapMode::Char);
+        details.set_hexpand(true);
+        details.set_halign(gtk::Align::Fill);
+        details.set_width_chars(1);
+        details.set_max_width_chars(1);
         let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
         root.append(&scroller);
+        root.append(&details);
 
         let this = Rc::new(QueueView {
             root,
             scroller,
             view,
+            details,
             store,
             selection,
             columns,
@@ -547,7 +570,21 @@ impl QueueView {
         *self.on_selection.borrow_mut() = Some(Rc::new(f));
     }
 
+    /// The Details line: the whole File name of the one selected row, empty for none or several.
+    fn update_details(&self) {
+        let ids = self.selected_ids();
+        let name = match ids.as_slice() {
+            [id] => self
+                .row_of(*id)
+                .and_then(|row| self.cell(row, Column::File))
+                .map(|c| c.text),
+            _ => None,
+        };
+        self.details.set_text(name.as_deref().unwrap_or(""));
+    }
+
     fn notify_selection(&self) {
+        self.update_details();
         let cb = self.on_selection.borrow().clone();
         if let Some(cb) = cb {
             cb(&self.selected_ids());
@@ -674,6 +711,7 @@ impl QueueView {
         };
         self.store.splice(0, self.store.n_items(), &rows);
         self.select_ids(&selected);
+        self.update_details();
         let hook = self.on_rebuilt.borrow().clone();
         if let Some(hook) = hook {
             hook();

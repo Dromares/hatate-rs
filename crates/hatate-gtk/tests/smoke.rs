@@ -48,6 +48,18 @@ const SCENARIOS: &[Scenario] = &[
         settings_window_keeps_its_stated_minimum,
     ),
     (
+        "queue_file_cell_carries_the_whole_file_name",
+        queue_file_cell_carries_the_whole_file_name,
+    ),
+    (
+        "queue_details_line_shows_the_selected_rows_whole_file_name",
+        queue_details_line_shows_the_selected_rows_whole_file_name,
+    ),
+    (
+        "settings_pages_fit_their_view_at_the_minimum_size",
+        settings_pages_fit_their_view_at_the_minimum_size,
+    ),
+    (
         "settings_window_asks_its_questions_over_itself",
         settings_window_asks_its_questions_over_itself,
     ),
@@ -2835,6 +2847,25 @@ fn parser_health_dialog_and_warning(app: &adw::Application) {
     // And the same words as a caption, so the reason is on screen without a hover.
     assert!(
         texts_under(dialog.window.child().unwrap().upcast_ref())
+            .iter()
+            .any(|t| t == "The live check is not part of this build yet.")
+    );
+    dialog.window.close();
+    f.close();
+
+    // The shipped window turns the real check on (`Env::live_probe`, DAN-2501): the button is on,
+    // the column is there, and the "not part of this build" caption is not. Nothing is clicked, so
+    // no site is reached.
+    let f = Fx::new_with(app, Opts::default(), |env| env.live_probe = true);
+    f.activate("parser-health");
+    let dialog = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    assert!(dialog.check_button.is_sensitive());
+    assert_eq!(
+        dialog.texts()[0],
+        ["Site", "This session", "Live check", "Last problem"]
+    );
+    assert!(
+        !texts_under(dialog.window.child().unwrap().upcast_ref())
             .iter()
             .any(|t| t == "The live check is not part of this build yet.")
     );
@@ -7664,6 +7695,138 @@ fn settings_window_keeps_its_stated_minimum(app: &adw::Application) {
             );
         }
     }
+    d.click_cancel();
+    f.close();
+}
+
+/// DAN-2501 (7.c M3): the Queue's File column cuts a long name in the middle, so the name is in
+/// the cell's tooltip (the pointer). The keyboard's focus is on the row, not the cell, so the
+/// keyboard reads the name from the Details line (the next test).
+fn queue_file_cell_carries_the_whole_file_name(app: &adw::Application) {
+    use hatate_core::table_cells::Column;
+    let long = "a-very-long-file-name-that-the-queue-column-has-to-cut-in-the-middle-0001.jpg";
+    let mut seed = seeded(3, MatchStatus::Good);
+    seed[1].path = format!("/tmp/hatate-dan2501/{long}");
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.w.win.set_default_size(1100, 800);
+    f.w.win.present();
+    pump_for(500);
+    let view = f.w.s.queue_view.clone();
+    let cell = view.cell(1, Column::File).expect("the File cell");
+    assert_eq!(cell.tooltip.as_deref(), Some(long));
+    f.close();
+}
+
+/// DAN-2501 (7.c M3, keyboard half): the Details line under the Queue table holds the whole File
+/// name of the one selected row. A key moves the selection (the cursor and the selection model, no
+/// pointer), so the keyboard reaches the name that hover reaches in the tooltip. None or several
+/// selected rows leave it empty, and a row a filter hides never leaves its name behind.
+fn queue_details_line_shows_the_selected_rows_whole_file_name(app: &adw::Application) {
+    use common::xtest::{Key, Xtest};
+    use hatate_core::entry_filter::EntryFilter;
+    let long = "a-very-long-file-name-that-the-queue-column-has-to-cut-in-the-middle-0001.jpg";
+    let mut seed = seeded(3, MatchStatus::Good);
+    seed[1].path = format!("/tmp/hatate-dan2501/{long}");
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.w.win.set_default_size(1100, 800);
+    f.w.win.present();
+    pump_for(500);
+    let view = f.w.s.queue_view.clone();
+    let details = || view.details.text().to_string();
+    assert_eq!(details(), "", "nothing selected");
+    view.select_row(1);
+    assert_eq!(details(), long, "one row selected");
+    view.select_row(0);
+    assert_eq!(
+        details(),
+        "img0.png",
+        "the line follows the selection, never the last name"
+    );
+    let ids = view.visible_ids();
+    view.select_ids(&ids);
+    assert_eq!(details(), "", "several rows selected");
+    view.select_ids(&[]);
+    assert_eq!(details(), "", "selection cleared");
+    view.select_row(1);
+    view.set_filter(EntryFilter {
+        statuses: Some(HashSet::new()),
+        ..EntryFilter::default()
+    });
+    assert_eq!(view.visible_count(), 0);
+    assert_eq!(details(), "", "a filter hid the selected row");
+    view.set_filter(EntryFilter::default());
+    view.select_row(0);
+
+    // The key half: Down from row 0 lands on the long name.
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("queue_details: the key half is skipped ({why})");
+            f.close();
+            return;
+        }
+    };
+    keys.focus_window_at(300, 300).expect("focus the window");
+    view.view.grab_focus();
+    pump_for(200);
+    assert_eq!(details(), "img0.png");
+    keys.tap(Key::Down, &[]).expect("inject");
+    pump_for(300);
+    assert_eq!(view.selected_ids(), [view.visible_ids()[1]]);
+    assert_eq!(details(), long, "Down selected the long-named row");
+    f.close();
+}
+
+/// DAN-2501 (7.c M2): at the stated minimum no Settings page scrolls sideways. The fit test above
+/// measures the window's child, which a sideways-scrolling page never widens, so it passed while
+/// `max (seconds)`, the Tag service placeholder and `Fetch from Hydrus...` ran off the view.
+fn settings_pages_fit_their_view_at_the_minimum_size(app: &adw::Application) {
+    use hatate_gtk::settings_dialog::{MIN_HEIGHT, MIN_WIDTH};
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    d.window.set_default_size(MIN_WIDTH, MIN_HEIGHT);
+    pump_for(200);
+    let mut too_wide = Vec::new();
+    for (i, name) in d.tab_names().iter().enumerate() {
+        d.tabs.set_current_page(Some(i as u32));
+        pump_for(100);
+        let page = d.tabs.nth_page(Some(i as u32)).expect("page");
+        let scroll = page
+            .downcast_ref::<gtk4::ScrolledWindow>()
+            .expect("a page is a scrolled window");
+        let adj = scroll.hadjustment();
+        println!(
+            "OUTER settings-page {name} width={} view={}",
+            adj.upper(),
+            adj.page_size()
+        );
+        if adj.upper() > adj.page_size() + 0.5 {
+            too_wide.push(format!("{name} {} in {}", adj.upper(), adj.page_size()));
+        }
+    }
+    assert!(
+        too_wide.is_empty(),
+        "at {MIN_WIDTH}x{MIN_HEIGHT} these pages scroll sideways: {too_wide:?}"
+    );
     d.click_cancel();
     f.close();
 }

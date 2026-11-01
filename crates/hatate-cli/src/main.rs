@@ -16,11 +16,16 @@ fn banner() -> &'static str {
 fn version_line() -> String {
     format!(
         "hatate {} (work-in-progress Rust rewrite, not yet a replacement for Hatate)",
-        env!("CARGO_PKG_VERSION")
+        hatate_core::version::VERSION
     )
 }
 
 fn main() {
+    // A panic in any command lands in `crash.log`. Without a home directory there is no profile,
+    // and the default hook alone reports it.
+    if let Ok(paths) = hatate_core::paths::Paths::from_env() {
+        hatate_core::crash_marker::install_panic_hook(&paths, "hatate");
+    }
     let argv: Vec<String> = std::env::args().skip(1).collect();
     match parse(&argv) {
         Ok(Command::Banner) => {
@@ -55,6 +60,11 @@ mod tests {
     fn version_says_work_in_progress_and_stays_0_0_x() {
         let line = version_line();
         assert!(line.starts_with("hatate 0.0."), "{line}");
+        // The number is the one version source's, not a copy (DAN-2501).
+        assert!(
+            line.starts_with(&format!("hatate {} (", hatate_core::version::VERSION)),
+            "{line}"
+        );
         assert!(line.contains("work-in-progress"), "{line}");
     }
 }

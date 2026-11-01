@@ -130,6 +130,43 @@ fn every_python_test_that_touches_the_gui_is_named_in_the_docs() {
     );
 }
 
+/// The 7.c modules (DAN-2515): the Python tests that mention `parser_probe`, `crashlog` or `version` must be named
+/// in `docs/phase7-7c.md` itself, by their own name or by their class. 7.c's walk was missing from the first gate, which
+/// only walked `gui_symbols`, and nine `crashlog`/`version` tests reached review in no doc at all (DAN-2512).
+const PHASE7_C_SYMBOLS: &[&str] = &["parser_probe", "crashlog", "version", "__version__"];
+
+#[test]
+fn every_python_test_that_touches_a_7c_module_is_named_in_the_7c_doc() {
+    let Some(o) = oracle() else { return };
+    let symbols: BTreeSet<String> = PHASE7_C_SYMBOLS.iter().map(|s| s.to_string()).collect();
+    let tests = pytests::walk_with(&o, &symbols, false).unwrap();
+    let docs = all_docs();
+    let unmapped: Vec<String> = tests
+        .iter()
+        .filter(|t| !docs.contains(&t.name))
+        .map(|t| {
+            format!(
+                "{}:{} {} (touches {})",
+                t.file,
+                t.line,
+                t.id,
+                t.hits.join(", ")
+            )
+        })
+        .collect();
+    eprintln!(
+        "7.c walk: {} tests, {} unmapped",
+        tests.len(),
+        unmapped.len()
+    );
+    assert!(
+        unmapped.is_empty(),
+        "{} Python test(s) touch a 7.c module and docs/phase7-7c.md names none of them:\n{}",
+        unmapped.len(),
+        unmapped.join("\n")
+    );
+}
+
 /// The other-docs scan (`scan_docs`, DAN-2396): a row of any `docs/*.md` whose disposition says `6.x` and names a
 /// Python test hands that test to `docs/gtk-6x.md`, whose "Python test map" section must then name it. A walk
 /// by symbol misses these, because a hand-over is made by name (DAN-2394 failed PR #74 for 37 of them).

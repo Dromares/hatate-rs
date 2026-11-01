@@ -15,7 +15,7 @@ Every `.py` file in `core/`, `core/boorus/`, `workers/` and `tools/` at `Hatate-
 | `core/ascii2d.py` | `engines/ascii2d.rs` | ported | #18, #27 | Parser (#18), client with block latch (#27). |
 | `core/availability.py` | `availability.rs` | ported | #26 |  |
 | `core/config.py` | `config/*` | ported | #5 |  |
-| `core/crashlog.py` | `crash_marker.rs` | partly | #8; Phase 7 | The `crash.log.running` and `last_clean_exit` markers are ported. Python's faulthandler output is not written (`docs/cache-and-startup-files.md`); a Rust crash reporter is a packaging decision. |
+| `core/crashlog.py` | `crash_marker.rs` | partly | #8; Phase 7 | The `crash.log.running` and `last_clean_exit` markers are ported. Python's faulthandler output is not written (`docs/cache-and-startup-files.md`); a Rust crash reporter is a packaging decision. **Closed by 7.c (DAN-2501):** a panic hook in every binary appends one entry per panic to `crash.log` (`crates/hatate-core/src/crash_report.rs`, tests `crates/hatate-core/tests/crash_report.rs`); the Crashed banner counts it. **Known gap:** a native signal (SIGSEGV, an abort from C code) runs no hook, so it leaves nothing in `crash.log`; Python's `faulthandler` covers those. The next launch still shows the banner, with "no new entry". |
 | `core/desktop_attention.py` | `lens_browser.rs` (`WindowAttention` trait, no-op) | not ported | Phase 7 | KDE Plasma taskbar and attention script for the Lens window. Behind a trait with a no-op shipped implementation (`docs/lens-browser.md` section 1); needs an owner before Lens is wired for Plasma users. |
 | `core/engine_alerts.py` | `engine_alerts.rs` | ported | #48 |  |
 | `core/engine_runner.py` | `engine_runner.rs` | ported | #31, #48, #53 | Runner (#31); Lens wiring (#48, #53). |
@@ -51,7 +51,7 @@ Every `.py` file in `core/`, `core/boorus/`, `workers/` and `tools/` at `Hatate-
 | `core/multipage_resolve.py` | `multipage_resolve.rs` | ported | #28 |  |
 | `core/net.py` | `net/*`, `pyresponse.rs` | ported | #6, #24, #26 |  |
 | `core/parser_health.py` | `parser_health.rs` | ported | #24 |  |
-| `core/parser_probe.py` | - | not ported | Phase 7 | A developer tool that checks each parser against a live post on the real site. The Rust parsers are checked against the corpus; a live probe cannot run in CI (no live network) and is a maintenance tool, not part of the app. Phase 7 decides whether to keep one. The Parser Health button ships disabled (6.e, DAN-2290); if Phase 7 drops the probe, the button goes with it. |
+| `core/parser_probe.py` | `parser_probe.rs` | not ported | Phase 7 | A developer tool that checks each parser against a live post on the real site. The Rust parsers are checked against the corpus; a live probe cannot run in CI (no live network) and is a maintenance tool, not part of the app. Phase 7 decides whether to keep one. The Parser Health button ships disabled (6.e, DAN-2290); if Phase 7 drops the probe, the button goes with it. **Closed by 7.c (DAN-2501): ported, not dropped.** The rule (port it only if the shipped Python app calls it at runtime) is met: `gui/parser_health_dialog.py` imports `parser_probe`, and its `_ProbeWorker.run` calls `parser_probe.run(timeout=..., on_progress=...)` when the user presses "Check every site now" in Help > Parser Health (`gui/main_window.py` `action_parser_health` opens it). So it is part of the app, not only a developer tool. `hatate_core::parser_probe` is the module, `hatate_gtk::parser_health::LiveProbe` runs it over the engine's net layer, and the button is on in the shipped window. No test reaches a real site (a scripted fetch, and a local https server). |
 | `core/paths.py` | `paths.rs` | ported | #5 |  |
 | `core/pawchive_index.py` | `pawchive_index/*` | ported | #38, #44 | Index (#38), wiring into the engines (#44). |
 | `core/pawchive_lookup.py` | `engines/pawchive_lookup.rs` | ported | #18 |  |
@@ -78,7 +78,7 @@ Every `.py` file in `core/`, `core/boorus/`, `workers/` and `tools/` at `Hatate-
 | `core/tag_rules.py` | `tag_rules.rs` | ported | #31 |  |
 | `core/tracemoe.py` | `engines/tracemoe.rs` | ported | #18 |  |
 | `core/upscale_detect.py` | `upscale_detect.rs` | ported | #37 |  |
-| `core/version.py` | `Cargo.toml` workspace version | not ported | Phase 7 | The version number lives in one place. Rust's is the workspace version, `0.0.0`; the number beyond `0.0.x` is a release decision. |
+| `core/version.py` | `Cargo.toml` workspace version | not ported | Phase 7 | The version number lives in one place. Rust's is the workspace version, `0.0.0`; the number beyond `0.0.x` is a release decision. **Closed by 7.c (DAN-2501):** `hatate_core::version::VERSION` is the one source (the workspace `[workspace.package] version`, `0.0.0` until 7.d), and `hatate --version` and the MCP `serverInfo.version` read it, one test each. There is no About dialog to read it: Python has none either (it prints the version with `main.py --version` and stamps it into the AppImage). |
 | `core/viewport.py` | - | not ported | Phase 6 | Viewport arithmetic for lazy thumbnail loading in the list view. **Closed by Phase 6:** `docs/phase6-coverage.md` section 3 (DAN-2223). |
 | `core/yandex.py` | `engines/yandex.rs` | ported | #20, #22 | Parser (#20), search half (#22). |
 | `core/boorus/__init__.py` | `boorus/mod.rs` | ported | #10 |  |
@@ -121,7 +121,7 @@ Every `.py` file in `core/`, `core/boorus/`, `workers/` and `tools/` at `Hatate-
 | `workers/thumbnail_worker.py` | - | not ported | Phase 6 | Decodes row thumbnails for the list view. **Closed by Phase 6:** `docs/phase6-coverage.md` section 3 (DAN-2223). |
 | `workers/upscale_check_worker.py` | `upscale_detect.rs` | partly | #37; Phase 6 | The check is ported; the thread shell is the GUI's. **Closed by Phase 6:** `docs/phase6-coverage.md` section 3 (DAN-2223). |
 | `tools/mcp_stdio_bridge.py` | `mcp/bridge.rs`, `hatate-cli` `mcp-stdio-bridge` | ported | #50 |  |
-| `tools/measure_tag_bands.py` | `tag_band_metrics.rs` (the recorder) | partly | #33; Phase 7 | The `HATATE_TAG_BAND_METRICS` recorder is ported. The offline report script is a measurement tool, not part of the app. |
+| `tools/measure_tag_bands.py` | `tag_band_metrics.rs` (the recorder) | partly | #33; Phase 7 | The `HATATE_TAG_BAND_METRICS` recorder is ported. The offline report script is a measurement tool, not part of the app. **Closed by 7.c (DAN-2501): dropped.** Nothing in the shipped Python app imports or runs it (`git grep -n -l measure_tag_bands` at `76c85c4` finds one file, the script itself), it reads the recorder's `--jsonl` file offline and prints a report, and the AppImage build copies only `main.py`, `core`, `gui`, `workers` and `resources` (`packaging/appimage/inner-build.sh`), not `tools/`. The recorder stays. |
 | `tools/render_states.py` | - | not ported | Phase 6 | Renders the real main window offscreen for comparison with the mockup (DAN-1294). Redone against the GTK window. **Closed by Phase 6:** `docs/phase6-coverage.md` section 3 (DAN-2223). |
 
 ## What stays with Phase 6, in one list

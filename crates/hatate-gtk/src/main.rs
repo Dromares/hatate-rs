@@ -18,6 +18,10 @@ fn main() -> gtk4::glib::ExitCode {
             return gtk4::glib::ExitCode::FAILURE;
         }
     };
+    // Before anything that can panic: a panic is written to `crash.log` (`core/crashlog.py`'s
+    // `install()`), and this run's section of it opens now, so the next launch can count it.
+    hatate_core::crash_marker::install_panic_hook(&paths, "hatate-gtk");
+    hatate_core::crash_marker::arm_crash_log(&paths);
     // stderr as before, and `hatate-rs.log` (the file the log viewer reads). A profile that
     // cannot be written to leaves the app on stderr alone.
     let ring = LogRing::new();
@@ -48,5 +52,7 @@ fn main() -> gtk4::glib::ExitCode {
     }
     let mut env = Env::new(paths, started.previous_run_unclean);
     env.log_ring = ring;
+    // Parser Health's "Check every site now" fetches the real sites (`core/parser_probe.py`).
+    env.live_probe = true;
     app::run_with(env, |_| {})
 }

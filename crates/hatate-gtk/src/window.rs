@@ -89,8 +89,13 @@ pub struct Env {
     pub search: Option<SearchBackend>,
     /// `time.monotonic()`, for the run's pace estimate.
     pub monotonic: Rc<dyn Fn() -> f64>,
-    /// Parser Health's live check (`core/parser_probe.py`); none in the shipped window.
+    /// Parser Health's live check (`core/parser_probe.py`), a test's scripted one. None, with
+    /// [`live_probe`](Env::live_probe) off, leaves the check disabled (DAN-2290).
     pub probe: Option<Arc<dyn crate::parser_health::ProbeRunner>>,
+    /// The shipped window turns the real live check on (DAN-2501): it fetches over the search
+    /// engine's network layer and booru session. A test leaves it off, so no scenario can reach
+    /// a real site.
+    pub live_probe: bool,
     /// The Pawchive crawler the Index window uses; none builds the real one on first use. Its
     /// hosts are fixed by its constructor, so a test points it at a local server.
     pub pawchive: Option<Arc<hatate_core::pawchive_index::PawchiveCrawler>>,
@@ -112,6 +117,7 @@ impl Env {
             search: None,
             monotonic: Rc::new(system_monotonic),
             probe: None,
+            live_probe: false,
             pawchive: None,
         }
     }
@@ -166,8 +172,10 @@ pub struct State {
     pub upscale_check_worker: Slot,
     /// The live check of Parser Health, off the main thread.
     pub parser_probe_worker: Slot,
-    /// The live check itself; the shipped window has none (`parser_probe.py` is not ported).
+    /// The live check itself (`parser_probe.py`): a scripted one, or none.
     pub probe: Option<Arc<dyn crate::parser_health::ProbeRunner>>,
+    /// Whether the dialog builds the real live check ([`Env::live_probe`]).
+    pub live_probe: bool,
     pub parser_health_dialog: RefCell<Option<Rc<crate::parser_health::ParserHealthDialog>>>,
     /// Set while an autosave write is on the pool, so close can wait for it.
     pub autosave_inflight: Arc<AtomicBool>,
@@ -455,6 +463,7 @@ impl MainWindow {
             upscale_check_worker: Slot::new(),
             parser_probe_worker: Slot::new(),
             probe: env.probe.take(),
+            live_probe: env.live_probe,
             parser_health_dialog: RefCell::new(None),
             autosave_inflight: Arc::new(AtomicBool::new(false)),
             autosave_timer: RefCell::new(None),

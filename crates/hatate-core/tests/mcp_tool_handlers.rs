@@ -686,6 +686,49 @@ async fn get_images_returns_both_pictures_at_full_resolution_over_https() {
     );
 }
 
+/// DAN-2501 (granted difference "audit image dump"): the audit line holds `<image: N bytes, sha256
+/// HEX>` where Python writes `str(bytes)`, and the reply to the client still carries the pictures.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_audit_log_records_an_image_by_size_and_hash_not_by_its_bytes() {
+    use base64::Engine as _;
+    use sha2::{Digest, Sha256};
+    let w = world(|r| {
+        let mut e = with_png(r, "local.png", [9, 9, 9]);
+        e.candidates = vec![candidate_on_cdn("/f.png")];
+        vec![e]
+    })
+    .await;
+    let out = w.call(|h| h.get_images(0, 0)).await.unwrap();
+    let blocks = hatate_core::mcp::content::to_content_blocks(&out);
+    let image_bytes = |block: &Value| {
+        base64::engine::general_purpose::STANDARD
+            .decode(block["data"].as_str().unwrap())
+            .unwrap()
+    };
+    let want = |bytes: Vec<u8>| {
+        let hex: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        format!("<image: {} bytes, sha256 {hex}>", bytes.len())
+    };
+    let lines = w.audit_lines();
+    assert_eq!(lines.len(), 1);
+    let outcome = &lines[0]["outcome"];
+    assert_eq!(
+        outcome["local_image"]["bytes"],
+        want(image_bytes(&blocks[1]))
+    );
+    assert_eq!(
+        outcome["match_image"]["bytes"],
+        want(image_bytes(&blocks[2]))
+    );
+    // The metadata beside the bytes is as it was, and no picture is in the file.
+    assert_eq!(outcome["match_image"]["is_full_resolution"], true);
+    let raw = std::fs::read_to_string(&w.audit).unwrap();
+    assert!(!raw.contains("b'") && !raw.contains("\\x"), "{raw}");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_preview_is_the_fallback_and_says_so_with_no_referer() {
     let w = world(|r| {
