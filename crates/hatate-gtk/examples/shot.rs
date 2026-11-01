@@ -846,6 +846,7 @@ fn main() -> glib::ExitCode {
         let win = window.win.clone();
         let main_win = window.win.clone();
         let frames = Rc::new(Cell::new(0u32));
+        let empty_snapshots = Cell::new(0u32);
         let out = out2.clone();
         let state = state.clone();
         win.add_tick_callback(move |win, _| {
@@ -945,7 +946,13 @@ fn main() -> glib::ExitCode {
                 );
             }
             let renderer = win.native().and_then(|n| n.renderer()).expect("renderer");
-            let tex = texture_of(win.upcast_ref(), &renderer).expect("snapshot");
+            // A window with an open popup can snapshot to nothing on the tick the popup is mapped
+            // (hosted `ci` after the header bar, DAN-2550): the next tick has the frame.
+            let Some(tex) = texture_of(win.upcast_ref(), &renderer) else {
+                empty_snapshots.set(empty_snapshots.get() + 1);
+                assert!(empty_snapshots.get() < 120, "snapshot");
+                return glib::ControlFlow::Continue;
+            };
             tex.save_to_png(&out).expect("png");
             println!("SHOT {} {}x{}", out.display(), win.width(), win.height());
             if tabs {
