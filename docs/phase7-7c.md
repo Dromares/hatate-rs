@@ -111,3 +111,39 @@ whole picture into `mcp_audit.jsonl` as `str(bytes)`. This build writes `<image:
 |---|---|
 | both pictures of a call are recorded by size and hash, and no `b'` literal is in the file | `crates/hatate-core/tests/mcp_tool_handlers.rs` `fn the_audit_log_records_an_image_by_size_and_hash_not_by_its_bytes` `want(image_bytes(&blocks[2]))` |
 | a call with no image writes the line Python writes (the key order, `json.dumps` text) | `crates/hatate-core/src/mcp/audit.rs` `fn line_format_is_pythons_json_dumps_with_the_fixed_key_order` (unchanged) |
+
+## 5. Settings at the 560x440 minimum (M2, DAN-2488 a2)
+
+At the stated minimum (`MIN_WIDTH` x `MIN_HEIGHT` in `settings_dialog.rs`, 560x440, **not raised**: that changes
+DAN-2025 line 2.5) five pages scrolled sideways: General 769, Engine 666, Import 581, Hydrus 659 and Site Logins 510 px
+in a 504 px view, so `max (seconds)`, the Tag service placeholder and `Fetch from Hydrus…` ran off the view. The layout
+now gives way instead: a `Node::Line` wraps (a caption stays with the control after it), form captions, check-box
+captions, group titles and drop-down rows wrap, and entries shrink to 8 characters (the Tag service entry is sized to its
+placeholder, so `empty = "my tags" local service` shows whole and the button drops to the next line). The code is in
+`settings_form.rs` (`fn wrap_caption`, `fn wrapping_drop`).
+
+| What | Pin |
+|---|---|
+| no Settings page has more width than its view at the minimum (red at `12ed04c`: the five pages above) | `crates/hatate-gtk/tests/smoke.rs` `fn settings_pages_fit_their_view_at_the_minimum_size` `too_wide.is_empty(),` |
+
+The fit test above measures the window's child, which a sideways-scrolling page never widens; this pin reads each
+page's horizontal adjustment. Shots, contrast and the Tab table are on the ticket and the PR (hosted-CI shot path).
+
+## 6. Queue: the whole file name (M3, DAN-2488 a2)
+
+The File column cuts a long name in the middle. The pointer gets the whole name in the cell's tooltip. The keyboard's
+focus is on the row, not on a cell, and a tooltip on the row widget crashed every Queue scenario (SIGSEGV, reverted), so
+the keyboard gets the same name from a **Details line** under the table (Cloud's ruling on DAN-2511, option 2): one
+selected row shows that row's whole File name; no row, several rows, or a filter that hides the selected row shows
+nothing. The line wraps at the character and has a width of one character, so it never widens the page, and it is one
+line tall when empty (`min-height: 18px`) so the table does not jump. It is not a Tab stop (a label).
+
+| What | Pin |
+|---|---|
+| the File cell's tooltip is the whole name (the hover half) | `crates/hatate-gtk/tests/smoke.rs` `fn queue_file_cell_carries_the_whole_file_name` `assert_eq!(cell.tooltip.as_deref(), Some(long));` |
+| one row selected shows its whole name; the line follows the selection | `crates/hatate-gtk/tests/smoke.rs` `fn queue_details_line_shows_the_selected_rows_whole_file_name` `assert_eq!(details(), long, "one row selected");` |
+| several rows, no row, and a filter that hid the row show nothing | `crates/hatate-gtk/tests/smoke.rs` `fn queue_details_line_shows_the_selected_rows_whole_file_name` `assert_eq!(details(), "", "a filter hid the selected row");` |
+| a real `Down` key (no pointer) lands on the long name | `crates/hatate-gtk/tests/smoke.rs` `fn queue_details_line_shows_the_selected_rows_whole_file_name` `assert_eq!(details(), long, "Down selected the long-named row");` |
+
+Revert-and-red (`worktrees/DAN-2501-mutation.log`): dropping the `notify_selection` call fails at "one row selected";
+dropping the `rebuild` call fails at "a filter hid the selected row".

@@ -7700,7 +7700,8 @@ fn settings_window_keeps_its_stated_minimum(app: &adw::Application) {
 }
 
 /// DAN-2501 (7.c M3): the Queue's File column cuts a long name in the middle, so the name is in
-/// the cell's tooltip (the pointer). The keyboard's focus is on the row, not the cell: not done.
+/// the cell's tooltip (the pointer). The keyboard's focus is on the row, not the cell, so the
+/// keyboard reads the name from the Details line (the next test).
 fn queue_file_cell_carries_the_whole_file_name(app: &adw::Application) {
     use hatate_core::table_cells::Column;
     let long = "a-very-long-file-name-that-the-queue-column-has-to-cut-in-the-middle-0001.jpg";
