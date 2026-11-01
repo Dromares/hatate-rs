@@ -89,50 +89,93 @@ fn test_names(text: &str) -> Vec<String> {
     out
 }
 
-/// Every Python test that touches a `gui/` symbol must be named in `docs/*.md`: by its own name, or by its
-/// class (a doc that maps `TestFoo` as a whole maps its tests). The set is computed from the checkout, so a
-/// test added to the port's pin shows up here without anyone listing it.
-#[test]
-fn every_python_test_that_touches_the_gui_is_named_in_the_docs() {
-    let Some(o) = oracle() else { return };
-    let symbols = pytests::gui_symbols(&o).unwrap();
-    let tests = pytests::walk(&o, &symbols).unwrap();
-    let docs = all_docs();
-    let unmapped: Vec<String> = tests
+const BASELINE: &str = "pytest_baseline.txt";
+
+fn baseline_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(BASELINE)
+}
+
+fn doc_texts() -> Vec<(String, String)> {
+    doc_files()
         .iter()
-        .filter(|t| !docs.contains(&t.name) && !docs.contains(t.id.split('.').next().unwrap()))
-        .map(|t| {
-            format!(
-                "{}:{} {} (touches {})",
-                t.file,
-                t.line,
-                t.id,
-                t.hits.join(", ")
+        .map(|f| {
+            (
+                f.file_name().unwrap().to_string_lossy().to_string(),
+                std::fs::read_to_string(f).unwrap(),
             )
         })
-        .collect();
+        .collect()
+}
+
+/// Every Python test of `tests/test_*.py` (DAN-2544: the whole suite, with no symbol list) is named in `docs/*.md`,
+/// by its own name or by its class (a doc that maps `TestFoo` as a whole maps its tests), or is listed in
+/// `pytest_baseline.txt`. The baseline only shrinks: the gate also fails on a listed test a doc now names, on a
+/// line that is no test of the oracle, and on a duplicate line.
+#[test]
+fn every_python_test_is_named_in_the_docs_or_the_baseline() {
+    let Some(o) = oracle() else { return };
+    let tests = pytests::all_tests(&o).unwrap();
+    let baseline = std::fs::read_to_string(baseline_path()).unwrap();
+    let r = pytests::check_baseline(&tests, &all_docs(), &baseline);
     eprintln!(
-        "python-test walk: {} gui symbols, {} tests touch one, {} unmapped",
-        symbols.len(),
+        "python-test walk: {} tests, {} baselined, {} unlisted, {} now mapped, {} stale, {} duplicate",
         tests.len(),
-        unmapped.len()
+        pytests::baseline_entries(&baseline).len(),
+        r.unlisted.len(),
+        r.now_mapped.len(),
+        r.stale.len(),
+        r.duplicate.len()
     );
     assert!(
-        tests.len() >= 500,
-        "the walk found only {} tests; the symbol set or the parser regressed",
+        tests.len() >= 3000,
+        "the walk found only {} tests; the parser regressed",
         tests.len()
     );
     assert!(
-        unmapped.is_empty(),
-        "{} Python test(s) touch the GUI and no doc names them:\n{}",
-        unmapped.len(),
-        unmapped.join("\n")
+        r.unlisted.is_empty(),
+        "{} Python test(s) are named in no doc and are not in {BASELINE}:\n{}",
+        r.unlisted.len(),
+        r.unlisted.join("\n")
+    );
+    assert!(
+        r.now_mapped.is_empty(),
+        "{} test(s) in {BASELINE} are now named in a doc; delete these lines:\n{}",
+        r.now_mapped.len(),
+        r.now_mapped.join("\n")
+    );
+    assert!(
+        r.stale.is_empty(),
+        "{} line(s) of {BASELINE} are no test of the oracle at {ORACLE_COMMIT}:\n{}",
+        r.stale.len(),
+        r.stale.join("\n")
+    );
+    assert!(
+        r.duplicate.is_empty(),
+        "{} line(s) of {BASELINE} appear more than once:\n{}",
+        r.duplicate.len(),
+        r.duplicate.join("\n")
+    );
+}
+
+/// Regenerates `pytest_baseline.txt` from the oracle and the docs (every unmapped test, a `# reason` header per
+/// module). Not a check: run it by hand with `--ignored` only to write the first baseline or to re-derive it.
+#[test]
+#[ignore = "writes crates/hatate-doccite/pytest_baseline.txt"]
+fn write_baseline() {
+    let o = oracle().expect("write_baseline needs HATATE_PY_ORACLE");
+    let tests = pytests::all_tests(&o).unwrap();
+    let text = pytests::render_baseline(&tests, &doc_texts());
+    std::fs::write(baseline_path(), &text).unwrap();
+    eprintln!(
+        "wrote {} entries to {}",
+        pytests::baseline_entries(&text).len(),
+        baseline_path().display()
     );
 }
 
 /// The 7.c modules (DAN-2515): the Python tests that mention `parser_probe`, `crashlog` or `version` must be named
 /// in `docs/phase7-7c.md` itself, by their own name or by their class. 7.c's walk was missing from the first gate, which
-/// only walked `gui_symbols`, and nine `crashlog`/`version` tests reached review in no doc at all (DAN-2512).
+/// only walked the `gui/` symbol list, and nine `crashlog`/`version` tests reached review in no doc at all (DAN-2512).
 const PHASE7_C_SYMBOLS: &[&str] = &["parser_probe", "crashlog", "version", "__version__"];
 
 #[test]
