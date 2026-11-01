@@ -133,6 +133,10 @@ impl Form {
         match *n {
             Node::Group { title, body } => {
                 let frame = widgets::card(Some(title), true);
+                // a long title wraps to the page (DAN-2501, 7.c M2)
+                if let Some(l) = frame.first_child().and_downcast::<gtk::Label>() {
+                    l.set_wrap(true);
+                }
                 // margins belong to the page; a card nested in a page sits flush
                 frame.set_margin_start(0);
                 frame.set_margin_end(0);
@@ -151,6 +155,10 @@ impl Form {
                     match &row.label {
                         Some(label) => {
                             let l = self.node(label);
+                            // a caption beside its control wraps rather than widening the page
+                            if let Some(label) = l.downcast_ref::<gtk::Label>() {
+                                label.set_wrap(true);
+                            }
                             l.set_valign(gtk::Align::Start);
                             grid.attach(&l, 0, r, 1, 1);
                             field.set_hexpand(true);
@@ -173,10 +181,29 @@ impl Form {
                 col.upcast()
             }
             Node::Line(items) => {
-                let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-                for item in items {
-                    let w = self.node(item);
-                    row.append(&w);
+                // A line that does not fit the page wraps onto the next one (DAN-2501, 7.c M2): in
+                // a box it ran off the 560 px minimum and the page scrolled sideways.
+                let row = gtk::FlowBox::new();
+                row.set_selection_mode(gtk::SelectionMode::None);
+                row.set_homogeneous(false);
+                row.set_column_spacing(8);
+                row.set_row_spacing(4);
+                row.set_max_children_per_line(items.len().max(1) as u32);
+                // a caption stays with the control after it when the line wraps (`min` + its box)
+                let mut i = 0;
+                while i < items.len() {
+                    let w = self.node(&items[i]);
+                    i += 1;
+                    if matches!(items[i - 1], Node::Label { .. }) && i < items.len() {
+                        let pair = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                        pair.append(&w);
+                        let next = self.node(&items[i]);
+                        pair.append(&next);
+                        i += 1;
+                        row.append(&pair);
+                    } else {
+                        row.append(&w);
+                    }
                 }
                 row.upcast()
             }
@@ -197,6 +224,7 @@ impl Form {
             }
             Node::Check { id, text, tip } => {
                 let c = gtk::CheckButton::with_label(text);
+                wrap_caption(&c);
                 tooltip(&c, tip);
                 self.name(text, &c);
                 self.controls.insert(id, Control::Check(c.clone()));
@@ -249,7 +277,7 @@ impl Form {
             }
             Node::Combo { id, items, tip } => {
                 let texts: Vec<&str> = items.iter().map(|(t, _)| *t).collect();
-                let drop = gtk::DropDown::from_strings(&texts);
+                let drop = wrapping_drop(&texts);
                 tooltip(&drop, tip);
                 self.controls.insert(
                     id,
@@ -295,6 +323,7 @@ impl Form {
                 let mut boxes = Vec::new();
                 for text in items {
                     let c = gtk::CheckButton::with_label(text);
+                    wrap_caption(&c);
                     list.append(&c);
                     boxes.push(c);
                 }
@@ -354,6 +383,10 @@ impl Form {
     fn edit_combo(&mut self, id: &'static str, placeholder: &str, tip: &str) -> gtk::Widget {
         let entry = self.entry(id, false, placeholder, tip);
         entry.set_hexpand(true);
+        // the placeholder shows whole: it said `empty = "my tags" local servi` at the minimum
+        if let Some(e) = entry.downcast_ref::<gtk::Entry>() {
+            e.set_width_chars((placeholder.chars().count() * 3 / 4) as i32);
+        }
         let line = match self.controls.get(id) {
             Some(Control::Text(e)) => e.clone(),
             _ => unreachable!("entry() just inserted it"),
@@ -413,7 +446,9 @@ impl Form {
         if !placeholder.is_empty() {
             e.set_placeholder_text(Some(placeholder));
         }
-        e.set_width_chars(24);
+        // least width is a few characters: the field takes the page's width where the page gives it
+        // (DAN-2501, 7.c M2: 24 characters pushed the Hydrus and Site Logins pages past 560 px)
+        e.set_width_chars(8);
         tooltip(&e, tip);
         self.controls.insert(id, Control::Text(e.clone()));
         e.upcast()
@@ -617,6 +652,49 @@ impl Form {
 /// runs past what a caption beside a control does.
 fn is_prose(text: &str) -> bool {
     text.contains('\n') || text.chars().count() > PROSE_CHARS
+}
+
+/// A drop-down whose current choice and list rows wrap to the width they are given: its least
+/// width was its longest choice, which pushed a page past the 560 px minimum (DAN-2501, 7.c M2).
+fn wrapping_drop(texts: &[&str]) -> gtk::DropDown {
+    let drop = gtk::DropDown::from_strings(texts);
+    let factory = gtk::SignalListItemFactory::new();
+    factory.connect_setup(|_, item| {
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let l = gtk::Label::new(None);
+        l.set_xalign(0.0);
+        l.set_wrap(true);
+        item.set_child(Some(&l));
+    });
+    factory.connect_bind(|_, item| {
+        let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
+            return;
+        };
+        let text = item
+            .item()
+            .and_downcast::<gtk::StringObject>()
+            .map(|s| s.string());
+        if let (Some(l), Some(text)) = (item.child().and_downcast::<gtk::Label>(), text) {
+            l.set_text(&text);
+        }
+    });
+    drop.set_factory(Some(&factory));
+    drop
+}
+
+/// A check box's caption wraps to the page instead of widening it: the sentence-length ones ran
+/// past the 560 px minimum and the page scrolled sideways (DAN-2501, 7.c M2).
+fn wrap_caption(c: &gtk::CheckButton) {
+    let mut child = c.first_child();
+    while let Some(w) = child {
+        if let Some(l) = w.downcast_ref::<gtk::Label>() {
+            l.set_wrap(true);
+            l.set_xalign(0.0);
+        }
+        child = w.next_sibling();
+    }
 }
 
 /// Longest caption (characters) that stays on one line beside its control.
