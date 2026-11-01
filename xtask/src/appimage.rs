@@ -13,6 +13,8 @@
 //! usr/lib/                    the shared libraries those and Chromium need (the AppImage
 //!                             excludelist, less FORCE_BUNDLE, stays on the host)
 //! usr/lib/ms-playwright/      the pinned Chromium (Chrome for Testing), headed
+//! usr/lib/gio/modules/        the GIO modules AppRun's `GIO_MODULE_DIR` names: `libdconfsettings.so`,
+//!                             so GSettings reads the desktop's dconf and not schema defaults
 //! usr/lib/gdk-pixbuf-2.0/     the image loaders GTK's symbolic icons go through
 //! usr/share/glib-2.0/schemas  the compiled GSettings schemas GTK and libadwaita read
 //! usr/share/icons/Adwaita     the symbolic icon theme
@@ -33,6 +35,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::licenses;
+
+// AppRun's own environment plan (std only), included the way `hatate-apprun`'s `main.rs` includes
+// the panic hook: the recipe and the pins on the image read the real thing, not a copy (DAN-2558).
+#[allow(dead_code)]
+#[path = "../../crates/hatate-apprun/src/plan.rs"]
+pub mod apprun_plan;
 
 type Res<T> = Result<T, String>;
 
@@ -344,6 +352,35 @@ pub fn woff2_files(appdir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The GIO modules the image needs, by file name. The bundled libgio does not look in the build
+/// host's module directory (it is a different path on the machine that runs the image), so each
+/// is copied to the one directory AppRun names. `libdconfsettings.so` is the GSettings backend:
+/// without it GSettings answers with the schema defaults, so the window ignores the desktop's
+/// button layout and fonts (DAN-2558). The other modules of the build host (TLS, proxy
+/// resolvers, gvfs) are not needed: the app's network stack is rustls and Chromium's own, and
+/// GTK's file chooser goes through the desktop portal.
+const GIO_MODULES_NEEDED: [&str; 1] = ["libdconfsettings.so"];
+
+/// Copies [`GIO_MODULES_NEEDED`] from the first of `host_dirs` that has each one into the
+/// directory AppRun sets as `GIO_MODULE_DIR`. Must run before `bundle_libs`, which then bundles
+/// what the modules link (`libdconf.so.1`). Returns the module files for the licence step.
+pub fn bundle_gio_modules(host_dirs: &[&Path], appdir: &Path) -> Res<Vec<(String, PathBuf)>> {
+    let to = appdir.join(apprun_plan::GIO_MODULES);
+    fs::create_dir_all(&to).map_err(|e| e.to_string())?;
+    let mut sources = Vec::new();
+    for module in GIO_MODULES_NEEDED {
+        let from = host_dirs
+            .iter()
+            .map(|d| d.join(module))
+            .find(|p| p.is_file())
+            .ok_or_else(|| format!("no {module} on this host (install dconf-gsettings-backend)"))?;
+        let real = fs::canonicalize(&from).map_err(|e| e.to_string())?;
+        fs::copy(&real, to.join(module)).map_err(|e| format!("{}: {e}", real.display()))?;
+        sources.push((module.to_owned(), real));
+    }
+    Ok(sources)
+}
+
 /// The pixbuf loaders, the schemas, the icon theme: GTK's own data, taken from the build host.
 fn bundle_gtk_data(appdir: &Path, sources: &mut Vec<(String, PathBuf)>) -> Res<()> {
     let loaders = first_existing(&[
@@ -554,7 +591,14 @@ fn build_inner(args: &[&str]) -> Res<PathBuf> {
 
     copy_fonts(&repo, &appdir)?;
     let exclude = parse_excludelist(&fs::read_to_string(&excludelist).map_err(|e| e.to_string())?);
-    let mut sources = bundle_libs(&appdir, &exclude)?;
+    let mut sources = bundle_gio_modules(
+        &[
+            Path::new("/usr/lib/x86_64-linux-gnu/gio/modules"),
+            Path::new("/usr/lib/gio/modules"),
+        ],
+        &appdir,
+    )?;
+    sources.extend(bundle_libs(&appdir, &exclude)?);
     bundle_gtk_data(&appdir, &mut sources)?;
     let chromium_version = pins["chromium"].get("version").cloned().unwrap_or_default();
     licenses::write(&repo, &appdir, &sources, &chromium_version)?;
@@ -673,6 +717,180 @@ mod tests {
         assert!(woff2_files(dir.path()).is_empty());
         fs::write(dir.path().join("usr/share/fonts/b.WOFF2"), b"").unwrap();
         assert_eq!(woff2_files(dir.path()).len(), 1);
+    }
+
+    /// Pin (a), DAN-2558: the module is in the image at the directory AppRun sets as
+    /// `GIO_MODULE_DIR`. Removing the copy in `bundle_gio_modules` or the variable in AppRun's
+    /// `plan` turns it red.
+    #[test]
+    fn the_image_carries_the_dconf_module_at_the_directory_apprun_sets() {
+        let host = tempfile::tempdir().unwrap();
+        fs::write(host.path().join("libdconfsettings.so"), b"\x7fELF").unwrap();
+        let appdir = tempfile::tempdir().unwrap();
+        let sources = bundle_gio_modules(&[host.path()], appdir.path()).unwrap();
+        assert_eq!(sources.len(), 1);
+        let env = apprun_plan::plan(appdir.path(), &[], &|_| None, None);
+        let dir = PathBuf::from(
+            env.set
+                .get("GIO_MODULE_DIR")
+                .expect("AppRun must set GIO_MODULE_DIR"),
+        );
+        assert_eq!(dir, appdir.path().join("usr/lib/gio/modules"));
+        assert!(
+            dir.join("libdconfsettings.so").is_file(),
+            "the image has no libdconfsettings.so in {}",
+            dir.display()
+        );
+    }
+
+    #[test]
+    fn a_host_without_the_dconf_module_stops_the_build() {
+        let host = tempfile::tempdir().unwrap();
+        let appdir = tempfile::tempdir().unwrap();
+        let err = bundle_gio_modules(&[host.path()], appdir.path()).unwrap_err();
+        assert!(err.contains("libdconfsettings.so"), "{err}");
+    }
+
+    /// The desktop's own schema for the one key the pin reads (`gsettings-desktop-schemas` ships
+    /// it; the image deliberately does not, and a hosted runner may not have it installed), with
+    /// the real default. Compiled into `dir`, which stands in for the desktop's schema directory.
+    fn desktop_schema(dir: &Path) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join("org.gnome.desktop.wm.preferences.gschema.xml"),
+            "<schemalist>\n  <schema id=\"org.gnome.desktop.wm.preferences\" \
+             path=\"/org/gnome/desktop/wm/preferences/\">\n    \
+             <key name=\"button-layout\" type=\"s\">\n      <default>\"appmenu:close\"</default>\n      \
+             <summary>Arrangement of buttons on the titlebar</summary>\n    </key>\n  </schema>\n</schemalist>\n",
+        )
+        .unwrap();
+        run(Command::new("glib-compile-schemas").arg(dir)).unwrap();
+    }
+
+    /// `gsettings get` for the title-bar layout through the image's own libgio, with the
+    /// environment AppRun builds (`apprun_plan::plan`), a throw-away `HOME` and, when given, a
+    /// different `GIO_MODULE_DIR`. Returns (value, log); the log carries GLib's debug lines,
+    /// which name the settings backend it picked.
+    fn gsettings_layout(
+        appdir: &Path,
+        home: &Path,
+        schemas: &Path,
+        module_dir: Option<&Path>,
+    ) -> (String, String) {
+        let plan = apprun_plan::plan(appdir, &[], &|_| None, None);
+        let mut cmd = Command::new("gsettings");
+        cmd.env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("HOME", home)
+            .env("G_MESSAGES_DEBUG", "all")
+            .args(["get", "org.gnome.desktop.wm.preferences", "button-layout"]);
+        for (name, value) in &plan.set {
+            cmd.env(name, value);
+        }
+        // The image's schemas, then the desktop's (`GSETTINGS_SCHEMA_DIR` is a list).
+        let mut dirs = plan.set["GSETTINGS_SCHEMA_DIR"].clone();
+        dirs.push(":");
+        dirs.push(schemas);
+        cmd.env("GSETTINGS_SCHEMA_DIR", dirs);
+        if let Some(dir) = module_dir {
+            cmd.env("GIO_MODULE_DIR", dir);
+        }
+        let out = cmd
+            .output()
+            .expect("gsettings (libglib2.0-bin) must be installed");
+        // GLib's debug lines go to stdout too: the value is the quoted line, the log is the rest.
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let value = all
+            .lines()
+            .find(|l| l.starts_with('\''))
+            .unwrap_or("")
+            .to_owned();
+        (value, all)
+    }
+
+    /// Pin (b), DAN-2558, run by the CI `appimage` job against the built image:
+    /// `HATATE_APPDIR=<AppDir> cargo test -p xtask -- --ignored --nocapture the_built_image`.
+    /// The desktop's dconf database (compiled here from a synthetic keyfile with `dconf compile`)
+    /// sets the button layout; the bundled libgio must read it, and with the module directory
+    /// emptied (the negative control) it must not, which is the defect.
+    #[test]
+    #[ignore = "needs a built AppDir: HATATE_APPDIR=<dir>, plus dconf-cli and libglib2.0-bin"]
+    fn the_built_image_reads_the_desktops_dconf_through_its_own_libgio() {
+        let appdir = PathBuf::from(std::env::var_os("HATATE_APPDIR").expect("HATATE_APPDIR"));
+        let tmp = tempfile::tempdir().unwrap();
+        let keyfiles = tmp.path().join("keyfiles");
+        fs::create_dir_all(&keyfiles).unwrap();
+        fs::write(
+            keyfiles.join("desktop"),
+            "[org/gnome/desktop/wm/preferences]\nbutton-layout='icon:minimize,maximize,close'\n",
+        )
+        .unwrap();
+        let with_db = tmp.path().join("home-with-db");
+        fs::create_dir_all(with_db.join(".config/dconf")).unwrap();
+        run(Command::new("dconf")
+            .arg("compile")
+            .arg(with_db.join(".config/dconf/user"))
+            .arg(&keyfiles))
+        .unwrap();
+        let no_db = tmp.path().join("home-no-db");
+        fs::create_dir_all(&no_db).unwrap();
+        let empty_modules = tmp.path().join("no-modules");
+        fs::create_dir_all(&empty_modules).unwrap();
+        let schemas = tmp.path().join("desktop-schemas");
+        desktop_schema(&schemas);
+
+        // The binary under test really loads the image's libgio, not the host's.
+        let plan = apprun_plan::plan(&appdir, &[], &|_| None, None);
+        let ldd = run(Command::new("ldd")
+            .env("LD_LIBRARY_PATH", &plan.set["LD_LIBRARY_PATH"])
+            .arg(
+                ["/usr/bin/gsettings", "/bin/gsettings"]
+                    .iter()
+                    .find(|p| Path::new(p).exists())
+                    .expect("gsettings"),
+            ))
+        .unwrap();
+        let gio_line = ldd.lines().find(|l| l.contains("libgio-2.0")).unwrap();
+        assert!(gio_line.contains(appdir.to_str().unwrap()), "{gio_line}");
+
+        let (got, log) = gsettings_layout(&appdir, &with_db, &schemas, None);
+        println!(
+            "with the bundled module:   {got}   [{}]",
+            backend_line(&log)
+        );
+        assert_eq!(got, "'icon:minimize,maximize,close'", "{log}");
+        assert!(log.contains("DConfSettingsBackend"), "{log}");
+
+        // No database at all (a clean machine): dconf reads an absent file as empty, the schema
+        // default comes back and nothing fails.
+        let (got, log) = gsettings_layout(&appdir, &no_db, &schemas, None);
+        println!(
+            "no dconf database:         {got}   [{}]",
+            backend_line(&log)
+        );
+        assert_eq!(got, "'appmenu:close'", "{log}");
+        assert!(log.contains("DConfSettingsBackend"), "{log}");
+
+        // Negative control: the same database, the module directory emptied.
+        let (got, log) = gsettings_layout(&appdir, &with_db, &schemas, Some(&empty_modules));
+        println!(
+            "module directory emptied:  {got}   [{}]",
+            backend_line(&log)
+        );
+        assert_eq!(got, "'appmenu:close'", "{log}");
+        assert!(log.contains("GKeyfileSettingsBackend"), "{log}");
+    }
+
+    fn backend_line(log: &str) -> String {
+        log.lines()
+            .find(|l| l.contains("gsettings-backend"))
+            .unwrap_or("no backend line")
+            .trim()
+            .to_owned()
     }
 
     #[test]

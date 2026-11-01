@@ -440,7 +440,7 @@ mod tests {
     fn the_launcher_and_the_lookup_name_the_same_bundled_path() {
         // `AppRun` (crates/hatate-apprun) exports `PLAYWRIGHT_BROWSERS_PATH` from its own copy of
         // the constant; a drift would leave the message and the lookup naming different places.
-        let launcher = include_str!("../../../hatate-apprun/src/main.rs");
+        let launcher = include_str!("../../../hatate-apprun/src/plan.rs");
         let line = format!("const BROWSERS: &str = \"{BUNDLED_BROWSERS}\";");
         assert!(launcher.contains(&line), "AppRun must contain `{line}`");
     }

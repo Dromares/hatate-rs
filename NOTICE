@@ -14,6 +14,10 @@ with its version, licence and files:
     links (mostly LGPL-2.1-or-later): the distribution packages' copyright files, under
     usr/share/licenses/lib/. LGPL libraries are shipped as separate shared objects in usr/lib/,
     so they can be replaced.
+  - The dconf GSettings backend (`libdconfsettings.so` from the dconf-gsettings-backend package,
+    and `libdconf.so.1`; LGPL-2.1-or-later), in usr/lib/gio/modules/ and usr/lib/. It lets the
+    window read the desktop's own GTK settings (title-bar buttons, fonts); texts under
+    usr/share/licenses/lib/.
   - The Adwaita icon theme (LGPL-3.0 / CC-BY-SA-3.0).
   - The app's fonts (SIL Open Font License 1.1, texts under usr/share/licenses/fonts/) and DejaVu.
   - The Rust crates linked into the binaries: each crate's licence files under
