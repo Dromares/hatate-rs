@@ -323,6 +323,10 @@ window.main-window headerbar windowcontrols button image { background: transpare
 window.main-window headerbar windowcontrols button:hover, window.main-window headerbar windowcontrols button:hover image {
   background: @ink_10; }
 window.main-window headerbar windowcontrols button:backdrop { color: @ink_65; }
+/* libadwaita fades an inactive bar's title and buttons to half strength (about 1.7:1 on the page);
+   the label tier is the dimmest this sheet allows text and glyphs */
+window.main-window headerbar:backdrop, window.main-window headerbar:backdrop * { opacity: 1; }
+window.main-window headerbar *:backdrop { color: @ink_65; opacity: 1; }
 
 /* ---- menubar and status bar ---- */
 menubar { background: @page; color: @ink; border-bottom: 1px solid @ink_18; padding: 0 %space_3%px; min-height: 27px; }

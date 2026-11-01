@@ -94,7 +94,7 @@ fn queue_rows(pics: &std::path::Path, n: usize, long_first: bool) -> Vec<Entry> 
 const SHOT_SET: &[(&str, bool)] = &[
     ("empty", true),
     ("rows", false),
-    ("crashed", false),
+    ("crashed", true),
     ("survived", false),
     ("quota", true),
     ("dialog", false),
@@ -180,6 +180,8 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("settings-mcp-tiers-low", true),
     ("queue", true),
     ("queue-selected", false),
+    // DAN-2550: the inactive window (the header bar, the menubar and the selection in their backdrop dress).
+    ("queue-backdrop", false),
     ("queue-sorted", false),
     ("queue-filter", false),
     ("queue-filter-empty", true),
@@ -2150,6 +2152,14 @@ fn prepare_queue(window: &MainWindow, state: &str) {
     let ids = view.visible_ids();
     match state {
         "queue-selected" => view.select_ids(&ids[1..3]),
+        "queue-backdrop" => {
+            view.select_ids(&ids[1..3]);
+            // Xvfb has no window manager, so the window is never told it lost focus: set the flag the
+            // toolkit sets when it does.
+            window
+                .win
+                .set_state_flags(gtk4::StateFlags::BACKDROP, false);
+        }
         "queue-sorted" => view.on_header_clicked(Column::Status),
         "queue-filter" => window.s.filter_bar.text.set_text("synthetic-001"),
         "queue-filter-empty" => window.s.filter_bar.text.set_text("no such file"),
