@@ -5,6 +5,9 @@ members = [
     "crates/hatate-cli",
     "crates/hatate-gtk",
     "crates/hatate-mcp",
+    "crates/hatate-doccite",
+    "crates/hatate-apprun",
+    "xtask",
 ]
 
 [workspace.package]

@@ -4,7 +4,7 @@
 //!
 //! **What changes from Python (plan decision, DAN-2164).** The Rust app has no Playwright, so it
 //! reports only [`LensMissing::Chromium`] as a missing dependency. It looks for a browser in this
-//! order: the AppImage's bundled one, Playwright's existing `ms-playwright/chromium-*` download
+//! order: the AppImage's bundled one (found under `$APPDIR`, first and alone), Playwright's existing `ms-playwright/chromium-*` download
 //! (read exactly as Python reads it, so a current user needs no new download), then
 //! `chromium`, `chromium-browser`, `google-chrome-stable` and `google-chrome` on `PATH`. The
 //! messages are new copy because Python's name `pip`; `docs/lens-browser.md` has both texts side by
@@ -28,6 +28,11 @@ pub const PATH_BROWSERS: [&str; 4] = [
     "google-chrome",
 ];
 
+/// Where the AppImage keeps its Chromium, relative to `$APPDIR`: Playwright's own layout
+/// (`chromium-<revision>/chrome-linux64/chrome`), as Python's 0.1.0 AppImage had it. The pinned
+/// download is unpacked here by `cargo run -p xtask -- appimage` (`packaging/appimage/pins.toml`).
+pub const BUNDLED_BROWSERS: &str = "usr/lib/ms-playwright";
+
 /// Where Playwright puts the executable inside a `chromium-<revision>` directory: the current
 /// layout first, then the older one.
 const EXECUTABLE_IN_DOWNLOAD: [&str; 2] = ["chrome-linux64/chrome", "chrome-linux/chrome"];
@@ -46,6 +51,9 @@ pub struct BrowserEnv {
     pub path: Option<OsString>,
     /// `running_as_appimage()`.
     pub appimage: bool,
+    /// `APPDIR`, the mounted AppImage root, when running as the AppImage (`AppRun` exports it).
+    /// With it the bundled browser under [`BUNDLED_BROWSERS`] is the only browser looked for.
+    pub appdir: Option<PathBuf>,
 }
 
 impl BrowserEnv {
@@ -56,8 +64,14 @@ impl BrowserEnv {
             home: std::env::var_os("HOME").map(PathBuf::from),
             path: std::env::var_os("PATH"),
             // `paths.running_as_appimage()`: the AppImage's `AppRun` sets `HATATE_APPIMAGE=1`.
-            // Phase 7 owns the AppImage itself.
             appimage: std::env::var_os("HATATE_APPIMAGE").is_some_and(|v| v == "1"),
+            // `APPDIR` counts only inside the AppImage: another AppImage that launched this
+            // process from a shell would leave its own `APPDIR` behind.
+            appdir: std::env::var_os("HATATE_APPIMAGE")
+                .is_some_and(|v| v == "1")
+                .then(|| std::env::var_os("APPDIR").filter(|v| !v.is_empty()))
+                .flatten()
+                .map(PathBuf::from),
         }
     }
 }
@@ -185,6 +199,16 @@ fn on_path(env: &BrowserEnv, name: &str) -> Option<PathBuf> {
 /// `PLAYWRIGHT_BROWSERS_PATH` at it, and a missing one means the file is damaged, not that the
 /// user should install something (`bundled_browser_message`).
 pub fn find_chromium(env: &BrowserEnv) -> Option<FoundBrowser> {
+    // `$APPDIR` first, and alone: a host Chromium or a `PLAYWRIGHT_BROWSERS_PATH` of the user's
+    // must never stand in for the one the AppImage was built and hash-checked with.
+    if let Some(appdir) = &env.appdir {
+        return playwright_executable(&appdir.join(BUNDLED_BROWSERS)).map(|executable| {
+            FoundBrowser {
+                executable,
+                source: BrowserSource::Bundled,
+            }
+        });
+    }
     if let Some(root) = browsers_root(env)
         && let Some(executable) = playwright_executable(&root)
     {
@@ -378,6 +402,47 @@ mod tests {
         );
         env.appimage = true;
         assert_eq!(find_chromium(&env).unwrap().source, BrowserSource::Bundled);
+    }
+
+    #[test]
+    fn the_bundled_browser_under_appdir_is_found_first_and_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        let mut env = env_in(dir.path());
+        env.path = Some(bin.clone().into());
+        env.appimage = true;
+        env.appdir = Some(dir.path().join("mnt"));
+        // Decoys that would win in every other order: a newer Playwright download the user set,
+        // the default cache one, and a `chromium` on `PATH`.
+        env.playwright_browsers_path = Some(dir.path().join("pw").into());
+        make_exe(&dir.path().join("pw/chromium-9999/chrome-linux64/chrome"));
+        make_exe(
+            &dir.path()
+                .join(".cache/ms-playwright/chromium-9999/chrome-linux64/chrome"),
+        );
+        make_exe(&bin.join("chromium"));
+        assert_eq!(
+            find_chromium(&env),
+            None,
+            "a damaged AppImage never falls back to a host browser"
+        );
+        let bundled = dir
+            .path()
+            .join("mnt/usr/lib/ms-playwright/chromium-1248/chrome-linux64/chrome");
+        make_exe(&bundled);
+        let found = find_chromium(&env).unwrap();
+        assert_eq!(found.executable, bundled);
+        assert_eq!(found.source, BrowserSource::Bundled);
+        assert!(check_dependencies(&env).ok());
+    }
+
+    #[test]
+    fn the_launcher_and_the_lookup_name_the_same_bundled_path() {
+        // `AppRun` (crates/hatate-apprun) exports `PLAYWRIGHT_BROWSERS_PATH` from its own copy of
+        // the constant; a drift would leave the message and the lookup naming different places.
+        let launcher = include_str!("../../../hatate-apprun/src/main.rs");
+        let line = format!("const BROWSERS: &str = \"{BUNDLED_BROWSERS}\";");
+        assert!(launcher.contains(&line), "AppRun must contain `{line}`");
     }
 
     #[test]

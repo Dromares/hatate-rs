@@ -24,13 +24,39 @@ truth is `Dromares/Hatate-Linux-Redux`.
 - **`ops/` is not ported.** The Python app is a black box: its fixtures are the
   inputs, its output is the oracle. No PR from this work modifies
   `Dromares/Hatate-Linux-Redux`.
-- **Never publish** a release, a crate or any package from this repo. How the
-  Rust build ships is a separate board decision before Phase 7.
+- **Never publish** a release, a crate or any package from this repo, except the
+  one release the Phase 7 note below allows. No AUR, Flathub, crates.io or other
+  registry, ever.
 - **Never touch the board's live Hydrus, real browser profile, or real Hatate
   config/session files.** Never inject input into the board's live session; any
   GUI run uses a headless compositor.
 - At most **two** Rust-rewrite author tickets in flight at once. Push a WIP
   commit about every 20 minutes; split runs that go past about 40 minutes.
+
+### Phase 7 amendments (board card `d1c70a9e`, accepted 2026-10-31; added by DAN-2499)
+
+These change the hard lines above only where they say so.
+
+- **Publishing.** Exactly one publish is allowed: a GitHub Release on
+  `Dromares/hatate-rs` carrying `Hatate-x86_64.AppImage` and `SHA256SUMS`, version
+  `0.2.0`. It is created as a **draft** after step 7.d merges, and made public only
+  by a separate publish ticket that is filed after the board's OK on its own card.
+  Until that ticket exists, "never publish" stands as written. No tag, draft or
+  release is created before the draft step. `RELEASING.md` is the procedure.
+- **Status claim.** The work-in-progress claim and the `0.0.x` version stay until 7.d,
+  which changes them under the status-claim sweep above. The AppImage's `--version`
+  and About say work in progress.
+- **The board's profile.** Only 7.b reads the board's real config, sessions and
+  `lens_profile`, and only to copy them into a temporary `HOME`. Neither app opens or
+  writes the originals. Every other ticket keeps "never touch".
+- **One author lane.** Authors run one hatate-rs ticket at a time (7.a, 7.c, 7.b, 7.d
+  in series), which replaces the "two tickets" line above.
+- **Docs cite a function, not a line.** A `docs/*.md` cite is three code spans:
+  the file, `fn name`, and a quoted fragment of the line. `cargo test -p hatate-gtk
+  --test phase6_coverage` fails on a line-number cite and on a fragment that is not
+  inside its named item. The presubmit tests (`hatate-doccite`, `presubmit_tabs`)
+  need `HATATE_PY_ORACLE` (the Python repo at `76c85c4`) and a display; with `CI` set
+  a missing input fails instead of skipping.
 
 ## No secrets in fixtures
 

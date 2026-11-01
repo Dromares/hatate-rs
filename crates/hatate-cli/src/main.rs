@@ -12,6 +12,14 @@ fn banner() -> &'static str {
     "hatate-cli: work-in-progress Rust rewrite, not yet a replacement for Hatate"
 }
 
+/// What `--version` prints: the version stays `0.0.x` and says work in progress.
+fn version_line() -> String {
+    format!(
+        "hatate {} (work-in-progress Rust rewrite, not yet a replacement for Hatate)",
+        env!("CARGO_PKG_VERSION")
+    )
+}
+
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     match parse(&argv) {
@@ -23,6 +31,7 @@ fn main() {
             println!("{}", banner());
             println!("{}", args::USAGE);
         }
+        Ok(Command::Version) => println!("{}", version_line()),
         Ok(Command::Batch(opts)) => std::process::exit(batch_cmd::run(opts)),
         Ok(Command::McpStdioBridge(rest)) => std::process::exit(bridge_cmd::run(&rest)),
         Err(message) => {
@@ -40,5 +49,12 @@ mod tests {
     #[test]
     fn banner_says_work_in_progress() {
         assert!(banner().contains("work-in-progress"));
+    }
+
+    #[test]
+    fn version_says_work_in_progress_and_stays_0_0_x() {
+        let line = version_line();
+        assert!(line.starts_with("hatate 0.0."), "{line}");
+        assert!(line.contains("work-in-progress"), "{line}");
     }
 }

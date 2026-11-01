@@ -1,0 +1,31 @@
+# Every external input of the AppImage build, pinned to a fixed URL and a SHA-256. `cargo run -p
+# xtask -- appimage` downloads each one and refuses it unless the hash matches; nothing here is a
+# `latest` or `continuous` URL. To bump one, change the URL and the hash together and rebuild.
+# The same pins as Hatate's 0.1.0 AppImage (Dromares/Hatate-Linux-Redux, packaging/appimage/pins.sh
+# at 76c85c4), re-fetched and re-hashed for this file.
+
+# Chrome for Testing, the headed Chromium Playwright 1.64.0 downloads for its revision 1248
+# (cdn.playwright.dev/builds/cft/<version>/linux64/chrome-linux64.zip). The AppImage unpacks it to
+# usr/lib/ms-playwright/chromium-<revision>/chrome-linux64, the layout the Lens lookup reads
+# (`hatate_core::lens_browser::deps::BUNDLED_BROWSERS`).
+[chromium]
+version = "156.0.8078.4"
+revision = "1248"
+url = "https://cdn.playwright.dev/builds/cft/156.0.8078.4/linux64/chrome-linux64.zip"
+sha256 = "43fd31766c7533a02dda2ded5ad50c2f861cd5400be7509c0abad71129f79d79"
+
+# appimagetool 1.9.1 (a release, not `continuous`).
+[appimagetool]
+url = "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage"
+sha256 = "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+
+# The static type-2 runtime (no libfuse2 needed on the user's machine).
+[runtime]
+url = "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64"
+sha256 = "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
+
+# The AppImage project's list of libraries that must come from the host, pinned to a commit of
+# AppImageCommunity/pkg2appimage.
+[excludelist]
+url = "https://raw.githubusercontent.com/AppImageCommunity/pkg2appimage/15a64c20dc23a0154622ba25829364323903b6b5/excludelist"
+sha256 = "50db0f894f34b169c47a5cbc0c17dbab61e9edebca5bc8269a1e6ac1bf4bdad9"

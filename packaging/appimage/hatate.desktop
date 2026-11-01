@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Hatate (work in progress)
+GenericName=Reverse image tagger
+Comment=Work-in-progress Rust rewrite of Hatate, not yet a replacement for it
+Exec=AppRun
+Icon=hatate
+Terminal=false
+Categories=Graphics;
+StartupWMClass=io.github.dromares.HatateRs
+X-AppImage-Name=Hatate

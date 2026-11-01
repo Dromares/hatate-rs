@@ -1,0 +1,16 @@
+[package]
+name = "xtask"
+description = "Workspace tooling (cargo run -p xtask -- <task>): never shipped"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+hatate-doccite = { path = "../crates/hatate-doccite" }
+serde_json = "1.0.154"
+
+[dev-dependencies]
+tempfile = "3.27.0"

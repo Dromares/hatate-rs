@@ -27,6 +27,8 @@ pub enum Command {
     /// No arguments.
     Banner,
     Help,
+    /// `--version` / `-V`: the AppImage answers it too (`AppRun` hands it to this binary).
+    Version,
     Batch(BatchOptions),
     /// The raw arguments after the command; `hatate_core::mcp::bridge::parse_args` reads them.
     McpStdioBridge(Vec<String>),
@@ -45,6 +47,7 @@ pub fn parse(argv: &[String]) -> Result<Command, String> {
     };
     match first.as_str() {
         "-h" | "--help" | "help" => Ok(Command::Help),
+        "-V" | "--version" => Ok(Command::Version),
         "batch" => {
             let mut dir: Option<PathBuf> = None;
             let mut verbosity = 0u8;
@@ -106,6 +109,12 @@ mod tests {
         assert_eq!(p(&["--help"]), Ok(Command::Help));
         assert_eq!(p(&["-h"]), Ok(Command::Help));
         assert_eq!(p(&["batch", "--help"]), Ok(Command::Help));
+    }
+
+    #[test]
+    fn version_in_either_spelling() {
+        assert_eq!(p(&["--version"]), Ok(Command::Version));
+        assert_eq!(p(&["-V"]), Ok(Command::Version));
     }
 
     #[test]
