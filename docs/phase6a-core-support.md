@@ -1,6 +1,6 @@
 # Phase 6.a: core support for the window (DAN-2216)
 
-Work in progress Rust rewrite of Hatate. Lane A, second Phase 6 ticket: core only, no widgets. Python source of truth: `Hatate-Linux-Redux` at `76c85c4`. Design authority: `phase6-calls` on DAN-2213 (calls 1, 2 and 4) and Cloud's rulings on DAN-2224.
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. Lane A, second Phase 6 ticket: core only, no widgets. Python source of truth: `Hatate-Linux-Redux` at `76c85c4`. Design authority: `phase6-calls` on DAN-2213 (calls 1, 2 and 4) and Cloud's rulings on DAN-2224.
 
 ## What is ported and where the cut is
 

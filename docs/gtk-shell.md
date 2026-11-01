@@ -1,6 +1,6 @@
 # The GTK shell (Phase 6.c)
 
-Work in progress; not yet a replacement for Hatate. This document belongs to
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This document belongs to
 [DAN-2215](/DAN/issues/DAN-2215). It states what the window shell ports from Python at `76c85c4`, what it
 leaves to the later Phase 6 tickets, how the worker bridge works, the minimum window size and how it was
 measured, the differences from Python that are on purpose, the action differential's method and counts, and

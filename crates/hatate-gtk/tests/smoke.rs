@@ -572,7 +572,7 @@ fn fx(app: &adw::Application) -> Fx {
 
 fn window_menus_and_deferred_actions(app: &adw::Application) {
     let f = fx(app);
-    assert!(f.w.win.title().unwrap().contains("work in progress"));
+    assert_eq!(f.w.win.title().unwrap(), "Hatate");
     // Every action in the menus exists; a later ticket's is disabled, this ticket's is enabled.
     for (name, owner) in menu::actions() {
         if name == "site" {

@@ -1,5 +1,5 @@
-//! The `hatate` command. Work in progress: `batch` is experimental, and `mcp-stdio-bridge` is a
-//! client of the MCP server (it does not start one).
+//! The `hatate` command. `batch` is experimental, and `mcp-stdio-bridge` is a client of the MCP
+//! server (it does not start one).
 
 mod args;
 mod batch_cmd;
@@ -9,13 +9,13 @@ use args::{Command, parse};
 
 /// Message printed when no command is given.
 fn banner() -> &'static str {
-    "hatate-cli: work-in-progress Rust rewrite, not yet a replacement for Hatate"
+    "hatate-cli: the command line of the Rust rewrite of Hatate"
 }
 
-/// What `--version` prints: the version stays `0.0.x` and says work in progress.
+/// What `--version` prints: the one version source (`hatate_core::version::VERSION`).
 fn version_line() -> String {
     format!(
-        "hatate {} (work-in-progress Rust rewrite, not yet a replacement for Hatate)",
+        "hatate {} (Rust rewrite of Hatate)",
         hatate_core::version::VERSION
     )
 }
@@ -52,19 +52,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn banner_says_work_in_progress() {
-        assert!(banner().contains("work-in-progress"));
+    fn banner_names_the_rewrite_and_claims_nothing_else() {
+        let text = banner();
+        assert!(text.contains("Rust rewrite of Hatate"), "{text}");
+        assert!(!text.contains("work-in-progress"), "{text}");
     }
 
     #[test]
-    fn version_says_work_in_progress_and_stays_0_0_x() {
+    fn version_is_0_2_x_and_says_what_this_is() {
         let line = version_line();
-        assert!(line.starts_with("hatate 0.0."), "{line}");
+        assert!(line.starts_with("hatate 0.2."), "{line}");
         // The number is the one version source's, not a copy (DAN-2501).
         assert!(
             line.starts_with(&format!("hatate {} (", hatate_core::version::VERSION)),
             "{line}"
         );
-        assert!(line.contains("work-in-progress"), "{line}");
+        assert!(line.ends_with("(Rust rewrite of Hatate)"), "{line}");
+        assert!(!line.contains("work-in-progress"), "{line}");
     }
 }

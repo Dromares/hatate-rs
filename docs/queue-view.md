@@ -1,6 +1,6 @@
 # The Queue view (Phase 6.d)
 
-Work in progress; not yet a replacement for Hatate. This document belongs to
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This document belongs to
 [DAN-2217](/DAN/issues/DAN-2217). It states what the Queue view ports from Python at `76c85c4`, what it leaves
 to later tickets, the differences from Python that are on purpose, the documented classes the differential
 could not match (each ruled by Cloud), the differential's method and counts, the measurements the design

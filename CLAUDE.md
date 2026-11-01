@@ -1,9 +1,9 @@
 # CLAUDE.md: hatate-rs
 
-Guidance for the agents who work in this repo. `hatate-rs` is a work-in-progress
-Rust rewrite of Hatate. It is public from its first commit and is **not yet a
-replacement for Hatate**. The plan is DAN-1961 (rev 3); the Python source of
-truth is `Dromares/Hatate-Linux-Redux`.
+Guidance for the agents who work in this repo. `hatate-rs` is the Rust rewrite of
+Hatate, version 0.2.0. It is public from its first commit and, from 0.2.0, replaces
+the Python app, which takes no new release and stays available. The plan is DAN-1961
+(rev 16); the Python source of truth is `Dromares/Hatate-Linux-Redux`.
 
 ## Hard lines
 
@@ -15,17 +15,21 @@ truth is `Dromares/Hatate-Linux-Redux`.
 - **Rust only** in the tree: no Python, no new `.sh`, no other scripting
   language, tooling and mockups included. CI is GitHub Actions YAML calling
   `cargo`.
-- **Status claim.** The README says work-in-progress Rust rewrite, not yet a
-  replacement for Hatate. No text anywhere may claim usable, parity,
-  feature-complete, released, or a version beyond `0.0.x`. Any change to that
-  claim carries the DAN-1729 status-claim sweep: run
+- **Status claim.** The README says what the app is and lists its Known gaps; the
+  version is `0.2.0`. "Replaces the Python app" is claimed only as the Phase 7 plan
+  states it: the Python app takes no new release and stays available. No text
+  anywhere may claim parity, feature-complete or stable, or a version beyond
+  `0.2.0`, and nothing may call the app released until the publish ticket has made
+  the GitHub Release public. A Known gap in the README is removed only by the PR
+  that closes it. Any change to the claim, the version or the gaps carries the
+  DAN-1729 status-claim sweep: run
   `git grep -n -i -E 'replace|parity|release|stable|ready|usable|install|version'`
   over the whole tree and list every hit with its disposition in the PR comment.
 - **`ops/` is not ported.** The Python app is a black box: its fixtures are the
   inputs, its output is the oracle. No PR from this work modifies
   `Dromares/Hatate-Linux-Redux`.
 - **Never publish** a release, a crate or any package from this repo, except the
-  one release the Phase 7 note below allows. No AUR, Flathub, crates.io or other
+  one release the Phase 7 amendment below allows. No AUR, Flathub, crates.io or other
   registry, ever.
 - **Never touch the board's live Hydrus, real browser profile, or real Hatate
   config/session files.** Never inject input into the board's live session; any
@@ -39,13 +43,16 @@ These change the hard lines above only where they say so.
 
 - **Publishing.** Exactly one publish is allowed: a GitHub Release on
   `Dromares/hatate-rs` carrying `Hatate-x86_64.AppImage` and `SHA256SUMS`, version
-  `0.2.0`. It is created as a **draft** after step 7.d merges, and made public only
-  by a separate publish ticket that is filed after the board's OK on its own card.
-  Until that ticket exists, "never publish" stands as written. No tag, draft or
-  release is created before the draft step. `RELEASING.md` is the procedure.
-- **Status claim.** The work-in-progress claim and the `0.0.x` version stay until 7.d,
-  which changes them under the status-claim sweep above. The AppImage's `--version`
-  and About say work in progress.
+  `0.2.0`. It is created as a **draft** by dispatching `release.yml` from `main` after
+  step 7.d merges, and made public only by a separate publish ticket that is filed
+  after the board's OK on its own card. Until that ticket exists, "never publish"
+  stands as written. `release.yml` never publishes: it has no `make_latest` and no
+  `draft: false`, and a PR that adds either is refused. No tag, draft or release is
+  created before the draft step. `RELEASING.md` is the procedure.
+- **Status claim.** Step 7.d (DAN-2503) moved the version from `0.0.0` to `0.2.0` and
+  dropped the work-in-progress claim, under the status-claim sweep above. `--version`
+  prints `hatate 0.2.0 (Rust rewrite of Hatate)`; there is no About dialog, and the
+  window title is `Hatate`.
 - **The board's profile.** Only 7.b reads the board's real config, sessions and
   `lens_profile`, and only to copy them into a temporary `HOME`. Neither app opens or
   writes the originals. Every other ticket keeps "never touch".

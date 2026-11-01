@@ -1,6 +1,6 @@
 [package]
 name = "hatate-gtk"
-description = "GTK4 + libadwaita window for the Hatate Rust rewrite (work in progress, not yet a replacement for Hatate)"
+description = "GTK4 + libadwaita window for the Hatate Rust rewrite"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

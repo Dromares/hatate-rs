@@ -8,7 +8,7 @@ session modules, the engine clients and runner (3.a to 3.f) and `search_image` (
 transient field on `Entry` and the line that sets it (section 5). Hydrus auto-import (4.g) is
 section 7.
 
-`hatate batch` is experimental: it is a work-in-progress command in a work-in-progress rewrite.
+`hatate batch` is experimental: its flags and output may change.
 
 ## 1. The cut
 

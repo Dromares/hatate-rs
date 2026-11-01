@@ -1,6 +1,6 @@
 # The Review view (Phase 6.f)
 
-Work in progress Rust rewrite, not yet a replacement for Hatate. This is the doc of the sixth-phase ticket that gives
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This is the doc of the sixth-phase ticket that gives
 the window its Review page (DAN-2219), in Side by side mode. It holds the two maps Phase 6 asks every ticket for (the
 method map and the Python test map; 6.j checks the union), the differential, the on-purpose differences, the measured
 minimum size and the shot set. Python is `Dromares/Hatate-Linux-Redux` at `76c85c4`. Wipe, Differences, the compare
@@ -623,5 +623,5 @@ makes; `geometry` rows are judged in the shot set and the measured tables, as in
 
 ## 9. Status claims
 
-This ticket changes no status claim. The README and the window's About text say work in progress; no text in the new
+This ticket changed no status claim. At its head the README and the window title said work in progress; no text in the new
 surfaces says usable, parity, feature-complete, released, replacement or stable (the sweep is in the PR).

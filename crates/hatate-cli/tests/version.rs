@@ -1,5 +1,5 @@
-//! DAN-2501: `hatate --version` prints the workspace version, the one version source, and says
-//! work in progress. The binary is run, not its `version_line` called.
+//! DAN-2501, DAN-2503: `hatate --version` prints the workspace version, the one version source,
+//! and what this is (a Rust rewrite of Hatate). The binary is run, not its `version_line` called.
 
 use std::process::Command;
 
@@ -14,7 +14,7 @@ fn version_flag_prints_the_workspace_version() {
     assert_eq!(
         text,
         format!(
-            "hatate {} (work-in-progress Rust rewrite, not yet a replacement for Hatate)\n",
+            "hatate {} (Rust rewrite of Hatate)\n",
             hatate_core::version::VERSION
         )
     );

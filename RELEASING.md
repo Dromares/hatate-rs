@@ -1,31 +1,37 @@
 # Releasing the Hatate AppImage
 
-> **Status.** Nothing has been released. `hatate-rs` is still a work-in-progress Rust rewrite and
-> its version is `0.0.0`. This file is the procedure that a release will follow once the board has
-> approved one. **No tag, draft or release is created, and nothing is published, without the
-> board's OK on its own card** (plan DAN-1961, Phase 7). The first release is planned as `0.2.0`,
-> and it is made only by a separate publish ticket.
+> **Status.** The workspace version is `0.2.0`. Until the publish step of section 6 has run, no
+> release is public. **No tag, draft or release is created, and nothing is published, without the
+> board's OK where this file says so** (plan DAN-1961, Phase 7): the draft is made by dispatching
+> `release.yml` (section 3), and a separate publish ticket, filed only after the board's OK on its own
+> card, makes it public.
 
 A release is one file, `Hatate-x86_64.AppImage`, plus `SHA256SUMS`, attached to a GitHub Release on
-`Dromares/hatate-rs`. It is built by the hosted `appimage` job of `ci.yml` from a `main` commit,
-uploaded as a **draft**, checked by someone other than the person who built it, and only then
+`Dromares/hatate-rs`. The `release` workflow (`.github/workflows/release.yml`) builds them from a
+`main` commit with the same recipe as the `appimage` job of `ci.yml`, and creates the release as a
+**draft**. The draft is checked by someone other than the person who dispatched it, and only then
 published. Never publish first and check afterwards. No AUR, Flathub, crates.io or other registry,
 ever (DAN-1665).
 
-Roles follow the repository's usual split: the **author** builds and uploads the draft, a
-**non-author** checks it, and the **publish executor** publishes.
+Roles follow the repository's usual split: the **executor** dispatches the workflow and creates the
+draft, a **non-author** checks it, and the **publish executor** publishes. The workflow itself cannot
+publish: it has no publish switch, and the verifier of any PR that touches it greps for one.
 
 ## 1. Before building
 
 1. `main` is green: the newest hosted `ci` run at the commit, with both jobs (`ci`, `appimage`)
    `completed` and `success`.
 2. The version is changed in one place, `[workspace.package] version` in `Cargo.toml`.
-   `hatate --version` must print it. While the claim is work in progress it also says so.
-3. Re-run the status-claim sweep over the **whole tree** and fix every stale hit before tagging:
+   `hatate --version` must print `hatate <version> (Rust rewrite of Hatate)`, and the workflow refuses a
+   dispatch whose `version` input differs from it.
+3. Re-run the status-claim sweep over the **whole tree** and fix every stale hit before dispatching:
 
    ```bash
-   git grep -n -i -E 'appimage|released|replacement|parity|usable|stable|0\.0\.|<old version>'
+   git grep -n -i -E 'replace|parity|release|stable|ready|usable|install|version'
    ```
+
+   List every hit with its disposition in the PR comment. The README's Known gaps list is checked
+   against its sources in the same pass.
 
 4. The pins in `packaging/appimage/pins.toml` are current. Each is a URL **and** a SHA-256, never
    `latest` or `continuous`; the build refuses a file whose hash differs. To change Chromium, edit
@@ -53,47 +59,62 @@ not hash to its pin. Keep `build.log`.
 Smoke-test the result **on your own machine** before uploading:
 
 ```bash
-./Hatate-x86_64.AppImage --version      # hatate <version> (work-in-progress ...), exit 0, no display
+./Hatate-x86_64.AppImage --version      # hatate <version> (Rust rewrite of Hatate), exit 0, no display
 ```
 
 then launch it with throw-away `HOME`, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` and no Hydrus
 configured. Never point it at a real profile.
 
-## 3. Upload a draft
+## 3. Create the draft
 
-Only with the board's approval on the release card:
+Only after `main` is green (section 1) and the PR that last changed `release.yml` has merged: GitHub
+dispatches a workflow only from the default branch, and answers 404 for one that exists only on a
+branch. The executor, not the author of the change, runs:
 
 ```bash
-sha256sum Hatate-x86_64.AppImage > SHA256SUMS
-git tag v<version> <commit> && git push origin v<version>
-gh release create v<version> --draft --title "Hatate <version>" \
-    --notes-file notes.md Hatate-x86_64.AppImage SHA256SUMS
+gh workflow run release.yml --repo Dromares/hatate-rs --ref main -f version=0.2.0
+gh run list --workflow release.yml --repo Dromares/hatate-rs --limit 1      # the run id
+gh run watch <run id> --repo Dromares/hatate-rs --exit-status               # about 20 minutes
+gh release view v0.2.0 --repo Dromares/hatate-rs --json isDraft,tagName,assets,targetCommitish
 ```
 
-`--draft` is not optional. The notes carry the AppImage's size, the glibc floor, the SHA-256 and the
-licence line ("Hatate's own code is MIT; the AppImage also bundles Chromium, GTK 4 and libadwaita
-and other components under their own licences, listed in `NOTICE`").
+Dispatch it **once**. The `build` job checks that the input is the workspace version and the ref is
+`main`, builds the AppImage, answers `--version`, writes `SHA256SUMS` and the release notes, and
+uploads them as the `release-assets` artifact. The `draft` job then creates `v0.2.0` as a draft
+(the tag does not exist until the release is published) and stops if a release of that name is
+already there. Expect `isDraft=true` and two assets. The notes carry the AppImage's size, the glibc
+floor, the SHA-256 and the licence line ("Hatate's own code is MIT; the AppImage also bundles
+Chromium, GTK 4 and libadwaita and other components under their own licences, listed in `NOTICE`").
+
+A dry run of the same build (no draft, no write permission) runs on every pull request that changes
+`release.yml`, `Cargo.toml`, `xtask/`, `packaging/` or `crates/hatate-apprun/`. Read the commit and
+the checksum from its job summary.
 
 ## 4. Non-author draft check
 
-Done by someone who did not build it, on the assets **as uploaded to the draft**, not on a local
-copy. Paste each output into the check.
+Done by someone who did not dispatch the workflow, on the assets **as uploaded to the draft**, not on a
+local copy. Paste each output into the check.
 
-1. Download both assets with an authenticated `gh release download`, then
+1. From the draft's own asset, in an empty directory, download both assets with an authenticated
+   `gh release download v<version> --repo Dromares/hatate-rs`, then
    `sha256sum -c --ignore-missing SHA256SUMS`.
-2. `./Hatate-x86_64.AppImage --version` prints `hatate <version> ...`, exit 0.
-3. **Run the shipped binary's network path, not just `--version`** (DAN-1909). rv-rs went public
+2. `env HOME=$(mktemp -d) ./Hatate-x86_64.AppImage --version` prints `hatate 0.2.0 (Rust rewrite of
+   Hatate)` (the version must be `0.2.0`), exit 0.
+3. **Run the shipped binary's network paths, not just `--version`** (DAN-1909). rv-rs went public
    twice with an update check that panicked, because two draft checks had run only `--version` and
    `--help`. From the draft's own downloaded asset, in an empty directory:
 
    ```bash
-   env HOME=$(mktemp -d) ./Hatate-x86_64.AppImage batch <dir with one generated noise PNG>; echo exit=$?
+   env HOME=$(mktemp -d) ./Hatate-x86_64.AppImage batch <dir with one synthetic image>; echo exit=$?
    ```
 
-   with a throw-away `config.json` that turns on only IQDB and trace.moe (the engines that answer an
-   anonymous upload). Pass: `exit=0` or a typed engine error on the row, and no `panicked` and no
-   `CryptoProvider` on stderr. A Cloudflare challenge is recorded, never worked around. The anonymous
-   API cannot see a draft, so this exercises the real TLS path of the binary against the real services.
+   with a throw-away `config.json` and **every engine the default config enables, once each** (one
+   try, no retry), plus **one Lens search** with a fresh temporary profile, driven by the bundled
+   Chromium. Pass: each engine ends in a result or a typed error on its row, `exit=0`, and no
+   `panicked` and no `CryptoProvider` on stderr. A Cloudflare or Google challenge is recorded, never
+   worked around. The anonymous API cannot see a draft, so this exercises the real TLS path of the
+   binary against the real services. Hydrus and the MCP server are checked against a scripted local
+   Hydrus and the app's own MCP port, never the board's.
 4. **The bundled browser starts from inside the image** under Xvfb and answers one CDP
    `Browser.getVersion` on `about:blank`; `ps` shows Chromium running under the AppImage's mount, not
    the host's. No Lens request is needed for this step.
@@ -106,9 +127,11 @@ copy. Paste each output into the check.
 
 ## 5. The DAN-1702 probes: is the draft really private?
 
-While the release is a draft, the tag page on github.com can still return 200 (the git tag is public
-even when the release is not), so the HTML tag page proves nothing. Use these instead, anonymously
-(no token):
+While the release is a draft, anonymously (no token) each asset URL
+`https://github.com/Dromares/hatate-rs/releases/download/v0.2.0/<asset>` returns 404, **and**
+`https://api.github.com/repos/Dromares/hatate-rs/releases/tags/v0.2.0` returns 404. Never use the HTML
+tag page: it can answer 200 for a tag even when the release is not public, so it proves nothing. The
+probes, in full:
 
 | Probe | Expect while draft | Expect after publish |
 |-------|--------------------|----------------------|
@@ -124,7 +147,9 @@ in the check and skip only that row.
 ## 6. Publish
 
 Only after the non-author check passes at the exact assets in the draft, **and** the board has said
-yes on the release card:
+yes on the release card. **Do not publish unless the draft-check verdict for these assets pastes the
+section 4 output.** The publish ticket is filed only after the board accepts the card (the desktop
+launch, the hardware check and the OK to publish):
 
 ```bash
 gh release edit v<version> --draft=false --latest

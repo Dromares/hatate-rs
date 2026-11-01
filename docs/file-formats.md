@@ -3,9 +3,10 @@
 Contract for the Rust rewrite (Phase 1 implements it, Phase 7 checks it on a real
 profile). Plan: DAN-1961 rev 3. Task: DAN-1966.
 
-**Status of this document.** `hatate-rs` is a work-in-progress Rust rewrite, not yet a
-replacement for Hatate. This file describes the *Python* app's on-disk formats so the
-rewrite can open them unchanged. Nothing here says the Rust code does any of it yet.
+**Status of this document.** This file describes the *Python* app's on-disk formats so the
+rewrite can open them unchanged. It was written in Phase 1, while the rewrite was work in
+progress (0.0.x); it is a contract, not a statement of what the Rust code does today (the
+current status is in `README.md`).
 
 ## Conventions
 

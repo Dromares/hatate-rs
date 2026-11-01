@@ -1,6 +1,6 @@
 # Hydrus and Pawchive in the window (Phase 6.g)
 
-Work in progress Rust rewrite, not yet a replacement for Hatate. This is the doc of [DAN-2220](/DAN/issues/DAN-2220).
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This is the doc of [DAN-2220](/DAN/issues/DAN-2220).
 It holds the two maps Phase 6 asks every ticket for (the method map and the Python test map; 6.j checks the union), the
 differential, the on-purpose differences with the assertion that pins each, the measured minimum size and the shot set.
 Python is `Dromares/Hatate-Linux-Redux` at `76c85c4`. **Every Hydrus and Pawchive answer in a test, a differential or a
@@ -497,5 +497,5 @@ two windows.
 
 ## 8. Status claims
 
-This PR adds no status claim. The README's work-in-progress banner is untouched. The claim grep at the head is in the PR
+This PR added no status claim; the README's work-in-progress banner was untouched at its head. The claim grep at the head is in the PR
 body.

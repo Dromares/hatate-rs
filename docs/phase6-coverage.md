@@ -1,6 +1,6 @@
 # Phase 6 exit check: every `gui/` file and `def`, and where it went (DAN-2223)
 
-Work in progress Rust rewrite of Hatate, not yet a replacement for it. This is the Phase 6.j coverage table. It lists every `.py` file and every `def` in `gui/` of `Hatate-Linux-Redux` at `76c85c4`, the Phase 6 rows of `docs/phase5-coverage.md`, and for each its Rust home and the merged PR, or the reason it has no Rust function of its own.
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This is the Phase 6.j coverage table. It lists every `.py` file and every `def` in `gui/` of `Hatate-Linux-Redux` at `76c85c4`, the Phase 6 rows of `docs/phase5-coverage.md`, and for each its Rust home and the merged PR, or the reason it has no Rust function of its own.
 
 ## 1. How it is checked
 

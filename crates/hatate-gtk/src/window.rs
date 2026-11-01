@@ -36,9 +36,10 @@ use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
-/// The window title says what this is (work in progress, not a replacement). Python's
-/// `setWindowTitle` (`main_window.py:422`) reads "Hatate-linux - IQDB/SauceNAO tagger for Hydrus".
-pub const WINDOW_TITLE: &str = "Hatate (work in progress Rust rewrite)";
+/// The window title is the app's name and claims nothing else (7.d dropped the work-in-progress
+/// words with the status claim). Python's `setWindowTitle` (`main_window.py:422`) reads
+/// "Hatate-linux - IQDB/SauceNAO tagger for Hydrus".
+pub const WINDOW_TITLE: &str = "Hatate";
 
 /// The window's minimum size (design gate 2.5, DAN-1974 item 2): the width and height below which a
 /// frame of the Queue or the Review (right rail in) would clip, **measured** on the CI toolkit

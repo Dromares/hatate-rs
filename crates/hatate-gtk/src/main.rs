@@ -1,4 +1,4 @@
-//! The Hatate window. Work in progress, not yet a replacement for Hatate.
+//! The Hatate window.
 
 use hatate_core::applog::LogRing;
 use hatate_core::crash_marker::CrashMarkers;

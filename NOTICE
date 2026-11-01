@@ -1,4 +1,4 @@
-Hatate (hatate-rs): a work-in-progress Rust rewrite of Hatate, not yet a replacement for it.
+Hatate (hatate-rs): a Rust rewrite of Hatate.
 
 The application's own code is MIT licensed (LICENSE).
 

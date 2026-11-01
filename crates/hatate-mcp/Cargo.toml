@@ -1,6 +1,6 @@
 [package]
 name = "hatate-mcp"
-description = "MCP server placeholder for the Hatate Rust rewrite (work in progress)"
+description = "MCP server placeholder for the Hatate Rust rewrite"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

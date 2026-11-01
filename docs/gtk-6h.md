@@ -1,6 +1,6 @@
 # The Settings window (Phase 6.h)
 
-Work in progress Rust rewrite, not yet a replacement for Hatate. This is the doc of [DAN-2221](/DAN/issues/DAN-2221).
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This is the doc of [DAN-2221](/DAN/issues/DAN-2221).
 It holds the two maps Phase 6 asks every ticket for (the method map and the Python test map; 6.j checks the union), the
 differential with its documented classes, the on-purpose differences, the measured minimum size and the shot set.
 Python is `Dromares/Hatate-Linux-Redux` at `76c85c4`. Nothing here reaches a network: the Test buttons that would are
