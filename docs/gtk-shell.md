@@ -54,12 +54,19 @@ is the pattern; `a_second_add_waits_and_the_window_keeps_working` is the window-
 
 ## 3. Minimum size
 
-`MIN_WIDTH x MIN_HEIGHT = 1010 x 790`, set with `set_size_request`. Python's 712x515 is not carried over.
+`MIN_WIDTH x MIN_HEIGHT = 1010 x 837`, set with `set_size_request`. Python's 712x515 is not carried over.
+
+DAN-2550 gave the main window a title bar (`adw::HeaderBar`, which the toolkit's `AdwApplicationWindow` does not draw
+itself), so the height of 790 the first cut stated grew by the bar's own height, **47 px** (libadwaita's 46 px bar and
+the 1 px hairline under it, `TITLEBAR main dark header_h=47` in the hosted `ci` log of the PR): the content keeps the
+height it had, and the width is unchanged. The numbers below are the first cut's, taken without the bar; every state's
+need now includes the 47 px, and `minimum_size_fits_every_state_in_both_schemes` and the Review minimum scenarios
+measure them with it.
 
 Measured on the CI toolkit (Ubuntu 24.04: GTK 4.14, libadwaita 1.5) by the `minimum_size_fits_every_state_in_both_schemes`
 scenario in `tests/smoke.rs`, which renders every state of the shell in dark and light with the right rail
 in, and fails if the window has to grow past the stated size or the content gets less than it needs. The
-window reads 1000x780 on the outer rect; the other 10 px are the client-side-decoration margin, which is why
+window reads 1000x827 on the outer rect; the other 10 px are the client-side-decoration margin, which is why
 the stated size is 10 px larger in each direction. What each state needs (hosted `ci` run 40075892018 at
 `b7c2bf8`):
 
@@ -74,7 +81,7 @@ the stated size is 10 px larger in each direction. What each state needs (hosted
 
 The width is set by Review with its rail (1000); the height by the two banner states (737), plus a margin:
 the first cut stated 750, and the CI log showed the banner states given 777 px of content against a window
-that reads 740, which is too close for a floor, so the stated height is 790.
+that reads 740, which is too close for a floor, so the stated height was 790 (837 with the title bar).
 
 ## 4. Differences from Python, on purpose
 

@@ -45,8 +45,11 @@ pub const WINDOW_TITLE: &str = "Hatate";
 /// frame of the Queue or the Review (right rail in) would clip, **measured** on the CI toolkit
 /// (GTK 4.14 / libadwaita 1.5) in both schemes by the `minimum_size_*` scenarios of
 /// `tests/smoke.rs`, which fail if any state needs more. `docs/gtk-shell.md` has the table.
+/// `MIN_HEIGHT` is the 790 of the first cut plus the 47 px the header bar takes (46 px of
+/// libadwaita's bar and the 1 px hairline under it, measured at CI, DAN-2550): the content keeps
+/// the height it had.
 pub const MIN_WIDTH: i32 = 1010;
-pub const MIN_HEIGHT: i32 = 790;
+pub const MIN_HEIGHT: i32 = 837;
 
 /// `workers/missing_file_worker.MissingFileWorker.run`: the subset of `paths` that no longer
 /// exist. The shipped window uses [`default_missing_files`] (`hatate_core::missing_files`, 6.b);
