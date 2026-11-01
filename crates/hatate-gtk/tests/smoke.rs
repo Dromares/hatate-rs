@@ -10151,6 +10151,68 @@ fn every_top_level_window_has_a_title_bar_with_a_close_button(app: &adw::Applica
     f.close();
 }
 
+/// DAN-2550 (state transitions): the bar is still the bar after the things a session does to the
+/// main window: switch scheme live, open Parser Health, close it. Each step re-reads the bar's box
+/// (above the menubar, 47 px, full width) and the window's own height, so a transition that dropped
+/// or squeezed the bar, or grew the window, turns this red.
+fn title_bar_survives_a_scheme_switch_and_a_parser_health_open_and_close(app: &adw::Application) {
+    let f = Fx::new(app, Opts::default());
+    pump_for(300);
+    let win: gtk4::Widget = f.w.win.clone().upcast();
+    let read = |step: &str| -> (f32, f32) {
+        let (bar, classes) = title_bar_of(&win)
+            .unwrap_or_else(|| panic!("{step}: the main window has no header bar"));
+        assert!(
+            classes.iter().any(|c| c == "close"),
+            "{step}: no close button in {classes:?}"
+        );
+        let mut found = Vec::new();
+        find_css_node(&win, "menubar", &mut found);
+        let menu_y = found
+            .first()
+            .and_then(|m| m.compute_bounds(&win))
+            .expect("menubar bounds")
+            .y();
+        let b = bar.compute_bounds(&win).expect("bar bounds");
+        assert!(
+            b.y() + b.height() <= menu_y + 0.5 && b.height() > 0.0,
+            "{step}: the bar ({:?}) is not above the menubar (y {menu_y})",
+            (b.y(), b.height())
+        );
+        println!(
+            "TITLEBAR-STEP {step} bar_h={} bar_w={} win={}x{}",
+            b.height(),
+            b.width(),
+            win.width(),
+            win.height()
+        );
+        (b.height(), b.width())
+    };
+    let (h0, w0) = read("start");
+    let win_h0 = win.height();
+    f.w.set_theme("light");
+    pump_for(300);
+    assert_eq!((h0, w0), read("after the scheme switch"));
+    f.activate("parser-health");
+    pump_for(400);
+    assert_eq!((h0, w0), read("with Parser Health open"));
+    for w in gtk4::Window::list_toplevels() {
+        if let Ok(w) = w.downcast::<gtk4::Window>()
+            && w.title().is_some_and(|t| t == "Parser Health")
+        {
+            w.close();
+        }
+    }
+    pump_for(300);
+    assert_eq!((h0, w0), read("after Parser Health closes"));
+    assert_eq!(
+        win.height(),
+        win_h0,
+        "the window changed height across the steps"
+    );
+    f.close();
+}
+
 const SCENARIOS_2550: &[Scenario] = &[
     (
         "main_window_has_a_header_bar_above_the_menubar_with_a_close_button",
@@ -10159,6 +10221,10 @@ const SCENARIOS_2550: &[Scenario] = &[
     (
         "every_top_level_window_has_a_title_bar_with_a_close_button",
         every_top_level_window_has_a_title_bar_with_a_close_button,
+    ),
+    (
+        "title_bar_survives_a_scheme_switch_and_a_parser_health_open_and_close",
+        title_bar_survives_a_scheme_switch_and_a_parser_health_open_and_close,
     ),
 ];
 
