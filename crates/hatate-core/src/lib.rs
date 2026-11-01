@@ -9,6 +9,7 @@ pub mod clock;
 pub mod compare_view;
 pub mod config;
 pub mod crash_marker;
+pub mod crash_report;
 pub mod desktop_attention;
 pub mod engine_alerts;
 pub mod engine_backends;
@@ -88,6 +89,7 @@ pub mod thumb;
 pub mod thumb_decode;
 pub mod timeutil;
 pub mod upscale_detect;
+pub mod version;
 pub mod viewport;
 
 #[cfg(test)]

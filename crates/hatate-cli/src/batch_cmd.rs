@@ -140,6 +140,7 @@ async fn batch(opts: BatchOptions) -> i32 {
     let settings = Mutex::new(loaded.settings);
 
     // Detects an interrupted earlier run, then marks this one as running.
+    hatate_core::crash_marker::arm_crash_log(&paths);
     let started = CrashMarkers::begin(&paths, clock.wall());
     if let Some(e) = &started.marker_error {
         tracing::warn!("Could not write the crash marker: {e}");

@@ -1,8 +1,9 @@
 //! What the Crashed banner reads off disk about the run before this one (`core/crashlog.py:150-210`
 //! at `76c85c4`): how many faults it left in `crash.log`, and when it last wrote to its log.
 //!
-//! The Rust app writes no faulthandler output (`docs/cache-and-startup-files.md`), so the fault
-//! count is whatever a Python run left in `crash.log`, and zero otherwise. Its own log is
+//! The Rust app writes no faulthandler output (`docs/cache-and-startup-files.md`); a Rust panic is
+//! written by `hatate_core::crash_report` under [`PANIC_HEADER`], which counts with Python's
+//! [`FAULT_HEADER`]. A native signal leaves nothing, so the count is zero for it. Its own log is
 //! `hatate-rs.log` with UTC stamps (`rotating_log`), which is the one difference from Python's
 //! local-time `app.log` here.
 
@@ -12,6 +13,8 @@ use hatate_core::timeutil;
 pub const SESSION_START_MARK: &str = "--- session started, faulthandler armed ---";
 /// `FAULT_HEADER`: what faulthandler prints first for each fault it catches.
 pub const FAULT_HEADER: &str = "Fatal Python error:";
+/// What a Rust panic's entry starts with (`hatate_core::crash_report`): counted like a fault.
+pub const PANIC_HEADER: &str = hatate_core::crash_report::PANIC_HEADER;
 /// `setup_logging()`'s first line of every run: the boundary between the previous run's lines
 /// and this one's.
 pub const LOG_RUN_START: &str = "Logging started, writing to";
@@ -30,7 +33,7 @@ pub fn faults_in_previous_run(crash_log: &str) -> usize {
     }
     sections[sections.len() - 2]
         .lines()
-        .filter(|l| l.starts_with(FAULT_HEADER))
+        .filter(|l| l.starts_with(FAULT_HEADER) || l.starts_with(PANIC_HEADER))
         .count()
 }
 
@@ -128,6 +131,23 @@ mod tests {
         assert_eq!(count(format!("\n{m}\n")), 0);
         // an empty log is zero
         assert_eq!(count(String::new()), 0);
+    }
+
+    /// DAN-2501: a Rust panic's entry counts like a faulthandler one, once, whatever follows it.
+    #[test]
+    fn a_rust_panic_entry_counts_as_one_fault() {
+        assert_eq!(
+            SESSION_START_MARK,
+            hatate_core::crash_report::SESSION_START_MARK
+        );
+        let m = SESSION_START_MARK;
+        let entry =
+            format!("{PANIC_HEADER} boom\n  time: T\n  thread: main\nBacktrace:\n  0: a\n  1: b\n");
+        assert_eq!(faults_in_previous_run(&format!("\n{m}\n{entry}\n{m}\n")), 1);
+        assert_eq!(
+            faults_in_previous_run(&format!("\n{m}\n{entry}{entry}\n{m}\n")),
+            2
+        );
     }
 
     #[test]

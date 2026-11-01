@@ -271,6 +271,23 @@ fn the_bearer_token_gates_every_request() {
     c.stop(true);
 }
 
+/// DAN-2501: `serverInfo.version` is the one version source (`hatate_core::version::VERSION`, the
+/// workspace version), not a second copy of the number.
+#[test]
+fn server_info_reports_the_one_version_source() {
+    let (_c, _, port) = started();
+    let r = post(
+        port,
+        &[],
+        &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}),
+    );
+    let event = r.event();
+    assert_eq!(
+        event["result"]["serverInfo"]["version"],
+        json!(hatate_core::version::VERSION)
+    );
+}
+
 #[test]
 fn initialize_and_tools_list_match_the_python_server() {
     let (mut c, _, port) = started();

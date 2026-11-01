@@ -22,8 +22,8 @@ use crate::pawchive_index::json_error;
 /// What `mcp 1.30.0` reports as `serverInfo.name` for `FastMCP("hatate-linux")`.
 pub const SERVER_NAME: &str = "hatate-linux";
 /// `serverInfo.version`. FastMCP reports the `mcp` package's own version; this is the Rust
-/// build's (a difference the ticket grants by name).
-pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// build's (a difference the ticket grants by name), from the one version source.
+pub const SERVER_VERSION: &str = crate::version::VERSION;
 /// `SUPPORTED_PROTOCOL_VERSIONS`, oldest first.
 pub const SUPPORTED_PROTOCOL_VERSIONS: [&str; 4] =
     ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
