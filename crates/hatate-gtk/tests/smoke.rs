@@ -48,6 +48,10 @@ const SCENARIOS: &[Scenario] = &[
         settings_window_keeps_its_stated_minimum,
     ),
     (
+        "settings_pages_fit_their_view_at_the_minimum_size",
+        settings_pages_fit_their_view_at_the_minimum_size,
+    ),
+    (
         "settings_window_asks_its_questions_over_itself",
         settings_window_asks_its_questions_over_itself,
     ),
@@ -7683,6 +7687,42 @@ fn settings_window_keeps_its_stated_minimum(app: &adw::Application) {
             );
         }
     }
+    d.click_cancel();
+    f.close();
+}
+
+/// DAN-2501 (7.c M2): at the stated minimum no Settings page scrolls sideways. The fit test above
+/// measures the window's child, which a sideways-scrolling page never widens, so it passed while
+/// `max (seconds)`, the Tag service placeholder and `Fetch from Hydrus...` ran off the view.
+fn settings_pages_fit_their_view_at_the_minimum_size(app: &adw::Application) {
+    use hatate_gtk::settings_dialog::{MIN_HEIGHT, MIN_WIDTH};
+    let f = fx(app);
+    f.w.activate_action("preferences");
+    let d = f.w.s.settings_dialog.borrow().clone().unwrap();
+    d.window.set_default_size(MIN_WIDTH, MIN_HEIGHT);
+    pump_for(200);
+    let mut too_wide = Vec::new();
+    for (i, name) in d.tab_names().iter().enumerate() {
+        d.tabs.set_current_page(Some(i as u32));
+        pump_for(100);
+        let page = d.tabs.nth_page(Some(i as u32)).expect("page");
+        let scroll = page
+            .downcast_ref::<gtk4::ScrolledWindow>()
+            .expect("a page is a scrolled window");
+        let adj = scroll.hadjustment();
+        println!(
+            "OUTER settings-page {name} width={} view={}",
+            adj.upper(),
+            adj.page_size()
+        );
+        if adj.upper() > adj.page_size() + 0.5 {
+            too_wide.push(format!("{name} {} in {}", adj.upper(), adj.page_size()));
+        }
+    }
+    assert!(
+        too_wide.is_empty(),
+        "at {MIN_WIDTH}x{MIN_HEIGHT} these pages scroll sideways: {too_wide:?}"
+    );
     d.click_cancel();
     f.close();
 }
