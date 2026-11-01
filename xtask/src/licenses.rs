@@ -225,26 +225,33 @@ fn owner(path: &Path) -> Res<(String, String, Vec<PathBuf>)> {
 /// Licence files of the distro packages that own the bundled libraries and GTK data.
 fn bundled_packages(sources: &[(String, PathBuf)], licenses: &Path) -> Res<Vec<Entry>> {
     let mut by_package: BTreeMap<String, (String, Vec<String>, Vec<PathBuf>)> = BTreeMap::new();
+    let mut missing = Vec::new();
     for (name, source) in sources {
-        // A directory (the pixbuf loaders) is owned through one of its files.
-        let probe = if source.is_dir() {
-            fs::read_dir(source)
+        // A directory (the icon theme) is owned through the first of its files a package owns:
+        // generated ones (`icon-theme.cache`) belong to no package.
+        let probes: Vec<PathBuf> = if source.is_dir() {
+            let mut files: Vec<PathBuf> = fs::read_dir(source)
                 .map_err(|e| e.to_string())?
                 .flatten()
                 .map(|e| e.path())
-                .find(|p| p.is_file())
-                .ok_or_else(|| format!("{} is empty", source.display()))?
+                .filter(|p| p.is_file())
+                .collect();
+            files.sort();
+            files
         } else {
-            source.clone()
+            vec![source.clone()]
         };
-        let (package, version, files) = owner(&probe)?;
+        let found = probes.iter().find_map(|probe| owner(probe).ok());
+        let Some((package, version, files)) = found else {
+            missing.push(format!("{name}: no package owns {}", source.display()));
+            continue;
+        };
         let slot = by_package
             .entry(package)
             .or_insert_with(|| (version, Vec::new(), files));
         slot.1.push(name.clone());
     }
     let mut entries = Vec::new();
-    let mut missing = Vec::new();
     for (package, (version, libs, files)) in by_package {
         if files.is_empty() {
             missing.push(format!("{package} {version} ({})", libs.join(", ")));
@@ -270,7 +277,7 @@ fn bundled_packages(sources: &[(String, PathBuf)], licenses: &Path) -> Res<Vec<E
     }
     if !missing.is_empty() {
         return Err(format!(
-            "{} bundled packages have no copyright/licence file on this host: {}",
+            "{} bundled components have no owning package or no copyright/licence file on this host: {}",
             missing.len(),
             missing.join("; ")
         ));
