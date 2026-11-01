@@ -327,6 +327,12 @@ mod tests {
         assert_eq!(src.recent_crash_log(), "");
         std::fs::write(paths.crash_log(), "x".repeat(CRASH_LOG_TAIL_CHARS + 5)).unwrap();
         assert_eq!(src.recent_crash_log().chars().count(), CRASH_LOG_TAIL_CHARS);
+        std::fs::write(
+            paths.crash_log(),
+            "--- session started ---\nQThread: boom\n",
+        )
+        .unwrap();
+        assert!(src.recent_crash_log().contains("QThread: boom"));
         ring.push("line".into());
         ring.push("two".into());
         assert_eq!(src.recent_log(), "line\ntwo");

@@ -147,3 +147,45 @@ line tall when empty (`min-height: 18px`) so the table does not jump. It is not 
 
 Revert-and-red (`worktrees/DAN-2501-mutation.log`): dropping the `notify_selection` call fails at "one row selected";
 dropping the `rebuild` call fails at "a filter hid the selected row".
+
+## 7. The Python tests of `crashlog` and `version` (`TestCrashDiagnostics`, `TestVersionFlag`)
+
+Nine tests at `76c85c4` exercise the two modules sections 1 and 2 port, and no earlier doc names them
+(`docs/batch.md` deferred the class as "Phase 1's"; `docs/phase5-coverage.md` handed `crashlog.py` to Phase 7). The
+tenth, `TestCrashDiagnostics.test_retiring_a_worker_does_not_warn`, is dispositioned at `docs/phase6-coverage.md` row 1453.
+The rest of `tests/test_appimage_lens.py` (`TestLensBuild` and the other classes) stays with 7.d, which owns the AppImage
+build; `TestVersionFlag` is here because it is the version source's test.
+
+Python's `crashlog` has three hooks (`sys.excepthook`, `threading.excepthook`, and a Qt message handler) and
+`faulthandler`. Rust has one hook (`std::panic`), which sees every thread, and no Qt: there is **no glib log handler**
+in this tree (`git grep -nE 'log_set_|log_default|set_print_handler'` finds nothing), so a GTK warning or critical
+goes to stderr as glib prints it and never reaches `crash.log`. That is a decision, not an oversight: a GTK warning is
+not a crash, and `g_error` aborts like any native signal (the **Known gap** of section 1).
+
+| Python test | Rust |
+|---|---|
+| `TestCrashDiagnostics.test_install_is_idempotent` | **Different, half pinned.** The section half: a hook installed and `arm` called gives one `--- session started` mark however often either runs (`ARMED`). `install` itself is not guarded (a second call chains a second hook), so what holds it to one is that each binary calls it once: `crates/hatate-core/tests/crash_report.rs` `fn a_panic_is_written_to_crash_log_and_the_next_start_shows_the_banner` `assert_eq!(marks, 1, "one section for the one run:\n{log}");` and `crates/hatate-core/tests/crash_report.rs` `fn every_binary_installs_the_hook` `assert!(main.contains(call), "{krate} does not call {call}");` |
+| `TestCrashDiagnostics.test_python_exceptions_are_logged` | `crates/hatate-core/tests/crash_report.rs` `fn a_panic_is_written_to_crash_log_and_the_next_start_shows_the_banner` `"Fatal Rust panic: main thread gives up"` |
+| `TestCrashDiagnostics.test_keyboard_interrupt_is_left_alone` | **n/a**: Rust has no `KeyboardInterrupt`. Ctrl-C is SIGINT, whose default action ends the process without unwinding, so no panic and no hook run; nothing is written, which is what the Python test asserts |
+| `TestCrashDiagnostics.test_worker_thread_exceptions_are_logged` | `crates/hatate-core/tests/crash_report.rs` `fn a_panic_is_written_to_crash_log_and_the_next_start_shows_the_banner` `assert!(log.contains("  thread: worker-7\n"), "{log}");` |
+| `TestCrashDiagnostics.test_a_qt_fatal_message_is_logged_before_it_aborts` | **n/a**: there is no Qt message handler and no glib log handler (above). The nearest case, a native abort, leaves no entry: the **Known gap** of section 1, which the running marker covers with the Crashed banner ("no new entry") |
+| `TestCrashDiagnostics.test_qt_warnings_do_not_masquerade_as_crashes` | **n/a**: it tests the Qt handler's routing of `QtWarningMsg` to `log.warning` instead of `critical`. There is no handler to route; only a panic writes to `crash.log`, so a warning cannot appear there as a crash. Not asserted by a Rust test (nothing to assert against) |
+| `TestCrashDiagnostics.test_a_real_disconnect_problem_still_warns` | **n/a**: it pins that the Qt handler quietens only the one benign `QObject::disconnect: wildcard call` message (`test_retiring_a_worker_does_not_warn`, `docs/phase6-coverage.md` row 1453) and still warns on any other disconnect text. No Qt, no handler, no allow-list |
+| `TestVersionFlag.test_version_is_0_1_0` | **Design difference, not an equal assertion.** Python pins `0.1.0`; this build is `0.0.0` until 7.d bumps it. What is pinned is the single source: `crates/hatate-core/src/version.rs` `fn the_version_is_the_workspace_package_version` `assert_eq!(line.trim(), format!("version = \"{VERSION}\""));` |
+| `TestVersionFlag.test_main_prints_version_and_exits_without_qt` | `crates/hatate-cli/tests/version.rs` `fn version_flag_prints_the_workspace_version` `assert!(out.status.success());`. The text differs by design (`hatate 0.0.0 (work-in-progress ...)` against `Hatate 0.1.0`, section 2). "Without Qt" has no analogue: the `hatate` binary links no GTK |
+
+The presubmit walk for 7.c's modules (`parser_probe`, `crashlog`, `version`) also found nine tests that touch `crashlog` or a
+version and that no doc named, besides the ones above. They are the crash marker and the crash-log tail (ported earlier, in
+`crash_marker.rs` and `logview.rs`) and one packaging test:
+
+| Python test | Rust |
+|---|---|
+| `TestUncleanShutdownMarker.test_first_ever_launch_is_not_an_unclean_shutdown` | `crates/hatate-core/tests/startup_files.rs` `fn a_clean_run_leaves_no_marker_and_no_banner_for_the_next_launch` `assert!(!started.previous_run_unclean, "fresh profile");` |
+| `TestUncleanShutdownMarker.test_marker_left_behind_means_the_last_run_crashed` | `crates/hatate-core/tests/startup_files.rs` `fn a_run_that_never_finishes_cleanly_is_seen_by_the_next_launch` `assert!(second.previous_run_unclean);` |
+| `TestUncleanShutdownMarker.test_clean_shutdown_clears_the_marker` | `crates/hatate-core/tests/startup_files.rs` `fn a_clean_run_leaves_no_marker_and_no_banner_for_the_next_launch` `"marker removed on clean exit"` |
+| `TestUncleanShutdownMarker.test_clearing_a_marker_that_was_never_written_does_not_raise` | `crates/hatate-core/tests/startup_files.rs` `fn closing_cleanly_a_run_that_never_wrote_a_marker_is_not_an_error` `.mark_clean_shutdown(1.0)` (new in this fixup; the first Rust test of the missing-marker case) |
+| `TestUncleanShutdownMarker.test_full_cycle_two_launches` | the two launches and the clean third: `crates/hatate-core/tests/startup_files.rs` `fn a_run_that_never_finishes_cleanly_is_seen_by_the_next_launch` `assert!(second.previous_run_unclean);`, then `crates/hatate-core/tests/startup_files.rs` `fn a_clean_run_leaves_no_marker_and_no_banner_for_the_next_launch` `assert!(!next.previous_run_unclean);` (in two tests, not one sequence) |
+| `TestCrashLogTail.test_missing_crash_log_reads_as_empty_not_an_error` | `crates/hatate-gtk/src/logview.rs` `fn the_ring_source_reads_the_ring_and_the_crash_tail` `assert_eq!(src.recent_crash_log(), "");` |
+| `TestCrashLogTail.test_reads_back_what_was_written` | `crates/hatate-gtk/src/logview.rs` `fn the_ring_source_reads_the_ring_and_the_crash_tail` `assert!(src.recent_crash_log().contains("QThread: boom"));` (new in this fixup) |
+| `TestCrashLogTail.test_only_the_tail_is_returned_for_a_log_grown_over_time` | `crates/hatate-gtk/src/logview.rs` `fn the_ring_source_reads_the_ring_and_the_crash_tail` `assert_eq!(src.recent_crash_log().chars().count(), CRASH_LOG_TAIL_CHARS);` |
+| `TestWheelLock.test_same_versions_as_requirements_lock` | **n/a here, handed to 7.d**: it compares the AppImage's pinned wheels with `requirements-lock.txt`, which is the AppImage build's input. It matched the walk only through a local named `version`. The Rust build pins its tools in `packaging/appimage/pins.toml`, which 7.d owns |
