@@ -260,6 +260,7 @@ dropdown.candidate-picker > button:hover { border-color: @ink_58; }
 .pick-list > row { border-bottom: 1px solid @ink_18; min-height: 0; }
 .pick-list > row:selected { background: @stamp_bg; color: @stamp_fg; }
 .pick-list > row:selected label { color: @stamp_fg; }
+.settings-line > flowboxchild { padding: 0; }
 .tag-row { font-family: %mono%; font-size: 13px; color: @ink; }
 .review-switch button { padding: 4px 6px; }
 .review-rail button.pill { padding: 5px %space_2%px; }

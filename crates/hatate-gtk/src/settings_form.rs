@@ -184,6 +184,7 @@ impl Form {
                 // A line that does not fit the page wraps onto the next one (DAN-2501, 7.c M2): in
                 // a box it ran off the 560 px minimum and the page scrolled sideways.
                 let row = gtk::FlowBox::new();
+                row.add_css_class("settings-line");
                 row.set_selection_mode(gtk::SelectionMode::None);
                 row.set_homogeneous(false);
                 row.set_column_spacing(8);
@@ -556,7 +557,8 @@ pub(crate) fn spin_button(
     let adj = gtk::Adjustment::new(min, min, max, step, step * 10.0, 0.0);
     let spin = gtk::SpinButton::new(Some(&adj), 1.0, dec);
     spin.set_numeric(false);
-    spin.set_width_chars(10);
+    // wide enough for the special text whole: `same as above` lost its last letter at 10 (DAN-2517)
+    spin.set_width_chars(10.max(special.chars().count() as i32 + 1));
     spin.connect_output(move |s| {
         let v = s.value();
         let text = if !special.is_empty() && v <= min {
@@ -654,18 +656,30 @@ fn is_prose(text: &str) -> bool {
     text.contains('\n') || text.chars().count() > PROSE_CHARS
 }
 
-/// A drop-down whose current choice and list rows wrap to the width they are given: its least
-/// width was its longest choice, which pushed a page past the 560 px minimum (DAN-2501, 7.c M2).
+/// A drop-down whose list rows wrap to the width they are given and whose current choice shrinks
+/// to an ellipsis: its least width was its longest choice, which pushed a page past the 560 px
+/// minimum (DAN-2501, 7.c M2), and a wrapped choice in the button ran under the arrow (DAN-2517).
 fn wrapping_drop(texts: &[&str]) -> gtk::DropDown {
     let drop = gtk::DropDown::from_strings(texts);
+    drop.set_factory(Some(&label_factory(false)));
+    drop.set_list_factory(Some(&label_factory(true)));
+    drop
+}
+
+/// Labels for a drop-down: `wrap` lets a row run to several lines, otherwise it ends in an ellipsis.
+fn label_factory(wrap: bool) -> gtk::SignalListItemFactory {
     let factory = gtk::SignalListItemFactory::new();
-    factory.connect_setup(|_, item| {
+    factory.connect_setup(move |_, item| {
         let Some(item) = item.downcast_ref::<gtk::ListItem>() else {
             return;
         };
         let l = gtk::Label::new(None);
         l.set_xalign(0.0);
-        l.set_wrap(true);
+        if wrap {
+            l.set_wrap(true);
+        } else {
+            l.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        }
         item.set_child(Some(&l));
     });
     factory.connect_bind(|_, item| {
@@ -680,8 +694,7 @@ fn wrapping_drop(texts: &[&str]) -> gtk::DropDown {
             l.set_text(&text);
         }
     });
-    drop.set_factory(Some(&factory));
-    drop
+    factory
 }
 
 /// A check box's caption wraps to the page instead of widening it: the sentence-length ones ran
