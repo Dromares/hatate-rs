@@ -751,11 +751,32 @@ mod tests {
         assert!(err.contains("libdconfsettings.so"), "{err}");
     }
 
+    /// The desktop's own schema for the one key the pin reads (`gsettings-desktop-schemas` ships
+    /// it; the image deliberately does not, and a hosted runner may not have it installed), with
+    /// the real default. Compiled into `dir`, which stands in for the desktop's schema directory.
+    fn desktop_schema(dir: &Path) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join("org.gnome.desktop.wm.preferences.gschema.xml"),
+            "<schemalist>\n  <schema id=\"org.gnome.desktop.wm.preferences\" \
+             path=\"/org/gnome/desktop/wm/preferences/\">\n    \
+             <key name=\"button-layout\" type=\"s\">\n      <default>\"appmenu:close\"</default>\n      \
+             <summary>Arrangement of buttons on the titlebar</summary>\n    </key>\n  </schema>\n</schemalist>\n",
+        )
+        .unwrap();
+        run(Command::new("glib-compile-schemas").arg(dir)).unwrap();
+    }
+
     /// `gsettings get` for the title-bar layout through the image's own libgio, with the
     /// environment AppRun builds (`apprun_plan::plan`), a throw-away `HOME` and, when given, a
     /// different `GIO_MODULE_DIR`. Returns (value, log); the log carries GLib's debug lines,
     /// which name the settings backend it picked.
-    fn gsettings_layout(appdir: &Path, home: &Path, module_dir: Option<&Path>) -> (String, String) {
+    fn gsettings_layout(
+        appdir: &Path,
+        home: &Path,
+        schemas: &Path,
+        module_dir: Option<&Path>,
+    ) -> (String, String) {
         let plan = apprun_plan::plan(appdir, &[], &|_| None, None);
         let mut cmd = Command::new("gsettings");
         cmd.env_clear()
@@ -766,6 +787,11 @@ mod tests {
         for (name, value) in &plan.set {
             cmd.env(name, value);
         }
+        // The image's schemas, then the desktop's (`GSETTINGS_SCHEMA_DIR` is a list).
+        let mut dirs = plan.set["GSETTINGS_SCHEMA_DIR"].clone();
+        dirs.push(":");
+        dirs.push(schemas);
+        cmd.env("GSETTINGS_SCHEMA_DIR", dirs);
         if let Some(dir) = module_dir {
             cmd.env("GIO_MODULE_DIR", dir);
         }
@@ -814,6 +840,8 @@ mod tests {
         fs::create_dir_all(&no_db).unwrap();
         let empty_modules = tmp.path().join("no-modules");
         fs::create_dir_all(&empty_modules).unwrap();
+        let schemas = tmp.path().join("desktop-schemas");
+        desktop_schema(&schemas);
 
         // The binary under test really loads the image's libgio, not the host's.
         let plan = apprun_plan::plan(&appdir, &[], &|_| None, None);
@@ -829,7 +857,7 @@ mod tests {
         let gio_line = ldd.lines().find(|l| l.contains("libgio-2.0")).unwrap();
         assert!(gio_line.contains(appdir.to_str().unwrap()), "{gio_line}");
 
-        let (got, log) = gsettings_layout(&appdir, &with_db, None);
+        let (got, log) = gsettings_layout(&appdir, &with_db, &schemas, None);
         println!(
             "with the bundled module:   {got}   [{}]",
             backend_line(&log)
@@ -839,7 +867,7 @@ mod tests {
 
         // No database at all (a clean machine): dconf reads an absent file as empty, the schema
         // default comes back and nothing fails.
-        let (got, log) = gsettings_layout(&appdir, &no_db, None);
+        let (got, log) = gsettings_layout(&appdir, &no_db, &schemas, None);
         println!(
             "no dconf database:         {got}   [{}]",
             backend_line(&log)
@@ -848,7 +876,7 @@ mod tests {
         assert!(log.contains("DConfSettingsBackend"), "{log}");
 
         // Negative control: the same database, the module directory emptied.
-        let (got, log) = gsettings_layout(&appdir, &with_db, Some(&empty_modules));
+        let (got, log) = gsettings_layout(&appdir, &with_db, &schemas, Some(&empty_modules));
         println!(
             "module directory emptied:  {got}   [{}]",
             backend_line(&log)
