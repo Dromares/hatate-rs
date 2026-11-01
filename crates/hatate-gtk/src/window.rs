@@ -347,6 +347,7 @@ impl MainWindow {
             .default_height(650)
             .build();
         win.set_size_request(MIN_WIDTH, MIN_HEIGHT);
+        win.add_css_class("main-window");
         let prompter: Rc<dyn Prompter> = env
             .prompter
             .clone()
