@@ -416,7 +416,7 @@ pub fn write(repo: &Path, appdir: &Path, sources: &[(String, PathBuf)], chromium
     entries.extend(rust_crates(repo, &licenses)?);
 
     let mut index = String::from(
-        "Licence index of the Hatate AppImage (work-in-progress Rust rewrite).\n\
+        "Licence index of the Hatate AppImage (Rust rewrite of Hatate).\n\
          One line per bundled component: name, version, licence, files under this directory.\n\n",
     );
     for e in &entries {

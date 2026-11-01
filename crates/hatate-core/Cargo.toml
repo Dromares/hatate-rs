@@ -1,6 +1,6 @@
 [package]
 name = "hatate-core"
-description = "Shared library for the Hatate Rust rewrite (work in progress)"
+description = "Shared library for the Hatate Rust rewrite"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

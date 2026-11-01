@@ -1,4 +1,4 @@
-//! Placeholder binary for the Hatate Rust rewrite. Work in progress.
+//! Placeholder binary for the Hatate Rust rewrite. The MCP server runs inside the Hatate window.
 
 // The panic hook (DAN-2501). This placeholder has no dependencies, so the one std-only source
 // file is included instead of linking `hatate-core`.
@@ -8,7 +8,7 @@ mod crash_report;
 
 /// Message printed by the placeholder binary.
 fn banner() -> &'static str {
-    "hatate-mcp: work-in-progress Rust rewrite, not yet a replacement for Hatate"
+    "hatate-mcp: placeholder; the MCP server of the Rust rewrite of Hatate runs inside the Hatate window"
 }
 
 fn main() {
@@ -24,7 +24,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn banner_says_work_in_progress() {
-        assert!(banner().contains("work-in-progress"));
+    fn banner_says_it_is_a_placeholder() {
+        assert!(banner().contains("placeholder"));
+        assert!(!banner().contains("work-in-progress"));
     }
 }

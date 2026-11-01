@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=Hatate (work in progress)
+Name=Hatate
 GenericName=Reverse image tagger
-Comment=Work-in-progress Rust rewrite of Hatate, not yet a replacement for it
+Comment=Rust rewrite of Hatate
 Exec=AppRun
 Icon=hatate
 Terminal=false

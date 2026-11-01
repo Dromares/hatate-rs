@@ -1,7 +1,7 @@
 # MCP server, audit log and stdio bridge (Phase 5.d, DAN-2166)
 
-Work in progress. `hatate-rs` is not yet a replacement for Hatate. No subcommand starts this
-server in this phase: Phase 6 wires it to Settings > MCP. What is here is the server, its tool
+This is the Phase 5 record, written while the rewrite was work in progress (0.0.x); the current status is in
+`README.md`. No subcommand starts this server: Phase 6 wired it to Settings > MCP. What is here is the server, its tool
 registry, the audit log and the stdio bridge, tested over scripted handlers. The tool bodies
 (`gui/mcp_bridge.py`, `core/mcp_images.py`) are 5.e (DAN-2167).
 

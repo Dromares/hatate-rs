@@ -1,6 +1,6 @@
 # Phase 6.b: the pure core modules of the window (DAN-2214)
 
-Work in progress Rust rewrite of Hatate. This is the first Phase 6 ticket, lane A: core only, no widgets. Every module here lands in `hatate-core` so the window tickets call it rather than port it. Python source of truth: `Hatate-Linux-Redux` at `76c85c4`.
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This is the first Phase 6 ticket, lane A: core only, no widgets. Every module here lands in `hatate-core` so the window tickets call it rather than port it. Python source of truth: `Hatate-Linux-Redux` at `76c85c4`.
 
 ## What is ported and where the cut is
 

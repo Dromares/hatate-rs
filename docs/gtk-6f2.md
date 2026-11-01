@@ -1,6 +1,6 @@
 # Wipe, Differences, the compare window and the error state (Phase 6.f-2)
 
-Work in progress Rust rewrite, not yet a replacement for Hatate. This is the doc of [DAN-2340](/DAN/issues/DAN-2340),
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This is the doc of [DAN-2340](/DAN/issues/DAN-2340),
 the second half of the Review view that [DAN-2219](/DAN/issues/DAN-2219) split at the end of its run A2
 (`docs/gtk-6f.md`). It holds the two maps Phase 6 asks every ticket for (the method map and the Python test map; 6.j
 checks the union), the differential, the on-purpose differences with the assertion that pins each, the measured
@@ -304,6 +304,6 @@ size, M5 the zoom anchor).
 
 ## 8. Status claims
 
-This PR adds no status claim. The README's work-in-progress banner is untouched; `docs/gtk-6f.md` section 2 now says the
+This PR added no status claim. At its head the README's work-in-progress banner was untouched; `docs/gtk-6f.md` section 2 now says the
 Wipe and Differences buttons and Pop out are live, which is a behaviour statement and not a claim of usability or
 parity. The claim grep at the head is in the PR body.

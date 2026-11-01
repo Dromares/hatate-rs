@@ -98,12 +98,13 @@ jobs:
       - name: Build Hatate-x86_64.AppImage
         run: cargo run -p xtask -- appimage --out "$RUNNER_TEMP/appimage"
       # No FUSE on the runner: the AppImage extracts itself and runs from there. `--version` is
-      # answered by the CLI inside the image and must say work in progress.
+      # answered by the CLI inside the image and must print the workspace version.
       - name: The image answers --version
         run: |
           cd "$RUNNER_TEMP/appimage"
           APPIMAGE_EXTRACT_AND_RUN=1 ./Hatate-x86_64.AppImage --version | tee version.txt
-          grep -q 'work-in-progress' version.txt
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' "$GITHUB_WORKSPACE/Cargo.toml" | head -1)
+          test "$(cat version.txt)" = "hatate $v (Rust rewrite of Hatate)"
           sha256sum Hatate-x86_64.AppImage | tee SHA256SUMS
           ls -l Hatate-x86_64.AppImage
       - uses: actions/upload-artifact@v4

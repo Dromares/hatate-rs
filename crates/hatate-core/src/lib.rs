@@ -1,4 +1,4 @@
-//! Shared library for the Hatate Rust rewrite. Work in progress.
+//! Shared library for the Hatate Rust rewrite.
 
 pub mod applog;
 pub mod availability;

@@ -29,11 +29,13 @@ fn text(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn no_arguments_prints_the_work_in_progress_banner() {
+fn no_arguments_prints_the_banner() {
     let home = tempfile::tempdir().unwrap();
     let out = hatate(home.path(), &[]);
     assert!(out.status.success());
-    assert!(text(&out.stdout).contains("work-in-progress"));
+    let shown = text(&out.stdout);
+    assert!(shown.contains("Rust rewrite of Hatate"), "{shown}");
+    assert!(!shown.contains("work-in-progress"), "{shown}");
 }
 
 #[test]

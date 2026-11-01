@@ -1,6 +1,6 @@
 [package]
 name = "hatate-cli"
-description = "Command-line front end for the Hatate Rust rewrite (work in progress)"
+description = "Command-line front end for the Hatate Rust rewrite"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

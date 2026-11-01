@@ -1,6 +1,6 @@
 # Settings > MCP, the Shortcuts tab and the server's lifecycle (Phase 6.i)
 
-Work in progress Rust rewrite, not yet a replacement for Hatate. This is the doc of [DAN-2222](/DAN/issues/DAN-2222).
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This is the doc of [DAN-2222](/DAN/issues/DAN-2222).
 It holds the two maps Phase 6 asks every ticket for (the method map and the Python test map; 6.j checks the union),
 the differentials with their counts, the on-purpose differences and the shot set. Python is
 `Dromares/Hatate-Linux-Redux` at `76c85c4`. Nothing here reaches a network except `127.0.0.1`: the tests start the

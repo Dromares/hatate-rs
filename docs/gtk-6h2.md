@@ -1,6 +1,6 @@
 # Settings Test buttons, Fetch from Hydrus and the Review Shortcuts dialog (Phase 6.h-2)
 
-Work in progress Rust rewrite, not yet a replacement for Hatate. This is the doc of [DAN-2448](/DAN/issues/DAN-2448).
+Written while the rewrite was work in progress (0.0.x); the current status is in `README.md`. This is the doc of [DAN-2448](/DAN/issues/DAN-2448).
 It holds the two maps Phase 6 asks every ticket for (the method map and the Python test map; 6.j checks the union), the
 differentials with their counts and documented classes, the on-purpose differences and the shot set.
 Python is `Dromares/Hatate-Linux-Redux` at `76c85c4`. Nothing in the tests, the differential or the shots reaches a real

@@ -1,6 +1,6 @@
 [package]
 name = "hatate-apprun"
-description = "The AppImage's AppRun: sets the bundled environment and starts the Hatate window or command (work in progress)"
+description = "The AppImage's AppRun: sets the bundled environment and starts the Hatate window or command"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

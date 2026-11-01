@@ -4,8 +4,8 @@
 //! every crate inherits with `version.workspace = true`. The three surfaces that print a version
 //! read this constant: `hatate --version`, the MCP `serverInfo`, and the `crash.log` entry. There
 //! is no About dialog in either app (Python has none: its version is printed by `main.py
-//! --version` and stamped into the AppImage). The version stays `0.0.x` while the claim in
-//! `README.md` is work in progress; step 7.d changes both under the status-claim sweep.
+//! --version` and stamped into the AppImage). Step 7.d moved it to `0.2.0` and moved the status
+//! claim in `README.md` with it, under the status-claim sweep of `CLAUDE.md`.
 
 /// The workspace version, `CARGO_PKG_VERSION` of this crate.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
