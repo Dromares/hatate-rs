@@ -54,12 +54,19 @@ is the pattern; `a_second_add_waits_and_the_window_keeps_working` is the window-
 
 ## 3. Minimum size
 
-`MIN_WIDTH x MIN_HEIGHT = 1010 x 790`, set with `set_size_request`. Python's 712x515 is not carried over.
+`MIN_WIDTH x MIN_HEIGHT = 1010 x 837`, set with `set_size_request`. Python's 712x515 is not carried over.
+
+DAN-2550 gave the main window a title bar (`adw::HeaderBar`, which the toolkit's `AdwApplicationWindow` does not draw
+itself), so the height of 790 the first cut stated grew by the bar's own height, **47 px** (libadwaita's 46 px bar and
+the 1 px hairline under it, `TITLEBAR main dark header_h=47` in the hosted `ci` log of the PR): the content keeps the
+height it had, and the width is unchanged. The numbers below are the first cut's, taken without the bar; every state's
+need now includes the 47 px, and `minimum_size_fits_every_state_in_both_schemes` and the Review minimum scenarios
+measure them with it.
 
 Measured on the CI toolkit (Ubuntu 24.04: GTK 4.14, libadwaita 1.5) by the `minimum_size_fits_every_state_in_both_schemes`
 scenario in `tests/smoke.rs`, which renders every state of the shell in dark and light with the right rail
 in, and fails if the window has to grow past the stated size or the content gets less than it needs. The
-window reads 1000x780 on the outer rect; the other 10 px are the client-side-decoration margin, which is why
+window reads 1000x827 on the outer rect; the other 10 px are the client-side-decoration margin, which is why
 the stated size is 10 px larger in each direction. What each state needs (hosted `ci` run 40075892018 at
 `b7c2bf8`):
 
@@ -74,7 +81,26 @@ the stated size is 10 px larger in each direction. What each state needs (hosted
 
 The width is set by Review with its rail (1000); the height by the two banner states (737), plus a margin:
 the first cut stated 750, and the CI log showed the banner states given 777 px of content against a window
-that reads 740, which is too close for a floor, so the stated height is 790.
+that reads 740, which is too close for a floor, so the stated height was 790 (837 with the title bar).
+
+### Title bars, every top-level window (DAN-2550)
+
+The main window is an `AdwApplicationWindow`, which draws no title bar of its own, so it carries an `adw::HeaderBar`
+(title, then minimize / maximize / close from the desktop's own layout; the menubar sits directly beneath it). The
+seven secondary windows are plain `gtk::Window`s that set neither `decorated(false)` nor a custom titlebar, so whoever
+owns the screen frames them: the compositor or window manager where it draws the frame (KWin, any X11 window
+manager), GTK's own default header bar otherwise (GNOME and the like). Under Xvfb, the hosted `ci` toolkit, the
+window manager is absent and no frame of either kind is drawn, so **the secondary windows' title bars cannot be shot
+there** and are not judgeable from the shot set (owner: the board, on the relaunch card).
+
+| Window | Title bar from | Close / minimize / maximize at the CI toolkit |
+|---|---|---|
+| Hatate (main) | `adw::HeaderBar` in an `adw::ToolbarView` | all three, read from the window controls |
+| Settings, Parser Health, Logs, Query Hydrus, Compare, Review Keyboard Shortcuts | the desktop's frame (`gtk::Window` default) | not drawn under Xvfb; the window is decorated and replaces nothing |
+| Pawchive Index | the desktop's frame | not drawn under Xvfb; decorated, not modal |
+
+The scenario that opens all eight and asserts none turns its decoration off or replaces its title bar also asserts the
+main window's close button.
 
 ## 4. Differences from Python, on purpose
 
@@ -925,7 +951,7 @@ evidence from a run, not a test that stays in the tree, and CI does not run it.
 | 5012 | `TestResumeWithoutSaucenaoOverride.test_the_saved_setting_is_unchanged_by_the_override` | 6.e: search run, pacing, engine alerts, parser health |
 | 5083 | `TestReviewDecisionCardSizing.test_declared_minimum_width_fits_the_button_grid` | 6.f: Review, compare and its shortcuts |
 | 5097 | `TestReviewDecisionCardSizing.test_buttons_dont_clip_when_squeezed_to_the_declared_minimum` | 6.f: Review, compare and its shortcuts |
-| 5138 | `TestModeStackSizeFloor.test_launches_at_the_requested_1100x650` | **6.c**: `smoke::minimum_size_fits_every_state_in_both_schemes` (Python's 712x515 floor is not carried over: the stated minimum is 1010x790, measured with the rail in (docs/gtk-shell.md)) |
+| 5138 | `TestModeStackSizeFloor.test_launches_at_the_requested_1100x650` | **6.c**: `smoke::minimum_size_fits_every_state_in_both_schemes` (Python's 712x515 floor is not carried over: the stated minimum is 1010x837 since DAN-2550 (1010x790 before the title bar), measured with the rail in (docs/gtk-shell.md)) |
 | 5144 | `TestModeStackSizeFloor.test_queue_floor_ignores_activitys_width_and_reviews_height` | **6.c**: `smoke::minimum_size_fits_every_state_in_both_schemes` (the window floor; the Activity page's own growth is 6.e) |
 | 5165 | `TestModeStackSizeFloor.test_switching_to_activity_grows_without_clipping` | **6.c**: `smoke::minimum_size_fits_every_state_in_both_schemes` (the window floor; the Activity page's own growth is 6.e) |
 | 5213 | `TestReviewShortcuts.test_every_registered_action_has_a_handler` | 6.f: Review, compare and its shortcuts |

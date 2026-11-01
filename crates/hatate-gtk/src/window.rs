@@ -45,8 +45,11 @@ pub const WINDOW_TITLE: &str = "Hatate";
 /// frame of the Queue or the Review (right rail in) would clip, **measured** on the CI toolkit
 /// (GTK 4.14 / libadwaita 1.5) in both schemes by the `minimum_size_*` scenarios of
 /// `tests/smoke.rs`, which fail if any state needs more. `docs/gtk-shell.md` has the table.
+/// `MIN_HEIGHT` is the 790 of the first cut plus the 47 px the header bar takes (46 px of
+/// libadwaita's bar and the 1 px hairline under it, measured at CI, DAN-2550): the content keeps
+/// the height it had.
 pub const MIN_WIDTH: i32 = 1010;
-pub const MIN_HEIGHT: i32 = 790;
+pub const MIN_HEIGHT: i32 = 837;
 
 /// `workers/missing_file_worker.MissingFileWorker.run`: the subset of `paths` that no longer
 /// exist. The shipped window uses [`default_missing_files`] (`hatate_core::missing_files`, 6.b);
@@ -347,6 +350,7 @@ impl MainWindow {
             .default_height(650)
             .build();
         win.set_size_request(MIN_WIDTH, MIN_HEIGHT);
+        win.add_css_class("main-window");
         let prompter: Rc<dyn Prompter> = env
             .prompter
             .clone()
@@ -445,7 +449,15 @@ impl MainWindow {
         shell.root.root.set_vexpand(true);
         content.append(&shell.root.root);
         content.append(&shell.status_bar);
-        win.set_content(Some(&content));
+        // An `AdwApplicationWindow` draws no title bar of its own and GTK4 on Wayland draws no
+        // server-side frame, so the header bar is what the user drags and what carries minimize,
+        // maximize and close (DAN-2550). Its title is the window's; its buttons follow the
+        // desktop's own layout (no `decoration-layout` is set here); drag, double-click and the
+        // window menu are the header bar's defaults. The menubar stays directly beneath it.
+        let toolbar = adw::ToolbarView::new();
+        toolbar.add_top_bar(&adw::HeaderBar::new());
+        toolbar.set_content(Some(&content));
+        win.set_content(Some(&toolbar));
         crate::menubar_keys::install(&win, &menubar);
 
         let (mcp, mcp_wake) = crate::mcp_bridge::McpBridge::new();

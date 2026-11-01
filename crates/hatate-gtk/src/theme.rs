@@ -310,6 +310,27 @@ separator.footer-rule { background: @ink_18; min-height: 1px; }
 .drop-copy { color: @ink_65; font-size: %body%px; }
 .survived-glyph { border: 1px solid @ink_46; min-width: 42px; min-height: 42px; font-size: 32px; color: @ink; }
 
+/* ---- the main window's title bar (DAN-2550): the page, ink text, the one hairline the menubar has,
+   flat square buttons. Its height is libadwaita's own (`MIN_HEIGHT` in window.rs carries it). Scoped
+   to the main window so a secondary window's default bar, where GTK draws one, stays GTK's. The
+   inactive window (`:backdrop`) keeps the label tier, 4.5:1 on the page in both schemes ---- */
+window.main-window headerbar { background: @page; color: @ink; box-shadow: none; border-bottom: 1px solid @ink_18; }
+window.main-window headerbar:backdrop { background: @page; color: @ink_65; }
+window.main-window headerbar windowcontrols button { background: transparent; background-image: none; color: @ink;
+  border-radius: 0; box-shadow: none; min-width: 24px; min-height: 24px; }
+window.main-window headerbar windowcontrols button image { background: transparent; background-image: none;
+  border-radius: 0; box-shadow: none; }
+window.main-window headerbar windowcontrols button:hover, window.main-window headerbar windowcontrols button:hover image {
+  background: @ink_10; }
+window.main-window headerbar windowcontrols button:backdrop { color: @ink_65; }
+/* libadwaita fades an inactive bar's title and buttons to half strength with a filter on the bar's
+   `windowhandle` and its child (2.1:1 on the page, measured at CI, libadwaita 1.5, in both schemes); the
+   label tier is the dimmest this sheet allows text and glyphs. `opacity: 1` alone does not lift it, and
+   a `filter: none` on the headerbar's own descendants does not either: the rule has to reach the handle */
+window.main-window windowhandle:backdrop, window.main-window windowhandle:backdrop > * { opacity: 1; filter: none; }
+window.main-window headerbar:backdrop, window.main-window headerbar:backdrop * { opacity: 1; filter: none; }
+window.main-window headerbar *:backdrop { color: @ink_65; opacity: 1; }
+
 /* ---- menubar and status bar ---- */
 menubar { background: @page; color: @ink; border-bottom: 1px solid @ink_18; padding: 0 %space_3%px; min-height: 27px; }
 menubar > item { border-radius: 0; padding: 4px %space_3%px; min-height: 0; color: @ink_65;
@@ -645,6 +666,26 @@ mod tests {
                     && off.contains("border-color: @ink_46")
                     && off.contains("opacity: 1"),
                 "{scheme:?}: a disabled primary is not Stop's hollow dim look (DAN-2398 P3-2): {off}"
+            );
+        }
+    }
+
+    /// DAN-2550: an inactive main window's bar keeps the label tier. libadwaita halves the bar's title and
+    /// glyphs with a filter on `windowhandle` (measured 2.1:1 at CI), so the sheet must switch the filter
+    /// off there, not only on the headerbar's descendants.
+    #[test]
+    fn the_inactive_title_bar_is_not_faded_by_the_toolkit() {
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let css = css(scheme);
+            let line = css
+                .lines()
+                .find(|l| l.starts_with("window.main-window windowhandle:backdrop"))
+                .unwrap_or_else(|| panic!("{scheme:?}: no windowhandle:backdrop rule"));
+            assert!(
+                line.contains("windowhandle:backdrop > *")
+                    && line.contains("filter: none")
+                    && line.contains("opacity: 1"),
+                "{scheme:?}: the fade stays on the inactive bar: {line}"
             );
         }
     }

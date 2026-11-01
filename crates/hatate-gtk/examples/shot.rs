@@ -94,7 +94,7 @@ fn queue_rows(pics: &std::path::Path, n: usize, long_first: bool) -> Vec<Entry> 
 const SHOT_SET: &[(&str, bool)] = &[
     ("empty", true),
     ("rows", false),
-    ("crashed", false),
+    ("crashed", true),
     ("survived", false),
     ("quota", true),
     ("dialog", false),
@@ -180,6 +180,8 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("settings-mcp-tiers-low", true),
     ("queue", true),
     ("queue-selected", false),
+    // DAN-2550: the inactive window (the header bar, the menubar and the selection in their backdrop dress).
+    ("queue-backdrop", false),
     ("queue-sorted", false),
     ("queue-filter", false),
     ("queue-filter-empty", true),
@@ -844,6 +846,7 @@ fn main() -> glib::ExitCode {
         let win = window.win.clone();
         let main_win = window.win.clone();
         let frames = Rc::new(Cell::new(0u32));
+        let empty_snapshots = Cell::new(0u32);
         let out = out2.clone();
         let state = state.clone();
         win.add_tick_callback(move |win, _| {
@@ -943,7 +946,13 @@ fn main() -> glib::ExitCode {
                 );
             }
             let renderer = win.native().and_then(|n| n.renderer()).expect("renderer");
-            let tex = texture_of(win.upcast_ref(), &renderer).expect("snapshot");
+            // A window with an open popup can snapshot to nothing on the tick the popup is mapped
+            // (hosted `ci` after the header bar, DAN-2550): the next tick has the frame.
+            let Some(tex) = texture_of(win.upcast_ref(), &renderer) else {
+                empty_snapshots.set(empty_snapshots.get() + 1);
+                assert!(empty_snapshots.get() < 120, "snapshot");
+                return glib::ControlFlow::Continue;
+            };
             tex.save_to_png(&out).expect("png");
             println!("SHOT {} {}x{}", out.display(), win.width(), win.height());
             if tabs {
@@ -2150,6 +2159,14 @@ fn prepare_queue(window: &MainWindow, state: &str) {
     let ids = view.visible_ids();
     match state {
         "queue-selected" => view.select_ids(&ids[1..3]),
+        "queue-backdrop" => {
+            view.select_ids(&ids[1..3]);
+            // Xvfb has no window manager, so the window is never told it lost focus: set the flag the
+            // toolkit sets when it does.
+            window
+                .win
+                .set_state_flags(gtk4::StateFlags::BACKDROP, false);
+        }
         "queue-sorted" => view.on_header_clicked(Column::Status),
         "queue-filter" => window.s.filter_bar.text.set_text("synthetic-001"),
         "queue-filter-empty" => window.s.filter_bar.text.set_text("no such file"),
