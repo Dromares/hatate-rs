@@ -149,7 +149,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
-          cd assets
+          # upload-artifact roots the artifact at the common parent of its files. `build.log` sits in
+          # $RUNNER_TEMP and the three assets in $RUNNER_TEMP/release, so the root is $RUNNER_TEMP and
+          # the assets land in assets/release/ (v0.2.0 dispatch, run 41273051528). `build.log` is
+          # never named below, so it cannot become a release asset.
+          cd assets/release
           sha256sum -c SHA256SUMS
           if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "a release v$VERSION already exists; this workflow does not touch it"; exit 1
