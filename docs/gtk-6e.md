@@ -34,7 +34,7 @@ and `PendingOptions` (an engine override per row, bypass the cache, a one-shot "
 | 6.d | the Queue table: selection, preview, the tag list, the context menu that calls the re-search entry points, Clear Search Cache. The row a live update lands on is the queue model's; selecting it and refreshing the preview is `DEFERRED(6.d)` (`search_run.rs`) |
 | 6.d/6.f | "Review the N waiting" (the banner's button is built and disabled: `window.rs`, `DEFERRED(6.d/6.f)`), and the Activity page's "Show in Queue" selecting the current row |
 | 6.g | the Hydrus actions; what auto-import does with a send is `batch/run.rs` (Phase 5) |
-| Phase 7 | `core/parser_probe.py` and so Parser Health's live check (Cloud's ruling, DAN-2290, option 1): the dialog ships with the check off. The button is disabled, its tooltip and a caption under it say exactly "The live check is not part of this build yet.", and the dialog has no "Live check" column while no check runs. The seam (`ProbeRunner`) is real, so the scripted-probe tests run over it |
+| Phase 7 | `core/parser_probe.py` and so Parser Health's live check (Cloud's ruling, DAN-2290, option 1): the dialog shipped with the check off. **Closed by 7.c (DAN-2501): the check is ported and on.** The shipped window gives the dialog `LiveProbe` (`Env::live_probe`), so the button is enabled and the "Live check" column is there. A window with no check (a test's) still shows the disabled button, its tooltip and the caption "The live check is not part of this build yet.". The seam (`ProbeRunner`) is unchanged, so the scripted-probe tests run over it |
 
 `docs/phase5-coverage.md` carries the clause for the probe. Nothing in this ticket claims more than the README does.
 
@@ -80,7 +80,7 @@ Parser Health is its own dialog and has its own minimum: 760 x 460, rendered at 
 
 | # | Difference | Why |
 |---|---|---|
-| D1 | The live check in Parser Health is off (see section 1). | Cloud, DAN-2290, option 1. |
+| D1 | The live check in Parser Health is off (see section 1). **Closed by 7.c (DAN-2501): on in the shipped window.** | Cloud, DAN-2290, option 1. |
 | D2 | The Failed banner's glyph is a plain `×`; call 2b draws a boxed one with an `ink_46` border, and `ink_46` is a control-border tier, not a token the banner family uses. | For Oderisi's read (item 1 of the design acceptance: a deviation is written, not discovered). |
 | D3 | An engine alert's remedy is in the dialog's **body**, after the question; Python puts it in the box's detailed text. The same goes for the dead-match list and the upscale details. | The dialog seam (`Prompter`) has no detail area. Ruled by Cloud on DAN-2291: it stays as is and is documented. It is class 2 of the differential (section 5). |
 | D4 | The Lens connection state is said in the status line ("Google Lens: waiting for an answer…"); Python shows nothing of it. | The ticket's "render `LensConnection`". |
@@ -269,8 +269,8 @@ removal of an imported row from the run's list is here, the import is Phase 5's.
 
 | Line | Python | Rust | Left to |
 |---|---|---|---|
-| 46 | `__init__ (the worker)` | `ProbeRunner` (the seam the live check will use) | **left to Phase 7 per DAN-2290**: no probe ships |
-| 50 | `run (the worker)` | `ProbeRunner::run` | **left to Phase 7 per DAN-2290** |
+| 46 | `__init__ (the worker)` | `ProbeRunner` (the seam the live check will use) | **left to Phase 7 per DAN-2290**: no probe ships; 7.c ships `LiveProbe` behind the seam |
+| 50 | `run (the worker)` | `ProbeRunner::run` | **left to Phase 7 per DAN-2290**; 7.c: `LiveProbe::run` is `parser_probe.run` |
 | 66 | `__init__ (the dialog)` | `crates/hatate-gtk/src/parser_health.rs` `fn build` `fn build(main: &MainWindow, probe: Option<Arc<dyn ProbeRunner>>) -> Rc<ParserHealthDialog> {` `ParserHealthDialog::build` |  |
 | 120 | `_populate` | `crates/hatate-gtk/src/parser_health.rs` `fn populate` `pub fn populate(&self) {` `populate` |  |
 | 155 | `_start_probe` | `crates/hatate-gtk/src/parser_health.rs` `fn start_probe` `fn start_probe(self: &Rc<Self>) {` (the check button; disabled in this build, DAN-2290) |  |
@@ -327,8 +327,8 @@ The set to map is the union of two, so a test that exercises 6.e behaviour witho
 | Line | Test | Disposition |
 |---|---|---|
 | 1453 | `TestCrashDiagnostics.test_retiring_a_worker_does_not_warn` | **core**: `SearchWorker`'s retirement warning has no Rust counterpart: the run is a task on the runtime, not a thread to retire; the window's teardown is `SearchRun::close` and the 6.c close scenarios |
-| 1710 | `TestParserProbe.test_progress_is_reported_for_each_site` | **not ported, per DAN-2290**: `core/parser_probe.py` is Phase 7's decision; the dialog's seam (`ProbeRunner`) reports progress per site, and the scripted-probe test is `smoke::parser_health_dialog_and_warning` |
-| 1720 | `TestParserProbe.test_every_probe_url_matches_the_parser_it_claims` | **not ported, per DAN-2290**: the probe URLs belong to `parser_probe`; no probe ships in this build, so there are no URLs to match to parsers |
+| 1710 | `TestParserProbe.test_progress_is_reported_for_each_site` | **7.c (DAN-2501)**: `crates/hatate-core/src/parser_probe.rs` `fn progress_is_reported_for_each_site` `assert_eq!(sites, ["danbooru", "e621"]);`; the dialog's seam reports it, and the scripted-probe test is `smoke::parser_health_dialog_and_warning` |
+| 1720 | `TestParserProbe.test_every_probe_url_matches_the_parser_it_claims` | **7.c (DAN-2501)**: `crates/hatate-core/src/parser_probe.rs` `fn every_probe_url_matches_the_parser_it_claims` `assert_eq!(name, site, "{url}");` |
 | 1959 | `TestMyAnimeListSite.test_it_is_offered_in_the_sites_menu` | **6.e**: `smoke::the_sites_menu_toggles_and_saves` builds the menu from `ALL_SITE_OPTIONS` (`menu::all_site_options`) and asserts its order against the saved config; that these three sites are in it is the list's contents, from `hatate_core::sites` (Phase 3) |
 | 2164 | `TestMangaUpdatesSite.test_it_is_offered_in_the_sites_menu` | **6.e**: `smoke::the_sites_menu_toggles_and_saves` builds the menu from `ALL_SITE_OPTIONS` (`menu::all_site_options`) and asserts its order against the saved config; that these three sites are in it is the list's contents, from `hatate_core::sites` (Phase 3) |
 | 2278 | `TestPahealSite.test_it_is_offered_in_the_sites_menu` | **6.e**: `smoke::the_sites_menu_toggles_and_saves` builds the menu from `ALL_SITE_OPTIONS` (`menu::all_site_options`) and asserts its order against the saved config; that these three sites are in it is the list's contents, from `hatate_core::sites` (Phase 3) |
@@ -359,7 +359,7 @@ The set to map is the union of two, so a test that exercises 6.e behaviour witho
 | 1846 | `TestTagsAppearWhenAMatchLands.test_an_update_for_another_row_still_follows_the_search` | **6.f (DAN-2219)**: not asserted here. "An update selects that row and the panel describes it" is class 1 of the action differential (DAN-2291: Python selects the row and fetches its candidates, so its status line reads `Ready`); the selection and the panel are 6.d/6.f, which reruns that class to zero. 6.e's half is the same as the row above |
 | 1983 | `TestParserHealthDialog.test_it_lists_every_site_even_before_anything_is_known` | **6.e**: `parser_health::tests::every_site_is_listed_before_anything_is_known`; `smoke::parser_health_dialog_and_warning` asserts the 13 rows and the `not used yet` cells |
 | 1989 | `TestParserHealthDialog.test_a_broken_parser_shows_in_the_session_column` | **6.e**: `parser_health::tests::a_broken_parser_shows_in_the_session_column_with_its_problem`; `smoke::parser_health_dialog_and_warning` asserts the dialog's cells |
-| 1996 | `TestParserHealthDialog.test_live_results_fill_the_check_column` | **6.e, per DAN-2290**: the live check is off in this build (the button is disabled with its tooltip and caption; `parser_probe` is Phase 7's decision). The check column's filling is `parser_health::tests::live_results_fill_the_check_column_and_a_failure_names_its_problem` and `smoke::parser_health_dialog_and_warning`, over a scripted probe (the seam the real check will use) |
+| 1996 | `TestParserHealthDialog.test_live_results_fill_the_check_column` | **6.e, per DAN-2290; the check is on since 7.c (DAN-2501)**: a window with no check still shows the disabled button with its tooltip and caption, and the shipped window has one. The check column's filling is `parser_health::tests::live_results_fill_the_check_column_and_a_failure_names_its_problem` and `smoke::parser_health_dialog_and_warning`, over a scripted probe (the seam the real check will use) |
 | 2008 | `TestParserHealthDialog.test_an_all_clear_says_so` | **6.e, per DAN-2290**: `parser_health::tests::the_summary_line_says_all_clear_names_the_broken_and_never_clears_a_check_that_did_not_run`, over scripted results |
 | 2015 | `TestParserHealthDialog.test_a_check_that_could_not_run_is_not_reported_as_all_clear` | **6.e, per DAN-2290**: `parser_health::tests::the_summary_line_says_all_clear_names_the_broken_and_never_clears_a_check_that_did_not_run`, over scripted results (the live check itself is off in this build) |
 | 2020 | `TestParserHealthDialog.test_the_check_runs_off_the_gui_thread` | **6.e, per DAN-2290**: `smoke::parser_health_dialog_and_warning` runs the scripted probe off the main thread (a 150 ms pause) and asserts the window's timers keep turning, the button is off meanwhile and the progress and summary follow |

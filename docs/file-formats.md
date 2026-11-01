@@ -742,7 +742,11 @@ paths of the run that produced it).
   (3.4).
 - `last_clean_exit`: `str(time.time())`, written by the same clean shutdown (`:127`).
 - `crash.log`: opened in append mode at startup, `--- session started, faulthandler armed ---`
-  written first (`:78,227-228`), then Python's `faulthandler` dumps on a hard crash.
+  written first (`:78,227-228`), then Python's `faulthandler` dumps on a hard crash. The Rust
+  apps write the same mark (the window and `hatate batch` at start, the other commands at their
+  first panic) and append one entry per panic that starts `Fatal Rust panic: <message>`, followed
+  by indented `time:`, `version:`, `binary:`, `thread:` and `location:` lines and `Backtrace:`
+  (DAN-2501). The Crashed banner counts such a line like a `Fatal Python error:` one.
 
 ### 5.4 `mcp_audit.jsonl` (+ `.1`)
 

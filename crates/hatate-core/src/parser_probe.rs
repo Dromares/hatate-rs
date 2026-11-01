@@ -277,17 +277,19 @@ mod tests {
 
     /// `_info`: one tag, 800x600, a preview and a file, fetched.
     fn info(edit: impl FnOnce(&mut BooruPageInfo)) -> BooruPageInfo {
-        let mut page = BooruPageInfo::default();
-        page.tags = vec![Tag {
-            name: "1girl".into(),
-            namespace: None,
-            source: TagSource::Booru,
-        }];
-        page.width = Some(800);
-        page.height = Some(600);
-        page.preview_url = Some("https://x/p.jpg".into());
-        page.file_url = Some("https://x/f.jpg".into());
-        page.fetched = true;
+        let mut page = BooruPageInfo {
+            tags: vec![Tag {
+                name: "1girl".into(),
+                namespace: None,
+                source: TagSource::Booru,
+            }],
+            width: Some(800),
+            height: Some(600),
+            preview_url: Some("https://x/p.jpg".into()),
+            file_url: Some("https://x/f.jpg".into()),
+            fetched: true,
+            ..BooruPageInfo::default()
+        };
         edit(&mut page);
         page
     }

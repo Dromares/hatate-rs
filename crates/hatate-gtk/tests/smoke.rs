@@ -2840,6 +2840,25 @@ fn parser_health_dialog_and_warning(app: &adw::Application) {
     );
     dialog.window.close();
     f.close();
+
+    // The shipped window turns the real check on (`Env::live_probe`, DAN-2501): the button is on,
+    // the column is there, and the "not part of this build" caption is not. Nothing is clicked, so
+    // no site is reached.
+    let f = Fx::new_with(app, Opts::default(), |env| env.live_probe = true);
+    f.activate("parser-health");
+    let dialog = f.w.s.parser_health_dialog.borrow().clone().unwrap();
+    assert!(dialog.check_button.is_sensitive());
+    assert_eq!(
+        dialog.texts()[0],
+        ["Site", "This session", "Live check", "Last problem"]
+    );
+    assert!(
+        !texts_under(dialog.window.child().unwrap().upcast_ref())
+            .iter()
+            .any(|t| t == "The live check is not part of this build yet.")
+    );
+    dialog.window.close();
+    f.close();
 }
 
 /// A log source whose text the test changes.

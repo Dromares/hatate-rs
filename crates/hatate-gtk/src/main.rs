@@ -52,5 +52,7 @@ fn main() -> gtk4::glib::ExitCode {
     }
     let mut env = Env::new(paths, started.previous_run_unclean);
     env.log_ring = ring;
+    // Parser Health's "Check every site now" fetches the real sites (`core/parser_probe.py`).
+    env.live_probe = true;
     app::run_with(env, |_| {})
 }

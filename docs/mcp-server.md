@@ -30,7 +30,7 @@ main-thread invoker, `mcp_images.fetch_full_resolution_match`: 5.e. The scripted
 differential implement `_run_tool` themselves, from the public `tools::gate`,
 `tools::is_dry_runnable` and `audit::record`. **For 5.e:** `_run_tool` records `outcome=result`,
 and for `get_images` that result holds `bytes`, which `json.dumps(default=str)` writes as
-`str(bytes)`; `content::py_bytes_repr` is that function if the audit line must match.
+`str(bytes)`; `content::py_bytes_repr` is that function. The audit line does not match it: class A1 below records `<image: N bytes, sha256 HEX>` instead (DAN-2501).
 
 ## The handler trait
 
@@ -147,7 +147,9 @@ servers with the same raw HTTP, and compare. Log: `worktrees/DAN-2166-differenti
 
 Granted by the ticket: **B1** the stdio client config command (above); **V1**
 `serverInfo.version` (Python reports the `mcp` package's `1.30.0`, this build its own crate
-version). **T1** the pydantic `title` keys are reproduced, so the grant is not used.
+version). **A1** the audit log's image dump (DAN-2501, granted by Cloud on the ticket, below). **T1** the pydantic `title` keys are reproduced, so the grant is not used.
+
+**A1, the audit log records an image as `<image: N bytes, sha256 HEX>`.** `_run_tool` records `outcome=result`, and for `get_images` the result holds `bytes`, which Python's `json.dumps(default=str)` writes as `str(bytes)`: the whole picture as an escaped literal, hundreds of kilobytes per call in the user's log. This build writes `<image: N bytes, sha256 HEX>` in that place (`content::audit_image_text`; `HEX` is the 64 lowercase hex digits of the SHA-256 of the bytes, `N` the byte count), so the log says which image without keeping it. A missing image is still `null`. Nothing else in a line changes: the keys, their order, the redaction and the rotation are as Python's, and a call that returns no image writes the line it always wrote, so a client that reads the log is unaffected. The reply to the MCP client is unchanged (the picture is still an image block). Pinned by `tests/mcp_tool_handlers.rs` `the_audit_log_records_an_image_by_size_and_hash_not_by_its_bytes`.
 
 Not matched, with the counts in the log:
 

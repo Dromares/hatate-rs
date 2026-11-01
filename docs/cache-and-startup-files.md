@@ -20,7 +20,7 @@ Out of scope here: `matched_urls.log`, `mcp_audit.jsonl`, sidecars, exports, Hyd
   creates `crash.log.running` after looking for the previous one, and removes it, then
   writes `last_clean_exit`, at the end of a clean exit (`RunSession::finish_clean`). There is
   no `Drop` that does this: a panic unwinds through `Drop`, and a crash must not be called
-  clean. `crash.log` (Python's faulthandler output) is not written.
+  clean. `crash.log` (Python's faulthandler output) is not written by faulthandler; a panic is written there by the hook of 7.c (DAN-2501, `crash_report.rs`): one `Fatal Rust panic:` entry per panic, with the time, version, binary, thread, location and a backtrace, under this run's `--- session started, faulthandler armed ---` mark. A native signal leaves nothing (known gap).
 - **The Rust log is `hatate-rs.log`, never `app.log`** (board decision on DAN-1982). The name
   collides with nothing in spec 1.2 or 1.3, nor with a rotated copy of one, nor with
   `hatate-rs.json` (DAN-1979); `tests/paths_sandbox.rs` checks that against the spec text.

@@ -3,11 +3,11 @@
 //!
 //! The dialog answers whether each site's parser still works, two ways: what this session has seen
 //! (`hatate_core::parser_health`, gathered as searches ran) and a live check that fetches one known
-//! post per site. **The live check is `core/parser_probe.py`, which is not ported** (it is a
-//! maintenance tool that needs the real sites, and `docs/phase5-coverage.md` leaves it to
-//! Phase 7). The dialog takes the check as a [`ProbeRunner`]: the shipped window gives none, and
-//! the button says so and stays off; a test gives a scripted one, so the column, the progress and
-//! the summary line are all exercised without a network.
+//! post per site. The live check is `core/parser_probe.py` (`hatate_core::parser_probe`, ported in
+//! Phase 7 because this dialog calls it, DAN-2501). The dialog takes the check as a
+//! [`ProbeRunner`]: the shipped window gives it [`LiveProbe`], and a test gives a scripted one, so
+//! the column, the progress and the summary line are all exercised without a network. A window
+//! with neither leaves the button off and says so (DAN-2290).
 
 use crate::widgets;
 use crate::window::MainWindow;
@@ -105,6 +105,51 @@ impl ProbeResult {
 /// total, site)` fires before each fetch.
 pub trait ProbeRunner: Send + Sync {
     fn run(&self, timeout: f64, on_progress: &dyn Fn(usize, usize, &str)) -> Vec<ProbeResult>;
+}
+
+/// The shipped check: `hatate_core::parser_probe::run` over the search engine's network layer
+/// and booru session, so the check also fills the "This session" column, as Python's module-level
+/// health does.
+pub struct LiveProbe {
+    fetch: hatate_core::parser_probe::LiveFetch<EngineSession>,
+}
+
+/// The engine that owns the booru session the check fetches through.
+pub struct EngineSession(Arc<hatate_core::search_engine::SearchEngine>);
+
+impl AsRef<hatate_core::boorus::fetch::BooruSession> for EngineSession {
+    fn as_ref(&self) -> &hatate_core::boorus::fetch::BooruSession {
+        &self.0.booru
+    }
+}
+
+impl LiveProbe {
+    pub fn new(engine: &Arc<hatate_core::search_engine::SearchEngine>) -> std::io::Result<Self> {
+        let fetch = hatate_core::parser_probe::LiveFetch::new(
+            engine.net.clone(),
+            EngineSession(engine.clone()),
+        )?;
+        Ok(LiveProbe { fetch })
+    }
+}
+
+impl ProbeRunner for LiveProbe {
+    fn run(&self, timeout: f64, on_progress: &dyn Fn(usize, usize, &str)) -> Vec<ProbeResult> {
+        hatate_core::parser_probe::run(&self.fetch, timeout, on_progress, &[])
+            .into_iter()
+            .map(|r| ProbeResult {
+                site: r.site,
+                ok: r.ok,
+                tags: r.tags,
+                width: r.width,
+                height: r.height,
+                has_preview: r.has_preview,
+                has_file_url: r.has_file_url,
+                problem: r.problem,
+                restricted: r.restricted,
+            })
+            .collect()
+    }
 }
 
 /// What `_populate` puts in one row.
@@ -542,9 +587,32 @@ impl MainWindow {
             .unwrap_or_default()
     }
 
+    /// The real check, when the shipped window asked for it ([`Env::live_probe`]) and the network
+    /// layer builds; otherwise none, and the dialog says the check is off.
+    fn live_probe(&self) -> Option<Arc<dyn ProbeRunner>> {
+        if !self.s.live_probe {
+            return None;
+        }
+        let backend = match self.s.search.backend(&self.s.paths) {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::error!("the live check has no network layer: {e}");
+                return None;
+            }
+        };
+        match LiveProbe::new(&backend.engine) {
+            Ok(p) => Some(Arc::new(p)),
+            Err(e) => {
+                tracing::error!("the live check could not start: {e}");
+                None
+            }
+        }
+    }
+
     /// `action_parser_health`: the dialog, modal over the window.
     pub fn action_parser_health(&self) {
-        let dialog = ParserHealthDialog::build(self, self.s.probe.clone());
+        let probe = self.s.probe.clone().or_else(|| self.live_probe());
+        let dialog = ParserHealthDialog::build(self, probe);
         dialog.window.present();
         *self.s.parser_health_dialog.borrow_mut() = Some(dialog);
     }

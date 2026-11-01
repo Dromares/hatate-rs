@@ -492,9 +492,9 @@ Grouped by file, in line order. A row's Rust home is the owning ticket's wording
 
 | Line | Python def | Rust home, or the owner | PR | Source row |
 |---|---|---|---|---|
-| 46 | `_ProbeWorker.__init__` | `ProbeRunner` (the seam the live check will use) (left to: **left to Phase 7 per DAN-2290**: no probe ships) | #63 | `gtk-6e.md:272` |
-| 50 | `_ProbeWorker.run` | `ProbeRunner::run` (left to: **left to Phase 7 per DAN-2290**) | #63 | `gtk-6e.md:273` |
-| 66 | `ParserHealthDialog.__init__` | `ProbeRunner` (the seam the live check will use) (left to: **left to Phase 7 per DAN-2290**: no probe ships) | #63 | `gtk-6e.md:272` |
+| 46 | `_ProbeWorker.__init__` | `ProbeRunner` (the seam the live check will use) (left to: **left to Phase 7 per DAN-2290**: no probe ships; 7.c ships `LiveProbe` behind the seam) | #63 | `gtk-6e.md:272` |
+| 50 | `_ProbeWorker.run` | `ProbeRunner::run` (left to: **left to Phase 7 per DAN-2290**; 7.c: `LiveProbe::run` is `parser_probe.run`) | #63 | `gtk-6e.md:273` |
+| 66 | `ParserHealthDialog.__init__` | `ProbeRunner` (the seam the live check will use) (left to: **left to Phase 7 per DAN-2290**: no probe ships; 7.c ships `LiveProbe` behind the seam) | #63 | `gtk-6e.md:272` |
 | 120 | `ParserHealthDialog._populate` | `crates/hatate-gtk/src/parser_health.rs` `fn populate` `pub fn populate(&self) {` `populate` | #63 | `gtk-6e.md:275` |
 | 155 | `ParserHealthDialog._start_probe` | `crates/hatate-gtk/src/parser_health.rs` `fn start_probe` `fn start_probe(self: &Rc<Self>) {` (the check button; disabled in this build, DAN-2290) | #63 | `gtk-6e.md:276` |
 | 168 | `ParserHealthDialog._on_progress` | `crates/hatate-gtk/src/parser_health.rs` `fn on_progress` `fn on_progress(&self, done: usize, total: usize, site: &str) {` `on_progress` | #63 | `gtk-6e.md:277` |
