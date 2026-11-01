@@ -42,6 +42,7 @@ pub mod multipage;
 pub mod multipage_resolve;
 pub mod net;
 pub mod parser_health;
+pub mod parser_probe;
 pub mod paths;
 pub mod pawchive_index;
 pub mod preview_text;
