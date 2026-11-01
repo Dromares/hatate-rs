@@ -91,6 +91,19 @@ fn copy_licence_files(from_dir: &Path, to_dir: &Path) -> Res<Vec<String>> {
     Ok(copied)
 }
 
+/// The first alternative of an SPDX `OR` expression that has a checked-in canonical text in `dir`
+/// (`<ID>.txt`), for a crate whose package ships no licence file. `AND` and `WITH` expressions
+/// bind the redistributor to every part, so they never qualify.
+pub fn elected_text(expr: &str, dir: &Path) -> Option<String> {
+    if expr.contains(" AND ") || expr.contains(" WITH ") {
+        return None;
+    }
+    expr.split(" OR ")
+        .map(|id| id.trim().trim_matches(['(', ')']))
+        .find(|id| !id.is_empty() && dir.join(format!("{id}.txt")).is_file())
+        .map(str::to_owned)
+}
+
 /// The Rust crates of the three shipped binaries, with licence files copied.
 fn rust_crates(repo: &Path, licenses: &Path) -> Res<Vec<Entry>> {
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
@@ -134,6 +147,7 @@ fn rust_crates(repo: &Path, licenses: &Path) -> Res<Vec<Entry>> {
         by_id.insert((name.to_owned(), version.to_owned()), (licence, dir));
     }
     let mut entries = Vec::new();
+    let mut missing = Vec::new();
     for key in wanted {
         let (licence, dir) = by_id.get(&key).ok_or_else(|| {
             format!(
@@ -142,19 +156,42 @@ fn rust_crates(repo: &Path, licenses: &Path) -> Res<Vec<Entry>> {
             )
         })?;
         let to = licenses.join("crates").join(format!("{}-{}", key.0, key.1));
-        let files = copy_licence_files(dir, &to)?;
+        let mut files = copy_licence_files(dir, &to)?;
+        let mut licence = licence.clone();
+        if files.is_empty()
+            && let Some(id) = elected_text(&licence, &repo.join("packaging/appimage/licenses/spdx"))
+        {
+            // The crate's package ships no licence file. Its SPDX expression is an `OR`, so the
+            // redistributor may elect one of the alternatives; the canonical text of that one is
+            // checked in. Only ids with a checked-in text qualify, and the choice is recorded.
+            fs::create_dir_all(&to).map_err(|e| e.to_string())?;
+            let name = format!("{id}.txt");
+            fs::copy(
+                repo.join("packaging/appimage/licenses/spdx").join(&name),
+                to.join(&name),
+            )
+            .map_err(|e| e.to_string())?;
+            licence =
+                format!("{licence} (package ships no licence file; {id} elected, canonical text)");
+            files.push(name);
+        }
         if licence.is_empty() || files.is_empty() {
-            return Err(format!(
-                "crate {} {} has no licence entry (SPDX {licence:?}, licence files {files:?})",
-                key.0, key.1
-            ));
+            missing.push(format!("{} {} (SPDX {licence:?})", key.0, key.1));
+            continue;
         }
         entries.push(Entry {
             name: key.0,
             version: key.1,
-            licence: licence.clone(),
+            licence,
             files,
         });
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "{} crates have no licence entry: {}",
+            missing.len(),
+            missing.join("; ")
+        ));
     }
     Ok(entries)
 }
@@ -442,6 +479,52 @@ mod tests {
         assert_eq!(
             copy_licence_files(dir.path(), to.path()).unwrap(),
             ["LICENSE-MIT"]
+        );
+    }
+
+    #[test]
+    fn a_crate_with_no_licence_file_elects_an_or_alternative_that_has_a_checked_in_text() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../packaging/appimage/licenses/spdx");
+        assert_eq!(elected_text("MPL-2.0", &dir).as_deref(), Some("MPL-2.0"));
+        assert_eq!(
+            elected_text("MIT OR Apache-2.0 OR Zlib", &dir).as_deref(),
+            Some("Apache-2.0")
+        );
+        assert_eq!(
+            elected_text("MIT OR Zlib", &dir),
+            None,
+            "no text, no election"
+        );
+        assert_eq!(
+            elected_text("MPL-2.0 AND MIT", &dir),
+            None,
+            "AND binds to every part"
+        );
+        assert_eq!(elected_text("", &dir), None);
+    }
+
+    #[test]
+    fn every_crate_the_binaries_link_gets_a_licence_entry() {
+        // The real dependency graph of the three shipped binaries: a new dependency that ships no
+        // licence file and offers no alternative with a checked-in text turns this red before it
+        // turns the AppImage build red.
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let entries = rust_crates(repo, out.path()).unwrap_or_else(|e| panic!("{e}"));
+        assert!(entries.len() > 100, "{} crates", entries.len());
+        assert!(
+            entries
+                .iter()
+                .all(|e| !e.files.is_empty() && !e.licence.is_empty())
+        );
+        let selectors = entries
+            .iter()
+            .find(|e| e.name == "selectors")
+            .expect("selectors");
+        assert!(
+            selectors.licence.contains("MPL-2.0 elected"),
+            "{}",
+            selectors.licence
         );
     }
 
