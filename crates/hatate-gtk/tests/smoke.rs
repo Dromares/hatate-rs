@@ -52,6 +52,10 @@ const SCENARIOS: &[Scenario] = &[
         queue_file_cell_carries_the_whole_file_name,
     ),
     (
+        "queue_details_line_shows_the_selected_rows_whole_file_name",
+        queue_details_line_shows_the_selected_rows_whole_file_name,
+    ),
+    (
         "settings_pages_fit_their_view_at_the_minimum_size",
         settings_pages_fit_their_view_at_the_minimum_size,
     ),
@@ -7701,7 +7705,7 @@ fn queue_file_cell_carries_the_whole_file_name(app: &adw::Application) {
     use hatate_core::table_cells::Column;
     let long = "a-very-long-file-name-that-the-queue-column-has-to-cut-in-the-middle-0001.jpg";
     let mut seed = seeded(3, MatchStatus::Good);
-    seed[1].path = format!("/tmp/hatate-dan2501/{long}").into();
+    seed[1].path = format!("/tmp/hatate-dan2501/{long}");
     let f = Fx::new(
         app,
         Opts {
@@ -7716,6 +7720,77 @@ fn queue_file_cell_carries_the_whole_file_name(app: &adw::Application) {
     let view = f.w.s.queue_view.clone();
     let cell = view.cell(1, Column::File).expect("the File cell");
     assert_eq!(cell.tooltip.as_deref(), Some(long));
+    f.close();
+}
+
+/// DAN-2501 (7.c M3, keyboard half): the Details line under the Queue table holds the whole File
+/// name of the one selected row. A key moves the selection (the cursor and the selection model, no
+/// pointer), so the keyboard reaches the name that hover reaches in the tooltip. None or several
+/// selected rows leave it empty, and a row a filter hides never leaves its name behind.
+fn queue_details_line_shows_the_selected_rows_whole_file_name(app: &adw::Application) {
+    use common::xtest::{Key, Xtest};
+    use hatate_core::entry_filter::EntryFilter;
+    let long = "a-very-long-file-name-that-the-queue-column-has-to-cut-in-the-middle-0001.jpg";
+    let mut seed = seeded(3, MatchStatus::Good);
+    seed[1].path = format!("/tmp/hatate-dan2501/{long}");
+    let f = Fx::new(
+        app,
+        Opts {
+            seed,
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    f.w.win.set_default_size(1100, 800);
+    f.w.win.present();
+    pump_for(500);
+    let view = f.w.s.queue_view.clone();
+    let details = || view.details.text().to_string();
+    assert_eq!(details(), "", "nothing selected");
+    view.select_row(1);
+    assert_eq!(details(), long, "one row selected");
+    view.select_row(0);
+    assert_eq!(
+        details(),
+        "img0.png",
+        "the line follows the selection, never the last name"
+    );
+    let ids = view.visible_ids();
+    view.select_ids(&ids);
+    assert_eq!(details(), "", "several rows selected");
+    view.select_ids(&[]);
+    assert_eq!(details(), "", "selection cleared");
+    view.select_row(1);
+    view.set_filter(EntryFilter {
+        statuses: Some(HashSet::new()),
+        ..EntryFilter::default()
+    });
+    assert_eq!(view.visible_count(), 0);
+    assert_eq!(details(), "", "a filter hid the selected row");
+    view.set_filter(EntryFilter::default());
+    view.select_row(0);
+
+    // The key half: Down from row 0 lands on the long name.
+    let mut keys = match Xtest::connect() {
+        Ok(x) => x,
+        Err(why) => {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI is set and the X server cannot inject keys: {why}: failing closed"
+            );
+            println!("queue_details: the key half is skipped ({why})");
+            f.close();
+            return;
+        }
+    };
+    keys.focus_window_at(300, 300).expect("focus the window");
+    view.view.grab_focus();
+    pump_for(200);
+    assert_eq!(details(), "img0.png");
+    keys.tap(Key::Down, &[]).expect("inject");
+    pump_for(300);
+    assert_eq!(view.selected_ids(), [view.visible_ids()[1]]);
+    assert_eq!(details(), long, "Down selected the long-named row");
     f.close();
 }
 

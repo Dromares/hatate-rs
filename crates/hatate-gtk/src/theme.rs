@@ -436,6 +436,9 @@ textview.log, textview.log text { background: @sunken; color: @ink; font-family:
    take the bundled face through Pango markup, so no rule names it here ---- */
 .queue-frame { background: @raised; border: 1px solid @ink_18; }
 .queue { background: @raised; color: @ink; }
+/* the Details line under the table: the selected row's whole file name, one line tall when empty so the
+   table does not jump when a row is selected (DAN-2501) */
+.queue-details { color: @ink_65; font-size: %body%px; padding: 4px 8px; min-height: 18px; }
 .queue > header { background: @raised; border-bottom: 1px solid @ink_28; }
 .queue > header > button { border-radius: 0; background: transparent; color: @ink_65;
   padding: 0 %space_1%px 0 %space_3%px; min-height: 28px; font-family: %mono%; font-size: %micro%px;
