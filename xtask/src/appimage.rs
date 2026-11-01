@@ -353,7 +353,15 @@ fn bundle_gtk_data(appdir: &Path, sources: &mut Vec<(String, PathBuf)>) -> Res<(
     if let Some(loaders) = loaders {
         let to = appdir.join("usr/lib/gdk-pixbuf-2.0/2.10.0/loaders");
         copy_tree(&loaders, &to)?;
-        sources.push(("gdk-pixbuf loaders".to_owned(), loaders));
+        // Each loader is owned by its own package (gdk-pixbuf, librsvg, ...).
+        for entry in fs::read_dir(&loaders).map_err(|e| e.to_string())?.flatten() {
+            if entry.path().is_file() {
+                sources.push((
+                    entry.file_name().to_string_lossy().into_owned(),
+                    entry.path(),
+                ));
+            }
+        }
     } else {
         return Err(
             "no gdk-pixbuf loaders directory on this host (install librsvg2-common)".into(),

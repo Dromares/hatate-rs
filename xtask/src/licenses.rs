@@ -35,7 +35,8 @@ pub fn is_licence_file(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     ["LICENSE", "LICENCE", "COPYING", "UNLICENSE", "NOTICE"]
         .iter()
-        .any(|p| upper.starts_with(p))
+        .filter_map(|p| upper.strip_prefix(p))
+        .any(|rest| rest.is_empty() || rest.starts_with(['-', '_', '.']))
 }
 
 /// `name vX.Y.Z` pairs from `cargo tree --prefix none -f '{p}'` output, registry crates only (a
@@ -200,6 +201,24 @@ fn owner(path: &Path) -> Res<(String, String, Vec<PathBuf>)> {
             }
         }
     }
+    if files.is_empty() {
+        // Arch points common licences at /usr/share/licenses/spdx instead of copying them.
+        let declared = run(Command::new("pacman").args(["-Qi", &package])).unwrap_or_default();
+        let ids = declared
+            .lines()
+            .find_map(|l| l.strip_prefix("Licenses"))
+            .and_then(|l| l.split_once(':'))
+            .map_or("", |(_, ids)| ids);
+        for id in ids
+            .split_whitespace()
+            .filter(|w| !matches!(*w, "OR" | "AND" | "WITH"))
+        {
+            let text = PathBuf::from("/usr/share/licenses/spdx").join(format!("{id}.txt"));
+            if text.is_file() {
+                files.push(text);
+            }
+        }
+    }
     Ok((package, version, files))
 }
 
@@ -225,11 +244,11 @@ fn bundled_packages(sources: &[(String, PathBuf)], licenses: &Path) -> Res<Vec<E
         slot.1.push(name.clone());
     }
     let mut entries = Vec::new();
+    let mut missing = Vec::new();
     for (package, (version, libs, files)) in by_package {
         if files.is_empty() {
-            return Err(format!(
-                "package {package} {version} (bundled: {libs:?}) has no copyright/licence file on this host"
-            ));
+            missing.push(format!("{package} {version} ({})", libs.join(", ")));
+            continue;
         }
         let to = licenses.join("lib").join(&package);
         fs::create_dir_all(&to).map_err(|e| e.to_string())?;
@@ -248,6 +267,13 @@ fn bundled_packages(sources: &[(String, PathBuf)], licenses: &Path) -> Res<Vec<E
             licence: format!("distro package; bundles {}", libs.join(", ")),
             files: names,
         });
+    }
+    if !missing.is_empty() {
+        return Err(format!(
+            "{} bundled packages have no copyright/licence file on this host: {}",
+            missing.len(),
+            missing.join("; ")
+        ));
     }
     Ok(entries)
 }
