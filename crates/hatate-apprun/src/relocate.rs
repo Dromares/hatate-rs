@@ -181,6 +181,31 @@ pub fn ensure_copy(appdir: &Path, cache: &Path, version: &str) -> io::Result<Pat
     Ok(target)
 }
 
+/// Closes every inherited descriptor that points into `appdir`. The runtime leaves a directory
+/// descriptor on the mount open (fd 1023 on the board's desktop); the app has no use for it, and
+/// while it is open the process still holds the mount. Returns how many it closed.
+pub fn close_fds_into(appdir: &Path) -> usize {
+    use std::os::fd::{FromRawFd, OwnedFd};
+    let Ok(dir) = fs::read_dir("/proc/self/fd") else {
+        return 0;
+    };
+    // Collected first: closing while `read_dir` iterates would disturb the listing.
+    let fds: Vec<i32> = dir
+        .flatten()
+        .filter_map(|e| {
+            let fd = e.file_name().to_str()?.parse::<i32>().ok()?;
+            let target = fs::read_link(e.path()).ok()?;
+            (fd > 2 && target.starts_with(appdir)).then_some(fd)
+        })
+        .collect();
+    for fd in &fds {
+        // SAFETY: the descriptor was inherited, nothing in this process owns it, and dropping the
+        // `OwnedFd` closes it once.
+        drop(unsafe { OwnedFd::from_raw_fd(*fd) });
+    }
+    fds.len()
+}
+
 /// What `AppRun` runs from: the cache copy, or `appdir` itself with the reason when the copy
 /// cannot be made. It never fails to start.
 pub fn resolve(
@@ -271,6 +296,28 @@ mod tests {
             Path::new("libx.so.1.2")
         );
         assert!(root.join(PIXBUF_LOADERS).is_dir());
+    }
+
+    #[test]
+    fn descriptors_into_the_mount_are_closed_and_others_are_kept() {
+        use std::os::fd::{AsRawFd, IntoRawFd};
+        let tmp = tempfile::tempdir().unwrap();
+        let appdir = fake_image(tmp.path());
+        let elsewhere = tmp.path().join("elsewhere");
+        fs::write(&elsewhere, b"x").unwrap();
+        let held = fs::File::open(appdir.join("usr/bin/hatate-gtk"))
+            .unwrap()
+            .into_raw_fd();
+        let dir = fs::File::open(&appdir).unwrap().into_raw_fd();
+        let kept = fs::File::open(&elsewhere).unwrap();
+        // Other tests open files too, so a closed number may be reused: ask where it points.
+        let into_mount = |fd: i32| {
+            fs::read_link(format!("/proc/self/fd/{fd}")).is_ok_and(|t| t.starts_with(&appdir))
+        };
+        assert!(into_mount(held) && into_mount(dir));
+        assert!(close_fds_into(&appdir) >= 2);
+        assert!(!into_mount(held) && !into_mount(dir));
+        assert!(fs::read_link(format!("/proc/self/fd/{}", kept.as_raw_fd())).is_ok());
     }
 
     #[test]

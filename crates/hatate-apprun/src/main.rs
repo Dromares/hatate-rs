@@ -111,7 +111,11 @@ fn main() {
         std::process::exit(1);
     };
     // Run from a copy in the user's cache, never from the FUSE mount (DAN-2564): see `relocate`.
-    let (appdir, warning) = relocate::resolve(&appdir, &env, env!("CARGO_PKG_VERSION"));
+    let mount = appdir;
+    let (appdir, warning) = relocate::resolve(&mount, &env, env!("CARGO_PKG_VERSION"));
+    if appdir != mount {
+        relocate::close_fds_into(&mount);
+    }
     if let Some(reason) = warning {
         eprintln!("AppRun: WARNING: {reason}; running from the mount");
     }
