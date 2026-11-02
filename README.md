@@ -23,6 +23,11 @@ chmod +x Hatate-x86_64.AppImage
 ./Hatate-x86_64.AppImage --version    # hatate 0.2.0 (Rust rewrite of Hatate)
 ```
 
+The first launch of a version copies the image (about 550 MB) to `~/.cache/hatate` (or
+`$XDG_CACHE_HOME/hatate`) and runs from that copy, so the window does not depend on the AppImage's
+mount staying up; later launches reuse it, and a newer version removes the older copy. If the copy
+cannot be made, it runs from the mount and prints one `WARNING` line.
+
 The AppImage is x86_64 Linux only. It carries GTK 4, libadwaita and a pinned Chromium (used for
 Google Lens), so it needs no packages of its own. The glibc floor is that of the build host
 (Ubuntu 24.04, glibc 2.39), and the release notes state it. Without FUSE, run it with
