@@ -4,6 +4,8 @@
 //! points the process at what the image carries (its own libraries, GLib schemas, Chromium and
 //! fonts) and then `exec`s the window (`usr/bin/hatate-gtk`) or, for a command-line argument, the
 //! command (`usr/bin/hatate`). Nothing is ever written inside `$APPDIR`: the mount is read-only.
+//! It first copies the image to the user's cache and runs from the copy (`relocate.rs`), so the
+//! app no longer depends on the mount staying up.
 //!
 //! The environment is worked out by `plan` (`plan.rs`), a function of the mount path, the arguments and
 //! the caller's environment alone, so a test covers it without starting anything.
@@ -23,6 +25,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod plan;
+mod relocate;
 use plan::{PIXBUF_LOADERS, fontconfig_text, plan};
 
 /// Writes `contents` to a file named for this mount under the runtime directory (`ext` tells the
@@ -107,6 +110,15 @@ fn main() {
         eprintln!("AppRun: cannot tell where the AppImage is mounted");
         std::process::exit(1);
     };
+    // Run from a copy in the user's cache, never from the FUSE mount (DAN-2564): see `relocate`.
+    let mount = appdir;
+    let (appdir, warning) = relocate::resolve(&mount, &env, env!("CARGO_PKG_VERSION"));
+    if appdir != mount {
+        relocate::close_fds_into(&mount);
+    }
+    if let Some(reason) = warning {
+        eprintln!("AppRun: WARNING: {reason}; running from the mount");
+    }
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let conf = write_fontconfig(&appdir, &env);
     let mut launch = plan(&appdir, &args, &env, conf.as_deref());
