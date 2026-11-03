@@ -65,6 +65,12 @@ These change the hard lines above only where they say so.
   inside its named item. The presubmit tests (`hatate-doccite`, `presubmit_tabs`)
   need `HATATE_PY_ORACLE` (the Python repo at `76c85c4`) and a display; with `CI` set
   a missing input fails instead of skipping.
+- **Settings ratchet.** `cargo test -p hatate-gtk --test settings_ratchet` fails when a setting
+  that promises a limit, an exclusion or a switch (`min_`/`max_`/`drop_`/`allow_`/`enable_`/`use_`/
+  `lazy_` first, `_workers`/`_ttl_days`/`_bytes`/`_timeout`/`_thumbnails` last) has no test that gives
+  it a non-default value outside `config_compat.rs` and the Settings-dialog round trips. A key without
+  one needs a waiver with a reason in that file; a waived key that gains a test fails until its
+  waiver is deleted. A PR that adds such a key adds its test (DAN-2602).
 
 ## No secrets in fixtures
 
