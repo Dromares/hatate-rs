@@ -253,8 +253,8 @@ pub fn missing_chromium_message(env: &BrowserEnv) -> String {
         return bundled_browser_message(env);
     }
     "Google Lens needs a Chromium-based browser and none was found. Install Chromium or Google \
-     Chrome with your package manager, so that one of `chromium`, `chromium-browser`, \
-     `google-chrome-stable` or `google-chrome` is on your PATH, then restart. Nothing else in this \
+     Chrome with your package manager, so that one of chromium, chromium-browser, \
+     google-chrome-stable or google-chrome is on your PATH, then restart. Nothing else in this \
      app needs it."
         .to_owned()
 }
@@ -481,6 +481,18 @@ mod tests {
         assert_eq!(status.missing, Some(LensMissing::Chromium));
         assert!(!status.message.contains("pip") && !status.message.contains("playwright"));
         assert!(status.message.contains("google-chrome-stable"));
+    }
+
+    /// DAN-2522 P3: the alert's text is plain text, so a backtick would be drawn as a backtick.
+    #[test]
+    fn the_missing_browser_copy_has_no_markup_backticks() {
+        let dir = tempfile::tempdir().unwrap();
+        let status = check_dependencies(&env_in(dir.path()));
+        assert!(
+            !status.message.contains('`'),
+            "a plain-text alert shows backticks: {}",
+            status.message
+        );
     }
 
     #[test]

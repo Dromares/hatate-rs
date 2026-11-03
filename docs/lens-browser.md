@@ -62,8 +62,10 @@ then restart. It is about 150MB, and nothing else in this app needs it.
 Rust (`missing_chromium_message`, and `missing_dependency_message`, which is the same text):
 
 ```
-Google Lens needs a Chromium-based browser and none was found. Install Chromium or Google Chrome with your package manager, so that one of `chromium`, `chromium-browser`, `google-chrome-stable` or `google-chrome` is on your PATH, then restart. Nothing else in this app needs it.
+Google Lens needs a Chromium-based browser and none was found. Install Chromium or Google Chrome with your package manager, so that one of chromium, chromium-browser, google-chrome-stable or google-chrome is on your PATH, then restart. Nothing else in this app needs it.
 ```
+
+The browser names carry no backticks (DAN-2522 P3): the alert is plain text, and `deps::tests::the_missing_browser_copy_has_no_markup_backticks` (fragment `a plain-text alert shows backticks`) goes red when they come back.
 
 `bundled_browser_message` (the AppImage case) is unchanged from Python, character for character.
 
