@@ -50,7 +50,7 @@ surface does not exist; the window title shows no number (7.c: it said work in p
 | `hatate --version` | `crates/hatate-cli/tests/version.rs` `fn version_flag_prints_the_workspace_version` `hatate_core::version::VERSION` |
 | MCP `serverInfo.version` | `crates/hatate-core/tests/mcp_server.rs` `fn server_info_reports_the_one_version_source` `json!(hatate_core::version::VERSION)` |
 
-The version string differs from Python's by design (`0.0.0` against `0.1.0` when 7.c landed, `0.2.0` against `0.1.0` since 7.d,
+The version string differs from Python's by design (`0.0.0` against `0.1.0` when 7.c landed, `0.2.1` against `0.1.0` since DAN-2601 (7.d set `0.2.0`, never published),
 and `hatate` against `Hatate`, with a suffix naming the rewrite); there is nothing to differential-test on the number itself.
 
 ## 3. `core/parser_probe.py` (ported) and `tools/measure_tag_bands.py` (dropped)
@@ -172,7 +172,7 @@ not a crash, and `g_error` aborts like any native signal (the **Known gap** of s
 | `TestCrashDiagnostics.test_qt_warnings_do_not_masquerade_as_crashes` | **n/a**: it tests the Qt handler's routing of `QtWarningMsg` to `log.warning` instead of `critical`. There is no handler to route; only a panic writes to `crash.log`, so a warning cannot appear there as a crash. Not asserted by a Rust test (nothing to assert against) |
 | `TestCrashDiagnostics.test_a_real_disconnect_problem_still_warns` | **n/a**: it pins that the Qt handler quietens only the one benign `QObject::disconnect: wildcard call` message (`test_retiring_a_worker_does_not_warn`, `docs/phase6-coverage.md` row 1453) and still warns on any other disconnect text. No Qt, no handler, no allow-list |
 | `TestVersionFlag.test_version_is_0_1_0` | **Design difference, not an equal assertion.** Python pins `0.1.0`; this build was `0.0.0` until 7.d bumped it to `0.2.0`. What is pinned is the single source: `crates/hatate-core/src/version.rs` `fn the_version_is_the_workspace_package_version` `assert_eq!(line.trim(), format!("version = \"{VERSION}\""));` |
-| `TestVersionFlag.test_main_prints_version_and_exits_without_qt` | `crates/hatate-cli/tests/version.rs` `fn version_flag_prints_the_workspace_version` `assert!(out.status.success());`. The text differs by design (`hatate 0.2.0 (Rust rewrite of Hatate)` against `Hatate 0.1.0`, section 2; 7.c printed `hatate 0.0.0 (work-in-progress ...)`). "Without Qt" has no analogue: the `hatate` binary links no GTK |
+| `TestVersionFlag.test_main_prints_version_and_exits_without_qt` | `crates/hatate-cli/tests/version.rs` `fn version_flag_prints_the_workspace_version` `assert!(out.status.success());`. The text differs by design (`hatate 0.2.1 (Rust rewrite of Hatate)` against `Hatate 0.1.0`, section 2; 7.c printed `hatate 0.0.0 (work-in-progress ...)`). "Without Qt" has no analogue: the `hatate` binary links no GTK |
 
 The presubmit walk for 7.c's modules (`parser_probe`, `crashlog`, `version`) also found nine tests that touch `crashlog` or a
 version and that no doc named, besides the ones above. They are the crash marker and the crash-log tail (ported earlier, in
