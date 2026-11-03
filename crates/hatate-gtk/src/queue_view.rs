@@ -758,6 +758,24 @@ impl QueueView {
         }
     }
 
+    /// The rows the scroller shows, as `(first, last)` indices into the list (Python's
+    /// `rowAt(top)` and `rowAt(bottom)` of the viewport; DAN-2588). The ColumnView keeps hundreds
+    /// of rows bound beyond the screen, so the bound rows are not this range. `first` is the first
+    /// row under the header and `last` the last row above the bottom edge (the edge itself can
+    /// fall on a scrollbar or past a short list). `None` while the scroller shows no row.
+    pub fn visible_row_span(&self) -> Option<(i64, i64)> {
+        let height = self.scroller.height();
+        let x = 10.0;
+        let row_at = |y: i32| {
+            self.row_id_at(x, f64::from(y))
+                .and_then(|id| self.row_of(id))
+                .map(i64::from)
+        };
+        let first = (0..height).step_by(4).find_map(row_at)?;
+        let last = (0..height).rev().step_by(4).find_map(row_at)?;
+        Some((first, last))
+    }
+
     /// Calls `f(row under the pointer, x, y)` on a right click, and `f(None, 0, 0)` from the
     /// keyboard (Menu, Shift+F10), where the menu opens over the first selected row.
     pub fn connect_context_menu(self: &Rc<Self>, f: impl Fn(Option<EntryId>, f64, f64) + 'static) {

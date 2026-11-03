@@ -511,8 +511,8 @@ const SCENARIOS: &[Scenario] = &[
         settings_mcp_audit_table_follows_the_log_newest_first,
     ),
     (
-        "lazy_thumbnails_probe_500_rows",
-        lazy_thumbnails_probe_500_rows,
+        "lazy_thumbnails_decode_only_the_rows_on_screen",
+        lazy_thumbnails_decode_only_the_rows_on_screen,
     ),
 ];
 
@@ -10701,8 +10701,10 @@ fn message_detail_box_does_not_swallow_tab(app: &adw::Application) {
     f.close();
 }
 
-// DAN-2588 run A: premise probe for lazy thumbnails (not a pin; prints counts).
-fn lazy_thumbnails_probe_500_rows(app: &adw::Application) {
+// DAN-2588: `test_the_thumbnail_range_is_clamped_to_the_visible_rows`. The ColumnView binds about
+// 205 rows for 7 on screen; lazy decoding follows the rows the scroller shows plus the 15-row
+// buffer, not the bound rows.
+fn lazy_thumbnails_decode_only_the_rows_on_screen(app: &adw::Application) {
     let pics = tempfile::tempdir().unwrap();
     let base = pics.path().join("p0.png");
     image::RgbaImage::from_pixel(64, 64, image::Rgba([10, 120, 200, 255]))
@@ -10717,20 +10719,10 @@ fn lazy_thumbnails_probe_500_rows(app: &adw::Application) {
         e.path = p.to_string_lossy().into_owned();
         e.hydrus_hash = None;
     }
-    fn live_thumbs(w: &gtk4::Widget, n: &mut usize) {
-        if w.has_css_class("thumb") {
-            *n += 1;
-        }
-        let mut c = w.first_child();
-        while let Some(x) = c {
-            live_thumbs(&x, n);
-            c = x.next_sibling();
-        }
-    }
     for (label, size, lazy) in [
         ("default", None, true),
         ("minimum", Some((1010, 837)), true),
-        ("default-lazy-off", None, false),
+        ("lazy off", None, false),
     ] {
         let f = Fx::new(
             app,
@@ -10747,11 +10739,18 @@ fn lazy_thumbnails_probe_500_rows(app: &adw::Application) {
         }
         let ids = view.visible_ids();
         let known = || ids.iter().filter(|id| view.thumb_known(**id)).count();
-        let visible = || {
-            let h = view.scroller.height();
+        let settle = || {
+            pump_for(1500);
+            pump_until(20_000, || {
+                f.w.s.thumbs.in_flight() == 0 && !f.w.s.thumbs.is_running()
+            });
+            pump_for(500);
+        };
+        // The rows the scroller shows, by a pick down its height.
+        let on_screen = || {
             let mut seen = Vec::new();
             let mut y = 0.0;
-            while y < h as f64 {
+            while y < f64::from(view.scroller.height()) {
                 if let Some(id) = view.row_id_at(10.0, y) {
                     if !seen.contains(&id) {
                         seen.push(id);
@@ -10761,92 +10760,47 @@ fn lazy_thumbnails_probe_500_rows(app: &adw::Application) {
             }
             seen
         };
-        let settle = || {
-            pump_for(1500);
-            pump_until(20_000, || {
-                f.w.s.thumbs.in_flight() == 0 && !f.w.s.thumbs.is_running()
-            });
-            pump_for(500);
-        };
-        let live = || {
-            let mut n = 0;
-            live_thumbs(view.view.upcast_ref(), &mut n);
-            n
-        };
         settle();
-        let vadj = view.scroller.vadjustment();
-        let vis = visible();
-        eprintln!(
-            "PROBE {label} window={}x{} scroller={}x{} page={} upper={} | before scroll: visible={} live_bound_widgets={} decoded={} in_flight={}",
-            f.w.win.width(),
-            f.w.win.height(),
-            view.scroller.width(),
-            view.scroller.height(),
-            vadj.page_size(),
-            vadj.upper(),
-            vis.len(),
-            live(),
+        let buffer = 2 * hatate_gtk::thumbnails::THUMB_VIEWPORT_BUFFER_ROWS as usize;
+        if !lazy {
+            assert_eq!(known(), 500, "{label}: every row is requested at load");
+            f.close();
+            continue;
+        }
+        let shown = on_screen().len();
+        assert!(shown > 0 && shown < 40, "{label}: {shown} rows on screen");
+        assert!(
+            known() <= shown + buffer,
+            "{label}: {} rows decoded before any scroll, {shown} on screen (limit {})",
             known(),
-            f.w.s.thumbs.in_flight()
+            shown + buffer
         );
-        let before = known();
+        let beyond = &ids[shown + buffer..];
+        assert!(
+            beyond.iter().all(|id| !view.thumb_known(*id)),
+            "{label}: rows past the buffer were decoded"
+        );
+        // Page down: the rows that came on screen are decoded, the ones left behind stay.
+        let vadj = view.scroller.vadjustment();
         vadj.set_value(vadj.value() + vadj.page_size());
         settle();
-        eprintln!(
-            "PROBE {label} after one page-down: value={} visible={} live_bound_widgets={} decoded={} (+{})",
-            vadj.value(),
-            visible().len(),
-            live(),
-            known(),
-            known() - before
+        let now = on_screen();
+        assert!(
+            now.iter().all(|id| view.thumb_known(*id)),
+            "{label}: a row on screen after a page-down has no thumbnail"
+        );
+        assert!(
+            known() <= 2 * (shown + buffer),
+            "{label}: {} rows decoded after one page-down",
+            known()
         );
         vadj.set_value(vadj.upper() - vadj.page_size());
         settle();
-        let last = ids[ids.len() - 1];
-        eprintln!(
-            "PROBE {label} at end: visible={} live_bound_widgets={} decoded={} last_row_decoded={}",
-            visible().len(),
-            live(),
-            known(),
-            view.thumb_known(last)
+        assert!(
+            view.thumb_known(ids[ids.len() - 1]),
+            "{label}: the last row is decoded once it is on screen"
         );
+        assert!(known() < 500, "{label}: the middle of the list stays blank");
         f.close();
     }
-    // The toggle, mid-session: on -> off -> on.
-    let f = Fx::new(
-        app,
-        Opts {
-            seed: seed.clone(),
-            missing: Some(Arc::new(|_, _| HashSet::new())),
-            ..Opts::default()
-        },
-    );
-    let view = f.w.s.queue_view.clone();
-    let ids = view.visible_ids();
-    let known = || ids.iter().filter(|id| view.thumb_known(**id)).count();
-    let settle = || {
-        pump_for(1500);
-        pump_until(20_000, || {
-            f.w.s.thumbs.in_flight() == 0 && !f.w.s.thumbs.is_running()
-        });
-        pump_for(500);
-    };
-    settle();
-    let vadj = view.scroller.vadjustment();
-    eprintln!("PROBE toggle start (lazy on): decoded={}", known());
-    f.w.s.settings.lock().unwrap().lazy_thumbnails = false;
-    vadj.set_value(vadj.upper() / 2.0);
-    settle();
-    eprintln!(
-        "PROBE toggle lazy OFF then scroll to middle: decoded={}",
-        known()
-    );
-    f.w.s.settings.lock().unwrap().lazy_thumbnails = true;
-    vadj.set_value(vadj.upper() / 2.0 + 3000.0);
-    settle();
-    eprintln!(
-        "PROBE toggle lazy ON again then scroll 3000px further: decoded={}",
-        known()
-    );
-    f.close();
 }

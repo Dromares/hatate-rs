@@ -150,20 +150,33 @@ impl MainWindow {
         }
     }
 
-    /// One viewport pass: the range the drawn rows span, widened by the buffer, minus what is
-    /// decoded or decoding.
+    /// A scroll (or a resize) moves the viewport: one debounced pass, as Python's 50 ms timer.
+    pub fn on_viewport_moved(&self) {
+        if self.s.closing.get() || !self.lazy_thumbnails() || self.thumbnail_source_off() {
+            return;
+        }
+        let t = &self.s.thumbs;
+        if !t.pass_queued.replace(true) {
+            let w = self.downgrade();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(50), move || {
+                if let Some(w) = w.upgrade() {
+                    w.s.thumbs.pass_queued.set(false);
+                    w.schedule_viewport_thumbnails();
+                }
+            });
+        }
+    }
+
+    /// One viewport pass: the rows the scroller shows (not the rows GTK has bound, which run to
+    /// hundreds past the screen; DAN-2588), widened by the buffer, minus what is decoded or
+    /// decoding. A drawn row only triggers the pass.
     pub fn schedule_viewport_thumbnails(&self) {
         if self.s.closing.get() || !self.lazy_thumbnails() || self.thumbnail_source_off() {
             return;
         }
-        let drawn: Vec<EntryId> = self.s.thumbs.drawn.borrow_mut().drain(..).collect();
+        self.s.thumbs.drawn.borrow_mut().clear();
         let visible = self.s.queue_view.visible_ids();
-        let rows: Vec<i64> = drawn
-            .iter()
-            .filter_map(|id| self.s.queue_view.row_of(*id))
-            .map(i64::from)
-            .collect();
-        let (Some(&first), Some(&last)) = (rows.iter().min(), rows.iter().max()) else {
+        let Some((first, last)) = self.s.queue_view.visible_row_span() else {
             return;
         };
         let Some((start, end)) = visible_range_with_buffer(
