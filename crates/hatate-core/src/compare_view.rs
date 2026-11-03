@@ -779,7 +779,7 @@ mod tests {
             view.overlay
                 .rgba
                 .chunks_exact(4)
-                .all(|px| px[..3] == DIFF_HL),
+                .all(|px| px[..3] == [255, 140, 0]),
             "every overlay pixel is #ff8c00; only its alpha follows the mask"
         );
         assert_eq!(
