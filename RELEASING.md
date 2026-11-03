@@ -141,8 +141,7 @@ probes, in full:
 | control: `.../releases/tags/<an already published tag>` | `200` | `200` |
 
 If the first two return `200` before you published, the release is not a draft: stop and tell the
-release owner. Until the first release exists there is no published tag for the last control; say so
-in the check and skip only that row.
+release owner. Use `v0.2.0` (published 2026-11-03) as the already published tag for the last control.
 
 ## 6. Publish
 

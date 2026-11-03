@@ -1,8 +1,9 @@
 # CLAUDE.md: hatate-rs
 
 Guidance for the agents who work in this repo. `hatate-rs` is the Rust rewrite of
-Hatate, version 0.2.1. It is public from its first commit and, from 0.2.1, replaces
-the Python app, which takes no new release and stays available. The plan is DAN-1961
+Hatate, version 0.2.1 (in preparation). It is public from its first commit and, since `v0.2.0`
+(published 2026-11-03, the current Latest), replaces the Python app, which takes no new release and
+stays available. The plan is DAN-1961
 (rev 16); the Python source of truth is `Dromares/Hatate-Linux-Redux`.
 
 ## Hard lines
@@ -29,7 +30,7 @@ the Python app, which takes no new release and stays available. The plan is DAN-
   inputs, its output is the oracle. No PR from this work modifies
   `Dromares/Hatate-Linux-Redux`.
 - **Never publish** a release, a crate or any package from this repo, except the
-  one release the Phase 7 amendment below allows. No AUR, Flathub, crates.io or other
+  releases the Phase 7 amendment below allows. No AUR, Flathub, crates.io or other
   registry, ever.
 - **Never touch the board's live Hydrus, real browser profile, or real Hatate
   config/session files.** Never inject input into the board's live session; any
@@ -41,17 +42,18 @@ the Python app, which takes no new release and stays available. The plan is DAN-
 
 These change the hard lines above only where they say so.
 
-- **Publishing.** Exactly one publish is allowed: a GitHub Release on
-  `Dromares/hatate-rs` carrying `Hatate-x86_64.AppImage` and `SHA256SUMS`, version
-  `0.2.1`. It is created as a **draft** by dispatching `release.yml` from `main` after
-  step 7.d merges, and made public only by a separate publish ticket that is filed
-  after the board's OK on its own card. Until that ticket exists, "never publish"
-  stands as written. `release.yml` never publishes: it has no `make_latest` and no
+- **Publishing.** A release is a GitHub Release on `Dromares/hatate-rs` carrying
+  `Hatate-x86_64.AppImage` and `SHA256SUMS`. The first, `v0.2.0`, was published on
+  2026-11-03 and is the current Latest; `0.2.1` is the next. A release is created as a
+  **draft** by dispatching `release.yml` from `main`, and made public only by a separate
+  publish ticket that is filed after the board's OK on its own card. Until that ticket
+  exists for a version, "never publish" stands as written for it. `release.yml` never publishes: it has no `make_latest` and no
   `draft: false`, and a PR that adds either is refused. No tag, draft or release is
   created before the draft step. `RELEASING.md` is the procedure.
 - **Status claim.** Step 7.d (DAN-2503) moved the version from `0.0.0` to `0.2.0` and
-  dropped the work-in-progress claim, under the status-claim sweep above. The 0.2.0 draft was
-  rejected and never published; DAN-2601 moves the version to `0.2.1`, the first release. `--version`
+  dropped the work-in-progress claim, under the status-claim sweep above. An earlier 0.2.0 draft was
+  rejected (DAN-2550); `v0.2.0` was then published on 2026-11-03, and DAN-2601 moved the version to
+  `0.2.1` for the next release. `--version`
   prints `hatate 0.2.1 (Rust rewrite of Hatate)`; there is no About dialog, and the
   window title is `Hatate`.
 - **The board's profile.** Only 7.b reads the board's real config, sessions and

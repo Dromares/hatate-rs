@@ -1915,6 +1915,17 @@ fn match_picture(w: u32, h: u32, seed: u8) -> image::RgbaImage {
             img.put_pixel(x, y, image::Rgba([250, 250, 250, 255]));
         }
     }
+    // DAN-2613: a second, marginal patch: 12 px square, lifted by 100, which the mask carries at an
+    // alpha of about 76 (a tint), against 209 for the white bar above. The Differences shots then
+    // hold a strong highlight and a faint one in the same frame.
+    for y in h / 4..h / 4 + 12 {
+        for x in w * 3 / 4..w * 3 / 4 + 12 {
+            let p = img.get_pixel_mut(x, y);
+            for c in &mut p.0[..3] {
+                *c = c.saturating_add(100);
+            }
+        }
+    }
     img
 }
 
@@ -2093,10 +2104,16 @@ fn prepare_compare(window: &MainWindow, state: &str) {
                 dialog.diff_radio.clone().upcast()
             }
         });
+        let state_name = state.to_owned();
         glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
             if d.view.has_pictures() == (true, true) {
                 if want_diff && !d.diff_radio.is_active() {
                     d.diff_radio.set_active(true);
+                    if state_name == "review-compare-differences" {
+                        // DAN-2613: sweep the highlights across both pictures, so the strong and
+                        // the marginal patch are both in frame.
+                        d.slider.set_value(95.0);
+                    }
                 }
                 if !want_diff || d.view.showing_differences() {
                     if let Some(t) = &focus {
@@ -2125,7 +2142,14 @@ fn prepare_compare(window: &MainWindow, state: &str) {
         let done = match state.as_str() {
             "review-error" => r.error_detail.is_visible(),
             "review-wipe-nomatch" => r.wipe.has_pictures() == (true, false),
-            _ if mode == "diff" => r.wipe.showing_differences(),
+            _ if mode == "diff" => {
+                let shown = r.wipe.showing_differences();
+                if shown && state == "review-differences" && r.wipe_slider.value() != 95.0 {
+                    // DAN-2613: sweep the highlights across both pictures (strong and marginal patch).
+                    r.wipe_slider.set_value(95.0);
+                }
+                shown
+            }
             _ => r.wipe.has_pictures() == (true, true) && !r.zoom_label.text().is_empty(),
         };
         if done {
