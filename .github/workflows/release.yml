@@ -6,7 +6,7 @@ name: release
 # A draft has no tag either: GitHub creates the tag when the draft is published.
 #
 # Two ways in:
-#   - `workflow_dispatch` on `main` (Actions > release > Run workflow, version 0.2.1): build, checksum,
+#   - `workflow_dispatch` on `main` (Actions > release > Run workflow, version 0.2.0): build, checksum,
 #     then create the draft. Dispatch only after step 7.d has merged: GitHub runs a dispatch workflow
 #     only if its file is on the default branch.
 #   - `pull_request` (only when a file the build reads changes): a dry run that builds and checksums
@@ -18,7 +18,7 @@ on:
       version:
         description: "Version to draft. Must equal [workspace.package] version in Cargo.toml."
         required: true
-        default: "0.2.1"
+        default: "0.2.0"
   pull_request:
     paths:
       - ".github/workflows/release.yml"
