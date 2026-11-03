@@ -510,6 +510,10 @@ const SCENARIOS: &[Scenario] = &[
         "settings_mcp_audit_table_follows_the_log_newest_first",
         settings_mcp_audit_table_follows_the_log_newest_first,
     ),
+    (
+        "lazy_thumbnails_probe_500_rows",
+        lazy_thumbnails_probe_500_rows,
+    ),
 ];
 
 fn main() {
@@ -10694,5 +10698,155 @@ fn message_detail_box_does_not_swallow_tab(app: &adw::Application) {
         "OK is reached: {stops:?}"
     );
     adw::prelude::AdwDialogExt::force_close(&dialog);
+    f.close();
+}
+
+// DAN-2588 run A: premise probe for lazy thumbnails (not a pin; prints counts).
+fn lazy_thumbnails_probe_500_rows(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let base = pics.path().join("p0.png");
+    image::RgbaImage::from_pixel(64, 64, image::Rgba([10, 120, 200, 255]))
+        .save(&base)
+        .unwrap();
+    let mut seed = seeded(500, MatchStatus::Good);
+    for (i, e) in seed.iter_mut().enumerate() {
+        let p = pics.path().join(format!("p{i}.png"));
+        if i > 0 {
+            std::fs::copy(&base, &p).unwrap();
+        }
+        e.path = p.to_string_lossy().into_owned();
+        e.hydrus_hash = None;
+    }
+    fn live_thumbs(w: &gtk4::Widget, n: &mut usize) {
+        if w.has_css_class("thumb") {
+            *n += 1;
+        }
+        let mut c = w.first_child();
+        while let Some(x) = c {
+            live_thumbs(&x, n);
+            c = x.next_sibling();
+        }
+    }
+    for (label, size, lazy) in [
+        ("default", None, true),
+        ("minimum", Some((1010, 837)), true),
+        ("default-lazy-off", None, false),
+    ] {
+        let f = Fx::new(
+            app,
+            Opts {
+                seed: seed.clone(),
+                missing: Some(Arc::new(|_, _| HashSet::new())),
+                tweak: Some(Box::new(move |s| s.lazy_thumbnails = lazy)),
+                ..Opts::default()
+            },
+        );
+        let view = f.w.s.queue_view.clone();
+        if let Some((w, h)) = size {
+            f.w.win.set_default_size(w, h);
+        }
+        let ids = view.visible_ids();
+        let known = || ids.iter().filter(|id| view.thumb_known(**id)).count();
+        let visible = || {
+            let h = view.scroller.height();
+            let mut seen = Vec::new();
+            let mut y = 0.0;
+            while y < h as f64 {
+                if let Some(id) = view.row_id_at(10.0, y) {
+                    if !seen.contains(&id) {
+                        seen.push(id);
+                    }
+                }
+                y += 2.0;
+            }
+            seen
+        };
+        let settle = || {
+            pump_for(1500);
+            pump_until(20_000, || {
+                f.w.s.thumbs.in_flight() == 0 && !f.w.s.thumbs.is_running()
+            });
+            pump_for(500);
+        };
+        let live = || {
+            let mut n = 0;
+            live_thumbs(view.view.upcast_ref(), &mut n);
+            n
+        };
+        settle();
+        let vadj = view.scroller.vadjustment();
+        let vis = visible();
+        eprintln!(
+            "PROBE {label} window={}x{} scroller={}x{} page={} upper={} | before scroll: visible={} live_bound_widgets={} decoded={} in_flight={}",
+            f.w.win.width(),
+            f.w.win.height(),
+            view.scroller.width(),
+            view.scroller.height(),
+            vadj.page_size(),
+            vadj.upper(),
+            vis.len(),
+            live(),
+            known(),
+            f.w.s.thumbs.in_flight()
+        );
+        let before = known();
+        vadj.set_value(vadj.value() + vadj.page_size());
+        settle();
+        eprintln!(
+            "PROBE {label} after one page-down: value={} visible={} live_bound_widgets={} decoded={} (+{})",
+            vadj.value(),
+            visible().len(),
+            live(),
+            known(),
+            known() - before
+        );
+        vadj.set_value(vadj.upper() - vadj.page_size());
+        settle();
+        let last = ids[ids.len() - 1];
+        eprintln!(
+            "PROBE {label} at end: visible={} live_bound_widgets={} decoded={} last_row_decoded={}",
+            visible().len(),
+            live(),
+            known(),
+            view.thumb_known(last)
+        );
+        f.close();
+    }
+    // The toggle, mid-session: on -> off -> on.
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: seed.clone(),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            ..Opts::default()
+        },
+    );
+    let view = f.w.s.queue_view.clone();
+    let ids = view.visible_ids();
+    let known = || ids.iter().filter(|id| view.thumb_known(**id)).count();
+    let settle = || {
+        pump_for(1500);
+        pump_until(20_000, || {
+            f.w.s.thumbs.in_flight() == 0 && !f.w.s.thumbs.is_running()
+        });
+        pump_for(500);
+    };
+    settle();
+    let vadj = view.scroller.vadjustment();
+    eprintln!("PROBE toggle start (lazy on): decoded={}", known());
+    f.w.s.settings.lock().unwrap().lazy_thumbnails = false;
+    vadj.set_value(vadj.upper() / 2.0);
+    settle();
+    eprintln!(
+        "PROBE toggle lazy OFF then scroll to middle: decoded={}",
+        known()
+    );
+    f.w.s.settings.lock().unwrap().lazy_thumbnails = true;
+    vadj.set_value(vadj.upper() / 2.0 + 3000.0);
+    settle();
+    eprintln!(
+        "PROBE toggle lazy ON again then scroll 3000px further: decoded={}",
+        known()
+    );
     f.close();
 }
