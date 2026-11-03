@@ -10589,8 +10589,8 @@ fn message_detail_box_shows_its_last_line_and_takes_no_focus(app: &adw::Applicat
     let (dialog, scroller, lines) = open_detail_alert(
         &f,
         "Google Lens needs a Chromium-based browser and none was found. Install Chromium or Google \
-         Chrome with your package manager, so that one of `chromium`, `chromium-browser`, \
-         `google-chrome-stable` or `google-chrome` is on your PATH, then restart Hatate.",
+         Chrome with your package manager, so that one of chromium, chromium-browser, \
+         google-chrome-stable or google-chrome is on your PATH, then restart Hatate.",
     );
     let adj = scroller.vadjustment();
     assert!(
@@ -10719,9 +10719,12 @@ fn lazy_thumbnails_decode_only_the_rows_on_screen(app: &adw::Application) {
         e.path = p.to_string_lossy().into_owned();
         e.hydrus_hash = None;
     }
+    // The default size IS the 1010x837 minimum (the window opens at its floor), so the second case
+    // is a taller window: a different scroller height, asserted below.
+    let mut heights = Vec::new();
     for (label, size, lazy) in [
-        ("default", None, true),
-        ("minimum", Some((1010, 837)), true),
+        ("default (= the 1010x837 minimum)", None, true),
+        ("taller (1100x900)", Some((1100, 900)), true),
         ("lazy off", None, false),
     ] {
         let f = Fx::new(
@@ -10768,6 +10771,7 @@ fn lazy_thumbnails_decode_only_the_rows_on_screen(app: &adw::Application) {
             continue;
         }
         let shown = on_screen().len();
+        heights.push(view.scroller.height());
         assert!(shown > 0 && shown < 40, "{label}: {shown} rows on screen");
         assert!(
             known() <= shown + buffer,
@@ -10801,6 +10805,32 @@ fn lazy_thumbnails_decode_only_the_rows_on_screen(app: &adw::Application) {
             "{label}: the last row is decoded once it is on screen"
         );
         assert!(known() < 500, "{label}: the middle of the list stays blank");
+        // DAN-2591 F1: a PURE scroll. The ColumnView keeps about 205 rows bound around the end, so
+        // moving back to row 400 binds nothing; only the adjustment's change notification can tell
+        // the thumbnail range (`wire_thumbnails`). The rows it shows are beyond the buffer of the rows
+        // that were on screen a moment ago.
+        let binds = Rc::new(Cell::new(0usize));
+        view.connect_row_bound({
+            let binds = binds.clone();
+            move |_| binds.set(binds.get() + 1)
+        });
+        let row_h = vadj.upper() / 500.0;
+        vadj.set_value(400.0 * row_h);
+        settle();
+        assert_eq!(
+            binds.get(),
+            0,
+            "{label}: the scroll bound a row, so it is not a pure scroll"
+        );
+        let there = on_screen();
+        assert!(
+            there.iter().all(|id| view.thumb_known(*id)),
+            "{label}: rows on screen after a scroll that bound nothing have no thumbnail"
+        );
         f.close();
     }
+    assert!(
+        heights[1] > heights[0],
+        "the second case is not a different size: scroller heights {heights:?}"
+    );
 }

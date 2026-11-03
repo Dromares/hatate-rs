@@ -1,6 +1,6 @@
 # Releasing the Hatate AppImage
 
-> **Status.** The workspace version is `0.2.0`. Until the publish step of section 6 has run, no
+> **Status.** The workspace version is `0.2.1`. Until the publish step of section 6 has run, no
 > release is public. **No tag, draft or release is created, and nothing is published, without the
 > board's OK where this file says so** (plan DAN-1961, Phase 7): the draft is made by dispatching
 > `release.yml` (section 3), and a separate publish ticket, filed only after the board's OK on its own
@@ -72,15 +72,15 @@ dispatches a workflow only from the default branch, and answers 404 for one that
 branch. The executor, not the author of the change, runs:
 
 ```bash
-gh workflow run release.yml --repo Dromares/hatate-rs --ref main -f version=0.2.0
+gh workflow run release.yml --repo Dromares/hatate-rs --ref main -f version=0.2.1
 gh run list --workflow release.yml --repo Dromares/hatate-rs --limit 1      # the run id
 gh run watch <run id> --repo Dromares/hatate-rs --exit-status               # about 20 minutes
-gh release view v0.2.0 --repo Dromares/hatate-rs --json isDraft,tagName,assets,targetCommitish
+gh release view v0.2.1 --repo Dromares/hatate-rs --json isDraft,tagName,assets,targetCommitish
 ```
 
 Dispatch it **once**. The `build` job checks that the input is the workspace version and the ref is
 `main`, builds the AppImage, answers `--version`, writes `SHA256SUMS` and the release notes, and
-uploads them as the `release-assets` artifact. The `draft` job then creates `v0.2.0` as a draft
+uploads them as the `release-assets` artifact. The `draft` job then creates `v0.2.1` as a draft
 (the tag does not exist until the release is published) and stops if a release of that name is
 already there. Expect `isDraft=true` and two assets. The notes carry the AppImage's size, the glibc
 floor, the SHA-256 and the licence line ("Hatate's own code is MIT; the AppImage also bundles
@@ -98,8 +98,8 @@ local copy. Paste each output into the check.
 1. From the draft's own asset, in an empty directory, download both assets with an authenticated
    `gh release download v<version> --repo Dromares/hatate-rs`, then
    `sha256sum -c --ignore-missing SHA256SUMS`.
-2. `env HOME=$(mktemp -d) ./Hatate-x86_64.AppImage --version` prints `hatate 0.2.0 (Rust rewrite of
-   Hatate)` (the version must be `0.2.0`), exit 0.
+2. `env HOME=$(mktemp -d) ./Hatate-x86_64.AppImage --version` prints `hatate 0.2.1 (Rust rewrite of
+   Hatate)` (the version must be `0.2.1`), exit 0.
 3. **Run the shipped binary's network paths, not just `--version`** (DAN-1909). rv-rs went public
    twice with an update check that panicked, because two draft checks had run only `--version` and
    `--help`. From the draft's own downloaded asset, in an empty directory:
@@ -128,8 +128,8 @@ local copy. Paste each output into the check.
 ## 5. The DAN-1702 probes: is the draft really private?
 
 While the release is a draft, anonymously (no token) each asset URL
-`https://github.com/Dromares/hatate-rs/releases/download/v0.2.0/<asset>` returns 404, **and**
-`https://api.github.com/repos/Dromares/hatate-rs/releases/tags/v0.2.0` returns 404. Never use the HTML
+`https://github.com/Dromares/hatate-rs/releases/download/v0.2.1/<asset>` returns 404, **and**
+`https://api.github.com/repos/Dromares/hatate-rs/releases/tags/v0.2.1` returns 404. Never use the HTML
 tag page: it can answer 200 for a tag even when the release is not public, so it proves nothing. The
 probes, in full:
 

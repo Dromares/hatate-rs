@@ -328,6 +328,56 @@ async fn a_gone_page_is_dropped_and_the_image_is_not_found() {
     assert!(entry.candidates.is_empty());
 }
 
+/// Counterpart of Python `TestDanbooruRestrictedPosts.test_toggle_controls_whether_they_are_dropped`
+/// (DAN-2601): one Gold-only post (banned, no file) and one ordinary post come back from the same
+/// engine. `drop_restricted_matches` on drops the restricted one; off keeps it, flagged, with
+/// its tags still readable.
+#[tokio::test]
+async fn drop_restricted_matches_controls_whether_a_gold_only_post_survives() {
+    const GOLD_ONLY: &str = r#"{"id": 111, "is_banned": true, "tag_string_general": "1girl"}"#;
+    const NORMAL: &str = r#"{"id": 222, "is_banned": false, "tag_string_general": "1girl",
+        "file_url": "https://cdn.donmai.us/original/ok.jpg",
+        "large_file_url": "https://cdn.donmai.us/sample/ok.jpg"}"#;
+    async fn run(drop_restricted: bool) -> Entry {
+        let w = world_for_hosts(&["danbooru.donmai.us", CDN], |req| {
+            if req.target.contains("/posts/111.json") {
+                json_reply(GOLD_ONLY)
+            } else if req.target.contains("/posts/222.json") {
+                json_reply(NORMAL)
+            } else {
+                Reply::ok("").header("Content-Type", "image/jpeg")
+            }
+        })
+        .await;
+        w.settings.lock().unwrap().drop_restricted_matches = drop_restricted;
+        w.engines.iqdb.push(Step::Return(Ok(vec![
+            iqdb_match("https://danbooru.donmai.us/posts/111", 95.0),
+            iqdb_match("https://danbooru.donmai.us/posts/222", 94.0),
+        ])));
+        let mut entry = w.entry();
+        w.search(&mut entry).await;
+        entry
+    }
+
+    let dropped = run(true).await;
+    let urls: Vec<&str> = dropped.candidates.iter().map(|c| c.url.as_str()).collect();
+    assert_eq!(urls, ["https://danbooru.donmai.us/posts/222"]);
+
+    let kept = run(false).await;
+    assert_eq!(kept.candidates.len(), 2, "off keeps the restricted match");
+    let restricted: Vec<_> = kept
+        .candidates
+        .iter()
+        .filter(|c| c.restricted.is_some())
+        .collect();
+    assert_eq!(restricted.len(), 1);
+    assert_eq!(restricted[0].url, "https://danbooru.donmai.us/posts/111");
+    assert!(
+        !restricted[0].booru_tags.is_empty(),
+        "tags stay readable even when the image does not"
+    );
+}
+
 /// Every engine failing is an `error` entry carrying the failure, and nothing is cached.
 #[tokio::test]
 async fn every_engine_failing_is_an_error_entry_and_is_not_cached() {

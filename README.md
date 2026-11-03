@@ -6,7 +6,7 @@ your picture, and send the ones you accept (with their tags) to Hydrus. It also 
 (`hatate batch`) and serves an MCP endpoint for assistants.
 
 `hatate-rs` is the Rust rewrite of [Hatate](https://github.com/Dromares/Hatate-Linux-Redux). From
-0.2.0 it replaces the Python app: the Python app takes no new release, and it stays available at
+0.2.1 it replaces the Python app: the Python app takes no new release, and it stays available at
 that repository. It opens the Python app's config and session files (checked on a copy of a real
 profile before the release); the [Known gaps](#known-gaps) below say what is different or not
 done.
@@ -20,7 +20,7 @@ From this repository's [Releases](https://github.com/Dromares/hatate-rs/releases
 sha256sum -c --ignore-missing SHA256SUMS
 chmod +x Hatate-x86_64.AppImage
 ./Hatate-x86_64.AppImage              # the window
-./Hatate-x86_64.AppImage --version    # hatate 0.2.0 (Rust rewrite of Hatate)
+./Hatate-x86_64.AppImage --version    # hatate 0.2.1 (Rust rewrite of Hatate)
 ```
 
 The first launch of a version copies the image (about 550 MB) to `~/.cache/hatate` (or
@@ -37,7 +37,7 @@ checked.
 
 ## Known gaps
 
-What 0.2.0 does not do, or does differently from the Python app.
+What 0.2.1 does not do, or does differently from the Python app.
 
 **Lens path**
 - **AVIF and JPEG 2000 are refused on the Lens path** (DAN-2183). Python converts them to JPEG and

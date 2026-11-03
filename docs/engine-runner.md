@@ -63,6 +63,15 @@ profile's `pawchive_index.db` (`docs/pawchive-index.md` section 7). A `LiveEngin
 index handed in answers as an index with nothing in it: `index.is_empty()` is true, so
 `_collect_pawchive_index` returns False with no error and without reading the file.
 
+## Settings that reach an engine
+
+`tracemoe_min_similarity` is passed from `collect_tracemoe` to the trace.moe filter. The pin is
+`engine_runner_https::tracemoe_min_similarity_is_read_from_the_settings`
+(`fn tracemoe_min_similarity_is_read_from_the_settings`, fragment `the default is 85`): one answer of
+60%, 90% and 97% searched at 50, the default and 95 keeps three, two and one. It goes red when
+`collect_tracemoe` passes a fixed `85.0` (the mutation run in DAN-2601 left two where fifty
+should leave three).
+
 ## Differences that are not differences found
 
 The differential (`worktrees/DAN-2063-differential.log`) found none in its cases. What it cannot

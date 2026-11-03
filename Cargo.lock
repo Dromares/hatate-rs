@@ -1073,14 +1073,14 @@ dependencies = [
 
 [[package]]
 name = "hatate-apprun"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "hatate-cli"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "hatate-core",
  "image",
@@ -1092,7 +1092,7 @@ dependencies = [
 
 [[package]]
 name = "hatate-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -1131,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "hatate-doccite"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "proc-macro2",
  "rustpython-ast",
@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "hatate-gtk"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "async-channel",
  "gtk4",
@@ -1162,7 +1162,7 @@ dependencies = [
 
 [[package]]
 name = "hatate-mcp"
-version = "0.2.0"
+version = "0.2.1"
 
 [[package]]
 name = "heck"
@@ -3597,7 +3597,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "hatate-doccite",
  "serde_json",

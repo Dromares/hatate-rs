@@ -1,7 +1,7 @@
 # CLAUDE.md: hatate-rs
 
 Guidance for the agents who work in this repo. `hatate-rs` is the Rust rewrite of
-Hatate, version 0.2.0. It is public from its first commit and, from 0.2.0, replaces
+Hatate, version 0.2.1. It is public from its first commit and, from 0.2.1, replaces
 the Python app, which takes no new release and stays available. The plan is DAN-1961
 (rev 16); the Python source of truth is `Dromares/Hatate-Linux-Redux`.
 
@@ -16,10 +16,10 @@ the Python app, which takes no new release and stays available. The plan is DAN-
   language, tooling and mockups included. CI is GitHub Actions YAML calling
   `cargo`.
 - **Status claim.** The README says what the app is and lists its Known gaps; the
-  version is `0.2.0`. "Replaces the Python app" is claimed only as the Phase 7 plan
+  version is `0.2.1`. "Replaces the Python app" is claimed only as the Phase 7 plan
   states it: the Python app takes no new release and stays available. No text
   anywhere may claim parity, feature-complete or stable, or a version beyond
-  `0.2.0`, and nothing may call the app released until the publish ticket has made
+  `0.2.1`, and nothing may call the app released until the publish ticket has made
   the GitHub Release public. A Known gap in the README is removed only by the PR
   that closes it. Any change to the claim, the version or the gaps carries the
   DAN-1729 status-claim sweep: run
@@ -43,15 +43,16 @@ These change the hard lines above only where they say so.
 
 - **Publishing.** Exactly one publish is allowed: a GitHub Release on
   `Dromares/hatate-rs` carrying `Hatate-x86_64.AppImage` and `SHA256SUMS`, version
-  `0.2.0`. It is created as a **draft** by dispatching `release.yml` from `main` after
+  `0.2.1`. It is created as a **draft** by dispatching `release.yml` from `main` after
   step 7.d merges, and made public only by a separate publish ticket that is filed
   after the board's OK on its own card. Until that ticket exists, "never publish"
   stands as written. `release.yml` never publishes: it has no `make_latest` and no
   `draft: false`, and a PR that adds either is refused. No tag, draft or release is
   created before the draft step. `RELEASING.md` is the procedure.
 - **Status claim.** Step 7.d (DAN-2503) moved the version from `0.0.0` to `0.2.0` and
-  dropped the work-in-progress claim, under the status-claim sweep above. `--version`
-  prints `hatate 0.2.0 (Rust rewrite of Hatate)`; there is no About dialog, and the
+  dropped the work-in-progress claim, under the status-claim sweep above. The 0.2.0 draft was
+  rejected and never published; DAN-2601 moves the version to `0.2.1`, the first release. `--version`
+  prints `hatate 0.2.1 (Rust rewrite of Hatate)`; there is no About dialog, and the
   window title is `Hatate`.
 - **The board's profile.** Only 7.b reads the board's real config, sessions and
   `lens_profile`, and only to copy them into a temporary `HOME`. Neither app opens or
