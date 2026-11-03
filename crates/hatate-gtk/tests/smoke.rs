@@ -160,8 +160,8 @@ const SCENARIOS: &[Scenario] = &[
         compare_dialog_loads_the_pair_and_switches_modes,
     ),
     (
-        "the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours",
-        the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours,
+        "the_differences_pane_keeps_the_pictures_grey_and_marks_changes_in_the_highlight_colour",
+        the_differences_pane_keeps_the_pictures_grey_and_marks_changes_in_the_highlight_colour,
     ),
     (
         "compare_dialog_answers_in_a_box_when_there_is_nothing_to_compare",
@@ -6030,9 +6030,10 @@ fn max_channel_spread(bgra: &[u8]) -> u8 {
         .unwrap_or(0)
 }
 
-/// Design gate 2.2: the Differences pane is an R=G=B ramp, whatever colour the pictures are. The
-/// Wipe pane shows them in colour, which is the control that proves the sampler can see chroma.
-fn the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_colours(
+/// Design gate 2.2 as amended by DAN-2612: the Differences pane draws both pictures on the R=G=B
+/// ramp, whatever colour they are, and the marked regions are `#ff8c00` over it. The Wipe pane shows
+/// the pictures in colour, which is the control that proves the sampler can see chroma.
+fn the_differences_pane_keeps_the_pictures_grey_and_marks_changes_in_the_highlight_colour(
     app: &adw::Application,
 ) {
     let dir = tempfile::tempdir().unwrap();
@@ -6072,24 +6073,53 @@ fn the_differences_pane_has_zero_chroma_and_the_wipe_pane_shows_the_pictures_col
     r.view_buttons["diff"].set_active(true);
     assert!(pump_until(10_000, || r.wipe.showing_differences()));
     let (px, w, h) = r.wipe.render().unwrap();
-    assert_eq!(
-        max_channel_spread(&px),
-        0,
-        "no pixel of the {w} x {h} Differences pane has chroma"
+    // Cairo's B, G, R, A. A pixel the overlay did not touch has no chroma, and one it did has the
+    // highlight's: over any grey g at overlay alpha a, R - G = 115 a and G - B = 140 a, so the two
+    // differences stay in the ratio 115 : 140 (to rounding) whatever the grey and the alpha.
+    let marked: Vec<&[u8]> = px
+        .chunks_exact(4)
+        .filter(|p| p[0].max(p[1]).max(p[2]) != p[0].min(p[1]).min(p[2]))
+        .collect();
+    let strongest = marked
+        .iter()
+        .map(|p| i32::from(p[1]) - i32::from(p[0]))
+        .max();
+    assert!(
+        marked.len() > 100 && strongest.unwrap_or(0) > 60,
+        "the changed patch is marked in the {w} x {h} Differences pane: {} px, strongest G - B {:?}",
+        marked.len(),
+        strongest
     );
-    // And it is not blank: the red local file's luma (87) sits at 26 + 87 * 171 / 255 = 84 on the
-    // ramp, and the overlay lifts the changed patch toward the light end.
+    for p in marked
+        .iter()
+        .filter(|p| i32::from(p[1]) - i32::from(p[0]) > 40)
+    {
+        let (rg, gb) = (
+            i32::from(p[2]) - i32::from(p[1]),
+            i32::from(p[1]) - i32::from(p[0]),
+        );
+        assert!(
+            (rg * 140 - gb * 115).abs() <= 140 * 2 + 115 * 2,
+            "a marked pixel is #ff8c00 over a grey: B,G,R = {:?}",
+            &p[..3]
+        );
+    }
+    // The pictures themselves stay on the ramp: the red local file's luma (87) sits at
+    // 26 + 87 * 171 / 255 = 84, with no chroma, wherever the overlay is clear.
     let on_ramp = px
         .chunks_exact(4)
-        .filter(|p| p[3] == 255 && p[0] == 84)
+        .filter(|p| p[3] == 255 && p[0] == 84 && p[1] == 84 && p[2] == 84)
         .count();
     assert!(
         on_ramp > 100,
-        "the local picture is on the ramp: {on_ramp} px"
+        "the unmarked local picture is on the ramp, spread 0: {on_ramp} px"
     );
     assert!(
-        px.chunks_exact(4).any(|p| p[3] == 255 && p[0] > 150),
-        "the highlighted patch is lifted toward the ramp's light end"
+        px.chunks_exact(4)
+            .filter(|p| p[0] == p[1] && p[1] == p[2])
+            .count()
+            > marked.len(),
+        "most of the pane is still grey"
     );
     f.close();
 }

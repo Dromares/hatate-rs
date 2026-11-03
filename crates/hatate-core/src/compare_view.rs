@@ -23,6 +23,9 @@ pub const MAX_ZOOM: f64 = 40.0;
 pub const RAMP_LOW: u8 = 0x1a;
 /// The ramp's light end: Pillow's `L` (`(299 R + 587 G + 114 B) / 1000`) of `#cdc4ba`.
 pub const RAMP_HIGH: u8 = 197;
+/// The Differences overlay's colour, `#ff8c00` (`--diff-hl` in the mockup's `tokens.css`; DAN-2612's
+/// call on the board's request that the highlights be easier to notice). The same in both schemes.
+pub const DIFF_HL: [u8; 3] = [255, 140, 0];
 
 /// `QRectF`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -323,7 +326,7 @@ pub fn rgb_of(p: &Rgba) -> Image {
 /// What `build_difference_overlay` hands back.
 #[derive(Debug, Clone)]
 pub struct DifferenceView {
-    /// The overlay at the local picture's size: the ramp's top grey, alpha following the mask.
+    /// The overlay at the local picture's size: `DIFF_HL`, alpha following the mask.
     pub overlay: Rgba,
     pub diff: Diff,
 }
@@ -354,7 +357,12 @@ pub fn build_difference_overlay(local: &Rgba, matched: &Rgba) -> Option<Differen
     for &v in &mask.data {
         // `mask.point(lambda v: int(v * 0.82))`: never fully opaque, the picture underneath is
         // the point.
-        rgba.extend_from_slice(&[RAMP_HIGH, RAMP_HIGH, RAMP_HIGH, (f64::from(v) * 0.82) as u8]);
+        rgba.extend_from_slice(&[
+            DIFF_HL[0],
+            DIFF_HL[1],
+            DIFF_HL[2],
+            (f64::from(v) * 0.82) as u8,
+        ]);
     }
     Some(DifferenceView {
         overlay: Rgba {
@@ -771,7 +779,13 @@ mod tests {
             view.overlay
                 .rgba
                 .chunks_exact(4)
-                .all(|px| px[0] == px[1] && px[1] == px[2])
+                .all(|px| px[..3] == DIFF_HL),
+            "every overlay pixel is #ff8c00; only its alpha follows the mask"
+        );
+        assert_eq!(
+            &view.overlay.rgba[(40 * 120 + 55) * 4..][..4],
+            &[255, 140, 0, 209],
+            "a solid mask pixel is #ff8c00 at alpha 209"
         );
     }
 
