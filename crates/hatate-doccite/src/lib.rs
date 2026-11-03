@@ -318,6 +318,11 @@ impl Tree {
         }
     }
 
+    /// Every `.rs` file of the tree, repo-relative.
+    pub fn files(&self) -> impl Iterator<Item = &String> {
+        self.files.iter()
+    }
+
     /// The repo-relative path a cite's path names: itself, `crates/` + it, or the one file that
     /// ends in `/` + it. `Err` says why not (missing or ambiguous).
     pub fn resolve(&self, path: &str) -> Result<String, String> {
