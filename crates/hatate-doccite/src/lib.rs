@@ -12,6 +12,7 @@
 //!
 //! In a markdown table a `|` inside the fragment is written `\|`; [`parse_cites`] undoes that.
 //! Test and tooling code only: no shipped crate depends on this one except as a dev-dependency.
+pub mod assigns;
 pub mod pytests;
 
 use std::collections::BTreeSet;
@@ -315,6 +316,11 @@ impl Tree {
             files,
             parsed: Default::default(),
         }
+    }
+
+    /// Every `.rs` file of the tree, repo-relative.
+    pub fn files(&self) -> impl Iterator<Item = &String> {
+        self.files.iter()
     }
 
     /// The repo-relative path a cite's path names: itself, `crates/` + it, or the one file that
