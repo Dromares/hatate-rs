@@ -588,6 +588,20 @@ impl MainWindow {
                 w.on_row_drawn(id);
             }
         });
+        // Scrolling changes which rows are on screen without binding a row that was bound already.
+        let vadj = self.s.queue_view.scroller.vadjustment();
+        let w = self.downgrade();
+        vadj.connect_value_changed(move |_| {
+            if let Some(w) = w.upgrade() {
+                w.on_viewport_moved();
+            }
+        });
+        let w = self.downgrade();
+        vadj.connect_page_size_notify(move |_| {
+            if let Some(w) = w.upgrade() {
+                w.on_viewport_moved();
+            }
+        });
     }
 
     pub fn downgrade(&self) -> MainWindowWeak {

@@ -510,6 +510,10 @@ const SCENARIOS: &[Scenario] = &[
         "settings_mcp_audit_table_follows_the_log_newest_first",
         settings_mcp_audit_table_follows_the_log_newest_first,
     ),
+    (
+        "lazy_thumbnails_decode_only_the_rows_on_screen",
+        lazy_thumbnails_decode_only_the_rows_on_screen,
+    ),
 ];
 
 fn main() {
@@ -10695,4 +10699,108 @@ fn message_detail_box_does_not_swallow_tab(app: &adw::Application) {
     );
     adw::prelude::AdwDialogExt::force_close(&dialog);
     f.close();
+}
+
+// DAN-2588: `test_the_thumbnail_range_is_clamped_to_the_visible_rows`. The ColumnView binds about
+// 205 rows for 7 on screen; lazy decoding follows the rows the scroller shows plus the 15-row
+// buffer, not the bound rows.
+fn lazy_thumbnails_decode_only_the_rows_on_screen(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let base = pics.path().join("p0.png");
+    image::RgbaImage::from_pixel(64, 64, image::Rgba([10, 120, 200, 255]))
+        .save(&base)
+        .unwrap();
+    let mut seed = seeded(500, MatchStatus::Good);
+    for (i, e) in seed.iter_mut().enumerate() {
+        let p = pics.path().join(format!("p{i}.png"));
+        if i > 0 {
+            std::fs::copy(&base, &p).unwrap();
+        }
+        e.path = p.to_string_lossy().into_owned();
+        e.hydrus_hash = None;
+    }
+    for (label, size, lazy) in [
+        ("default", None, true),
+        ("minimum", Some((1010, 837)), true),
+        ("lazy off", None, false),
+    ] {
+        let f = Fx::new(
+            app,
+            Opts {
+                seed: seed.clone(),
+                missing: Some(Arc::new(|_, _| HashSet::new())),
+                tweak: Some(Box::new(move |s| s.lazy_thumbnails = lazy)),
+                ..Opts::default()
+            },
+        );
+        let view = f.w.s.queue_view.clone();
+        if let Some((w, h)) = size {
+            f.w.win.set_default_size(w, h);
+        }
+        let ids = view.visible_ids();
+        let known = || ids.iter().filter(|id| view.thumb_known(**id)).count();
+        let settle = || {
+            pump_for(1500);
+            pump_until(20_000, || {
+                f.w.s.thumbs.in_flight() == 0 && !f.w.s.thumbs.is_running()
+            });
+            pump_for(500);
+        };
+        // The rows the scroller shows, by a pick down its height.
+        let on_screen = || {
+            let mut seen = Vec::new();
+            let mut y = 0.0;
+            while y < f64::from(view.scroller.height()) {
+                if let Some(id) = view.row_id_at(10.0, y) {
+                    if !seen.contains(&id) {
+                        seen.push(id);
+                    }
+                }
+                y += 2.0;
+            }
+            seen
+        };
+        settle();
+        let buffer = 2 * hatate_gtk::thumbnails::THUMB_VIEWPORT_BUFFER_ROWS as usize;
+        if !lazy {
+            assert_eq!(known(), 500, "{label}: every row is requested at load");
+            f.close();
+            continue;
+        }
+        let shown = on_screen().len();
+        assert!(shown > 0 && shown < 40, "{label}: {shown} rows on screen");
+        assert!(
+            known() <= shown + buffer,
+            "{label}: {} rows decoded before any scroll, {shown} on screen (limit {})",
+            known(),
+            shown + buffer
+        );
+        let beyond = &ids[shown + buffer..];
+        assert!(
+            beyond.iter().all(|id| !view.thumb_known(*id)),
+            "{label}: rows past the buffer were decoded"
+        );
+        // Page down: the rows that came on screen are decoded, the ones left behind stay.
+        let vadj = view.scroller.vadjustment();
+        vadj.set_value(vadj.value() + vadj.page_size());
+        settle();
+        let now = on_screen();
+        assert!(
+            now.iter().all(|id| view.thumb_known(*id)),
+            "{label}: a row on screen after a page-down has no thumbnail"
+        );
+        assert!(
+            known() <= 2 * (shown + buffer),
+            "{label}: {} rows decoded after one page-down",
+            known()
+        );
+        vadj.set_value(vadj.upper() - vadj.page_size());
+        settle();
+        assert!(
+            view.thumb_known(ids[ids.len() - 1]),
+            "{label}: the last row is decoded once it is on screen"
+        );
+        assert!(known() < 500, "{label}: the middle of the list stays blank");
+        f.close();
+    }
 }
