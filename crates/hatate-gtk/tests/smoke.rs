@@ -6121,6 +6121,64 @@ fn the_differences_pane_keeps_the_pictures_grey_and_marks_changes_in_the_highlig
             > marked.len(),
         "most of the pane is still grey"
     );
+
+    // The state transitions keep the pane the same kind of thing: every chroma pixel is still the
+    // highlight over a grey, and the marked patch is still there after each.
+    let pane = |what: &str| {
+        let (px, _, _) = r.wipe.render().unwrap();
+        let (mut marked, mut stray) = (0, 0);
+        for p in px.chunks_exact(4) {
+            if p[0].max(p[1]).max(p[2]) == p[0].min(p[1]).min(p[2]) {
+                continue;
+            }
+            marked += 1;
+            let (rg, gb) = (
+                i32::from(p[2]) - i32::from(p[1]),
+                i32::from(p[1]) - i32::from(p[0]),
+            );
+            if rg < 0 || gb < 0 || (rg * 140 - gb * 115).abs() > 140 * 2 + 115 * 2 {
+                stray += 1;
+            }
+        }
+        assert_eq!(
+            stray, 0,
+            "{what}: a chroma pixel that is not #ff8c00 over a grey"
+        );
+        marked
+    };
+    r.wipe.zoom_in();
+    pump_for(100);
+    pane("after zoom in");
+    r.wipe.zoom_to_fit();
+    r.wipe_slider.set_value(100.0);
+    pump_for(100);
+    assert!(
+        pane("with the wipe swept to the end") > 100,
+        "the patch is marked"
+    );
+    r.wipe_slider.set_value(10.0);
+    pump_for(100);
+    pane("with the wipe near the start");
+    r.view_buttons["pair"].set_active(true);
+    pump_for(100);
+    r.view_buttons["diff"].set_active(true);
+    assert!(pump_until(10_000, || r.wipe.showing_differences()));
+    r.wipe_slider.set_value(100.0);
+    pump_for(100);
+    assert!(
+        pane("after Side by side and back") > 100,
+        "the patch is marked"
+    );
+    f.w.s.queue_view.select_row(2);
+    assert!(pump_until(10_000, || {
+        f.w.current_review_key() == f.w.s.comparison.borrow().loaded_for.clone()
+            && r.wipe.showing_differences()
+    }));
+    pump_for(300);
+    assert!(
+        pane("after selecting another row") > 100,
+        "the patch is marked"
+    );
     f.close();
 }
 
@@ -10020,7 +10078,7 @@ fn title_bar_of(w: &gtk4::Widget) -> Option<(gtk4::Widget, Vec<String>)> {
 
 /// DAN-2550: the main window has a title bar. An `AdwApplicationWindow` draws none of its own and
 /// GTK4 on Wayland draws no server-side frame, so without an `adw::HeaderBar` at the top there is
-/// nothing to drag and no minimize, maximize or close (the v0.2.0 draft, rejected on the board's
+/// nothing to drag and no minimize, maximize or close (an earlier 0.2.0 draft, rejected on the board's
 /// desktop). The bar sits above the menubar, the menubar is unchanged beneath it, and the window
 /// controls at the bar's end show a close button under the toolkit's default decoration layout.
 fn main_window_has_a_header_bar_above_the_menubar_with_a_close_button(app: &adw::Application) {

@@ -50,7 +50,7 @@ surface does not exist; the window title shows no number (7.c: it said work in p
 | `hatate --version` | `crates/hatate-cli/tests/version.rs` `fn version_flag_prints_the_workspace_version` `hatate_core::version::VERSION` |
 | MCP `serverInfo.version` | `crates/hatate-core/tests/mcp_server.rs` `fn server_info_reports_the_one_version_source` `json!(hatate_core::version::VERSION)` |
 
-The version string differs from Python's by design (`0.0.0` against `0.1.0` when 7.c landed, `0.2.1` against `0.1.0` since DAN-2601 (7.d set `0.2.0`, never published),
+The version string differs from Python's by design (`0.0.0` against `0.1.0` when 7.c landed, `0.2.1` against `0.1.0` since DAN-2601 (7.d set `0.2.0`, which was published on 2026-11-03),
 and `hatate` against `Hatate`, with a suffix naming the rewrite); there is nothing to differential-test on the number itself.
 
 ## 3. `core/parser_probe.py` (ported) and `tools/measure_tag_bands.py` (dropped)

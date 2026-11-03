@@ -5,11 +5,13 @@
 //! Zoom applies to the shared target rectangle and not to either picture, so the two stay
 //! registered at every zoom level and the wipe keeps landing on the same feature in both.
 //!
-//! **Differences pane (design gate 2.2).** Python paints the two pictures in colour and sweeps a red
-//! overlay across them. The gate asks for a pane with zero chroma, an R=G=B ramp from `#1a1a1a` up to
-//! the luma of the mockup's `#cdc4ba`, so here each picture is drawn as its luma on that ramp and the
-//! overlay is the ramp's top grey. Alpha follows the mask exactly as Python's does (`int(v * 0.82)`).
-//! What the pane is, region by region, is unchanged; only the hue is.
+//! **Differences pane (design gate 2.2, as amended by DAN-2612).** Python paints the two pictures in colour
+//! and sweeps a red overlay across them. The gate asks for pictures with zero chroma, an R=G=B ramp from
+//! `#1a1a1a` up to the luma of the mockup's `#cdc4ba`, so here each picture is drawn as its luma on that
+//! ramp and the overlay is `DIFF_HL` (`#ff8c00`), the only hue in the pane. Alpha follows the mask exactly
+//! as Python's does (`int(v * 0.82)`). What the pane is, region by region, is unchanged; the pictures lose
+//! their hue and the overlay is orange where Python's is red. (Until DAN-2613 the overlay was the ramp's
+//! top grey, which disappeared over the lightest part of the ramp.)
 
 use crate::error::ErrorKind;
 use crate::image_diff::{Diff, difference_map_images};
