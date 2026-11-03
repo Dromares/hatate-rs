@@ -188,6 +188,67 @@ async fn the_runner_reaches_local_https_engines_through_the_binaries_constructor
     );
 }
 
+/// `tracemoe_min_similarity` reaches trace.moe's filter (DAN-2601): the same three answers (60%,
+/// 90%, 97%) are searched at 50, the default 85 and 95. A threshold fixed at 85 passes only the
+/// middle one.
+#[tokio::test]
+async fn tracemoe_min_similarity_is_read_from_the_settings() {
+    async fn survivors(min_similarity: Option<f64>) -> Vec<String> {
+        let pki = TestPki::generate();
+        let file = image();
+        let entry = Entry::new(file.path.to_str().unwrap());
+        let body = json!({"result": [
+            {"anilist": {"id": 60, "title": {"romaji": "Sixty"}}, "similarity": 0.60},
+            {"anilist": {"id": 90, "title": {"romaji": "Ninety"}}, "similarity": 0.90},
+            {"anilist": {"id": 97, "title": {"romaji": "Ninety-seven"}}, "similarity": 0.97}]});
+        let moe = ReplayServer::https(
+            &pki,
+            vec![Reply::ok(body.to_string()).header("Content-Type", "application/json")],
+        )
+        .await;
+        let clock = Arc::new(ManualClock::new(1_000.0, 0.0));
+        let mut live = LiveEngines::new(net(&pki), clock.clone());
+        live.tracemoe = TraceMoeClient::with_host(net(&pki), &moe.url("/search"));
+        let runner = EngineRunner::new(Arc::new(live), clock);
+        let mut s = settings();
+        if let Some(min) = min_similarity {
+            s.tracemoe_min_similarity = min;
+        }
+        let settings = Arc::new(s);
+        let mut candidates = Vec::new();
+        runner
+            .run_engines_parallel(
+                &["tracemoe"],
+                &entry,
+                &settings,
+                &mut candidates,
+                &mut Vec::new(),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let mut urls: Vec<String> = candidates.into_iter().map(|c| c.url).collect();
+        urls.sort();
+        urls
+    }
+
+    let anilist = |ids: &[u32]| -> Vec<String> {
+        ids.iter()
+            .map(|id| format!("https://anilist.co/anime/{id}"))
+            .collect()
+    };
+    assert_eq!(survivors(Some(50.0)).await, anilist(&[60, 90, 97]));
+    assert_eq!(
+        survivors(None).await,
+        anilist(&[90, 97]),
+        "the default is 85"
+    );
+    assert_eq!(survivors(Some(95.0)).await, anilist(&[97]));
+}
+
 #[tokio::test]
 async fn an_engine_that_cannot_reach_its_host_is_that_engines_failure() {
     let pki = TestPki::generate();
