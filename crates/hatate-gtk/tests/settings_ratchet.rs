@@ -37,24 +37,8 @@ use hatate_doccite::assigns::{Assign, Rhs, key_assignments};
 /// A key with no non-default test yet, and why. The key is `key` for a top-level setting and
 /// `section.key` for a nested one. A key found here that has a test fails the ratchet: delete its line.
 const WAIVERS: &[(&str, &str)] = &[
-    // DAN-2595 q1 rows 3-7. `hash_workers = 99` in the smoke test is a Settings-dialog round trip.
-    ("hash_workers", OWED),
-    ("search_cache_ttl_days", OWED),
-    ("match_conditions.min_width_gain_percent", OWED),
-    ("match_conditions.min_height_gain_percent", OWED),
-    ("mcp.audit_log_max_bytes", OWED),
-    ("lens_search_whole_image", OWED),
-    ("rank_matches_by_quality", OWED),
-    // Found by this ratchet, not in q1 (which called it covered): the one boundary test in
-    // `search_engine.rs` derives its tag count from the setting, so it passes at the default 5 with the
-    // number hard-coded.
-    (
-        "match_conditions.min_tags_for_good",
-        "Phase 7: non-default test owed (DAN-2594); found by the ratchet, its only test derives the boundary from the setting",
-    ),
+    // No key is waived. DAN-2629 replaced the eight Phase 7 waivers with non-default tests.
 ];
-
-const OWED: &str = "Phase 7: non-default test owed (DAN-2594)";
 
 /// The Settings-dialog round trips: they hand a value to the dialog and read it back, which proves the
 /// value survives a save and says nothing about what the setting does. `(file, fn)`.

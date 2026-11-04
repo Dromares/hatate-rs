@@ -148,6 +148,11 @@ pub struct Ran {
 
 /// Runs `hatate batch` over `scenario` in a throw-away profile.
 pub async fn run_scenario(scenario: &Scenario) -> Ran {
+    run_scenario_with(scenario, |_| {}).await
+}
+
+/// `run_scenario`, with the settings changed by `configure` before the batch starts.
+pub async fn run_scenario_with(scenario: &Scenario, configure: impl FnOnce(&mut Settings)) -> Ran {
     let pki = TestPki::generate_for(&HOSTS);
     let routes = Arc::new(scenario.routes.clone());
     let seen: Arc<Mutex<Vec<String>>> = Arc::default();
@@ -204,6 +209,7 @@ pub async fn run_scenario(scenario: &Scenario) -> Ran {
     settings.match_conditions.require_larger_than_local = false;
     settings.delay_min_seconds = 0.0;
     settings.delay_max_seconds = 0.0;
+    configure(&mut settings);
     let settings = Mutex::new(settings);
 
     let writer = SessionStore::new(&paths).open_writer().unwrap();
@@ -376,6 +382,28 @@ async fn lens_finds_matches_and_a_rule34_search_tile_is_recovered_through_the_li
     assert_eq!(ran.calls[0].filename, "a.png");
     assert!(ran.calls[0].whole_image);
     assert!(ran.requests[0].starts_with("GET rule34.xxx/index.php?page=post&s=list"));
+}
+
+/// DAN-2629 (settings ratchet, `lens_search_whole_image`): the setting is handed to the browser fetch as
+/// its `whole_image` argument. Off asks for the cropped search; the default asks for the whole image
+/// (`lens_finds_matches_and_a_rule34_search_tile...` asserts that side).
+#[tokio::test]
+async fn lens_search_whole_image_off_asks_the_browser_for_the_cropped_search() {
+    let (name, bytes) = one_picture();
+    let ran = run_scenario_with(
+        &Scenario {
+            files: vec![(name, bytes)],
+            fetches: vec![pages(json!([]))],
+            routes: HashMap::new(),
+        },
+        |s| s.lens_search_whole_image = false,
+    )
+    .await;
+    assert_eq!(ran.calls.len(), 1, "{:?}", ran.outcome);
+    assert!(
+        !ran.calls[0].whole_image,
+        "lens_search_whole_image = false must reach the fetch"
+    );
 }
 
 #[tokio::test]

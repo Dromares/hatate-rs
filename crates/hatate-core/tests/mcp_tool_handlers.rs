@@ -554,6 +554,30 @@ async fn a_refusal_and_an_allowed_call_are_both_audited() {
     assert_eq!(lines[1]["outcome"]["filename"], "a.jpg");
 }
 
+/// DAN-2629 (settings ratchet, `mcp.audit_log_max_bytes`): the audit log rotates to `<name>.1` once it
+/// holds `audit_log_max_bytes`. At the default 5 MB three short lines never rotate, so this fails if the
+/// handlers pass the default (or any constant) instead of the live setting.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_small_audit_log_max_bytes_rotates_the_log() {
+    let w = world(|_| vec![entry("a.jpg")]).await;
+    w.settings.lock().unwrap().mcp.audit_log_max_bytes = 100;
+    for _ in 0..3 {
+        w.call(|h| h.get_entry(0)).await.unwrap();
+    }
+    let rotated = w.audit.with_file_name("mcp_audit.jsonl.1");
+    assert!(
+        rotated.exists(),
+        "a line is over 100 bytes, so the next call rotates the log"
+    );
+    assert_eq!(
+        w.audit_lines().len(),
+        1,
+        "the live log holds only the line written after the last rotation"
+    );
+    let rotated_lines = std::fs::read_to_string(&rotated).unwrap().lines().count();
+    assert_eq!(rotated_lines, 1, "one rotated generation, one line");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn the_audit_log_redacts_a_token_in_the_arguments() {
     let w = world(|_| vec![entry("a.jpg")]).await;

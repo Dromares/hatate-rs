@@ -142,7 +142,10 @@ dark `#cdc4ba` on `#0d0d0d` 11.29 (slider, compare slider, Differences radio) an
 **The Differences pane's channel spread** (gate 2.2 as amended by DAN-2612, DAN-2613 shots, `worktrees/DAN-2613-measure.log`): in the pane's
 picture area, every pixel with any channel spread is `#ff8c00` over a grey (R - G = 115 a, G - B = 140 a to rounding): **0** pixels
 are unexplained in the Review page (`review-differences`, `review-differences-min`) and the compare window
-(`review-compare-differences`), dark and light, and every other pixel has spread **0**. Before DAN-2613 the pane read **0**
+(`review-compare-differences`), dark and light, and every other pixel has spread **0** except one line: in `review-differences-light`
+the 1-px Wipe divider at x=344, y 390..580 (186 px) is `(197,196,194)`, spread **3**. It is theme chrome (`_pane_divider_colour`),
+not picture or overlay; the dark divider is `(159,159,159)`, spread 0 (the verifier's read of PR #98, DAN-2614; the Wipe-divider
+contrast rider is on DAN-2319). Before DAN-2613 the pane read **0**
 everywhere (`review-differences-min` x 68..350, y 345..532; `review-compare-differences` y 174..492); that figure no longer
 holds for the marked patches, which carry the overlay's hue on purpose. The strong patch (alpha 209) composites to `#e58714`
 over a bare grey of about 112 (CIEDE2000 32.3, floor 25) and the marginal one (alpha about 95) to `#aa7f4a` over about 119 (20.9,
