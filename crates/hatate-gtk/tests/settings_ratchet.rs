@@ -44,6 +44,7 @@ const WAIVERS: &[(&str, &str)] = &[
     ("match_conditions.min_height_gain_percent", OWED),
     ("mcp.audit_log_max_bytes", OWED),
     ("lens_search_whole_image", OWED),
+    ("rank_matches_by_quality", OWED),
     // Found by this ratchet, not in q1 (which called it covered): the one boundary test in
     // `search_engine.rs` derives its tag count from the setting, so it passes at the default 5 with the
     // number hard-coded.
@@ -72,8 +73,9 @@ const ROUND_TRIPS: &[(&str, &str)] = &[
 const ROUND_TRIP_FILES: &[&str] = &["crates/hatate-core/tests/config_compat.rs"];
 
 /// Switches the name rule does not catch: `lens_search_whole_image` turns the whole-image Lens search on or
-/// off (DAN-2595 q1 row 7). A key is `key` or `section.key`.
-const INCLUDE: &[&str] = &["lens_search_whole_image"];
+/// off (DAN-2595 q1 row 7); `rank_matches_by_quality` switches the quality ordering of matches (DAN-2610).
+/// A key is `key` or `section.key`.
+const INCLUDE: &[&str] = &["lens_search_whole_image", "rank_matches_by_quality"];
 
 /// Field names too common to count without the section: `x.timeout = ..` is not always Hydrus's.
 const GENERIC_LEAVES: &[&str] = &["min_similarity", "timeout"];
