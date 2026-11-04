@@ -57,6 +57,15 @@ impl SandboxHome {
         path
     }
 
+    /// A flat PNG of the given size, for a test that needs the local file's dimensions.
+    fn image_of_size(&self, name: &str, width: u32, height: u32) -> std::path::PathBuf {
+        let path = self.dir.path().join(name);
+        image::RgbImage::from_pixel(width, height, image::Rgb([90, 120, 30]))
+            .save(&path)
+            .unwrap();
+        path
+    }
+
     fn cache_files(&self) -> Vec<String> {
         let dir = self.paths.search_cache_dir();
         let mut names: Vec<String> = std::fs::read_dir(dir)
@@ -76,6 +85,7 @@ struct World {
     engines: Arc<ScriptedEngines>,
     settings: Mutex<Settings>,
     home: SandboxHome,
+    clock: Arc<ManualClock>,
 }
 
 async fn world(handler: impl Fn(&Recorded) -> Reply + Send + Sync + 'static) -> World {
@@ -98,7 +108,7 @@ async fn world_for_hosts(
     let engines = Arc::new(ScriptedEngines::default());
     let clock = Arc::new(ManualClock::new(NOW, 0.0));
     let runner = EngineRunner::new(engines.clone(), clock.clone());
-    let engine = SearchEngine::with_recorder(net, runner, home.paths.clone(), clock, None);
+    let engine = SearchEngine::with_recorder(net, runner, home.paths.clone(), clock.clone(), None);
     let mut settings = Settings::with_defaults(&home.paths);
     settings.primary_engine = "iqdb".to_owned();
     settings.secondary_engine_mode = "disabled".to_owned();
@@ -112,6 +122,7 @@ async fn world_for_hosts(
         engines,
         settings: Mutex::new(settings),
         home,
+        clock,
     }
 }
 
@@ -465,4 +476,175 @@ async fn the_format_head_and_the_preview_download_carry_the_post_page_as_referer
     let head = &recorded[2];
     assert_eq!(preview.header("referer"), Some(URL), "the preview download");
     assert_eq!(head.header("referer"), Some(URL), "the format HEAD");
+}
+
+// ---- DAN-2629: non-default tests for the settings the ratchet had waived ----
+
+/// DAN-2629 (`search_cache_ttl_days`): a `not_found` result is served from the cache until it is older than
+/// the setting. Five days after the first search, the default 30 still answers from the cache; a 3-day
+/// TTL has expired it, the cache file is dropped, and the engine is asked again.
+#[tokio::test]
+async fn search_cache_ttl_days_expires_a_not_found_result() {
+    async fn second_search(ttl_days: f64) -> (Entry, Vec<&'static str>) {
+        let w = world(|_| Reply::new(404, "gone")).await;
+        w.settings.lock().unwrap().search_cache_ttl_days = ttl_days;
+        for _ in 0..2 {
+            w.engines
+                .iqdb
+                .push(Step::Return(Ok(vec![iqdb_match(URL, 96.5)])));
+        }
+        let mut first = w.entry();
+        w.search(&mut first).await;
+        assert_eq!(first.status, MatchStatus::NotFound);
+        assert_eq!(w.home.cache_files().len(), 1, "the not_found is cached");
+        w.clock.advance(5.0 * 86_400.0);
+        let mut second = w.entry();
+        w.search(&mut second).await;
+        (second, w.engines.calls())
+    }
+
+    let (fresh, calls) = second_search(30.0).await;
+    assert_eq!(fresh.result_source.as_deref(), Some("cached"));
+    assert_eq!(
+        calls,
+        ["iqdb"],
+        "inside the TTL the engine is not asked again"
+    );
+
+    let (expired, calls) = second_search(3.0).await;
+    assert_ne!(expired.result_source.as_deref(), Some("cached"));
+    assert_eq!(
+        calls,
+        ["iqdb", "iqdb"],
+        "past a 3-day TTL the engine is asked again"
+    );
+}
+
+/// What `decide_status` made of one search whose booru page has `POST` (800x600, seven tags), with the
+/// local file `local` pixels wide and high (`None`: the default 4x3 image) and `configure` applied.
+async fn status_of_search(
+    local: Option<(u32, u32)>,
+    require_larger: bool,
+    configure: impl FnOnce(&mut Settings),
+) -> MatchStatus {
+    let w = world(routes(vec![("/posts/5.json", json_reply(POST))])).await;
+    {
+        let mut s = w.settings.lock().unwrap();
+        s.match_conditions.require_larger_than_local = require_larger;
+        configure(&mut s);
+    }
+    w.engines
+        .iqdb
+        .push(Step::Return(Ok(vec![iqdb_match(URL, 96.5)])));
+    let path = match local {
+        Some((width, height)) => w.home.image_of_size("sized.png", width, height),
+        None => w.home.image("a.png"),
+    };
+    let mut entry = Entry::new(path.to_str().unwrap());
+    w.search(&mut entry).await;
+    entry.status
+}
+
+/// DAN-2629 (`match_conditions.min_tags_for_good`): the booru page carries seven tags. The default
+/// threshold (5) calls that GOOD; a threshold of 8 calls the same page POOR, and 7 is the boundary
+/// (`tag_count < min` is POOR, equal is GOOD).
+#[tokio::test]
+async fn min_tags_for_good_moves_the_good_poor_boundary() {
+    let at_default = status_of_search(None, false, |_| {}).await;
+    assert_eq!(at_default, MatchStatus::Good);
+    let at_boundary =
+        status_of_search(None, false, |s| s.match_conditions.min_tags_for_good = 7).await;
+    assert_eq!(
+        at_boundary,
+        MatchStatus::Good,
+        "7 tags meet a threshold of 7"
+    );
+    let above = status_of_search(None, false, |s| s.match_conditions.min_tags_for_good = 8).await;
+    assert_eq!(
+        above,
+        MatchStatus::Poor,
+        "7 tags are short of a threshold of 8"
+    );
+}
+
+/// DAN-2629 (`match_conditions.min_width_gain_percent`): the local file is 400x600 and the match 800x600,
+/// a width gain of exactly 100% and a height gain of 0. The default threshold of 10 calls that POOR
+/// (the match looks larger); 100 is the boundary (`>=`), and 100.5 leaves it GOOD.
+#[tokio::test]
+async fn min_width_gain_percent_decides_when_a_wider_match_is_poor() {
+    let local = Some((400, 600));
+    let at_default = status_of_search(local, true, |_| {}).await;
+    assert_eq!(at_default, MatchStatus::Poor);
+    let at_boundary = status_of_search(local, true, |s| {
+        s.match_conditions.min_width_gain_percent = 100.0
+    })
+    .await;
+    assert_eq!(
+        at_boundary,
+        MatchStatus::Poor,
+        "a gain equal to the threshold counts"
+    );
+    let above = status_of_search(local, true, |s| {
+        s.match_conditions.min_width_gain_percent = 100.5
+    })
+    .await;
+    assert_eq!(above, MatchStatus::Good, "100% is under a 100.5% threshold");
+}
+
+/// DAN-2629 (`match_conditions.min_height_gain_percent`): the same, for height. The local file is 800x300
+/// and the match 800x600: a height gain of exactly 100% and a width gain of 0.
+#[tokio::test]
+async fn min_height_gain_percent_decides_when_a_taller_match_is_poor() {
+    let local = Some((800, 300));
+    let at_default = status_of_search(local, true, |_| {}).await;
+    assert_eq!(at_default, MatchStatus::Poor);
+    let at_boundary = status_of_search(local, true, |s| {
+        s.match_conditions.min_height_gain_percent = 100.0
+    })
+    .await;
+    assert_eq!(
+        at_boundary,
+        MatchStatus::Poor,
+        "a gain equal to the threshold counts"
+    );
+    let above = status_of_search(local, true, |s| {
+        s.match_conditions.min_height_gain_percent = 100.5
+    })
+    .await;
+    assert_eq!(above, MatchStatus::Good, "100% is under a 100.5% threshold");
+}
+
+/// DAN-2629 (`rank_matches_by_quality`): the engine answers an unreadable site first and a parser site
+/// second at the same similarity. Ranking (the default) puts the readable one first; off keeps the
+/// engine's order, so the recommended match is the unreadable one.
+#[tokio::test]
+async fn rank_matches_by_quality_off_keeps_the_engines_order() {
+    const UNREADABLE: &str = "https://example.invalid/x";
+    async fn urls(rank: bool) -> Vec<String> {
+        // The availability sweep asks for the page itself as well as its `.json`.
+        let w = world(routes(vec![
+            ("/posts/5.json", json_reply(POST)),
+            ("/posts/5", Reply::ok("<html></html>")),
+        ]))
+        .await;
+        w.settings.lock().unwrap().rank_matches_by_quality = rank;
+        w.engines.iqdb.push(Step::Return(Ok(vec![
+            iqdb_match(UNREADABLE, 90.0),
+            iqdb_match(URL, 90.0),
+        ])));
+        let mut entry = w.entry();
+        w.search(&mut entry).await;
+        entry.candidates.iter().map(|c| c.url.clone()).collect()
+    }
+
+    assert_eq!(
+        urls(true).await,
+        [URL, UNREADABLE],
+        "ranked: the parser site leads"
+    );
+    assert_eq!(
+        urls(false).await,
+        [UNREADABLE, URL],
+        "unranked: the engine's order"
+    );
 }
