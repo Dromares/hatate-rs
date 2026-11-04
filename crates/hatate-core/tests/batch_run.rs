@@ -1549,3 +1549,71 @@ async fn the_one_shot_override_continues_without_saucenao_and_without_it_the_run
             .continue_without_saucenao_on_quota
     );
 }
+
+/// DAN-2629 (settings ratchet, `hash_workers`): the hash pass reads that many files at once. The two
+/// "files" are named pipes, so a read blocks until a writer opens the other end and the test can see
+/// how many reads are in flight. The writer of the SECOND pipe signals the moment its open returns,
+/// which happens only when something is reading it while the first read is still blocked. One worker
+/// (the default) reads them one after the other, so the signal comes only after the first is released;
+/// two workers read both at once, so it comes first.
+#[tokio::test(flavor = "multi_thread")]
+async fn hash_workers_sets_how_many_files_are_read_at_once() {
+    use std::io::Write;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    /// Whether the second pipe was being read while the first was still blocked, with `workers` set.
+    async fn second_read_overlaps_the_first(workers: i64, wait: Duration) -> bool {
+        let w = world().await;
+        w.settings.lock().unwrap().hash_workers = workers;
+        let fifos: Vec<PathBuf> = ["one.png", "two.png"]
+            .iter()
+            .map(|n| {
+                let p = w.root.join(n);
+                let made = std::process::Command::new("mkfifo").arg(&p).status();
+                assert!(made.unwrap().success(), "mkfifo {}", p.display());
+                p
+            })
+            .collect();
+        let (first, second) = (fifos[0].clone(), fifos[1].clone());
+        let (opened_tx, opened_rx) = mpsc::channel();
+        let second_writer = std::thread::spawn(move || {
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .open(second)
+                .unwrap();
+            let _ = opened_tx.send(());
+            f.write_all(b"two").unwrap();
+        });
+        let controller = std::thread::spawn(move || {
+            let overlapped = opened_rx.recv_timeout(wait).is_ok();
+            let mut f = std::fs::OpenOptions::new().write(true).open(first).unwrap();
+            f.write_all(b"one").unwrap();
+            overlapped
+        });
+        let mut entries: Vec<Entry> = fifos
+            .iter()
+            .map(|p| Entry::new(p.to_str().unwrap()))
+            .collect();
+        // Stop on the last progress line, so the batch ends after the hash pass: the pipes have no
+        // data left for the search that would follow.
+        *w.reporter.stop_on.lock().unwrap() = Some(("hashing 2/2".to_owned(), w.stop.clone()));
+        let empty = w.root.join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        let (outcome, _) = w.run(&empty, &mut entries).await;
+        assert_eq!(outcome.ending, Ending::Stopped, "{:?}", w.lines());
+        second_writer.join().unwrap();
+        controller.join().unwrap()
+    }
+
+    assert!(
+        // Long enough on a slow runner; a passing run returns the moment the second pipe is opened.
+        second_read_overlaps_the_first(2, Duration::from_secs(10)).await,
+        "hash_workers = 2 reads both files at once"
+    );
+    assert!(
+        // The control: nothing can overlap, so this only waits to be sure none did.
+        !second_read_overlaps_the_first(1, Duration::from_millis(500)).await,
+        "hash_workers = 1 reads the second only after the first"
+    );
+}
