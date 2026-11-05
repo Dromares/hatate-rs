@@ -14,7 +14,17 @@ env:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # DAN-2647: the dev profile's full debuginfo (`debug = 2`) is most of `target/` and the runner ran
+    # out of disk at the shot build. Line tables are enough for the backtraces the tests print.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
+      # DAN-2647: free space is a logged number. The runner image has run out of disk at the shot
+      # step twice (`No space left on device`); each of these lines is what a fix is scored on.
+      - name: Disk at job start
+        run: |
+          echo "runner image: ${ImageVersion:-unknown}"
+          df -h /
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -47,17 +57,29 @@ jobs:
           GSK_RENDERER: cairo
           NO_AT_BRIDGE: "1"
         run: xvfb-run -a -s "-screen 0 1440x900x24" cargo test --workspace
+      # `if: always()` so the numbers print on the failure this is here to explain.
+      - name: Disk after the tests
+        if: always()
+        run: |
+          df -h / | tail -1
+          du -sh target || true
       # The shot set on this toolkit (GTK 4.14 / libadwaita 1.5), dark and light, for the design
       # read: `examples/shot.rs` renders the real window over a synthetic temp profile. The
       # numbers in `docs/gtk-shell.md` and the contrast table come from these, not from a host
       # with a newer toolkit.
+      - name: Shot build
+        run: cargo build -p hatate-gtk --example shot
+      - name: Disk after the shot build
+        if: always()
+        run: |
+          df -h / | tail -1
+          du -sh target || true
       - name: Shot set (under Xvfb)
         env:
           GDK_BACKEND: x11
           GSK_RENDERER: cairo
           NO_AT_BRIDGE: "1"
         run: |
-          cargo build -p hatate-gtk --example shot
           # The renderer walks its own state table (`SHOT_SET` in `examples/shot.rs`) and writes
           # `shots/index.tsv`: each PNG's header size next to the size its surface states as its minimum.
           xvfb-run -a -s "-screen 0 1440x900x24" target/debug/examples/shot --all shots
