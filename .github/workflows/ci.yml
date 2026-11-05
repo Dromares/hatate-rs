@@ -14,6 +14,10 @@ env:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    # DAN-2647: the dev profile's full debuginfo (`debug = 2`) is most of `target/` and the runner ran
+    # out of disk at the shot build. Line tables are enough for the backtraces the tests print.
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       # DAN-2647: free space is a logged number. The runner image has run out of disk at the shot
       # step twice (`No space left on device`); each of these lines is what a fix is scored on.
