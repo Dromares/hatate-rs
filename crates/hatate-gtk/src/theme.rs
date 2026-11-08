@@ -1203,7 +1203,9 @@ mod tests {
     /// chip's own rule, so a weaker token there goes red too.
     #[test]
     fn the_boxed_chip_border_clears_three_to_one_on_the_inactive_selection_wash() {
-        let eight = |c: Rgba| Rgba(c.0.round(), c.1.round(), c.2.round(), 1.0);
+        let eight = |c: crate::tokens::Rgba| {
+            crate::tokens::Rgba(c.0.round(), c.1.round(), c.2.round(), 1.0)
+        };
         let body = rule_body(".queue-cell.chip-boxed {");
         let tier = token_of(body, "border:");
         for scheme in [Scheme::Dark, Scheme::Light] {

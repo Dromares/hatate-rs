@@ -300,6 +300,11 @@ pub fn tool_floor() -> i32 {
 /// (`Rea`, `Rev`, `Re-`, `Hyd`, `Des`), so a clipped Tier still tells the tiers apart.
 pub const TIER_FLOOR: i32 = 5;
 
+/// The Outcome column's floor in characters. It was 11; DAN-2682's single fallback takes it to 8 when
+/// the Tool column's floor and the 11 px Time column would otherwise push the page past the 560 px
+/// window (the page needed 523 px of a 504 px view with 11). Its tooltip carries the full text.
+pub const OUTCOME_FLOOR: i32 = 8;
+
 /// The Recent tool calls card.
 pub struct AuditCard {
     pub root: gtk::Box,
@@ -483,7 +488,7 @@ impl AuditCard {
                     label.set_hexpand(true);
                     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
                     // at the minimum window the other columns give way first
-                    label.set_width_chars(11);
+                    label.set_width_chars(OUTCOME_FLOOR);
                     label.set_tooltip_text(Some(&row.tooltip));
                     set_weight(&label, row.weight);
                 } else {
