@@ -544,7 +544,7 @@ impl SettingsDialog {
 
     fn set_live(&self, id: &str, text: &str) {
         if let Some(l) = self.live_of(id) {
-            l.set_text(text);
+            widgets::set_glyph_led_text(l, text);
         }
     }
 
@@ -575,6 +575,11 @@ impl SettingsDialog {
         if let Some(b) = &button {
             b.set_sensitive(false);
         }
+        // the previous answer is not shown beside the busy button (DAN-2682); no "Testing" text, so
+        // no new state: the line is the empty one it already was before the first click
+        if let Some(l) = &label {
+            widgets::clear_glyph_led_text(l);
+        }
         let factory = backend.hydrus_client.clone();
         let handle = self.main.s.workers.run_async(
             move |_ctx| async move {
@@ -587,7 +592,7 @@ impl SettingsDialog {
             move |event: Event<(), String>| {
                 if let Event::Done(text) = event {
                     if let Some(l) = &label {
-                        l.set_text(&text);
+                        widgets::set_glyph_led_text(l, &text);
                     }
                     if let Some(b) = &button {
                         b.set_sensitive(true);
@@ -974,6 +979,11 @@ impl SettingsDialog {
     /// The control with `id`, wherever it is.
     pub fn control(&self, id: &str) -> Option<&Control> {
         self.forms.iter().find_map(|f| f.controls.get(id))
+    }
+
+    /// A live label itself (the pipeline line, a Test answer). Tests and shots only.
+    pub fn live_label(&self, id: &str) -> Option<gtk::Label> {
+        self.forms.iter().find_map(|f| f.live(id)).cloned()
     }
 
     /// A live label's text (the pipeline line, a Test answer).

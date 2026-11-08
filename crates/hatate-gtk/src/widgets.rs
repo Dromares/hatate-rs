@@ -771,3 +771,29 @@ pub fn top_weighted(block: &impl IsA<gtk::Widget>, below_weight: u32) -> gtk::Bo
     });
     col
 }
+
+/// Sets a result line whose first character is a status glyph (`fonts::STATUS_GLYPHS`): the text
+/// stays plain, so a `<` or `&` in it shows as typed, and the glyph alone is drawn in Ryoku Status
+/// (the face the Queue's glyphs come from), the rest in the label's own face and size. A line that
+/// does not lead with a status glyph is set as it is.
+pub fn set_glyph_led_text(label: &gtk::Label, text: &str) {
+    label.set_text(text);
+    let attrs = text
+        .chars()
+        .next()
+        .filter(|c| crate::fonts::STATUS_GLYPHS.contains(c))
+        .map(|c| {
+            let list = gtk::pango::AttrList::new();
+            let mut family = gtk::pango::AttrString::new_family("Ryoku Status");
+            family.set_start_index(0);
+            family.set_end_index(c.len_utf8() as u32);
+            list.insert(family);
+            list
+        });
+    label.set_attributes(attrs.as_ref());
+}
+
+/// Empties a result line and drops the glyph's face with it.
+pub fn clear_glyph_led_text(label: &gtk::Label) {
+    set_glyph_led_text(label, "");
+}

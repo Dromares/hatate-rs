@@ -260,7 +260,8 @@ dropdown.candidate-picker > button:hover { border-color: @ink_58; }
 /* a selected row of a list (DAN-2669). The list that has the keyboard shows it as the stamp; one that has
    not (focus is elsewhere, or the window is in the background) shows the row as chosen but not live: an
    ink-10 wash under ink text and the 4 px ink bar the candidate picker draws for its current row, so the
-   row is found by the bar and not by a wash that is 1.1:1 against the zebra. The bar is a shadow, so no
+   row is found by the bar and not by a wash that is about 1.1:1 against the row's own raised fill
+   (the Queue draws no stripe; its rows are `raised` with an ink-18 hairline between them). The bar is a shadow, so no
    layout moves. The `:backdrop` form is for a window in the background that still holds the list's focus */
 .tag-list > row:selected, .pick-list > row:selected { background: @ink_10; color: @ink; box-shadow: inset 4px 0 0 @ink; }
 .tag-list:focus-within > row:selected, .pick-list:focus-within > row:selected { background: @stamp_bg; color: @stamp_fg; box-shadow: none; }
@@ -504,6 +505,8 @@ textview.log, textview.log text { background: @sunken; color: @ink; font-family:
 .queue-cell.tier-bold { font-weight: 700; }
 .queue-cell.tier-italic { font-style: italic; }
 .queue-cell.chip-boxed { border: 1px solid @ink_46; padding: 1px %space_2%px; margin: 0 %space_3%px; }
+/* the audit table's Time and Tool cells (DAN-2683): data at the label size, as the Queue's mono cells */
+.mcp-audit label.audit-data { font-family: %mono%; font-size: %label%px; }
 .queue-cell.cell-mono, .queue-cell.cell-mono-bold { font-family: %mono%; font-size: 11px; }
 .queue-cell.cell-mono { font-weight: 500; }
 .queue-cell.cell-mono-bold { font-weight: 700; }
@@ -1188,6 +1191,39 @@ mod tests {
             assert!(
                 tier >= 4.5,
                 "{scheme:?} ink-65 label on the wash: {tier:.2}:1"
+            );
+        }
+    }
+
+    /// DAN-2672 item 2 (DAN-2682 line 14): the boxed chip's border (`ink_46`, the Error chip of a Queue
+    /// row) on the inactive-selection wash (`ink_10` over the row's `raised`). Composited the way the
+    /// toolkit paints it, rounded to 8 bits after each layer, the border clears 3:1 in both schemes. The
+    /// margin is thin (3.037 dark, 3.020 light at c86e32e: one 8-bit level moves the light ratio by about
+    /// 0.02), which is why this is a computation from tokens and not a shot. The tier is read from the
+    /// chip's own rule, so a weaker token there goes red too.
+    #[test]
+    fn the_boxed_chip_border_clears_three_to_one_on_the_inactive_selection_wash() {
+        let eight = |c: Rgba| Rgba(c.0.round(), c.1.round(), c.2.round(), 1.0);
+        let body = rule_body(".queue-cell.chip-boxed {");
+        let tier = token_of(body, "border:");
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            let border = match tier.as_str() {
+                "ink_46" => p.ink_46,
+                "ink_58" => p.ink_58,
+                other => {
+                    panic!("the boxed chip border is {other:?}: this pin knows ink_46 and ink_58")
+                }
+            };
+            let wash = eight(p.ink_10.over(p.raised));
+            let edge = eight(border.over(wash));
+            let r = contrast(edge, wash);
+            assert!(
+                r >= 3.0,
+                "{scheme:?}: the boxed chip border {} on the inactive wash {} is {r:.3}:1 \
+                 (3.037 dark, 3.020 light at c86e32e)",
+                edge.hex(),
+                wash.hex()
             );
         }
     }

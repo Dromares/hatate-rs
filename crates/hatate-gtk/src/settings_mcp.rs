@@ -286,6 +286,20 @@ pub fn set_weight(label: &impl IsA<gtk::Widget>, weight: Weight) {
 /// The columns of the table, in order.
 pub const COLUMNS: [&str; 5] = ["Time", "Tool", "Tier", "Target", "Outcome"];
 
+/// The Tool column's floor in characters: the longest registered tool name, read from the tool
+/// specs so a 15th tool cannot silently regress (DAN-2682: `select_candidate` is 16).
+pub fn tool_floor() -> i32 {
+    hatate_core::mcp::tools::TOOLS
+        .iter()
+        .map(|t| t.name.chars().count())
+        .max()
+        .unwrap_or(0) as i32
+}
+
+/// The Tier column's floor in characters: a five-value enum whose first three letters differ
+/// (`Rea`, `Rev`, `Re-`, `Hyd`, `Des`), so a clipped Tier still tells the tiers apart.
+pub const TIER_FLOOR: i32 = 5;
+
 /// The Recent tool calls card.
 pub struct AuditCard {
     pub root: gtk::Box,
@@ -374,7 +388,8 @@ impl AuditCard {
         root.append(&controls);
 
         let grid = gtk::Grid::new();
-        grid.set_column_spacing(18);
+        // 12 is `space_3`: 18 is off the spacing scale and cost the Tool column 24 px at the minimum
+        grid.set_column_spacing(12);
         grid.set_row_spacing(6);
         grid.add_css_class("mcp-audit");
         let scroll = gtk::ScrolledWindow::new();
@@ -447,12 +462,19 @@ impl AuditCard {
                 let label = gtk::Label::new(Some(text));
                 label.set_xalign(0.0);
                 if c < 2 {
-                    label.add_css_class("mono");
+                    // Time and Tool are data: the mono label size, as the Queue's own mono cells
+                    label.add_css_class("audit-data");
                 }
                 if (1..=3).contains(&c) {
-                    // Tool, Tier and Target give way before Outcome does
+                    // Target gives way first, then Tier, then Outcome; Time and Tool give way to
+                    // nothing (a registered tool name is never clipped), the full text in the tooltip
                     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
                     label.set_tooltip_text(Some(text));
+                }
+                match c {
+                    1 => label.set_width_chars(tool_floor()),
+                    2 => label.set_width_chars(TIER_FLOOR),
+                    _ => {}
                 }
                 if c == 3 {
                     label.set_max_width_chars(14);

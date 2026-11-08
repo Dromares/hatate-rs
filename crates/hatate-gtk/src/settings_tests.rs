@@ -527,14 +527,24 @@ fn failed_fetch(site: Test, err: &BooruError) -> String {
 
 // -- Hydrus --------------------------------------------------------------------------------------
 
-/// `_test_hydrus`: the label's text for what the client answered.
+/// The glyph a passing Hydrus Test leads with: the Queue's Good glyph, from Ryoku Status
+/// (`fonts::STATUS_GLYPHS`). DAN-2682 row 5 replaces Python's `Connected \u{2713}`: U+2713 is not a
+/// bundled glyph and a failure had no mark at all.
+pub const HYDRUS_PASS_GLYPH: char = '\u{25CF}';
+
+/// The glyph a failed or unanswered Hydrus Test leads with: the Queue's Error glyph.
+pub const HYDRUS_FAIL_GLYPH: char = '\u{00D7}';
+
+/// `_test_hydrus`: the label's text for what the client answered. The first character is the cue
+/// (a filled disc for a pass, a cross for anything else), then one space, then the words, so the
+/// shape and the word carry it and the colour never does.
 pub fn hydrus_text(answer: &Result<bool, hatate_core::hydrus_client::HydrusError>) -> String {
     match answer {
-        Ok(true) => "Connected \u{2713}".into(),
-        Ok(false) => "No response".into(),
+        Ok(true) => format!("{HYDRUS_PASS_GLYPH} Connected"),
+        Ok(false) => format!("{HYDRUS_FAIL_GLYPH} No response"),
         Err(e) => {
             tracing::warn!("Hydrus connection test failed: {}", e.detail());
-            format!("Failed: {}", e.user_message())
+            format!("{HYDRUS_FAIL_GLYPH} Failed: {}", e.user_message())
         }
     }
 }
@@ -548,6 +558,30 @@ pub fn service_label(key: &str, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// DAN-2682 row 5: a pass and a failure each lead with a status glyph the app ships, so the cue
+    /// is a shape and U+2713 (not a bundled glyph) cannot come back.
+    #[test]
+    fn the_hydrus_answer_leads_with_a_bundled_status_glyph() {
+        let pass = hydrus_text(&Ok(true));
+        let none = hydrus_text(&Ok(false));
+        assert_eq!(pass, "\u{25CF} Connected");
+        assert_eq!(none, "\u{00D7} No response");
+        for (text, glyph) in [(&pass, HYDRUS_PASS_GLYPH), (&none, HYDRUS_FAIL_GLYPH)] {
+            let first = text.chars().next().unwrap();
+            assert_eq!(first, glyph, "{text}");
+            assert!(
+                crate::fonts::STATUS_GLYPHS.contains(&first),
+                "{text}: {first:?} is not a glyph the app ships"
+            );
+            assert_eq!(text.chars().nth(1), Some(' '), "one space after the glyph");
+            assert!(!text.contains('\u{2713}'));
+        }
+        assert_ne!(
+            HYDRUS_PASS_GLYPH, HYDRUS_FAIL_GLYPH,
+            "a pass and a fail differ by shape"
+        );
+    }
 
     fn typed(url: &str, cookies: &str) -> Typed {
         Typed {
