@@ -722,6 +722,14 @@ impl SettingsDialog {
         }
     }
 
+    /// Row `i` of the fetched-services list. Shots only (DAN-2669: the keyboard and pointer rows).
+    pub fn service_row(&self, i: i32) -> Option<gtk4::ListBoxRow> {
+        self.forms
+            .iter()
+            .find_map(|f| f.combo("hydrus_service_key"))
+            .and_then(|c| c.list.row_at_index(i))
+    }
+
     /// Whether the button `id` takes a click. Tests only.
     pub fn button_sensitive(&self, id: &str) -> bool {
         self.button_of(id).is_some_and(|b| b.is_sensitive())

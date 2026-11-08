@@ -395,6 +395,7 @@ impl Form {
         let list = gtk::ListBox::new();
         list.set_selection_mode(gtk::SelectionMode::None);
         list.set_activate_on_single_click(true);
+        list.add_css_class("found-list");
         let scroll = gtk::ScrolledWindow::new();
         scroll.set_child(Some(&list));
         scroll.set_propagate_natural_height(true);

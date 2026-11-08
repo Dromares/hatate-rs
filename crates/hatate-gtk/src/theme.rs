@@ -255,11 +255,18 @@ dropdown.candidate-picker > button:hover { border-color: @ink_58; }
 .tag-scroller { background: @sunken; border: 1px solid @ink_28; }
 .tag-list, .tag-list > row { background: transparent; color: @ink; }
 .tag-list > row { border-bottom: 1px solid @ink_18; min-height: 0; padding: 6px %space_4%px; }
-.tag-list > row:selected { background: @stamp_bg; color: @stamp_fg; }
 .pick-list, .pick-list > row { background: transparent; color: @ink; }
 .pick-list > row { border-bottom: 1px solid @ink_18; min-height: 0; }
-.pick-list > row:selected { background: @stamp_bg; color: @stamp_fg; }
-.pick-list > row:selected label { color: @stamp_fg; }
+/* a selected row of a list (DAN-2669). The list that has the keyboard shows it as the stamp; one that has
+   not (focus is elsewhere, or the window is in the background) shows the row as chosen but not live: an
+   ink-10 wash under ink text and the 4 px ink bar the candidate picker draws for its current row, so the
+   row is found by the bar and not by a wash that is 1.1:1 against the zebra. The bar is a shadow, so no
+   layout moves. The `:backdrop` form is for a window in the background that still holds the list's focus */
+.tag-list > row:selected, .pick-list > row:selected { background: @ink_10; color: @ink; box-shadow: inset 4px 0 0 @ink; }
+.tag-list:focus-within > row:selected, .pick-list:focus-within > row:selected { background: @stamp_bg; color: @stamp_fg; box-shadow: none; }
+.tag-list:focus-within > row:selected .tag-row, .pick-list:focus-within > row:selected label { color: @stamp_fg; }
+.tag-list:focus-within > row:selected:backdrop, .pick-list:focus-within > row:selected:backdrop { background: @ink_10; color: @ink; box-shadow: inset 4px 0 0 @ink; }
+.tag-list:focus-within > row:selected:backdrop .tag-row, .pick-list:focus-within > row:selected:backdrop label { color: @ink; }
 .settings-line > flowboxchild { padding: 0; }
 .tag-row { font-family: %mono%; font-size: 13px; color: @ink; }
 .review-switch button { padding: 4px 6px; }
@@ -351,19 +358,23 @@ popover modelbutton:hover, popover modelbutton:focus { background: @ink_10; }
 popover modelbutton:disabled { color: @ink_45; }
 popover modelbutton check, popover modelbutton radio { border-radius: 0; box-shadow: none; }
 popover separator { background: @ink_18; min-height: 1px; margin: 0; }
-/* the candidate picker's list (a GtkDropDown popup, rows of a list view). The row under the pointer or
-   the keyboard is the stamp, as Python's combo popup draws its selection (`selection-background-color:
-   stamp_bg`, gui/theme.py:765-770); the current candidate keeps a 4 px bar in ink and is bold, so it is
-   found in a shot and by a person who has moved off it (DAN-2472 item 2) */
+/* the candidate picker's list (a GtkDropDown popup, rows of a list view). The row under the keyboard is the
+   stamp, as Python's combo popup draws its selection (`selection-background-color: stamp_bg`,
+   gui/theme.py:765-770); the row under the pointer is the ink-10 wash, so a pointer resting on one row and
+   the keyboard on another are both found (DAN-2669). The current candidate keeps a 4 px bar in ink and is
+   bold, so it is found in a shot and by a person who has moved off it (DAN-2472 item 2) */
 dropdown.candidate-picker popover listview > row { border-radius: 0; background: transparent; color: @ink; }
 dropdown.candidate-picker popover listview > row:selected { box-shadow: inset 4px 0 0 @ink; font-weight: 700; }
-dropdown.candidate-picker popover listview > row:hover, dropdown.candidate-picker popover listview > row:focus {
-  background: @stamp_bg; color: @stamp_fg; }
-dropdown.candidate-picker popover listview > row:hover label, dropdown.candidate-picker popover listview > row:focus label {
-  color: @stamp_fg; }
-dropdown.candidate-picker popover listview > row:selected:hover, dropdown.candidate-picker popover listview > row:selected:focus {
-  box-shadow: inset 4px 0 0 @stamp_fg; }
+dropdown.candidate-picker popover listview > row:hover { background: @ink_10; color: @ink; }
+dropdown.candidate-picker popover listview > row:focus:focus-visible { background: @stamp_bg; color: @stamp_fg; }
+dropdown.candidate-picker popover listview > row:focus:focus-visible label { color: @stamp_fg; }
+dropdown.candidate-picker popover listview > row:selected:focus:focus-visible { box-shadow: inset 4px 0 0 @stamp_fg; }
 dropdown.candidate-picker popover listview > row:focus:focus-visible { outline-offset: -2px; outline-color: @stamp_fg; }
+/* the Settings drop-down of the tag services Hydrus reported: the same two cues on a plain list */
+popover .found-list, popover .found-list > row { background: transparent; color: @ink; border-radius: 0; }
+popover .found-list > row:hover { background: @ink_10; color: @ink; }
+popover .found-list > row:focus:focus-visible { background: @stamp_bg; color: @stamp_fg; outline-offset: -2px; outline-color: @stamp_fg; }
+popover .found-list > row:focus:focus-visible label { color: @stamp_fg; }
 popover label, popover modelbutton label { font-family: %mono%; font-size: 12px; }
 popover modelbutton accelerator, popover modelbutton label.accelerator { color: @ink_65; }
 /* ink_65 on the hover wash is 4.25:1 in dark; a hovered or focused row reads its hint in ink */
@@ -471,12 +482,21 @@ textview.log, textview.log text { background: @sunken; color: @ink; font-family:
 .queue > header > button:hover label { color: @ink; }
 .queue > header > button sort-indicator { color: @ink; min-width: 10px; min-height: 10px; }
 .queue > listview > row { min-height: 48px; border-bottom: 1px solid @ink_18; background: @raised; padding: 0; }
-.queue > listview > row:selected { background: @stamp_bg; color: @stamp_fg; }
-.queue > listview > row:selected label { color: @stamp_fg; }
+/* the selected row: the stamp while the list has the keyboard, the ink-10 wash and 4 px ink bar when it has
+   not or the window is in the background (DAN-2669; the same rule as the tag and pick lists above). The
+   labels keep their ink tiers on the wash, so the `:backdrop` form puts them back after the stamp rule */
+.queue > listview > row:selected { background: @ink_10; color: @ink; box-shadow: inset 4px 0 0 @ink; }
+.queue > listview:focus-within > row:selected { background: @stamp_bg; color: @stamp_fg; box-shadow: none; }
+.queue > listview:focus-within > row:selected label { color: @stamp_fg; }
+.queue > listview:focus-within > row:selected:backdrop { background: @ink_10; color: @ink; box-shadow: inset 4px 0 0 @ink; }
+.queue > listview:focus-within > row:selected:backdrop label { color: @ink; }
+.queue > listview:focus-within > row:selected:backdrop label.ink-45 { color: @ink_45; }
+.queue > listview:focus-within > row:selected:backdrop label.ink-65 { color: @ink_65; }
 /* the row is clipped by the list, so the global 2px ring at offset 2 falls outside it and never shows;
    draw it inside, in ink on the row and in the stamp's own ink on a selected one (design gate 1.1) */
 .queue > listview > row:focus:focus-visible { outline-offset: -4px; }
 .queue > listview > row:selected:focus:focus-visible { outline-color: @stamp_fg; }
+.queue > listview:focus-within > row:selected:backdrop:focus:focus-visible { outline-color: @ink; }
 .queue-cell { padding: 0 %space_3%px; font-size: %body%px; color: @ink; }
 .queue-cell.ink-45 { color: @ink_45; }
 .queue-cell.ink-65 { color: @ink_65; }
@@ -1099,11 +1119,19 @@ mod tests {
             "the current row's bar"
         );
         assert!(current.contains("inset 4px 0 0") && current.contains("font-weight: 700"));
-        let keyed = rule_body(
-            "dropdown.candidate-picker popover listview > row:hover, dropdown.candidate-picker popover listview > row:focus {",
-        );
+        // DAN-2669: the keyboard row is the stamp, the pointer row the ink-10 wash
+        let keyed =
+            rule_body("dropdown.candidate-picker popover listview > row:focus:focus-visible {");
         assert_eq!(token_of(keyed, "background:"), "stamp_bg");
         assert_eq!(token_of(keyed, "color:"), "stamp_fg");
+        let hovered = rule_body("dropdown.candidate-picker popover listview > row:hover {");
+        assert_eq!(token_of(hovered, "background:"), "ink_10");
+        assert_eq!(token_of(hovered, "color:"), "ink");
+        let found = rule_body("popover .found-list > row:focus:focus-visible {");
+        assert_eq!(token_of(found, "background:"), "stamp_bg");
+        assert_eq!(token_of(found, "outline-color:"), "stamp_fg");
+        let found_hover = rule_body("popover .found-list > row:hover {");
+        assert_eq!(token_of(found_hover, "background:"), "ink_10");
         for scheme in [Scheme::Dark, Scheme::Light] {
             let p = Palette::of(scheme);
             let bar = contrast(p.ink, p.raised);
@@ -1112,6 +1140,55 @@ mod tests {
             assert!(stamp >= 3.0, "{scheme:?} stamp row on raised: {stamp:.2}:1");
             let text = contrast(p.stamp_fg, p.stamp_bg);
             assert!(text >= 4.5, "{scheme:?} stamp text: {text:.2}:1");
+        }
+    }
+    /// DAN-2669 (inactive selection): a selected row of the Queue, the tag list or a pick list is the stamp
+    /// while its list has the keyboard, and an ink-10 wash under ink text with a 4 px ink bar when it has
+    /// not or the window is in the background. The sheet is read for the rules and the contrast is
+    /// computed from the tokens: the bar clears 3:1 on the row it sits on and the labels that keep their
+    /// tier clear 4.5:1 on the wash (`ink_45` is listed in the PR as the one that does not).
+    #[test]
+    fn a_selected_row_without_the_keyboard_is_an_ink_wash_with_an_ink_bar() {
+        let inactive = [
+            ".queue > listview > row:selected {",
+            ".tag-list > row:selected, .pick-list > row:selected {",
+        ];
+        let active = [
+            ".queue > listview:focus-within > row:selected {",
+            ".tag-list:focus-within > row:selected, .pick-list:focus-within > row:selected {",
+        ];
+        let backdrop = [
+            ".queue > listview:focus-within > row:selected:backdrop {",
+            ".tag-list:focus-within > row:selected:backdrop, .pick-list:focus-within > row:selected:backdrop {",
+        ];
+        for sel in inactive.into_iter().chain(backdrop) {
+            let r = rule_body(sel);
+            assert_eq!(token_of(r, "background:"), "ink_10", "{sel}");
+            assert_eq!(token_of(r, "color:"), "ink", "{sel}");
+            assert_eq!(token_of(r, "box-shadow:"), "ink", "{sel}");
+            assert!(
+                r.contains("inset 4px 0 0"),
+                "{sel}: the bar is 4 px at the left edge"
+            );
+        }
+        for sel in active {
+            let r = rule_body(sel);
+            assert_eq!(token_of(r, "background:"), "stamp_bg", "{sel}");
+            assert_eq!(token_of(r, "color:"), "stamp_fg", "{sel}");
+            assert!(r.contains("box-shadow: none"), "{sel}: no bar on the stamp");
+        }
+        for scheme in [Scheme::Dark, Scheme::Light] {
+            let p = Palette::of(scheme);
+            let wash = p.ink_10.over(p.raised);
+            let bar = contrast(p.ink, p.raised);
+            assert!(bar >= 3.0, "{scheme:?} bar on the row: {bar:.2}:1");
+            let text = contrast(p.ink, wash);
+            assert!(text >= 4.5, "{scheme:?} ink text on the wash: {text:.2}:1");
+            let tier = contrast(p.ink_65.over(wash), wash);
+            assert!(
+                tier >= 4.5,
+                "{scheme:?} ink-65 label on the wash: {tier:.2}:1"
+            );
         }
     }
 }

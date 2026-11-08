@@ -10328,6 +10328,7 @@ fn all_scenarios() -> impl Iterator<Item = &'static (&'static str, fn(&adw::Appl
         .chain(SCENARIOS_6H2_FIXUP)
         .chain(SCENARIOS_6J_FOLLOWUP)
         .chain(SCENARIOS_2550)
+        .chain(SCENARIOS_2669)
 }
 
 /// DAN-2467 (6.h-2 R-1): the Hydrus Test's failed line is a sentence, and it wraps to the page. Unwrapped
@@ -10921,4 +10922,213 @@ fn lazy_thumbnails_decode_only_the_rows_on_screen(app: &adw::Application) {
         heights[1] > heights[0],
         "the second case is not a different size: scroller heights {heights:?}"
     );
+}
+
+const SCENARIOS_2669: &[Scenario] = &[
+    (
+        "a_selected_queue_row_is_inactive_when_the_list_or_the_window_loses_the_keyboard",
+        a_selected_queue_row_is_inactive_when_the_list_or_the_window_loses_the_keyboard,
+    ),
+    (
+        "a_selected_tag_or_pick_list_row_is_inactive_when_the_list_or_the_window_loses_the_keyboard",
+        a_selected_tag_or_pick_list_row_is_inactive_when_the_list_or_the_window_loses_the_keyboard,
+    ),
+];
+
+/// The first descendant of `root` that is a selected `row`.
+fn selected_row(root: &gtk4::Widget) -> Option<gtk4::Widget> {
+    if root.css_name() == "row" && root.state_flags().contains(gtk4::StateFlags::SELECTED) {
+        return Some(root.clone());
+    }
+    let mut c = root.first_child();
+    while let Some(child) = c {
+        if let Some(found) = selected_row(&child) {
+            return Some(found);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
+/// What a selected row paints: the stamp, or the ink-10 wash with the 4 px ink bar. Read from the
+/// row's own pixels: the fill 10 px in from the left and 1 px down, the bar 1 px in from the left.
+#[derive(Debug, PartialEq)]
+enum SelectedPaint {
+    Stamp,
+    Wash,
+    Other(String),
+}
+
+fn selected_paint(row: &gtk4::Widget, pal: &hatate_gtk::tokens::Palette) -> SelectedPaint {
+    let img = render(row, 0);
+    let fill = px(&img, 10, 1);
+    let bar = px(&img, 1, img.1 / 2);
+    // compared premultiplied: a straight 8-bit channel under a 12% alpha holds only 3 bits of the colour
+    let near = |p: [u8; 4], c: hatate_gtk::tokens::Rgba, a: f64| {
+        let k = f64::from(p[3]) / 255.0;
+        (f64::from(p[0]) * k - c.0 * a).abs() <= 1.5
+            && (f64::from(p[1]) * k - c.1 * a).abs() <= 1.5
+            && (f64::from(p[2]) * k - c.2 * a).abs() <= 1.5
+            && (f64::from(p[3]) - a * 255.0).abs() <= 4.0
+    };
+    if near(fill, pal.stamp_bg, 1.0) && near(bar, pal.stamp_bg, 1.0) {
+        SelectedPaint::Stamp
+    } else if near(fill, pal.ink_10, pal.ink_10.3) && near(bar, pal.ink, 1.0) {
+        SelectedPaint::Wash
+    } else {
+        SelectedPaint::Other(format!(
+            "fill {fill:?}, bar {bar:?}; ink_10 {:?}, ink {:?}, stamp_bg {:?}",
+            pal.ink_10, pal.ink, pal.stamp_bg
+        ))
+    }
+}
+
+/// DAN-2669 (line 11): the inactive state is forced, not assumed. The selected row of the Queue is the
+/// stamp while the list has the keyboard; it is the ink-10 wash with the ink bar once focus moves out of
+/// the list while the window stays active, and again when the window is put in the background with the
+/// list still holding focus; and it is the stamp again once either is undone. Both schemes.
+fn a_selected_queue_row_is_inactive_when_the_list_or_the_window_loses_the_keyboard(
+    app: &adw::Application,
+) {
+    use hatate_gtk::tokens::{Palette, Scheme};
+    for (name, scheme) in [("dark", Scheme::Dark), ("light", Scheme::Light)] {
+        let f = Fx::new(
+            app,
+            Opts {
+                seed: seeded(4, MatchStatus::Good),
+                tweak: Some(Box::new(move |c| c.theme = name.to_owned())),
+                ..Opts::default()
+            },
+        );
+        f.w.win.set_default_size(1100, 800);
+        pump_for(400);
+        let pal = Palette::of(scheme);
+        let view = f.w.s.queue_view.clone();
+        let ids = view.visible_ids();
+        view.select_ids(&ids[1..2]);
+        f.w.win.set_focus_visible(true);
+        view.view.grab_focus();
+        pump_for(200);
+        let row = || selected_row(view.view.upcast_ref::<gtk4::Widget>()).expect("a selected row");
+        assert_eq!(
+            selected_paint(&row(), &pal),
+            SelectedPaint::Stamp,
+            "{name}: the list has the keyboard"
+        );
+
+        // focus leaves the list, the window stays active
+        f.w.s.filter_bar.text.grab_focus();
+        pump_for(200);
+        assert!(!view.view.upcast_ref::<gtk4::Widget>().has_focus());
+        assert_eq!(
+            selected_paint(&row(), &pal),
+            SelectedPaint::Wash,
+            "{name}: focus is in the filter box"
+        );
+        view.view.grab_focus();
+        pump_for(200);
+        assert_eq!(
+            selected_paint(&row(), &pal),
+            SelectedPaint::Stamp,
+            "{name}: and back in the list"
+        );
+
+        // the window goes to the background with the focus still in the list
+        f.w.win.set_state_flags(gtk4::StateFlags::BACKDROP, false);
+        pump_for(200);
+        assert_eq!(
+            selected_paint(&row(), &pal),
+            SelectedPaint::Wash,
+            "{name}: the window is in the background"
+        );
+        f.w.win.unset_state_flags(gtk4::StateFlags::BACKDROP);
+        pump_for(200);
+        assert_eq!(
+            selected_paint(&row(), &pal),
+            SelectedPaint::Stamp,
+            "{name}: and active again"
+        );
+        f.close();
+    }
+}
+
+/// As above, for the tag list and a pick list, which are plain `GtkListBox`es: built here on a window of
+/// their own, because the rule is on the class and the list state, not on the page they sit in.
+fn a_selected_tag_or_pick_list_row_is_inactive_when_the_list_or_the_window_loses_the_keyboard(
+    app: &adw::Application,
+) {
+    use hatate_gtk::tokens::{Palette, Scheme};
+    for (name, scheme) in [("dark", Scheme::Dark), ("light", Scheme::Light)] {
+        let f = Fx::new(
+            app,
+            Opts {
+                tweak: Some(Box::new(move |c| c.theme = name.to_owned())),
+                ..Opts::default()
+            },
+        );
+        let pal = Palette::of(scheme);
+        for class in ["tag-list", "pick-list"] {
+            let win = gtk4::Window::new();
+            win.set_default_size(400, 300);
+            let column = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+            let list = gtk4::ListBox::new();
+            list.add_css_class(class);
+            list.set_selection_mode(gtk4::SelectionMode::Multiple);
+            for t in ["alpha", "beta", "gamma"] {
+                let l = gtk4::Label::new(Some(t));
+                l.set_xalign(0.0);
+                let r = gtk4::ListBoxRow::new();
+                r.set_child(Some(&l));
+                list.append(&r);
+            }
+            let entry = gtk4::Entry::new();
+            column.append(&list);
+            column.append(&entry);
+            win.set_child(Some(&column));
+            win.present();
+            pump_for(300);
+            win.set_focus_visible(true);
+            list.select_row(list.row_at_index(1).as_ref());
+            list.row_at_index(1).expect("row").grab_focus();
+            pump_for(200);
+            let root = list.clone().upcast::<gtk4::Widget>();
+            let row = || selected_row(&root).expect("a selected row");
+            let tag = format!("{name} {class}");
+            assert_eq!(
+                selected_paint(&row(), &pal),
+                SelectedPaint::Stamp,
+                "{tag}: the list has the keyboard"
+            );
+            entry.grab_focus();
+            pump_for(200);
+            assert_eq!(
+                selected_paint(&row(), &pal),
+                SelectedPaint::Wash,
+                "{tag}: focus is in the entry"
+            );
+            list.row_at_index(1).expect("row").grab_focus();
+            pump_for(200);
+            assert_eq!(
+                selected_paint(&row(), &pal),
+                SelectedPaint::Stamp,
+                "{tag}: and back in the list"
+            );
+            win.set_state_flags(gtk4::StateFlags::BACKDROP, false);
+            pump_for(200);
+            assert_eq!(
+                selected_paint(&row(), &pal),
+                SelectedPaint::Wash,
+                "{tag}: the window is in the background"
+            );
+            win.unset_state_flags(gtk4::StateFlags::BACKDROP);
+            pump_for(200);
+            assert_eq!(
+                selected_paint(&row(), &pal),
+                SelectedPaint::Stamp,
+                "{tag}: and active again"
+            );
+            win.close();
+        }
+        f.close();
+    }
 }

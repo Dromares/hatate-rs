@@ -182,6 +182,21 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("queue-selected", false),
     // DAN-2550: the inactive window (the header bar, the menubar and the selection in their backdrop dress).
     ("queue-backdrop", false),
+    // DAN-2669 (acceptance 12): one selected row, three adjacent rows, and an even-index row, each with
+    // the keyboard in the list (active) and with it in the filter box (inactive); the window in the
+    // background with the list still holding focus (backdrop); the tag list and a pick list the same.
+    ("queue-sel1-active", false),
+    ("queue-sel1-inactive", false),
+    ("queue-sel1-backdrop", false),
+    ("queue-sel3-active", true),
+    ("queue-sel3-inactive", true),
+    ("queue-sel-even-active", false),
+    ("queue-sel-even-inactive", false),
+    ("review-tags-active", true),
+    ("review-tags-inactive", true),
+    ("review-tags-backdrop", false),
+    ("hydrus-query-results-active", true),
+    ("hydrus-query-results-inactive", true),
     ("queue-sorted", false),
     ("queue-filter", false),
     ("queue-filter-empty", true),
@@ -207,6 +222,9 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("settings-hydrus-failed", true),
     ("settings-hydrus-fetched", true),
     ("settings-hydrus-fetched-open", true),
+    // DAN-2669 (acceptance 13): the popovers open, the keyboard on one row and the pointer on another.
+    ("review-picker-kb-hover", true),
+    ("settings-hydrus-fetched-open-kb", true),
     ("settings-focus-test", false),
     ("settings-focus-fetch", false),
     ("shortcuts-dialog", true),
@@ -873,7 +891,8 @@ fn main() -> glib::ExitCode {
                 "menu-hover" => 60,
                 "queue-5000-scroll" => 400,
                 "parser-health-kb" => 90,
-                st if st.starts_with("review") => 60,
+                "settings-hydrus-fetched-open-kb" => 60,
+                st if st.starts_with("review") || st.starts_with("queue-sel") => 60,
                 _ => 14,
             };
             if frames.get() < settle || !READY.load(std::sync::atomic::Ordering::SeqCst) {
@@ -1113,6 +1132,17 @@ fn prepare_hydrus(window: &MainWindow, state: &str) {
                     dialog.results.append(&label);
                 }
                 dialog.select_results(&[0, 2]);
+                // DAN-2669: the keyboard in the results list, or in the search button.
+                if state.ends_with("-active") || state.ends_with("-inactive") {
+                    dialog.window.set_focus_visible(true);
+                    if state.ends_with("-active") {
+                        if let Some(row) = dialog.results.row_at_index(0) {
+                            row.grab_focus();
+                        }
+                    } else {
+                        dialog.search_button.grab_focus();
+                    }
+                }
             }
             if state == "hydrus-query-focus" {
                 dialog.window.set_focus_visible(true);
@@ -1457,7 +1487,8 @@ fn prepare_settings(window: &MainWindow, state: &str) {
         | "hydrus-ok"
         | "hydrus-failed"
         | "hydrus-fetched"
-        | "hydrus-fetched-open" => {
+        | "hydrus-fetched-open"
+        | "hydrus-fetched-open-kb" => {
             d.tabs.set_current_page(Some(4));
             let (text, busy) = match rest {
                 "hydrus-running" => ("", true),
@@ -1485,11 +1516,29 @@ fn prepare_settings(window: &MainWindow, state: &str) {
                     ),
                 ]);
             }
-            if rest == "hydrus-fetched-open" {
+            if rest.starts_with("hydrus-fetched-open") {
                 // after the window is up: a popover opened before it maps has nothing to hang from
                 let d = d.clone();
+                let kb = rest == "hydrus-fetched-open-kb";
                 glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
-                    d.open_services()
+                    d.open_services();
+                    if !kb {
+                        return;
+                    }
+                    // DAN-2669: the keyboard on the second service and the pointer on the third.
+                    d.window.set_focus_visible(true);
+                    let d = d.clone();
+                    glib::timeout_add_local_once(
+                        std::time::Duration::from_millis(250),
+                        move || {
+                            if let Some(row) = d.service_row(1) {
+                                row.grab_focus();
+                            }
+                            if let Some(row) = d.service_row(2) {
+                                row.set_state_flags(gtk4::StateFlags::PRELIGHT, false);
+                            }
+                        },
+                    );
                 });
             }
         }
@@ -1994,7 +2043,10 @@ fn prepare_review(window: &MainWindow, state: &str) {
         }
         // The popup after Down from the first row: the second row is the keyboard's, the current
         // candidate keeps its mark (DAN-2472 item 2).
-        "review-picker-kb" => {
+        "review-picker-kb" | "review-picker-kb-hover" => {
+            // `-hover`: the pointer rests on another row (the first, the current candidate) while the
+            // keyboard is on the second, so the wash and the stamp are in one shot (DAN-2669).
+            let hover = state == "review-picker-kb-hover";
             win.set_focus_visible(true);
             glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
                 r.candidate_combo.activate();
@@ -2015,6 +2067,11 @@ fn prepare_review(window: &MainWindow, state: &str) {
                     // selection (the current candidate) stays where it is.
                     let second = list.first_child().and_then(|first| first.next_sibling());
                     let moved = second.as_ref().is_some_and(|row| row.grab_focus());
+                    if hover {
+                        if let Some(first) = list.first_child() {
+                            first.set_state_flags(gtk4::StateFlags::PRELIGHT, false);
+                        }
+                    }
                     println!(
                         "PICKER-KB focus on the second row: {moved} after {tries} polls, focus {:?}",
                         list.root()
@@ -2023,6 +2080,27 @@ fn prepare_review(window: &MainWindow, state: &str) {
                     );
                     glib::ControlFlow::Break
                 });
+            });
+        }
+        // DAN-2669: two tag rows selected; the keyboard in the list, in another control, or the window in
+        // the background with the list still holding focus.
+        st if st.starts_with("review-tags-") => {
+            let list = r.tag_list.clone();
+            let (win2, next) = (win.clone(), r.next_btn.button.clone());
+            let mode = st["review-tags-".len()..].to_owned();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+                for i in [0, 2] {
+                    list.select_row(list.row_at_index(i).as_ref());
+                }
+                win2.set_focus_visible(true);
+                if mode == "inactive" {
+                    next.grab_focus();
+                } else if let Some(row) = list.row_at_index(0) {
+                    row.grab_focus();
+                }
+                if mode == "backdrop" {
+                    win2.set_state_flags(gtk4::StateFlags::BACKDROP, false);
+                }
             });
         }
         "review-addtags" => window.add_tags_to_current(),
@@ -2176,6 +2254,21 @@ fn prepare_compare(window: &MainWindow, state: &str) {
     });
 }
 
+/// The first descendant of `w` that is a selected `row`.
+fn selected_row_of(w: &gtk4::Widget) -> Option<gtk4::Widget> {
+    if w.css_name() == "row" && w.state_flags().contains(gtk4::StateFlags::SELECTED) {
+        return Some(w.clone());
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(found) = selected_row_of(&child) {
+            return Some(found);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
 /// What a Queue state does once the window is up.
 fn prepare_queue(window: &MainWindow, state: &str) {
     use hatate_core::table_cells::Column;
@@ -2190,6 +2283,44 @@ fn prepare_queue(window: &MainWindow, state: &str) {
             window
                 .win
                 .set_state_flags(gtk4::StateFlags::BACKDROP, false);
+        }
+        // DAN-2669: the keyboard is in the list, in the filter box, or the window is in the background.
+        st if st.starts_with("queue-sel") => {
+            let range = if st.starts_with("queue-sel1") {
+                1..2
+            } else if st.starts_with("queue-sel3") {
+                1..4
+            } else {
+                2..3
+            };
+            view.select_ids(&ids[range]);
+            let (win, v, filter) = (
+                window.win.clone(),
+                view.view.clone(),
+                window.s.filter_bar.text.clone(),
+            );
+            let mode = st.rsplit('-').next().unwrap_or("").to_owned();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+                win.set_focus_visible(true);
+                // the keyboard's row is the first selected one, as after a click or Shift+Click
+                let selected = selected_row_of(v.upcast_ref());
+                let took = if mode == "inactive" {
+                    filter.grab_focus()
+                } else {
+                    selected
+                        .as_ref()
+                        .map_or_else(|| v.grab_focus(), |r| r.grab_focus())
+                };
+                if mode == "backdrop" {
+                    win.set_state_flags(gtk4::StateFlags::BACKDROP, false);
+                }
+                println!(
+                    "FOCUS queue-sel {mode}: grab_focus={took} list focus-within={} focus={:?}",
+                    v.state_flags().contains(gtk4::StateFlags::FOCUS_WITHIN),
+                    gtk4::prelude::GtkWindowExt::focus(win.upcast_ref::<gtk4::Window>())
+                        .map(|f| describe(&f))
+                );
+            });
         }
         "queue-sorted" => view.on_header_clicked(Column::Status),
         "queue-filter" => window.s.filter_bar.text.set_text("synthetic-001"),
