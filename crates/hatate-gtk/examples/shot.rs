@@ -220,6 +220,13 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("settings-hydrus-running", true),
     ("settings-hydrus-ok", true),
     ("settings-hydrus-failed", true),
+    // DAN-2683 (spec DAN-2682 lines 11, 12): the audit card with Actions on, and the Hydrus Test result
+    // empty, with a short server message, `No response`, and a message that wraps at 60 characters.
+    ("settings-mcp-audit-actions", true),
+    ("settings-hydrus-idle", true),
+    ("settings-hydrus-failed-short", true),
+    ("settings-hydrus-noresponse", true),
+    ("settings-hydrus-failed-long", true),
     ("settings-hydrus-fetched", true),
     ("settings-hydrus-fetched-open", true),
     // DAN-2669 (acceptance 13): the popovers open, the keyboard on one row and the pointer on another.
@@ -681,7 +688,7 @@ fn main() -> glib::ExitCode {
         } else {
             drop(listener);
         }
-        if state == "settings-mcp-audit" {
+        if state.starts_with("settings-mcp-audit") {
             // Synthetic lines in the audit log's own format (`mcp/audit.rs::entry_line`).
             let lines = [
                 ("list_queue", "read", true, false, "null", "{\"count\": 12}"),
@@ -713,9 +720,15 @@ fn main() -> glib::ExitCode {
             ];
             let mut text = String::new();
             for (i, (tool, tier, allowed, dry, reason, outcome)) in lines.iter().enumerate() {
+                // Both Time forms (DAN-2682 line 11): the first two calls are "today" at NOW
+                // (`08:00:22`), the rest older (`Nov 18, 14:03:22`).
+                let stamp = if i < 2 {
+                    format!("2026-10-14T08:00:{:02}Z", 22 + i)
+                } else {
+                    format!("2026-11-18T14:03:{:02}Z", 22 + i)
+                };
                 text.push_str(&format!(
-                    "{{\"timestamp\": \"2026-10-30T08:00:{:02}Z\", \"tool\": \"{tool}\", \"tier\": \"{tier}\", \"allowed\": {allowed}, \"reason\": {reason}, \"dry_run\": {dry}, \"row\": 3, \"candidate_index\": null, \"arguments\": {{}}, \"outcome\": {outcome}}}\n",
-                    i * 7 + 1
+                    "{{\"timestamp\": \"{stamp}\", \"tool\": \"{tool}\", \"tier\": \"{tier}\", \"allowed\": {allowed}, \"reason\": {reason}, \"dry_run\": {dry}, \"row\": 3, \"candidate_index\": null, \"arguments\": {{}}, \"outcome\": {outcome}}}\n"
                 ));
             }
             if let Some(dir) = paths.mcp_audit_log().parent() {
@@ -1484,22 +1497,44 @@ fn prepare_settings(window: &MainWindow, state: &str) {
             }
         }
         "hydrus-running"
+        | "hydrus-idle"
         | "hydrus-ok"
         | "hydrus-failed"
+        | "hydrus-failed-short"
+        | "hydrus-noresponse"
+        | "hydrus-failed-long"
         | "hydrus-fetched"
         | "hydrus-fetched-open"
         | "hydrus-fetched-open-kb" => {
             d.tabs.set_current_page(Some(4));
             let (text, busy) = match rest {
-                "hydrus-running" => ("", true),
-                "hydrus-ok" => ("Connected \u{2713}", false),
-                "hydrus-failed" => (
-                    "Failed: Could not reach Hydrus at http://127.0.0.1:45869. Is the client running with its API switched on?",
+                "hydrus-running" => (String::new(), true),
+                // The text is what `hydrus_text` makes of each answer (the glyph first), so the shot
+                // shows what the Test button shows.
+                "hydrus-ok" => (hatate_gtk::settings_tests::hydrus_text(&Ok(true)), false),
+                "hydrus-noresponse" => (hatate_gtk::settings_tests::hydrus_text(&Ok(false)), false),
+                "hydrus-failed-short" => (
+                    format!(
+                        "{} Failed: The access key was not accepted.",
+                        hatate_gtk::settings_tests::HYDRUS_FAIL_GLYPH
+                    ),
                     false,
                 ),
-                _ => ("", false),
+                "hydrus-failed" | "hydrus-failed-long" => (
+                    format!(
+                        "{} Failed: Could not reach Hydrus at http://127.0.0.1:45869. Is the client running with its API switched on?",
+                        hatate_gtk::settings_tests::HYDRUS_FAIL_GLYPH
+                    ),
+                    false,
+                ),
+                _ => (String::new(), false),
             };
-            d.preview_result("button.test_connection", "hydrus_test_result", text, busy);
+            d.preview_result("button.test_connection", "hydrus_test_result", &text, busy);
+            // The result sits under the Test button, below the fold at the minimum height: scroll the
+            // page so the button and its result are in frame (DAN-2682 line 12).
+            if let Some(b) = d.button_widget("button.test_connection") {
+                scroll_to_top_of(b.upcast_ref(), 40.0);
+            }
             if rest == "hydrus-running" {
                 d.preview_result("button.fetch_from_hydrus", "hydrus_test_result", "", true);
             }
@@ -1545,12 +1580,18 @@ fn prepare_settings(window: &MainWindow, state: &str) {
         // The MCP tab with the server started at launch (a free port, or a held one) and the
         // Shortcuts tab with a conflict or a recorder waiting for its key (6.i).
         "mcp-running" | "mcp-held" => d.tabs.set_current_page(Some(8)),
-        "mcp-audit" => {
+        "mcp-audit" | "mcp-audit-actions" => {
             d.tabs.set_current_page(Some(8));
-            d.audit.all.set_active(true);
+            if rest == "mcp-audit" {
+                d.audit.all.set_active(true);
+            } else {
+                d.audit.actions.set_active(true);
+            }
             d.audit.refresh();
-            // The card is under the fold: the page scrolls to its end once it is laid out.
-            scroll_to_end(d.audit.all.upcast_ref());
+            // The card is under the fold: the page scrolls once it is laid out so that the card's
+            // heading row (the filter buttons sit on it) is at the top of the view and the table is in
+            // frame under it (DAN-2682 line 11; the old end-of-page scroll showed only the log path).
+            scroll_to_top_of(d.audit.all.upcast_ref(), 24.0);
         }
         "shortcuts-conflict" => {
             d.tabs.set_current_page(Some(7));
