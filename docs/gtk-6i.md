@@ -247,7 +247,7 @@ Shots from hosted ci run 41045477236 at `dfaec09` (green, one gate `ci`, ~23 min
 | Finding | What changed | Evidence |
 |---|---|---|
 | **F1** middle of the MCP page in no shot | States `settings-mcp-tiers` (scrolled to the Dry run box), `settings-mcp-tiers-dry` (the same with Dry run ticked, the sentence flips), `settings-mcp-tiers-low` (scrolled to the Hydrus box, through the destructive box), `settings-focus-mcp-tier` (the research tier's check box focused, inside its group box). Each in dark and light, default and minimum size; wired into both `ci.yml` shot loops. | PNG headers of all 10 minimum-size shots read 560 x 440 (0 differ). 1018 labels measured over the new and the old 6.i states, 0 below 4.5:1, lowest 5.09 (the Find placeholder, light). |
-| **F2** Outcome clipped at 560 | The page itself was 575 px wide at the minimum: the token box (20 characters) pushed the whole page past the window, and the audit table with it. `mcp_token` is 8 characters wide, the path caption ellipsizes in the middle, and the table's Tool, Tier and Target columns ellipsize (full text in the tooltip) with Outcome kept at 11 characters. The inner scroller no longer scrolls sideways. | `settings-mcp-audit-min-{dark,light}.png`: the right edge of the card is in view, Outcome reads "Recorded, not ...", "Allowed - pick...", "Allowed". Tool and Tier are shortened at 560 ("tog...", "Rev..."), which is the price of the column that matters. Pin: `smoke.rs` `settings_mcp_audit_table_follows_the_log_newest_first` asserts the page needs <= 520 px; it went red at 575 px with the token box back at 20 characters (`worktrees/DAN-2222-fixup-red-R1.log`). |
+| **F2** Outcome clipped at 560 | The page itself was 575 px wide at the minimum: the token box (20 characters) pushed the whole page past the window, and the audit table with it. `mcp_token` is 8 characters wide, the path caption ellipsizes in the middle, and the table's Tool, Tier and Target columns ellipsize (full text in the tooltip) with Outcome kept at 11 characters (8 since DAN-2683, which also took Tool off the ellipsizing list: it now holds the longest registered tool name, see the DAN-2683 section at the end). The inner scroller no longer scrolls sideways. | `settings-mcp-audit-min-{dark,light}.png`: the right edge of the card is in view, Outcome reads "Recorded, not ...", "Allowed - pick...", "Allowed". At the time Tool and Tier were shortened at 560 ("tog...", "Rev..."), the price of the column that matters; since DAN-2683 Tool reads whole (`select_candidate`) and only Tier and Target still shorten. Pin: `smoke.rs` `settings_mcp_audit_table_follows_the_log_newest_first` asserts the page needs <= 520 px; it went red at 575 px with the token box back at 20 characters (`worktrees/DAN-2222-fixup-red-R1.log`). |
 | **F3** "Keep up to ... MB" off-token | Both labels (and the table's Time, Tool, Tier and Target cells) take the page's `ink-100` label class. | `settings-mcp-audit-{dark,light}`: `Keep up to`, `MB before trimming the oldest entries.` #cdc4ba on #0d0d0d 11.29 (dark), #211d17 on #e8e1d2 12.88 (light); before the fixup #ffffff and #2e2d2a. |
 
 **Contrast of the new states** (rows from `worktrees/DAN-2222-measure-fix.md`; floor 4.5:1 for text, 3:1 for a non-text mark):
@@ -292,7 +292,32 @@ Mutations the DAN-2222 verifier found surviving, and the Tool-column note. Each 
 The F2c fixture's own path is the fixture's temp directory, so the old scenario catches F2c or not by how long `TMPDIR` is. The new
 function builds its own path (two folder names of 40 and 54 characters), so the pin does not depend on the environment.
 
-**Tool column (design note, Phase 7).** At the minimum window (560 x 440) the Tool, Tier and Target columns give way before Outcome
-does, and Tool shows about three characters (`tog`, `Rev...`); the full text is in the tooltip. This is the same trade as section 6:
-the Outcome is the column the card exists for. It is a copy and layout item for Phase 7 (a shorter tool name, or a two line
-cell), carried on DAN-2319's ledger. `wontfix` in 6.i.
+**Tool column (DAN-2683, spec DAN-2682 row 3; replaces the Phase 7 design note that stood here).** The note said Tool shows about
+three characters at 560 x 440 and was carried as `wontfix`. It is fixed, so that claim is gone. Time and Tool take the mono data
+size (`audit-data`, `--text-label` 11 px, the Queue's own mono cell), Tool holds the longest registered tool name
+(`tool_floor()`, the maximum over `hatate_core::mcp::tools::TOOLS`, 16 characters today), Tier holds 5, the column spacing is 12
+(`space_3`, was 18), and Outcome's floor went from 11 to 8, the one fallback the spec names, after spec steps 1 to 4 left the page
+at 523 px of a 504 px view. Give-way order at the minimum: Target, then Tier, then Outcome; Time and Tool give way to nothing.
+- **Pin:** `crates/hatate-gtk/tests/smoke.rs` `fn settings_mcp_audit_tool_and_time_cells_are_not_clipped_at_the_minimum_window`
+  `"{what} {text:?} is ellipsized at {MIN_WIDTH}x{MIN_HEIGHT}"` (every Time and Tool cell, one row per registered tool, both Time forms).
+  Red on the three mutations in the PR body (Tool `set_width_chars` deleted, `audit-data` off, Outcome floor back to 11).
+- **Shots (hosted-CI shot path, Xvfb, content only):** `settings-mcp-audit-min-{dark,light}.png` (All calls) and
+  `settings-mcp-audit-actions-min-{dark,light}.png` (Actions), all 560 x 440 by their PNG headers, table scrolled so the card is in
+  frame. `.rects` proof: `Recent tool calls` at 46,135 and the `select_candidate` Tool cell at 165,339 (112 x 20, not ellipsized).
+- **Table surface:** the table sits on `charcoal` (the page): dark `#0d0d0d`, light `#e8e1d2`, as measured on the shots. Time, Tool and
+  Tier are `ink` (header labels `ink_65`).
+
+**Hydrus Test cue (DAN-2683, spec DAN-2682 row 5; deviation D-M in `gtk-6h2.md`).** The result line leads with `\u{25CF}` for a pass
+and `\u{00D7}` for a failure or no response, the glyph alone in Ryoku Status, then one space and the words. Shots, all 560 x 440:
+`settings-hydrus-idle-min-*` (empty line), `settings-hydrus-running-min-*` (empty, button busy), `settings-hydrus-ok-min-*`
+(`● Connected`), `settings-hydrus-failed-short-min-*` (`× Failed: The access key was not accepted.`), `settings-hydrus-noresponse-min-*`
+(`× No response`), `settings-hydrus-failed-long-min-*` (wraps to three lines at 60 characters); each dark and light, each with the Test
+button in frame. The `.rects` list holds a label by its text, not its Live id, and an empty label has no rect, so the empty states are
+proved by the Test button's rect at the same place and the absence of any result rect.
+- **Contrast** (extreme-pixel method, `worktrees/DAN-2683-tools/contrast.py`, a copy of the DAN-2400 script plus a glyph-only row): glyph and
+  text are `ink` on `charcoal` in every state: dark `#cdc4ba` on `#0d0d0d` 11.29, light `#211d17` on `#e8e1d2` 12.88. Floors 4.5 (text)
+  and 3 (glyph) clear in both schemes.
+- **Tab order:** no new stop (labels are not focusable). `shot --tabs` over `settings-4` (Hydrus) and `settings-8` (MCP) walks 15 and 27
+  stops, 0 without an indicator; the Test button is stop 12 of the Hydrus page.
+- **Not judgeable from shots:** HiDPI crispness of `\u{00D7}` at 15 px and the real desktop's font fallback (owner: the board's M4
+  card).
