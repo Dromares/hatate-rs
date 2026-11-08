@@ -9407,7 +9407,7 @@ fn settings_hydrus_test_and_fetch_follow_python(app: &adw::Application) {
     d.type_into("hydrus_key", common::hydrus::KEY);
     // verification on: a certificate no root vouches for is a failure, and says nothing of the address
     let text = press_and_wait(&d, "button.test_connection", "hydrus_test_result");
-    assert!(text.starts_with("Failed: "), "{text}");
+    assert!(text.starts_with("\u{00D7} Failed: "), "{text}");
     for leak in ["127.0.0.1", "os error", common::hydrus::KEY] {
         assert!(!text.contains(leak), "the text carries {leak:?}: {text}");
     }
@@ -9421,7 +9421,7 @@ fn settings_hydrus_test_and_fetch_follow_python(app: &adw::Application) {
         &hatate_gtk::settings_values::Value::Bool(false),
     );
     let text = press_and_wait(&d, "button.test_connection", "hydrus_test_result");
-    assert_eq!(text, "Connected \u{2713}");
+    assert_eq!(text, "\u{25CF} Connected");
     let sent = server.recorded();
     assert_eq!(sent[0].target, "/verify_access_key");
     assert_eq!(
@@ -9959,9 +9959,9 @@ fn settings_hydrus_test_and_fetch_after_an_error_rerun_clean(app: &adw::Applicat
     );
     let (test, label) = ("button.test_connection", "hydrus_test_result");
     let failed = press_and_wait(&d, test, label);
-    assert!(failed.starts_with("Failed: "), "{failed}");
+    assert!(failed.starts_with("\u{00D7} Failed: "), "{failed}");
     set(200);
-    assert_eq!(press_and_wait(&d, test, label), "Connected \u{2713}");
+    assert_eq!(press_and_wait(&d, test, label), "\u{25CF} Connected");
     // Fetch: works, then fails: the list stays, the Fetch button is back
     d.press("button.fetch_from_hydrus");
     assert!(pump_until(8_000, || !d.service_list().0.is_empty()));
@@ -9977,7 +9977,7 @@ fn settings_hydrus_test_and_fetch_after_an_error_rerun_clean(app: &adw::Applicat
     );
     // the Test after the Fetch's error says its own answer and the button is live
     let failed = press_and_wait(&d, test, label);
-    assert!(failed.starts_with("Failed: "), "{failed}");
+    assert!(failed.starts_with("\u{00D7} Failed: "), "{failed}");
     set(200);
     d.tabs.set_current_page(Some(0));
     d.tabs.set_current_page(Some(4));
@@ -9986,7 +9986,7 @@ fn settings_hydrus_test_and_fetch_after_an_error_rerun_clean(app: &adw::Applicat
         listed,
         "the list survives a change of page"
     );
-    assert_eq!(press_and_wait(&d, test, label), "Connected \u{2713}");
+    assert_eq!(press_and_wait(&d, test, label), "\u{25CF} Connected");
     d.click_cancel();
     // a new dialog: no label, no list, both buttons live
     let again = open_settings(&f);
@@ -10329,6 +10329,7 @@ fn all_scenarios() -> impl Iterator<Item = &'static (&'static str, fn(&adw::Appl
         .chain(SCENARIOS_6J_FOLLOWUP)
         .chain(SCENARIOS_2550)
         .chain(SCENARIOS_2669)
+        .chain(SCENARIOS_2683)
 }
 
 /// DAN-2467 (6.h-2 R-1): the Hydrus Test's failed line is a sentence, and it wraps to the page. Unwrapped
@@ -10343,7 +10344,7 @@ fn settings_hydrus_failed_status_wraps_to_the_page_at_both_window_sizes(app: &ad
     d.preview_result(
         "button.test_connection",
         "hydrus_test_result",
-        "Failed: Could not reach Hydrus at http://127.0.0.1:45869. Is the client running with its API switched on?",
+        "\u{00D7} Failed: Could not reach Hydrus at http://127.0.0.1:45869. Is the client running with its API switched on?",
         false,
     );
     for (w, h) in [(DEFAULT_WIDTH, DEFAULT_HEIGHT), (MIN_WIDTH, MIN_HEIGHT)] {
@@ -10368,7 +10369,7 @@ fn settings_hydrus_failed_status_wraps_to_the_page_at_both_window_sizes(app: &ad
         all_labels(&page, &mut labels);
         let status = labels
             .iter()
-            .find(|l| l.text().starts_with("Failed: "))
+            .find(|l| l.text().starts_with("\u{00D7} Failed: "))
             .expect("the failed line");
         assert!(status.wraps(), "{w}x{h}: the failed line does not wrap");
         assert!(
@@ -11131,4 +11132,184 @@ fn a_selected_tag_or_pick_list_row_is_inactive_when_the_list_or_the_window_loses
         }
         f.close();
     }
+}
+
+/// DAN-2683: the MCP audit Tool column at the minimum, and the Hydrus Test's cue.
+const SCENARIOS_2683: &[Scenario] = &[
+    (
+        "settings_mcp_audit_tool_and_time_cells_are_not_clipped_at_the_minimum_window",
+        settings_mcp_audit_tool_and_time_cells_are_not_clipped_at_the_minimum_window,
+    ),
+    (
+        "settings_hydrus_result_leads_with_a_status_glyph_and_is_empty_while_the_test_runs",
+        settings_hydrus_result_leads_with_a_status_glyph_and_is_empty_while_the_test_runs,
+    ),
+];
+
+/// DAN-2682 line 11, forced and not assumed: the settings window at 560 x 440 with the audit table
+/// holding one row per registered tool name (taken from the tool specs) and both Time forms. Every Time
+/// and Tool cell is whole (not ellipsized, allocated at least its natural width) and the page is no wider
+/// than its view. Red when the Tool `set_width_chars` line is deleted, and when Time and Tool go back to
+/// the 15 px body size (`audit-data` off).
+fn settings_mcp_audit_tool_and_time_cells_are_not_clipped_at_the_minimum_window(
+    app: &adw::Application,
+) {
+    use hatate_gtk::settings_dialog::{MIN_HEIGHT, MIN_WIDTH, SettingsDialog};
+    let f = Fx::new(app, Opts::default());
+    let now = (f.w.s.clock)() as i64;
+    let today = hatate_core::localtime::WallClock::from_naive_secs(now);
+    let today_stamp = format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+        today.year, today.month, today.day, today.hour, today.minute, today.second
+    );
+    let mut log = String::new();
+    for (i, spec) in hatate_core::mcp::tools::TOOLS.iter().enumerate() {
+        // the two Time forms: `HH:MM:SS` for today, `Mon D, HH:MM:SS` for an earlier day
+        let stamp = if i % 2 == 0 {
+            today_stamp.as_str()
+        } else {
+            "2020-11-18T14:03:22Z"
+        };
+        log.push_str(&format!(
+            "{{\"timestamp\": \"{stamp}\", \"tool\": \"{}\", \"tier\": \"reversible\", \"allowed\": true, \
+             \"dry_run\": false, \"row\": 1234, \"candidate_index\": 3, \"outcome\": {{}}}}\n",
+            spec.name
+        ));
+    }
+    std::fs::write(f.paths.mcp_audit_log(), log).unwrap();
+    let d = open_settings(&f);
+    d.show_tab(SettingsDialog::mcp_tab_index());
+    d.audit.all.set_active(true);
+    d.audit.refresh();
+    d.window.set_default_size(MIN_WIDTH, MIN_HEIGHT);
+    pump_for(400);
+    let tools = hatate_core::mcp::tools::TOOLS;
+    assert_eq!(
+        d.audit.rows().len(),
+        tools.len(),
+        "one row per registered tool"
+    );
+    let horizontal = gtk4::Orientation::Horizontal;
+    let mut seen_forms = HashSet::new();
+    for (r, spec) in tools.iter().enumerate() {
+        for (c, what) in [(0, "Time"), (1, "Tool")] {
+            // newest first: row 1 of the grid is the last line written
+            let cell = d
+                .audit
+                .grid
+                .child_at(c, (tools.len() - r) as i32)
+                .and_then(|w| w.downcast::<gtk4::Label>().ok())
+                .expect("a cell");
+            let text = cell.text().to_string();
+            if c == 0 {
+                seen_forms.insert(text.contains(','));
+            } else {
+                assert_eq!(text, spec.name);
+            }
+            let (_, natural, _, _) = cell.measure(horizontal, -1);
+            assert!(
+                !cell.layout().is_ellipsized(),
+                "{what} {text:?} is ellipsized at {MIN_WIDTH}x{MIN_HEIGHT}"
+            );
+            assert!(
+                cell.width() >= natural,
+                "{what} {text:?} is allocated {} px of its {natural} px",
+                cell.width()
+            );
+        }
+    }
+    assert_eq!(seen_forms.len(), 2, "both Time forms were on the page");
+    let page = d
+        .tabs
+        .nth_page(Some(SettingsDialog::mcp_tab_index() as u32))
+        .expect("the MCP page");
+    let adj = page
+        .downcast_ref::<gtk4::ScrolledWindow>()
+        .expect("a page is a scrolled window")
+        .hadjustment();
+    assert!(
+        adj.upper() <= adj.page_size() + 0.5,
+        "the page is {} px wide in a {} px view",
+        adj.upper(),
+        adj.page_size()
+    );
+    d.click_cancel();
+    f.close();
+}
+
+/// DAN-2682 line 12: a pass leads with the Queue's Good glyph, a failure and "No response" with its Error
+/// glyph, each drawn in Ryoku Status on the glyph alone; the line is empty between the click and the
+/// answer (so the last answer is never shown beside the busy button); and a message with markup
+/// characters in it is shown as typed. Red when the clear in `test_hydrus` is deleted, and when
+/// `set_glyph_led_text` goes through `set_markup`.
+fn settings_hydrus_result_leads_with_a_status_glyph_and_is_empty_while_the_test_runs(
+    app: &adw::Application,
+) {
+    use common::hydrus::{Reply, json_reply};
+    let status = Arc::new(std::sync::atomic::AtomicU16::new(200));
+    let s = status.clone();
+    let server =
+        common::hydrus::Hydrus::https(move |_| match s.load(std::sync::atomic::Ordering::SeqCst) {
+            200 => json_reply(serde_json::json!({"basic_permissions": [0]})),
+            code => Reply::new(code, "oops"),
+        });
+    let f = Fx::new_with(app, Opts::default(), |_| {});
+    let d = open_settings(&f);
+    d.type_into("hydrus_url", &server.url);
+    d.type_into("hydrus_key", common::hydrus::KEY);
+    d.set_value(
+        "hydrus_verify_ssl",
+        &hatate_gtk::settings_values::Value::Bool(false),
+    );
+    let (test, id) = ("button.test_connection", "hydrus_test_result");
+    let label = d.live_label(id).expect("the result label");
+    assert_eq!(label.text(), "", "empty before the first click");
+
+    // the glyph alone is in Ryoku Status, one glyph wide in bytes
+    let glyph_face = |label: &gtk4::Label| -> Vec<(u32, u32, String)> {
+        label
+            .attributes()
+            .map(|list| {
+                list.attributes()
+                    .iter()
+                    .filter_map(|a| {
+                        let s = a.downcast_ref::<gtk4::pango::AttrString>()?;
+                        Some((a.start_index(), a.end_index(), s.value().to_string()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    assert_eq!(press_and_wait(&d, test, id), "\u{25CF} Connected");
+    assert_eq!(glyph_face(&label), [(0, 3, "Ryoku Status".to_owned())]);
+
+    // a second click empties the line before the answer is in
+    d.press(test);
+    assert_eq!(
+        label.text(),
+        "",
+        "the last answer sits beside the busy button"
+    );
+    assert!(
+        glyph_face(&label).is_empty(),
+        "the glyph's face outlived its text"
+    );
+    assert!(pump_until(8_000, || d.button_sensitive(test)));
+    assert_eq!(label.text(), "\u{25CF} Connected");
+
+    // a failure: the cross, and the words after one space
+    status.store(500, std::sync::atomic::Ordering::SeqCst);
+    let failed = press_and_wait(&d, test, id);
+    assert!(failed.starts_with("\u{00D7} Failed: "), "{failed}");
+    assert_eq!(glyph_face(&label), [(0, 2, "Ryoku Status".to_owned())]);
+    assert!(!failed.contains('\u{2713}'));
+
+    // markup characters are text, not markup
+    hatate_gtk::widgets::set_glyph_led_text(&label, "\u{00D7} Failed: <b>&amp;</b> <i>");
+    assert_eq!(label.text(), "\u{00D7} Failed: <b>&amp;</b> <i>");
+    assert!(!label.uses_markup());
+    assert_eq!(label.layout().text(), "\u{00D7} Failed: <b>&amp;</b> <i>");
+    d.click_cancel();
+    f.close();
 }
