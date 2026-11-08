@@ -182,6 +182,21 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("queue-selected", false),
     // DAN-2550: the inactive window (the header bar, the menubar and the selection in their backdrop dress).
     ("queue-backdrop", false),
+    // DAN-2669 (acceptance 12): one selected row, three adjacent rows, and an even-index row, each with
+    // the keyboard in the list (active) and with it in the filter box (inactive); the window in the
+    // background with the list still holding focus (backdrop); the tag list and a pick list the same.
+    ("queue-sel1-active", false),
+    ("queue-sel1-inactive", false),
+    ("queue-sel1-backdrop", false),
+    ("queue-sel3-active", true),
+    ("queue-sel3-inactive", true),
+    ("queue-sel-even-active", false),
+    ("queue-sel-even-inactive", false),
+    ("review-tags-active", true),
+    ("review-tags-inactive", true),
+    ("review-tags-backdrop", false),
+    ("hydrus-query-results-active", true),
+    ("hydrus-query-results-inactive", true),
     ("queue-sorted", false),
     ("queue-filter", false),
     ("queue-filter-empty", true),
@@ -1113,6 +1128,17 @@ fn prepare_hydrus(window: &MainWindow, state: &str) {
                     dialog.results.append(&label);
                 }
                 dialog.select_results(&[0, 2]);
+                // DAN-2669: the keyboard in the results list, or in the search button.
+                if state.ends_with("-active") || state.ends_with("-inactive") {
+                    dialog.window.set_focus_visible(true);
+                    if state.ends_with("-active") {
+                        if let Some(row) = dialog.results.row_at_index(0) {
+                            row.grab_focus();
+                        }
+                    } else {
+                        dialog.search_button.grab_focus();
+                    }
+                }
             }
             if state == "hydrus-query-focus" {
                 dialog.window.set_focus_visible(true);
@@ -2025,6 +2051,27 @@ fn prepare_review(window: &MainWindow, state: &str) {
                 });
             });
         }
+        // DAN-2669: two tag rows selected; the keyboard in the list, in another control, or the window in
+        // the background with the list still holding focus.
+        st if st.starts_with("review-tags-") => {
+            let list = r.tag_list.clone();
+            let (win2, next) = (win.clone(), r.next_btn.button.clone());
+            let mode = st["review-tags-".len()..].to_owned();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+                for i in [0, 2] {
+                    list.select_row(list.row_at_index(i).as_ref());
+                }
+                win2.set_focus_visible(true);
+                if mode == "inactive" {
+                    next.grab_focus();
+                } else if let Some(row) = list.row_at_index(0) {
+                    row.grab_focus();
+                }
+                if mode == "backdrop" {
+                    win2.set_state_flags(gtk4::StateFlags::BACKDROP, false);
+                }
+            });
+        }
         "review-addtags" => window.add_tags_to_current(),
         "review-conditions" => window.action_edit_conditions(),
         st if st.starts_with("review-focus-") && is_compare_state(st) => {
@@ -2190,6 +2237,34 @@ fn prepare_queue(window: &MainWindow, state: &str) {
             window
                 .win
                 .set_state_flags(gtk4::StateFlags::BACKDROP, false);
+        }
+        // DAN-2669: the keyboard is in the list, in the filter box, or the window is in the background.
+        st if st.starts_with("queue-sel") => {
+            let range = if st.starts_with("queue-sel1") {
+                1..2
+            } else if st.starts_with("queue-sel3") {
+                1..4
+            } else {
+                2..3
+            };
+            view.select_ids(&ids[range]);
+            let (win, v, filter) = (
+                window.win.clone(),
+                view.view.clone(),
+                window.s.filter_bar.text.clone(),
+            );
+            let mode = st.rsplit('-').next().unwrap_or("").to_owned();
+            glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
+                win.set_focus_visible(true);
+                if mode == "inactive" {
+                    filter.grab_focus();
+                } else {
+                    v.grab_focus();
+                }
+                if mode == "backdrop" {
+                    win.set_state_flags(gtk4::StateFlags::BACKDROP, false);
+                }
+            });
         }
         "queue-sorted" => view.on_header_clicked(Column::Status),
         "queue-filter" => window.s.filter_bar.text.set_text("synthetic-001"),
