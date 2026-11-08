@@ -1213,9 +1213,8 @@ mod tests {
             let border = match tier.as_str() {
                 "ink_46" => p.ink_46,
                 "ink_58" => p.ink_58,
-                other => {
-                    panic!("the boxed chip border is {other:?}: this pin knows ink_46 and ink_58")
-                }
+                "ink_45" => p.ink_45,
+                other => panic!("the boxed chip border is {other:?}: no such tier here"),
             };
             let wash = eight(p.ink_10.over(p.raised));
             let edge = eight(border.over(wash));
