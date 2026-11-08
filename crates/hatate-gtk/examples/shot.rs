@@ -222,6 +222,9 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("settings-hydrus-failed", true),
     ("settings-hydrus-fetched", true),
     ("settings-hydrus-fetched-open", true),
+    // DAN-2669 (acceptance 13): the popovers open, the keyboard on one row and the pointer on another.
+    ("review-picker-kb-hover", true),
+    ("settings-hydrus-fetched-open-kb", true),
     ("settings-focus-test", false),
     ("settings-focus-fetch", false),
     ("shortcuts-dialog", true),
@@ -888,6 +891,7 @@ fn main() -> glib::ExitCode {
                 "menu-hover" => 60,
                 "queue-5000-scroll" => 400,
                 "parser-health-kb" => 90,
+                "settings-hydrus-fetched-open-kb" => 60,
                 st if st.starts_with("review") || st.starts_with("queue-sel") => 60,
                 _ => 14,
             };
@@ -1483,7 +1487,8 @@ fn prepare_settings(window: &MainWindow, state: &str) {
         | "hydrus-ok"
         | "hydrus-failed"
         | "hydrus-fetched"
-        | "hydrus-fetched-open" => {
+        | "hydrus-fetched-open"
+        | "hydrus-fetched-open-kb" => {
             d.tabs.set_current_page(Some(4));
             let (text, busy) = match rest {
                 "hydrus-running" => ("", true),
@@ -1511,11 +1516,29 @@ fn prepare_settings(window: &MainWindow, state: &str) {
                     ),
                 ]);
             }
-            if rest == "hydrus-fetched-open" {
+            if rest.starts_with("hydrus-fetched-open") {
                 // after the window is up: a popover opened before it maps has nothing to hang from
                 let d = d.clone();
+                let kb = rest == "hydrus-fetched-open-kb";
                 glib::timeout_add_local_once(std::time::Duration::from_millis(80), move || {
-                    d.open_services()
+                    d.open_services();
+                    if !kb {
+                        return;
+                    }
+                    // DAN-2669: the keyboard on the second service and the pointer on the third.
+                    d.window.set_focus_visible(true);
+                    let d = d.clone();
+                    glib::timeout_add_local_once(
+                        std::time::Duration::from_millis(250),
+                        move || {
+                            if let Some(row) = d.service_row(1) {
+                                row.grab_focus();
+                            }
+                            if let Some(row) = d.service_row(2) {
+                                row.set_state_flags(gtk4::StateFlags::PRELIGHT, false);
+                            }
+                        },
+                    );
                 });
             }
         }
@@ -2020,7 +2043,10 @@ fn prepare_review(window: &MainWindow, state: &str) {
         }
         // The popup after Down from the first row: the second row is the keyboard's, the current
         // candidate keeps its mark (DAN-2472 item 2).
-        "review-picker-kb" => {
+        "review-picker-kb" | "review-picker-kb-hover" => {
+            // `-hover`: the pointer rests on another row (the first, the current candidate) while the
+            // keyboard is on the second, so the wash and the stamp are in one shot (DAN-2669).
+            let hover = state == "review-picker-kb-hover";
             win.set_focus_visible(true);
             glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
                 r.candidate_combo.activate();
@@ -2041,6 +2067,11 @@ fn prepare_review(window: &MainWindow, state: &str) {
                     // selection (the current candidate) stays where it is.
                     let second = list.first_child().and_then(|first| first.next_sibling());
                     let moved = second.as_ref().is_some_and(|row| row.grab_focus());
+                    if hover {
+                        if let Some(first) = list.first_child() {
+                            first.set_state_flags(gtk4::StateFlags::PRELIGHT, false);
+                        }
+                    }
                     println!(
                         "PICKER-KB focus on the second row: {moved} after {tries} polls, focus {:?}",
                         list.root()
