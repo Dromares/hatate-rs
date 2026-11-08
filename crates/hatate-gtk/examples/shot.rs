@@ -888,7 +888,7 @@ fn main() -> glib::ExitCode {
                 "menu-hover" => 60,
                 "queue-5000-scroll" => 400,
                 "parser-health-kb" => 90,
-                st if st.starts_with("review") => 60,
+                st if st.starts_with("review") || st.starts_with("queue-sel") => 60,
                 _ => 14,
             };
             if frames.get() < settle || !READY.load(std::sync::atomic::Ordering::SeqCst) {
@@ -2223,6 +2223,21 @@ fn prepare_compare(window: &MainWindow, state: &str) {
     });
 }
 
+/// The first descendant of `w` that is a selected `row`.
+fn selected_row_of(w: &gtk4::Widget) -> Option<gtk4::Widget> {
+    if w.css_name() == "row" && w.state_flags().contains(gtk4::StateFlags::SELECTED) {
+        return Some(w.clone());
+    }
+    let mut c = w.first_child();
+    while let Some(child) = c {
+        if let Some(found) = selected_row_of(&child) {
+            return Some(found);
+        }
+        c = child.next_sibling();
+    }
+    None
+}
+
 /// What a Queue state does once the window is up.
 fn prepare_queue(window: &MainWindow, state: &str) {
     use hatate_core::table_cells::Column;
@@ -2256,14 +2271,24 @@ fn prepare_queue(window: &MainWindow, state: &str) {
             let mode = st.rsplit('-').next().unwrap_or("").to_owned();
             glib::timeout_add_local_once(std::time::Duration::from_millis(250), move || {
                 win.set_focus_visible(true);
-                if mode == "inactive" {
-                    filter.grab_focus();
+                // the keyboard's row is the first selected one, as after a click or Shift+Click
+                let selected = selected_row_of(v.upcast_ref());
+                let took = if mode == "inactive" {
+                    filter.grab_focus()
                 } else {
-                    v.grab_focus();
-                }
+                    selected
+                        .as_ref()
+                        .map_or_else(|| v.grab_focus(), |r| r.grab_focus())
+                };
                 if mode == "backdrop" {
                     win.set_state_flags(gtk4::StateFlags::BACKDROP, false);
                 }
+                println!(
+                    "FOCUS queue-sel {mode}: grab_focus={took} list focus-within={} focus={:?}",
+                    v.state_flags().contains(gtk4::StateFlags::FOCUS_WITHIN),
+                    gtk4::prelude::GtkWindowExt::focus(win.upcast_ref::<gtk4::Window>())
+                        .map(|f| describe(&f))
+                );
             });
         }
         "queue-sorted" => view.on_header_clicked(Column::Status),
