@@ -114,3 +114,33 @@ Pins (each went red when its shipped line was reverted, `worktrees/DAN-2481-muta
 | last line shown, no half line | `message_detail_box_shows_its_last_line_and_takes_no_focus` | `"a half line is cut"` | `scroller.set_policy(Never, Automatic)` in `detail_box` removed |
 | no caret | same | `"a focused selectable label draws a caret"` | `lines.set_focusable(false)` in `detail_box` removed |
 | persistent bar past the cap | `message_detail_box_past_its_cap_scrolls_with_a_persistent_bar` | `"an overlay bar is a 2 px line"` | `scroller.set_overlay_scrolling(false)` in `detail_box` removed |
+
+## 7. Inactive selection and the popover rows (DAN-2669, PR #103)
+
+A selected row of the Queue (`.queue > listview`), the tag list (`.tag-list`) and a pick list (`.pick-list`) is the stamp while its list has the keyboard (`:focus-within`). When the list does not, or the window is in the background with the list still holding focus (`:backdrop`), it is an `ink_10` wash under `ink` text with a 4 px inset `ink` bar at the left edge (`box-shadow: inset 4px 0 0 @ink`), the shape the candidate picker already used for its current row. No token is added. The review picker's keyboard row (`:focus:focus-visible`) is the stamp and its pointer row (`:hover`) is `ink_10`; the Settings tag-service drop-down (`ListBox` class `found-list`) takes the same two cues. The menubar and context-menu `modelbutton` rules are not changed, and neither changed popover shows an accelerator hint.
+
+Computed from `tokens.css` by `worktrees/DAN-2669/tools/tokens_contrast.py` (outside the tree), measured on the shots by `worktrees/DAN-2669/tools/measure.py`; the shot-by-shot tables are in the PR comment and the verify verdict.
+
+| element | dark | light | floor |
+|---|---|---|---|
+| inactive row text (`ink`) on the wash | 8.82 | 11.34 | 4.5 |
+| inactive `ink_65` label on the wash | 4.60 | 5.10 | 4.5 |
+| thumbnail frame (`ink_58`) on the wash | 3.97 | 4.07 | 3.0 |
+| Error chip border (`ink_46`) on the wash | 3.03 | 3.03 | 3.0 |
+| 4 px bar vs the raised row | 10.70 | 14.35 | 3.0 |
+| wash vs the raised row | 1.21 | 1.27 | none (the bar carries the cue) |
+
+- There is no zebra stripe in the Rust sheet, so the wash is read against the raised row. The 4 px bar ends on the row above the 1 px `ink_18` divider: they abut, with no gap.
+- Not judgeable from shots: a real compositor's own backdrop tint and whether the user's theme overrides `:backdrop`. Owner: the board's M4 card.
+
+Pins (each goes red when its rule is deleted, `worktrees/DAN-2669-mutations.log`; and against the parent's rules, `worktrees/DAN-2669-parent.log`). Cites name the fn and quote the assertion.
+
+| claim | fn | assertion fragment | reverted line |
+|---|---|---|---|
+| inactive form is the wash and the bar | `crates/hatate-gtk/src/theme.rs` `fn a_selected_row_without_the_keyboard_is_an_ink_wash_with_an_ink_bar` | `assert_eq!(token_of(r, "background:"), "ink_10", "{sel}");` | the `.queue > listview > row:selected` and `.tag-list > row:selected, .pick-list > row:selected` rules |
+| the Queue row goes inactive when focus leaves the list | `crates/hatate-gtk/tests/smoke.rs` `fn a_selected_queue_row_is_inactive_when_the_list_or_the_window_loses_the_keyboard` | `"{name}: focus is in the filter box"` | `.queue > listview > row:selected { background: @ink_10 ...` deleted |
+| the Queue row goes inactive when the window is in the background | same | `"{name}: the window is in the background"` | `.queue > listview:focus-within > row:selected:backdrop` deleted |
+| the tag and pick rows go inactive when focus leaves the list | `crates/hatate-gtk/tests/smoke.rs` `fn a_selected_tag_or_pick_list_row_is_inactive_when_the_list_or_the_window_loses_the_keyboard` | `"{tag}: focus is in the entry"` | `.tag-list > row:selected, .pick-list > row:selected` deleted |
+| the tag and pick rows go inactive when the window is in the background | same | `"{tag}: the window is in the background"` | `.tag-list:focus-within > row:selected:backdrop, ...` deleted |
+| picker pointer row is the wash | `crates/hatate-gtk/src/theme.rs` `fn the_picker_popup_marks_the_current_row_and_the_keyboard_row` | `assert_eq!(token_of(hovered, "background:"), "ink_10");` | `dropdown.candidate-picker popover listview > row:hover` set back to the stamp |
+| Settings found list keyboard row is the stamp | same | `assert_eq!(token_of(found, "background:"), "stamp_bg");` | `popover .found-list > row:focus:focus-visible` deleted |
