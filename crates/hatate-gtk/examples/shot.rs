@@ -535,7 +535,6 @@ const TAB_STATES: &[&str] = &[
     "crashed",
     "survived",
     "quota",
-    "stopped",
     "failed",
     "activity",
     "logs",
@@ -563,6 +562,8 @@ const TAB_STATES: &[&str] = &[
     "settings-shortcuts-conflict",
     "settings-hydrus-fetched",
     "shortcuts-dialog",
+    // DAN-2700, last so the numbering of section 8 of `docs/phase6-coverage.md` above it stands.
+    "stopped",
 ];
 
 /// `shot --tabs OUTDIR [--only a,b]`: the Tab walk of every surface in `TAB_STATES`, dark and light, a child

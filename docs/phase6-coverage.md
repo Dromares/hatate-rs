@@ -2062,7 +2062,19 @@ Nothing in 7.2 is a disabled placeholder (`no_menu_action_is_deferred`). The onl
 | 711 | `settings-hydrus-fetched` | 13 | GtkButton [text-button.pill.primary.plain.default] OK | 416 / 416 | `settings-hydrus-fetched-dark-tab13.png`, `settings-hydrus-fetched-light-tab13.png` |
 | 712 | `shortcuts-dialog` | 0 | GtkScrolledWindow [] Next image: | 2848 / 2848 | `shortcuts-dialog-dark-tab0.png`, `shortcuts-dialog-light-tab0.png` |
 | 713 | `shortcuts-dialog` | 1 | GtkButton [text-button.pill.primary.plain.default] Close | 496 / 496 | `shortcuts-dialog-dark-tab1.png`, `shortcuts-dialog-light-tab1.png` |
+| 714 | `stopped` | 0 | GtkToggleButton [text-button.toggle.caps] The list: add images, fil... | 540 / 540 | `stopped-dark-tab0.png`, `stopped-light-tab0.png` |
+| 715 | `stopped` | 1 | GtkToggleButton [text-button.toggle.caps] One image at a time, your... | 572 / 572 | `stopped-dark-tab1.png`, `stopped-light-tab1.png` |
+| 716 | `stopped` | 2 | GtkToggleButton [text-button.toggle.caps] How the run is going, wha... | 620 / 620 | `stopped-dark-tab2.png`, `stopped-light-tab2.png` |
+| 717 | `stopped` | 3 | GtkButton [text-button.pill.caps.primary] ▶ Start Search | 904 / 904 | `stopped-dark-tab3.png`, `stopped-light-tab3.png` |
+| 718 | `stopped` | 4 | GtkButton [text-button.icon-boxed] Preferences… | 392 / 392 | `stopped-dark-tab4.png`, `stopped-light-tab4.png` |
+| 719 | `stopped` | 5 | GtkButton [text-button.pill.caps.primary] Resume Queue | 852 / 852 | `stopped-dark-tab5.png`, `stopped-light-tab5.png` |
+| 720 | `stopped` | 6 | GtkButton [text-button.link.caps] Dismiss | 514 / 516 | `stopped-dark-tab6.png`, `stopped-light-tab6.png` |
+| 721 | `stopped` | 7 | GtkText [] Filename contains… | 1184 / 1184 | `stopped-dark-tab7.png`, `stopped-light-tab7.png` |
+| 722 | `stopped` | 8 | GtkToggleButton [text-button.arrow-button.toggle] Status: All | 700 / 700 | `stopped-dark-tab8.png`, `stopped-light-tab8.png` |
+| 723 | `stopped` | 9 | GtkToggleButton [text-button.arrow-button.toggle] Site: All | 620 / 620 | `stopped-dark-tab9.png`, `stopped-light-tab9.png` |
+| 724 | `stopped` | 10 | GtkToggleButton [text-button.arrow-button.toggle] Upscale: All | 740 / 740 | `stopped-dark-tab10.png`, `stopped-light-tab10.png` |
+| 725 | `stopped` | 11 | GtkColumnViewRowWidget [activatable] Thumbnail unavailable — the fi... | 4146 / 4146 | `stopped-dark-tab11.png`, `stopped-light-tab11.png` |
 
-**713 stops (1426 walks, one per scheme) over 34 surfaces; 0 without a visible indicator.** `failed` is one of them: 13 stops (0 to 12), each with an indicator in both schemes.
+**725 stops (1450 walks, one per scheme) over 35 surfaces; 0 without a visible indicator.** `failed` is one of them: 13 stops (0 to 12), each with an indicator in both schemes.
 
 **Not judged: `review-picker`.** The candidate picker is a popover, its own surface, and the walk's snapshot is the window's: its 80 stops (the walk's cap; the popover's list cycles) show no change, which measures the tool and not the popover. The picker's ring is on the `review-picker-*` shots; the walk of a popover surface is the fix (run C, or the verifier's walk). Owner: Oderisi's design read for the ring, the author for the walker.

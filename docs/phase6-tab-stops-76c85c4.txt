@@ -711,3 +711,15 @@ settings-hydrus-fetched 12
 settings-hydrus-fetched 13
 shortcuts-dialog 0
 shortcuts-dialog 1
+stopped 0
+stopped 1
+stopped 2
+stopped 3
+stopped 4
+stopped 5
+stopped 6
+stopped 7
+stopped 8
+stopped 9
+stopped 10
+stopped 11
