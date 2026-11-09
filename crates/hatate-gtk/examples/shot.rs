@@ -7,7 +7,7 @@
 //! and writes `OUTDIR/index.tsv` with each PNG's header size next to the size its surface states as its
 //! minimum (DAN-2356: the header decides, not the host toolkit's numbers).
 //!
-//! `STATE` is one of `empty` (default), `rows`, `crashed`, `survived`, `quota`, `dialog` (the
+//! `STATE` is one of `empty` (default), `rows`, `crashed`, `survived`, `quota`, `stopped` (the Stopped launch banner, DAN-2700; `stopped-focus-resume` and `stopped-focus-dismiss` focus its two actions, `stopped-dismissed` presses Dismiss), `dialog` (the
 //! Clear Session question), `dialog-nolabel` (the same with the Queue page's placeholder label hidden, DAN-2256), `logs` (the log viewer), `logs-selected` (the log viewer with the path
 //! line selected and focused) or `logs-selected-body` (the log body selected and focused), `menu` (the first menu open) or `focus` (the
 //! first button focused with the ring showing), `failed` (the Failed banner), `activity` (the
@@ -97,6 +97,12 @@ const SHOT_SET: &[(&str, bool)] = &[
     ("crashed", true),
     ("survived", false),
     ("quota", true),
+    // DAN-2700: the Stopped launch banner (default and minimum), each of its two actions focused, and the
+    // state after Dismiss.
+    ("stopped", true),
+    ("stopped-focus-resume", true),
+    ("stopped-focus-dismiss", true),
+    ("stopped-dismissed", true),
     ("dialog", false),
     ("dialog-nolabel", false),
     ("logs", false),
@@ -556,6 +562,8 @@ const TAB_STATES: &[&str] = &[
     "settings-shortcuts-conflict",
     "settings-hydrus-fetched",
     "shortcuts-dialog",
+    // DAN-2700, last so the numbering of section 8 of `docs/phase6-coverage.md` above it stands.
+    "stopped",
 ];
 
 /// `shot --tabs OUTDIR [--only a,b]`: the Tab walk of every surface in `TAB_STATES`, dark and light, a child
@@ -800,6 +808,24 @@ fn main() -> glib::ExitCode {
         "survived" => {
             unclean = true;
             save(&[]);
+        }
+        // DAN-2700: eight rows, the last three still unsearched, and the stop record that says so,
+        // written three hours before `NOW`; no crash marker (`unclean` stays false).
+        st if st.starts_with("stopped") => {
+            let mut r = rows(8);
+            for e in &mut r {
+                e.status = MatchStatus::Good;
+            }
+            for e in &mut r[5..] {
+                e.status = MatchStatus::NotSearched;
+            }
+            save(&r);
+            hatate_core::stop_record::StopRecordFile::new(&paths)
+                .write(&hatate_core::stop_record::StopRecord {
+                    at: NOW - 3.0 * 3600.0,
+                    unsearched: 3,
+                })
+                .expect("stop record");
         }
         "quota" => {
             save(&rows(8));
@@ -1319,6 +1345,24 @@ fn prepare(window: &MainWindow, state: &str) {
                     b.grab_focus();
                 }
                 None => eprintln!("{state}: no button {want}"),
+            }
+        }
+        // DAN-2700: the Stopped banner is shown by the launch itself; these focus one of its two
+        // actions with the ring showing, or press Dismiss.
+        "stopped-focus-resume" | "stopped-focus-dismiss" => {
+            window.win.set_focus_visible(true);
+            let label = if state == "stopped-focus-resume" {
+                "Resume Queue"
+            } else {
+                "Dismiss"
+            };
+            if let Some(b) = find_button_labelled(window.win.upcast_ref(), label) {
+                b.grab_focus();
+            }
+        }
+        "stopped-dismissed" => {
+            if let Some(b) = find_button_labelled(window.win.upcast_ref(), "Dismiss") {
+                b.emit_clicked();
             }
         }
         "focus" => {

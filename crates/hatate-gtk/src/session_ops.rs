@@ -26,6 +26,7 @@ use hatate_core::missing_files;
 use hatate_core::model::{Entry, MatchStatus};
 use hatate_core::queue::QueueModel;
 use hatate_core::session::{self, LoadOptions, SessionStore, named};
+use hatate_core::stop_record::{LaunchBanner, StopRecordFile};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -402,6 +403,17 @@ impl MainWindow {
             tracing::info!("session: {notice:?}");
         }
         let entries = loaded.entries;
+        // The launch decision for a stop record (DAN-2700): the crash marker wins and clears it,
+        // and so does a launch with nothing unsearched. An Interrupted answer leaves the record
+        // for Resume Queue, a run start or Dismiss to clear.
+        let resolved = StopRecordFile::new(&self.s.paths).resolve(
+            self.s.unclean_shutdown,
+            had_session_file,
+            &entries,
+        );
+        if let Some(e) = &resolved.clear_error {
+            tracing::warn!("Could not clear the stop record: {e}");
+        }
         if entries.is_empty() {
             if had_session_file && self.s.unclean_shutdown {
                 // The status-bar line stays (G-06): a transient message needs a home even once
@@ -423,6 +435,9 @@ impl MainWindow {
             // same event is noise (commit 31478d5). `session_restore_status` stays unset, so the
             // quota text shows on its own if a pause is also pending.
             self.show_run_banner(&entries);
+        } else if let LaunchBanner::Interrupted { counts, at } = &resolved.banner {
+            // Like the Crashed banner, it replaces the status-bar line rather than joining it.
+            self.show_stopped_banner(counts, *at);
         } else {
             let status = format!("Restored {count} image(s) from your last session");
             *self.s.session_restore_status.borrow_mut() = Some(status.clone());

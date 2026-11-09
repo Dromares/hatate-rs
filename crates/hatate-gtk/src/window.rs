@@ -197,6 +197,8 @@ pub struct State {
     pub queue_stack: gtk::Stack,
     pub drop_zone: gtk::Overlay,
     pub run_banner: widgets::RunBanner,
+    /// Whether `run_banner` is showing the Stopped launch banner rather than the Crashed one.
+    pub stopped_banner: Cell<bool>,
     pub quota_banner: widgets::QuotaBanner,
     /// The banner of a run that ended on `Ending::Failed` (call 2b).
     pub failed_banner: widgets::FailedBanner,
@@ -492,6 +494,7 @@ impl MainWindow {
             queue_stack,
             drop_zone,
             run_banner,
+            stopped_banner: Cell::new(false),
             quota_banner,
             failed_banner,
             nothing_survived: RefCell::new(None),
@@ -845,6 +848,15 @@ impl MainWindow {
             move |_| {
                 if let Some(w) = w.upgrade() {
                     w.action_start_search();
+                }
+            }
+        });
+        // The Stopped launch banner's Dismiss: forget the stop (DAN-2700).
+        self.s.run_banner.dismiss.connect_clicked({
+            let w = w.clone();
+            move |_| {
+                if let Some(w) = w.upgrade() {
+                    w.dismiss_stopped_banner();
                 }
             }
         });

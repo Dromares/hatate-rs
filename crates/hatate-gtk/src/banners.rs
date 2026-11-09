@@ -18,6 +18,7 @@ use hatate_core::localtime::local_hhmm;
 use hatate_core::model::Entry;
 use hatate_core::quota_pause::{QuotaPauseFile, StartupPause};
 use hatate_core::session::SessionStore;
+use hatate_core::stop_record::{self, RestoreCounts, StopRecordFile};
 use hatate_core::timeutil;
 
 /// `f"{n:,}"`.
@@ -44,6 +45,13 @@ fn crash_log_figure(faults: usize) -> String {
         "no new entry".to_owned()
     }
 }
+
+/// The Stopped banner's glyph: the hollow status glyph, because Ryoku Status carries no stop
+/// square. The title says the word, so the tone is not carried by the glyph alone.
+const STOPPED_GLYPH: &str = "\u{25CB}";
+/// What `widgets::run_banner` starts with, put back when the Stopped banner leaves.
+const CRASHED_GLYPH: &str = "\u{25D0}";
+const CRASHED_HEAD: &str = "Run interrupted \u{2014} partial results survived";
 
 impl MainWindow {
     fn faults_in_previous_run(&self) -> usize {
@@ -107,6 +115,61 @@ impl MainWindow {
                 .set_text(&format!("stopped {} ago", format_duration(age, false)));
         }
         banner.root.set_visible(true);
+    }
+
+    /// The Stopped launch banner (DAN-2700, DAN-2224 call 2b): the previous run was stopped on
+    /// purpose, with rows still unsearched. It is the Crashed banner's card with the core's own
+    /// copy (`interrupted_body`, the same counts clause as Crashed), the age from the stop record
+    /// in the title, and Resume Queue and Dismiss as the only actions (a stop leaves no crash log).
+    pub fn show_stopped_banner(&self, counts: &RestoreCounts, at: f64) {
+        let banner = &self.s.run_banner;
+        let age = ((self.s.clock)() - at).max(0.0);
+        banner.parts.glyph.set_text(STOPPED_GLYPH);
+        banner.parts.head.set_text(&format!(
+            "Run stopped \u{2014} {} ago",
+            format_duration(age, false)
+        ));
+        banner
+            .parts
+            .body
+            .set_text(&stop_record::interrupted_body(counts));
+        clear_children(&banner.parts.meta_slot);
+        banner.crash_log.set_visible(false);
+        banner.discard.set_visible(false);
+        banner.dismiss.set_visible(true);
+        self.s
+            .shell
+            .run_note_label
+            .set_text(&format!("stopped {} ago", format_duration(age, false)));
+        self.s.stopped_banner.set(true);
+        banner.root.set_visible(true);
+    }
+
+    /// Hides the Stopped banner and gives the card back to the Crashed one. Does nothing while the
+    /// Crashed banner is the one showing.
+    pub fn hide_stopped_banner(&self) {
+        if !self.s.stopped_banner.replace(false) {
+            return;
+        }
+        let banner = &self.s.run_banner;
+        banner.root.set_visible(false);
+        banner.parts.glyph.set_text(CRASHED_GLYPH);
+        banner.parts.head.set_text(CRASHED_HEAD);
+        banner.crash_log.set_visible(true);
+        banner.discard.set_visible(true);
+        banner.dismiss.set_visible(false);
+        if self.s.shell.run_note_label.text().starts_with("stopped ") {
+            self.s.shell.run_note_label.set_text("");
+        }
+    }
+
+    /// Dismiss: the user has read it. Forgets the stop, so the next launch shows only the
+    /// ordinary "Restored N image(s)" line. A record that will not clear logs one WARNING.
+    pub fn dismiss_stopped_banner(&self) {
+        if let Err(e) = StopRecordFile::new(&self.s.paths).clear() {
+            tracing::warn!("Could not clear the stop record: {e}");
+        }
+        self.hide_stopped_banner();
     }
 
     /// `_show_nothing_survived()`: replaces the Queue's drop zone with the "Nothing survived."
