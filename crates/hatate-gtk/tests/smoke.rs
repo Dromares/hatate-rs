@@ -16,6 +16,7 @@ use hatate_core::engines::saucenao::SauceNaoQuota;
 use hatate_core::model::MatchStatus;
 use hatate_core::quota_pause::{QuotaPause, QuotaPauseFile};
 use hatate_core::session::{LoadOptions, SessionStore, named};
+use hatate_core::stop_record::{LaunchBanner, StopRecord, StopRecordFile};
 use hatate_core::table_menu::Action;
 use hatate_gtk::dialogs::{Asked, Buttons, Kind, Response};
 use hatate_gtk::menu::{self, Owner};
@@ -513,6 +514,26 @@ const SCENARIOS: &[Scenario] = &[
     (
         "lazy_thumbnails_decode_only_the_rows_on_screen",
         lazy_thumbnails_decode_only_the_rows_on_screen,
+    ),
+    (
+        "a_stopped_run_shows_the_stopped_banner_on_the_next_launch",
+        a_stopped_run_shows_the_stopped_banner_on_the_next_launch,
+    ),
+    (
+        "a_finished_or_unreadable_stop_record_shows_no_banner_and_is_cleared",
+        a_finished_or_unreadable_stop_record_shows_no_banner_and_is_cleared,
+    ),
+    (
+        "dismissing_the_stopped_banner_clears_the_record_for_good",
+        dismissing_the_stopped_banner_clears_the_record_for_good,
+    ),
+    (
+        "resume_queue_on_the_stopped_banner_starts_the_run_and_clears_the_record",
+        resume_queue_on_the_stopped_banner_starts_the_run_and_clears_the_record,
+    ),
+    (
+        "a_crash_marker_beats_the_stop_record",
+        a_crash_marker_beats_the_stop_record,
     ),
 ];
 
@@ -11311,5 +11332,207 @@ fn settings_hydrus_result_leads_with_a_status_glyph_and_is_empty_while_the_test_
     assert!(!label.uses_markup());
     assert_eq!(label.layout().text(), "\u{00D7} Failed: <b>&amp;</b> <i>");
     d.click_cancel();
+    f.close();
+}
+
+// ---- DAN-2700: the Stopped launch banner -----------------------------------------------------
+
+/// A setup step that leaves a stop record `age` seconds old in the profile.
+fn stop_record_setup(age: f64) -> Setup {
+    Box::new(move |p| {
+        StopRecordFile::new(p)
+            .write(&StopRecord {
+                at: NOW - age,
+                unsearched: 2,
+            })
+            .unwrap();
+    })
+}
+
+/// Four rows, two of them still unsearched.
+fn half_searched() -> Vec<hatate_core::model::Entry> {
+    let mut rows = seeded(4, MatchStatus::Good);
+    rows[2].status = MatchStatus::NotSearched;
+    rows[3].status = MatchStatus::NotSearched;
+    rows
+}
+
+fn on_disk(f: &Fx) -> hatate_core::stop_record::Read {
+    StopRecordFile::new(&f.paths).read()
+}
+
+/// A stop, then a launch: the run-banner card says "Run stopped", the age, and the core's own
+/// counts sentence, with Resume Queue and Dismiss and no crash-log action. The record stays until
+/// the user acts on it.
+fn a_stopped_run_shows_the_stopped_banner_on_the_next_launch(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: half_searched(),
+            setup: Some(stop_record_setup(3.0 * 3600.0)),
+            ..Opts::default()
+        },
+    );
+    let b = &f.w.s.run_banner;
+    assert!(b.root.is_visible());
+    assert!(f.w.s.stopped_banner.get());
+    assert_eq!(b.parts.head.text(), "Run stopped \u{2014} 3h ago");
+    assert_eq!(
+        b.parts.body.text(),
+        "Hatate was stopped during this run. Everything it had done is saved. 0 of 4 images are \
+         already sent to Hydrus, 2 are decided and waiting for your review, and 2 were never \
+         reached."
+    );
+    assert!(b.resume.is_visible() && b.dismiss.is_visible());
+    assert!(!b.crash_log.is_visible() && !b.discard.is_visible());
+    assert_eq!(f.w.s.shell.run_note_label.text(), "stopped 3h ago");
+    // Like the Crashed banner it replaces the status-bar line.
+    assert_eq!(f.say(), "Ready");
+    assert!(matches!(
+        on_disk(&f),
+        hatate_core::stop_record::Read::Valid(_)
+    ));
+    f.close();
+}
+
+/// A run that finished leaves no record, and a record with nothing unsearched under it (or one
+/// that cannot be read) never gives a banner: the launch says "Restored N image(s)" and the file
+/// is cleaned up. Nothing blocks the launch.
+fn a_finished_or_unreadable_stop_record_shows_no_banner_and_is_cleared(app: &adw::Application) {
+    // Normal completion: every row searched, no record.
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: seeded(3, MatchStatus::Good),
+            ..Opts::default()
+        },
+    );
+    assert!(!f.w.s.run_banner.root.is_visible());
+    assert_eq!(f.say(), "Restored 3 image(s) from your last session");
+    f.close();
+    // A record, but nothing left to search.
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: seeded(3, MatchStatus::Good),
+            setup: Some(stop_record_setup(60.0)),
+            ..Opts::default()
+        },
+    );
+    assert!(!f.w.s.run_banner.root.is_visible());
+    assert_eq!(f.say(), "Restored 3 image(s) from your last session");
+    assert_eq!(on_disk(&f), hatate_core::stop_record::Read::Absent);
+    f.close();
+    // A record from some other version: ignored, cleared, launch unharmed.
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: half_searched(),
+            setup: Some(Box::new(|p| {
+                std::fs::write(
+                    StopRecordFile::new(p).path(),
+                    r#"{"stop_record": {"version": 7}}"#,
+                )
+                .unwrap();
+            })),
+            ..Opts::default()
+        },
+    );
+    assert_eq!(f.len(), 4);
+    assert!(!f.w.s.run_banner.root.is_visible());
+    assert_eq!(on_disk(&f), hatate_core::stop_record::Read::Absent);
+    f.close();
+}
+
+/// Dismiss hides the banner and the strip's note, and the record is gone from the disk, so the
+/// next launch decides "no banner" from the same files.
+fn dismissing_the_stopped_banner_clears_the_record_for_good(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: half_searched(),
+            setup: Some(stop_record_setup(600.0)),
+            ..Opts::default()
+        },
+    );
+    assert!(f.w.s.run_banner.root.is_visible());
+    f.w.s.run_banner.dismiss.emit_clicked();
+    assert!(!f.w.s.run_banner.root.is_visible());
+    assert!(!f.w.s.stopped_banner.get());
+    assert_eq!(f.w.s.shell.run_note_label.text(), "");
+    assert_eq!(on_disk(&f), hatate_core::stop_record::Read::Absent);
+    // The next launch, decided from the same files.
+    let rows = half_searched();
+    let again = StopRecordFile::new(&f.paths).resolve(false, true, &rows);
+    assert_eq!(again.banner, LaunchBanner::None);
+    assert!(again.clear_error.is_none());
+    // The card is the Crashed one's again.
+    assert_eq!(
+        f.w.s.run_banner.parts.head.text(),
+        "Run interrupted \u{2014} partial results survived"
+    );
+    // The card is hidden, so ask the buttons' own `visible`, not the chain.
+    let shown = |b: &gtk4::Button| b.property::<bool>("visible");
+    assert!(shown(&f.w.s.run_banner.crash_log) && shown(&f.w.s.run_banner.discard));
+    assert!(!shown(&f.w.s.run_banner.dismiss));
+    f.close();
+}
+
+/// Resume Queue starts the run the way Start Search does: the banner leaves with it and the
+/// record is cleared by the run starting (`RunChannel`), so a second launch finds nothing.
+fn resume_queue_on_the_stopped_banner_starts_the_run_and_clears_the_record(app: &adw::Application) {
+    let pics = tempfile::tempdir().unwrap();
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: unsearched(pics.path(), 2),
+            tweak: Some(search_tweak()),
+            missing: Some(Arc::new(|_, _| HashSet::new())),
+            setup: Some(stop_record_setup(900.0)),
+            ..Opts::default()
+        },
+    );
+    for _ in 0..2 {
+        f.search
+            .engines
+            .iqdb
+            .push(common::search::scripted::Step::Return(Ok(Vec::new())));
+    }
+    assert!(f.w.s.run_banner.root.is_visible());
+    assert!(matches!(
+        on_disk(&f),
+        hatate_core::stop_record::Read::Valid(_)
+    ));
+    f.w.s.run_banner.resume.emit_clicked();
+    assert!(f.w.s.run_active.get(), "Resume Queue did not start the run");
+    assert!(!f.w.s.run_banner.root.is_visible());
+    assert!(pump_until(10_000, || !f.w.s.run_active.get()));
+    assert_eq!(on_disk(&f), hatate_core::stop_record::Read::Absent);
+    f.close();
+}
+
+/// A crash marker wins: the Crashed banner shows, the Stopped one does not, and the record is
+/// cleared rather than left to show up on the launch after.
+fn a_crash_marker_beats_the_stop_record(app: &adw::Application) {
+    let f = Fx::new(
+        app,
+        Opts {
+            unclean: true,
+            seed: half_searched(),
+            setup: Some(stop_record_setup(3.0 * 3600.0)),
+            ..Opts::default()
+        },
+    );
+    let b = &f.w.s.run_banner;
+    assert!(b.root.is_visible());
+    assert!(!f.w.s.stopped_banner.get());
+    assert!(
+        b.parts
+            .body
+            .text()
+            .starts_with("Hatate did not exit cleanly")
+    );
+    assert!(b.crash_log.is_visible() && !b.dismiss.is_visible());
+    assert_eq!(on_disk(&f), hatate_core::stop_record::Read::Absent);
     f.close();
 }
