@@ -520,3 +520,75 @@ The set to map is the union of two, so a test that exercises 6.e behaviour witho
 | 186 | `TestAvailabilityWorker.test_a_check_that_raises_is_counted_as_done_without_taking_the_run_down` | **core**: `availability_https::the_manual_check_records_each_verdict_and_counts_only_the_gone` (a check that raises is counted done); see `hatate-core/src/availability.rs` `check_one_candidate` |
 | 237 | `TestAvailabilityWorker.test_the_reactor_full_fallback_is_NOT_applied_on_this_path` | **core**: the soft-404 and reactor-full decisions are `hatate_core::availability` (Phase 4), in `availability_https.rs` and the module's tests; the worker's shell here only forwards them (`smoke::the_availability_check_offers_to_drop_the_dead_matches`) |
 
+## 10. The Stopped launch banner (DAN-2700, DAN-2631 row 4)
+
+A run the user stopped, with rows still unsearched, is shown on the next launch by the same card the Crashed banner uses
+(`banners.rs` `fn show_stopped_banner`): the glyph `○`, the title `Run stopped — 3h ago`, core's `interrupted_body` (the counts clause
+the Crashed banner shares), and two actions, **Resume Queue** and **Dismiss**. The run strip reads `stopped 3h ago`. The crash marker
+still wins (`stop_record::launch_banner` decides, `session_ops.rs` `fn restore_saved_session` only renders), a finished run shows no
+banner, and an in-session Stop shows none (core's rule). A record that will not clear logs one WARNING and never blocks the launch.
+
+**Which of the three clears were already wired.** Run start: already (core `RunChannel::reset`); this PR only hides the banner then
+(`search_run.rs`). Resume Queue: it is the existing run start, so it needed no clear of its own. Dismiss: **was missing**, wired here
+(`banners.rs` `fn dismiss_stopped_banner`, connected in `window.rs`). The launch itself also clears a record that no banner is
+owed for (`StopRecordFile::resolve`).
+
+| # | Difference / finding | Why |
+|---|---|---|
+| D-S1 | The title is `Run stopped — <age> ago`. The ticket said the `RunEnd::Interrupted` "Run stopped" copy was on `main` in `hatate-gtk`; it is not (`git grep -i 'run stopped' -- crates` at `758441b` finds one doc comment in `stop_record.rs` and nothing in `hatate-gtk`). | Premise finding, written here for the design read. The copy is the ticket's own (`Stopped 3h ago` in its example, reworded to read with the Crashed title). |
+| D-S2 | The glyph is hollow `○` (U+25CB). The Ryoku Status family has six glyphs and none for a stop. | No new token or glyph family is added (A4). For Oderisi's read. |
+| D-S3 | The card's 1 px border is 1.54:1 (dark) and 1.76:1 (light) against the page, under the 3:1 floor of A4. It is the Crashed, Quota and Failed banners' border, unchanged; the pixels are byte-identical across the four. The crop marks at the corners are 6.23 and 7.09. | Inherited, not introduced. A change would touch three other banners; it comes to Cloud as a design call, not a fixup (DAN-2700 scope item 4). |
+
+**Pins** (each red on a named mutation, `worktrees/DAN-2700-mutations.log`):
+`crates/hatate-gtk/tests/smoke.rs` `fn a_stopped_run_shows_the_stopped_banner_on_the_next_launch` `assert_eq!(b.parts.head.text(), "Run stopped \u{2014} 3h ago");` (M1);
+`crates/hatate-gtk/tests/smoke.rs` `fn a_finished_or_unreadable_stop_record_shows_no_banner_and_is_cleared` `assert_eq!(f.say(), "Restored 3 image(s) from your last session");` (M6);
+`crates/hatate-gtk/tests/smoke.rs` `fn dismissing_the_stopped_banner_clears_the_record_for_good` `assert_eq!(on_disk(&f), hatate_core::stop_record::Read::Absent);` (M3, M5);
+`crates/hatate-gtk/tests/smoke.rs` `fn resume_queue_on_the_stopped_banner_starts_the_run_and_clears_the_record` `"Resume Queue did not start the run"` (M4);
+`crates/hatate-gtk/tests/smoke.rs` `fn a_crash_marker_beats_the_stop_record` `assert!(!f.w.s.stopped_banner.get());` (M2).
+
+**Shots** (`examples/shot.rs`, the `stopped*` states; hosted-CI shot path, Xvfb, content only; the window's stated minimum is
+1010 x 837 outer, so 1000 x 827 by the PNG header). The banner wraps instead of clipping at the minimum: the body is a wrapping
+label (`widgets.rs` `fn banner_shell` `body.set_wrap(true);`), and with that line set to `false` every `stopped-min` shot reads
+1451 x 827, `OVER` in `index.tsv` (`worktrees/DAN-2700-fit-red.tsv`): the fit test is red on the shot path without the wrap.
+
+| State | Shot (dark, light) | PNG header (hosted CI) | Stated min | Fit | `.rects` proof (min shot) |
+|---|---|---|---|---|---|
+| stopped | `stopped-dark.png`, `stopped-light.png` | 1090x827 | - | - |  |
+| stopped (min) | `stopped-min-dark.png`, `stopped-min-light.png` | 1000x827 | 1000x827 | FIT | `Run stopped — 3h ago` at 98,310 (845 x 15) |
+| stopped-focus-resume | `stopped-focus-resume-dark.png`, `stopped-focus-resume-light.png` | 1090x827 | - | - |  |
+| stopped-focus-resume (min) | `stopped-focus-resume-min-dark.png`, `stopped-focus-resume-min-light.png` | 1000x827 | 1000x827 | FIT | `Resume Queue` at 123,405 (focused) |
+| stopped-focus-dismiss | `stopped-focus-dismiss-dark.png`, `stopped-focus-dismiss-light.png` | 1090x827 | - | - |  |
+| stopped-focus-dismiss (min) | `stopped-focus-dismiss-min-dark.png`, `stopped-focus-dismiss-min-light.png` | 1000x827 | 1000x827 | FIT | `Dismiss` at 289,392 62 x 46 (focused) |
+| stopped-dismissed | `stopped-dismissed-dark.png`, `stopped-dismissed-light.png` | 1090x827 | - | - |  |
+| stopped-dismissed (min) | `stopped-dismissed-min-dark.png`, `stopped-dismissed-min-light.png` | 1000x827 | 1000x827 | FIT | no `Run stopped` rect; `Queue.` at 32,219 and the filter box `01 // Filter` at 49,490 sit where the banner was |
+
+The window opens at the minimum with the state already prepared (the banner is shown by the launch), no later resize. The 1100 x 800 shots read 1090 x 827 because the window's own minimum height (837) is above the requested 800; this is so for every state of the set. Page no wider than the viewport: the header width is the window's, 1000 at the minimum, and the body wraps inside the card (the `.rects` body label is 670 wide at x=98, inside the card's 32..968).
+
+
+**Contrast** (extreme-pixel method, `worktrees/DAN-2700-tools/contrast.py` over every label in each shot's `.rects`, and
+`worktrees/DAN-2700-tools/ring.py` for the focus ring and the border; `worktrees/DAN-2700-hosted-contrast.md`, `-hosted-ring.md`, run on the hosted-CI shots; the host's own shots give the same numbers). Banner rows,
+identical at both sizes and in all four states; floors 4.5 text, 3 non-text:
+
+| Element | dark fg / bg / ratio | light fg / bg / ratio |
+|---|---|---|
+| `○` glyph | `#9d968f` / `#141414` / 6.31 | `#57524b` / `#f2ede1` / 6.62 |
+| Title `Run stopped — 3h ago` | `#cdc4ba` / `#141414` / 10.70 | `#211d17` / `#f2ede1` / 14.35 |
+| Body (counts) | `#8c8680` / `#141414` / 5.12 | `#5f5b53` / `#f2ede1` / 5.78 |
+| Resume Queue | `#0d0d0d` / `#cdc4ba` / 11.29 | `#f6f1e6` / `#211d17` / 14.88 |
+| Dismiss (rest) | `#8c8680` / `#141414` / 5.12 | `#5f5b53` / `#f2ede1` / 5.78 |
+| Dismiss (focused, text) | `#cdc4ba` / `#141414` / 10.70 | `#211d17` / `#f2ede1` / 14.35 |
+| Run strip `stopped` / `3h` / `ago` | 5.17 / 11.29 / 4.97 | 5.34 / 12.88 / 5.15 |
+| Focus ring, Resume Queue | `#0d0d0d` / `#cdc4ba` / 11.29 | `#f6f1e6` / `#211d17` / 14.88 |
+| Focus ring, Dismiss | `#cdc4ba` / `#141414` / 10.70 | `#211d17` / `#f2ede1` / 14.35 |
+| Card border (D-S3) | `#353331` / `#0d0d0d` / **1.54** | `#afaba1` / `#e8e1d2` / **1.76** |
+| Crop marks | `#97918a` / `#0d0d0d` / 6.23 | `#4b4740` / `#e8e1d2` / 7.09 |
+
+The script flags 90 rows over the whole window, all of them the Queue's `—` placeholder cells (`#67635f` on `#141414`, 3.09;
+`#8c887f` on `#f2ede1`, 3.02), which this PR does not touch; there are 0 failing rows among the banner's labels.
+
+**Tab order** (`shot --tabs` over `stopped`, 12 stops a scheme, 0 without an indicator): Queue, Review, Activity, Start Search,
+Preferences, **Resume Queue** (stop 5), **Dismiss** (stop 6), the filename filter, Status, Site, Upscale, the table. The two banner
+stops sit between the header and the filter, in reading order. Indicator crops `stopped-{dark,light}-tab5.png` and `-tab6.png`.
+
+**Not judgeable from shots:** the real compositor's window chrome, HiDPI crispness of `○`, hover and pressed washes of the two
+buttons, and the real desktop's focus-ring theme (owner: the board's launch card).
