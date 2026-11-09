@@ -603,13 +603,16 @@ pub fn failed_banner() -> FailedBanner {
     }
 }
 
-/// The Crashed banner's widgets (`run_banner`).
+/// The Crashed banner's widgets (`run_banner`), which the Stopped launch banner shares: the same
+/// card with `Dismiss` shown and the two crash actions hidden (DAN-2700).
 pub struct RunBanner {
     pub root: gtk::Overlay,
     pub parts: BannerParts,
     pub resume: gtk::Button,
     pub crash_log: gtk::Button,
     pub discard: gtk::Button,
+    /// Only the Stopped banner shows it; hidden while the Crashed banner does.
+    pub dismiss: gtk::Button,
 }
 
 /// `run_banner()`: the interrupted-run notice.
@@ -621,15 +624,19 @@ pub fn run_banner() -> RunBanner {
     let resume = pill_button("Resume Queue", true, true);
     let crash_log = pill_button("View Crash Log", false, true);
     let discard = link_button("Discard & start fresh");
+    let dismiss = link_button("Dismiss");
+    dismiss.set_visible(false);
     parts.actions.append(&resume);
     parts.actions.append(&crash_log);
     parts.actions.append(&discard);
+    parts.actions.append(&dismiss);
     RunBanner {
         root,
         parts,
         resume,
         crash_log,
         discard,
+        dismiss,
     }
 }
 

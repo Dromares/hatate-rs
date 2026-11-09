@@ -635,6 +635,9 @@ impl MainWindow {
         if pending.is_empty() {
             return false;
         }
+        // The run begins, so the Stopped launch banner describes the run before it. The stop
+        // record itself is cleared by the channel when the run starts (`RunChannel::reset`).
+        self.hide_stopped_banner();
         let total = pending.len();
         let by_path: HashMap<String, EntryId> = batch
             .iter()
