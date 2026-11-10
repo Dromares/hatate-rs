@@ -281,9 +281,12 @@ pub fn crashed_body(c: &RestoreCounts) -> String {
 }
 
 /// The Interrupted banner's body (`phase6-calls` call 2b): new copy on the Crashed counts clause.
+/// It says `during the last run` (the banner is read at the next launch), while `crashed_body`
+/// keeps Python's `during this run` byte for byte, so the two banners differ in tense on purpose
+/// (DAN-2718).
 pub fn interrupted_body(c: &RestoreCounts) -> String {
     format!(
-        "Hatate was stopped during this run. Everything it had done is saved. {}.",
+        "Hatate was stopped during the last run. Everything it had done is saved. {}.",
         counts_clause(c)
     )
 }
@@ -390,8 +393,30 @@ mod tests {
         );
         assert_eq!(
             interrupted_body(&c),
-            "Hatate was stopped during this run. Everything it had done is saved. 0 of 2 images are already sent to Hydrus, 1 is decided and waiting for your review, and 1 was never reached."
+            "Hatate was stopped during the last run. Everything it had done is saved. 0 of 2 images are already sent to Hydrus, 1 is decided and waiting for your review, and 1 was never reached."
         );
+    }
+
+    /// DAN-2718 item 3: the Stopped body opens `during the last run`; the Crashed body is Python's
+    /// `_interrupted_prose` byte for byte and keeps `during this run`. Each is pinned whole, so a
+    /// change to either sentence, or to the shared counts clause, fails here.
+    #[test]
+    fn the_stopped_body_says_the_last_run_and_the_crashed_body_is_unchanged() {
+        let c = RestoreCounts::of(&rows(&[MatchStatus::Good, MatchStatus::NotSearched]));
+        let counts = "0 of 2 images are already sent to Hydrus, 1 is decided and waiting for your review, and 1 was never reached.";
+        assert_eq!(
+            interrupted_body(&c),
+            format!(
+                "Hatate was stopped during the last run. Everything it had done is saved. {counts}"
+            )
+        );
+        assert_eq!(
+            crashed_body(&c),
+            format!(
+                "Hatate did not exit cleanly during this run. Everything up to the last autosave is safe. {counts}"
+            )
+        );
+        assert!(!interrupted_body(&c).contains("during this run"));
     }
 
     #[test]
