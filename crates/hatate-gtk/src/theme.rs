@@ -300,7 +300,7 @@ separator.footer-rule { background: @ink_18; min-height: 1px; }
 
 /* ---- banners (Crashed, quota pause) and the empty state ---- */
 .banner { background: @raised; border: 1px solid @ink_18; padding: %space_5%px; }
-.banner-glyph { font-family: %status%; font-size: 17px; color: @ink; }
+.banner-glyph { font-family: %status%; font-size: 17px; line-height: 88%; color: @ink; }
 .banner-head { font-size: %label%px; letter-spacing: %tracking_label%px; font-weight: 700; color: @ink; }
 .banner-body { color: @ink_65; font-size: %body%px; }
 /* Activity: the pipeline sentence, the "Show in Queue" hint, the log footer. */

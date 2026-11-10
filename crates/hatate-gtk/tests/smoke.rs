@@ -520,6 +520,10 @@ const SCENARIOS: &[Scenario] = &[
         a_stopped_run_shows_the_stopped_banner_on_the_next_launch,
     ),
     (
+        "the_banner_glyph_is_centred_on_the_title_line",
+        the_banner_glyph_is_centred_on_the_title_line,
+    ),
+    (
         "a_finished_or_unreadable_stop_record_shows_no_banner_and_is_cleared",
         a_finished_or_unreadable_stop_record_shows_no_banner_and_is_cleared,
     ),
@@ -11379,7 +11383,7 @@ fn a_stopped_run_shows_the_stopped_banner_on_the_next_launch(app: &adw::Applicat
     assert_eq!(b.parts.head.text(), "Run stopped \u{2014} 3h ago");
     assert_eq!(
         b.parts.body.text(),
-        "Hatate was stopped during this run. Everything it had done is saved. 0 of 4 images are \
+        "Hatate was stopped during the last run. Everything it had done is saved. 0 of 4 images are \
          already sent to Hydrus, 2 are decided and waiting for your review, and 2 were never \
          reached."
     );
@@ -11392,6 +11396,49 @@ fn a_stopped_run_shows_the_stopped_banner_on_the_next_launch(app: &adw::Applicat
         on_disk(&f),
         hatate_core::stop_record::Read::Valid(_)
     ));
+    f.close();
+}
+
+/// DAN-2718 item 1: the status glyph of the shared banner card is centred on the title line. Its
+/// 17 px face has a 24 px line box beside the 15 px title, which put the glyph about 4.5 px low; the
+/// sheet's `line-height` on `.banner-glyph` brings the box to the title's height. Measured on the
+/// Stopped and Crashed banners (one card), glyph box centre against title box centre.
+fn the_banner_glyph_is_centred_on_the_title_line(app: &adw::Application) {
+    let centred = |f: &Fx, what: &str| {
+        pump_for(300);
+        let b = &f.w.s.run_banner;
+        assert!(b.root.is_visible(), "{what}: the banner shows");
+        let g = b.parts.glyph.compute_bounds(&b.root).expect("glyph bounds");
+        let h = b.parts.head.compute_bounds(&b.root).expect("title bounds");
+        let (gc, hc) = (g.y() + g.height() / 2.0, h.y() + h.height() / 2.0);
+        assert!(
+            (gc - hc).abs() <= 0.5,
+            "{what}: glyph centre {gc} against title centre {hc} (glyph box {}, title box {})",
+            g.height(),
+            h.height()
+        );
+    };
+    let f = Fx::new(
+        app,
+        Opts {
+            seed: half_searched(),
+            setup: Some(stop_record_setup(3.0 * 3600.0)),
+            ..Opts::default()
+        },
+    );
+    centred(&f, "Stopped");
+    f.close();
+    let mut rows = seeded(4, MatchStatus::Good);
+    rows[2].status = MatchStatus::NotSearched;
+    let f = Fx::new(
+        app,
+        Opts {
+            unclean: true,
+            seed: rows,
+            ..Opts::default()
+        },
+    );
+    centred(&f, "Crashed");
     f.close();
 }
 
