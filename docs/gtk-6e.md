@@ -592,3 +592,34 @@ stops sit between the header and the filter, in reading order. Indicator crops `
 
 **Not judgeable from shots:** the real compositor's window chrome, HiDPI crispness of `○`, hover and pressed washes of the two
 buttons, and the real desktop's focus-ring theme (owner: the board's launch card).
+
+## 11. Banner glyph baseline and the Stopped copy (DAN-2718, DAN-2705 items 1 to 3)
+
+**Item 1, glyph baseline.** `widgets.rs` `fn banner_shell` puts the status glyph in a start-aligned label beside the title, and the
+17 px Ryoku Status face has a 24 px line box against the title's 15 px, so the glyph centre sat 4.5 px below the title centre on
+all four banners (Stopped, Crashed, Quota, Failed share the shell). `theme.rs` `.banner-glyph` now sets `line-height: 88%`, which
+brings the glyph box to 15 px; the `.rects` of every banner shot changed by one line, the glyph box height 24 to 15, and a pixel
+diff of 20 before/after shots (the four banners, dark and light, default and minimum size, plus Stopped with Dismiss focused) finds
+every changed pixel inside the glyph's own column (x 57 to 74), none outside it.
+
+| Banner | glyph box centre minus title box centre, before / after | glyph ink centre minus first-capital ink centre, before / after |
+|---|---|---|
+| Stopped `○` | 4.5 / 0.0 | 5.5 / 1.5 |
+| Crashed `◐` | 4.5 / 0.0 | 5.5 / 1.5 |
+| Failed `×` | 4.5 / 0.0 | 4.5 / 0.5 |
+| Quota `…` | 4.0 / 0.0 | 8.5 / 4.5 (an ellipsis sits on the baseline, so its ink is low in any box) |
+
+**Item 2, Dismiss focus ring.** Not changed. The ring is rounded because `theme.rs` `button.link` sets no `border-radius`, so
+libadwaita's button radius stays under the one `*:focus:focus-visible` outline; the Tab walk names the widget
+`GtkButton [text-button.link.caps]`. `link_button()` is shared by `Clear`, `Discard & start fresh` and both `Dismiss` buttons. In
+`stopped-focus-dismiss-{dark,light}.png` the ring is 70 x 54 px at 285,388 and the corner cut starts 8 px in on the top row, the
+same before and after. Whether every link button gets a square ring is a design call on DAN-2705.
+
+**Item 3, copy.** `stop_record.rs` `fn interrupted_body` now opens `Hatate was stopped during the last run.`; `fn crashed_body` keeps
+Python's `_interrupted_prose` sentence `during this run` byte for byte, and `fn counts_clause` is untouched, so the two banners differ
+in tense on purpose (the Stopped one is read at the next launch).
+
+**Pins** (each red on a named mutation, run before the PR):
+`crates/hatate-core/src/stop_record.rs` `fn the_stopped_body_says_the_last_run_and_the_crashed_body_is_unchanged` `"Hatate was stopped during the last run. Everything it had done is saved. {counts}"` (red when `interrupted_body` is put back to "this run");
+`crates/hatate-core/src/stop_record.rs` `fn the_stopped_body_says_the_last_run_and_the_crashed_body_is_unchanged` `"Hatate did not exit cleanly during this run. Everything up to the last autosave is safe. {counts}"` (red when `crashed_body` is changed to "the last run");
+`crates/hatate-gtk/tests/smoke.rs` `fn the_banner_glyph_is_centred_on_the_title_line` `(gc - hc).abs() <= 0.5,` (the `line-height` rule removed: glyph centre 37 against title centre 32.5).
