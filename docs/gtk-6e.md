@@ -571,7 +571,7 @@ identical at both sizes and in all four states; floors 4.5 text, 3 non-text:
 
 | Element | dark fg / bg / ratio | light fg / bg / ratio |
 |---|---|---|
-| `○` glyph | `#9d968f` / `#141414` / 6.31 | `#57524b` / `#f2ede1` / 6.62 |
+| `○` glyph | `#99938b` / `#141414` / 6.05 | `#5c5851` / `#f2ede1` / 6.05 |
 | Title `Run stopped — 3h ago` | `#cdc4ba` / `#141414` / 10.70 | `#211d17` / `#f2ede1` / 14.35 |
 | Body (counts) | `#8c8680` / `#141414` / 5.12 | `#5f5b53` / `#f2ede1` / 5.78 |
 | Resume Queue | `#0d0d0d` / `#cdc4ba` / 11.29 | `#f6f1e6` / `#211d17` / 14.88 |
